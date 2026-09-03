@@ -11,6 +11,9 @@ import type {
     SelectorComparisonBaseline,
     SelectorDefinition,
     SelectorDependencySnapshot,
+    SelectorNewEdgeProofDiagnostics,
+    SelectorNewEdgeProofMemoDisableReason,
+    SelectorNewEdgeProofMemoSeedReason,
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
     SelectorEvaluationSession,
@@ -113,125 +116,317 @@ interface ResettableNewEdgeProofMemo<Node>
     reset(): void
 }
 
-const createNewEdgeProofMemo = <Node>(): ResettableNewEdgeProofMemo<Node> => {
-    let first: ReadonlyMap<Node, unknown> | undefined
-    let second: ReadonlyMap<Node, unknown> | undefined
-    let hits = 0
-    let missWork = 0
-    let locked = false
-    let enabled = true
+class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
+    readonly passiveSearches: number
+    declare readonly diagnostics: SelectorNewEdgeProofDiagnostics | undefined
+    searches = 0
+    declare first: ReadonlyMap<Node, unknown> | undefined
+    declare second: ReadonlyMap<Node, unknown> | undefined
+    declare hits: number | undefined
+    declare missWork: number | undefined
+    declare locked: boolean | undefined
+    declare disabled: boolean | undefined
+    declare consultCurrentSearch: boolean | undefined
+    declare passiveOrigin: boolean | undefined
+    declare passiveProbeBudget: number | undefined
+    declare diagnosticsCompleted: boolean | undefined
+    declare mapProbes: number | undefined
+    declare prunedNodes: number | undefined
 
-    const disable = (): void => {
-        first = undefined
-        second = undefined
-        missWork = 0
-        enabled = false
+    constructor(
+        passiveSearches: number,
+        diagnostics?: SelectorNewEdgeProofDiagnostics,
+    ) {
+        this.passiveSearches = passiveSearches
+        if (diagnostics !== undefined) this.diagnostics = diagnostics
     }
 
-    const reset = (): void => {
-        first = undefined
-        second = undefined
-        hits = 0
-        missWork = 0
-        locked = false
-        enabled = true
+    get enabled(): boolean {
+        return this.disabled !== true
     }
 
-    return {
-        get enabled() {
-            return enabled
-        },
-        beginSearch() {
-            hits = 0
-            return enabled && first !== undefined
-        },
-        hasProvenNoPath(node) {
-            if (first?.has(node)) {
-                hits |= 1
+    beginSearch(): boolean {
+        this.searches++
+        if (this.diagnostics !== undefined) {
+            this.diagnosticsCompleted = false
+            this.mapProbes = 0
+            this.prunedNodes = 0
+        }
+        const consult =
+            this.enabled &&
+            this.searches > this.passiveSearches &&
+            this.first !== undefined
+        if (consult) {
+            this.consultCurrentSearch = true
+            this.hits = 0
+        } else if (this.consultCurrentSearch === true) {
+            this.consultCurrentSearch = undefined
+        }
+        if (
+            consult &&
+            this.passiveOrigin === true &&
+            this.searches === this.passiveSearches + 1
+        ) {
+            this.passiveProbeBudget = Math.min(
+                NEW_EDGE_MEMO_MAX_ANCHOR_SIZE,
+                2 * this.first!.size,
+            )
+        }
+        return consult
+    }
+
+    hasProvenNoPath(node: Node): boolean {
+        if (!this.enabled) return false
+        const first = this.first
+        if (first !== undefined) {
+            if (first.has(node)) {
+                this.hits = (this.hits ?? 0) | 1
+                this.passiveOrigin = undefined
+                this.passiveProbeBudget = undefined
                 return true
             }
-            if (second?.has(node)) {
-                hits |= 2
+            const remaining = this.passiveProbeBudget
+            if (remaining !== undefined) {
+                this.passiveProbeBudget = remaining - 1
+                if (remaining === 1) {
+                    this.disable("passive-probe-budget")
+                    return false
+                }
+            }
+        }
+
+        const second = this.second
+        if (second !== undefined) {
+            if (second.has(node)) {
+                this.hits = (this.hits ?? 0) | 2
+                this.passiveOrigin = undefined
+                this.passiveProbeBudget = undefined
                 return true
             }
-            return false
-        },
-        completeNegative(closure) {
-            if (!enabled) return
-            if (hits !== 0) {
-                // A broad approach that only touches a much smaller retained
-                // tail is not useful evidence to keep probing. It cannot be
-                // retained within the liveness bound, so disable rather than
-                // resetting the miss budget on every repeated broad walk.
-                if (closure.size > NEW_EDGE_MEMO_MAX_ANCHOR_SIZE) {
-                    disable()
-                    return
+            const remaining = this.passiveProbeBudget
+            if (remaining !== undefined) {
+                this.passiveProbeBudget = remaining - 1
+                if (remaining === 1) {
+                    this.disable("passive-probe-budget")
+                    return false
                 }
-                // A search that pruned a certified-negative anchor is itself
-                // a complete negative certificate. Keep its new approach path
-                // as well as the broadest prior layer, without copying either
-                // existing DFS map. This is what lets one shared-tail hit teach
-                // later roots to stop before walking that tail again.
-                const priorFirst = first
-                const priorSecond = second
-                first = undefined
-                second = undefined
-                const retain = (
-                    candidate: ReadonlyMap<Node, unknown> | undefined,
-                ): void => {
-                    if (
-                        candidate === undefined ||
-                        candidate.size > NEW_EDGE_MEMO_MAX_ANCHOR_SIZE ||
-                        candidate === first
-                    ) {
-                        return
-                    }
-                    if (first === undefined || candidate.size > first.size) {
-                        second = first
-                        first = candidate
-                    } else if (
-                        second === undefined ||
-                        candidate.size > second.size
-                    ) {
-                        second = candidate
-                    }
-                }
-                retain(priorFirst)
-                retain(priorSecond)
-                retain(closure)
-                locked = true
-                missWork = 0
-                return
             }
-            // Terminal roots never perform a Map lookup and do not count as
-            // evidence against overlap: a useful shared selector layer may
-            // appear after a run of source dependencies.
-            if (closure.size === 1) return
+        }
+        return false
+    }
+
+    hasProvenNoPathMeasured(node: Node): boolean {
+        if (!this.enabled) return false
+        const first = this.first
+        if (first !== undefined) {
+            this.mapProbes = (this.mapProbes ?? 0) + 1
+            if (first.has(node)) {
+                this.hits = (this.hits ?? 0) | 1
+                this.prunedNodes = (this.prunedNodes ?? 0) + 1
+                this.passiveOrigin = undefined
+                this.passiveProbeBudget = undefined
+                return true
+            }
+            const remaining = this.passiveProbeBudget
+            if (remaining !== undefined) {
+                this.passiveProbeBudget = remaining - 1
+                if (remaining === 1) {
+                    this.disable("passive-probe-budget")
+                    return false
+                }
+            }
+        }
+
+        const second = this.second
+        if (second !== undefined) {
+            this.mapProbes = (this.mapProbes ?? 0) + 1
+            if (second.has(node)) {
+                this.hits = (this.hits ?? 0) | 2
+                this.prunedNodes = (this.prunedNodes ?? 0) + 1
+                this.passiveOrigin = undefined
+                this.passiveProbeBudget = undefined
+                return true
+            }
+            const remaining = this.passiveProbeBudget
+            if (remaining !== undefined) {
+                this.passiveProbeBudget = remaining - 1
+                if (remaining === 1) {
+                    this.disable("passive-probe-budget")
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
+    completeNegative(closure: ReadonlyMap<Node, unknown>): void {
+        if (!this.enabled) return
+
+        // A warm narrow parent observes its first three proofs without a
+        // lookup. Proof one may seed one bounded passive anchor. A qualifying
+        // proof three replaces it so current proof-three to proof-four sharing
+        // is preserved; proof two never retains a second anchor. A terminal or
+        // small proof three keeps proof one's evidence, covering the ShiftX
+        // large/terminal/terminal/large sequence without new probes in one-
+        // through three-proof cases.
+        if (this.searches <= this.passiveSearches) {
             const mayRetain =
                 closure.size >= NEW_EDGE_MEMO_MIN_SEED_SIZE &&
                 closure.size <= NEW_EDGE_MEMO_MAX_ANCHOR_SIZE
-            if (first === undefined) {
-                if (mayRetain) first = closure
-                return
+            let seed: SelectorNewEdgeProofMemoSeedReason | undefined
+            if (this.searches === 1 && mayRetain) {
+                this.first = closure
+                this.passiveOrigin = true
+                seed = "initial"
+            } else if (this.searches === this.passiveSearches && mayRetain) {
+                seed =
+                    this.first === undefined
+                        ? "initial"
+                        : "activation-replacement"
+                this.first = closure
+                this.passiveOrigin = undefined
+                this.passiveProbeBudget = undefined
             }
+            this.completeDiagnostics(seed)
+            return
+        }
 
-            const missCost = Math.min(closure.size, NEW_EDGE_MEMO_MIN_SEED_SIZE)
-            missWork += missCost
-            if (!locked && second === undefined && mayRetain) {
-                // Give a second substantial closure one following proof to
-                // demonstrate overlap, even when admitting it crosses the
-                // cumulative miss budget.
-                second = closure
+        if ((this.hits ?? 0) !== 0) {
+            // A broad approach that only touches a much smaller retained tail
+            // is not useful evidence to keep probing. It cannot be retained
+            // within the liveness bound, so disable instead of repeatedly
+            // resetting the miss budget on every broad walk.
+            if (closure.size > NEW_EDGE_MEMO_MAX_ANCHOR_SIZE) {
+                this.disable("over-cap-hit")
                 return
             }
-            if (missWork >= NEW_EDGE_MEMO_MAX_MISS_WORK) {
-                disable()
-            }
-        },
-        reset,
+            const priorFirst = this.first
+            const priorSecond = this.second
+            this.first = undefined
+            this.second = undefined
+            this.retain(priorFirst)
+            this.retain(priorSecond)
+            const retainedApproach = this.retain(closure)
+            this.locked = true
+            this.missWork = 0
+            this.completeDiagnostics(
+                retainedApproach ? "hit-derived" : undefined,
+            )
+            return
+        }
+
+        // Terminal roots never perform a Map lookup and do not count as
+        // evidence against overlap.
+        if (closure.size === 1) {
+            this.completeDiagnostics()
+            return
+        }
+        const mayRetain =
+            closure.size >= NEW_EDGE_MEMO_MIN_SEED_SIZE &&
+            closure.size <= NEW_EDGE_MEMO_MAX_ANCHOR_SIZE
+        if (this.first === undefined) {
+            if (mayRetain) this.first = closure
+            this.completeDiagnostics(mayRetain ? "initial" : undefined)
+            return
+        }
+
+        this.missWork =
+            (this.missWork ?? 0) +
+            Math.min(closure.size, NEW_EDGE_MEMO_MIN_SEED_SIZE)
+        if (this.locked !== true && this.second === undefined && mayRetain) {
+            // A second substantial closure receives one following proof to
+            // demonstrate overlap even when admission crosses the miss budget.
+            this.second = closure
+            this.completeDiagnostics("secondary")
+            return
+        }
+        if ((this.missWork ?? 0) >= NEW_EDGE_MEMO_MAX_MISS_WORK) {
+            this.disable("miss-budget")
+            return
+        }
+        this.completeDiagnostics()
+    }
+
+    completePositive(): void {
+        this.completeDiagnostics()
+    }
+
+    reset(): void {
+        this.first = undefined
+        this.second = undefined
+        this.hits = undefined
+        this.missWork = undefined
+        this.locked = undefined
+        this.disabled = undefined
+        this.searches = 0
+        this.consultCurrentSearch = undefined
+        this.passiveOrigin = undefined
+        this.passiveProbeBudget = undefined
+        this.diagnosticsCompleted = undefined
+        this.mapProbes = undefined
+        this.prunedNodes = undefined
+    }
+
+    private retain(candidate: ReadonlyMap<Node, unknown> | undefined): boolean {
+        if (
+            candidate === undefined ||
+            candidate.size > NEW_EDGE_MEMO_MAX_ANCHOR_SIZE ||
+            candidate === this.first
+        ) {
+            return false
+        }
+        if (this.first === undefined || candidate.size > this.first.size) {
+            this.second = this.first
+            this.first = candidate
+            return true
+        }
+        if (this.second === undefined || candidate.size > this.second.size) {
+            this.second = candidate
+            return true
+        }
+        return false
+    }
+
+    private disable(reason: SelectorNewEdgeProofMemoDisableReason): void {
+        this.first = undefined
+        this.second = undefined
+        this.missWork = undefined
+        this.disabled = true
+        this.passiveOrigin = undefined
+        this.passiveProbeBudget = undefined
+        this.completeDiagnostics(undefined, reason)
+    }
+
+    private completeDiagnostics(
+        seed?: SelectorNewEdgeProofMemoSeedReason,
+        disable?: SelectorNewEdgeProofMemoDisableReason,
+    ): void {
+        const diagnostics = this.diagnostics
+        if (diagnostics === undefined || this.diagnosticsCompleted === true) {
+            return
+        }
+        this.diagnosticsCompleted = true
+        const mapProbes = this.mapProbes ?? 0
+        diagnostics.completeSearch(
+            this.consultCurrentSearch === true
+                ? (this.hits ?? 0) !== 0
+                    ? "consulted-pruned"
+                    : "consulted-no-prune"
+                : "observing",
+            seed,
+            disable,
+            mapProbes,
+            this.prunedNodes ?? 0,
+            (this.first?.size ?? 0) + (this.second?.size ?? 0),
+        )
     }
 }
 
+const createNewEdgeProofMemo = <Node>(
+    passiveSearches: number,
+    diagnostics?: SelectorNewEdgeProofDiagnostics,
+): ResettableNewEdgeProofMemo<Node> =>
+    new NewEdgeProofMemo(passiveSearches, diagnostics)
 const findDependencyPathFast = <Node, Token extends object>(
     start: Node,
     target: Node,
@@ -241,7 +436,7 @@ const findDependencyPathFast = <Node, Token extends object>(
     _acceptedPrefixLength: number,
     newEdgeProofMemo?: SelectorNewEdgeProofMemo<Node>,
 ): readonly Node[] | undefined => {
-    const consultMemo = newEdgeProofMemo?.beginSearch() ?? false
+    let consultMemo = newEdgeProofMemo?.beginSearch() ?? false
     const pending = [start]
     const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
         [start, DEPENDENCY_PATH_ROOT],
@@ -259,13 +454,16 @@ const findDependencyPathFast = <Node, Token extends object>(
                     | typeof DEPENDENCY_PATH_ROOT
             }
             reversed.reverse()
+            newEdgeProofMemo?.completePositive()
             return Object.freeze(reversed)
         }
         const transient = session.getTransientDependencies(host, node)
         if (transient) {
             if (transient.length === 0) continue
-            if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) {
-                continue
+            if (consultMemo) {
+                const proven = newEdgeProofMemo!.hasProvenNoPath(node)
+                if (!newEdgeProofMemo!.enabled) consultMemo = false
+                if (proven) continue
             }
             for (const dependency of transient) {
                 if (parent.has(dependency.node)) continue
@@ -280,8 +478,10 @@ const findDependencyPathFast = <Node, Token extends object>(
             if (dependencies === undefined || dependencies.length === 0) {
                 continue
             }
-            if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) {
-                continue
+            if (consultMemo) {
+                const proven = newEdgeProofMemo!.hasProvenNoPath(node)
+                if (!newEdgeProofMemo!.enabled) consultMemo = false
+                if (proven) continue
             }
             for (const dependency of dependencies) {
                 if (parent.has(dependency)) continue
@@ -293,7 +493,11 @@ const findDependencyPathFast = <Node, Token extends object>(
 
         const record = host.getSelectorRecord(node)
         if (!record || record.dependencies.length === 0) continue
-        if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) continue
+        if (consultMemo) {
+            const proven = newEdgeProofMemo!.hasProvenNoPath(node)
+            if (!newEdgeProofMemo!.enabled) consultMemo = false
+            if (proven) continue
+        }
         for (const dependency of record.dependencies) {
             if (parent.has(dependency.node)) continue
             parent.set(dependency.node, node)
@@ -348,6 +552,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
     host: SelectorEvaluationHost<Node, Token>,
     session: SelectorEvaluationSession<Node>,
     cycleSearch: SelectorCycleSearch<Node, Token> = findDependencyPathFast,
+    newEdgeProofDiagnostics?: SelectorNewEdgeProofDiagnostics,
 ): SelectorEvaluationProposal<Node, Token, Value> => {
     const { node: selector } = definition
     const dependencies: SelectorDependencySnapshot<Node, Token>[] = []
@@ -393,22 +598,39 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         if (graphVersion !== newEdgeProofMemoVersion) {
             newEdgeProofMemoVersion = graphVersion
             newEdgeProofsAtVersion = 0
-            newEdgeProofMemo?.reset()
+            if (newEdgeProofMemo !== undefined) {
+                newEdgeProofMemo.reset()
+                newEdgeProofDiagnostics?.graphVersionReset()
+            }
         }
         newEdgeProofsAtVersion++
-        // Warm wide parents can learn from their first retained-edge re-proof.
-        // A cold or narrow proposal waits for three proofs at one exact graph
-        // version, avoiding allocation on singleton and graph-churning paths.
+        // Warm wide parents activate learning on their first retained-edge
+        // re-proof. Warm narrow parents may retain proof one passively because
+        // their existing record rules out first-materialization noise. Cold
+        // and warm-zero proposals still wait for three proofs at one exact
+        // graph version, avoiding allocation on singleton paths.
         if (
-            (currentDependencies?.length ?? 0) < 3 &&
+            (currentDependencies?.length ?? 0) === 0 &&
             newEdgeProofsAtVersion < 3
         ) {
+            newEdgeProofDiagnostics?.admissionSkipped()
             return undefined
         }
         if (newEdgeProofMemo === undefined) {
-            newEdgeProofMemo = createNewEdgeProofMemo<Node>()
+            const warmNarrowParent =
+                currentDependencies !== undefined &&
+                currentDependencies.length > 0 &&
+                currentDependencies.length < 3
+            newEdgeProofMemo = createNewEdgeProofMemo<Node>(
+                warmNarrowParent ? 3 : 0,
+                newEdgeProofDiagnostics,
+            )
         }
-        return newEdgeProofMemo.enabled ? newEdgeProofMemo : undefined
+        if (!newEdgeProofMemo.enabled) {
+            newEdgeProofDiagnostics?.disabled()
+            return undefined
+        }
+        return newEdgeProofMemo
     }
 
     const beginGraphObservation = (dependency: Node): void => {

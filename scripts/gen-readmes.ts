@@ -95,7 +95,7 @@ const V1_CORE_BODY = [
     "inspect.reset()",
     "```",
     "",
-    "The report correlates human labels with opaque operation, commit, evaluation, session, and search IDs. It includes selector work, proposed topology changes, cycle-search visits by host and call site, transient selector-host counts, and propagation/notification totals. Completed summaries and details use separate bounded rings with explicit overflow. Exports are immutable and JSON-safe; application values, callbacks, errors, and live State handles are never recorded. Labels are metadata, not identity.",
+    "The report correlates human labels with opaque operation, commit, evaluation, session, and search IDs. It includes selector work, proposed topology changes, cycle-search visits by host and call site, aggregate negative-proof memo admission/probe/prune counters, transient selector-host counts, and propagation/notification totals. Completed summaries and details use separate bounded rings with explicit overflow. Exports are immutable and JSON-safe; application values, callbacks, errors, and live State handles are never recorded. Labels are metadata, not identity. The core inspection schema is version 3.",
     "",
     "Inspection adds recording and timing work only to the Store created by `createInspectableStore`. The recorder stays outside the ordinary root entry and ordinary consumer bundles remain within their existing size budget.",
     "",

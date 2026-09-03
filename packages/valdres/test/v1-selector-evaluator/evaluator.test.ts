@@ -27,6 +27,7 @@ import type {
     SelectorEvaluationProposal,
     SelectorGraphEdgeAddition,
     SelectorGraphObservation,
+    SelectorNewEdgeProofDiagnostics,
     SelectorRecordView,
     SelectorCycleSearch,
     ServedSelectorOutcome,
@@ -68,6 +69,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
         node: Node,
     ) => readonly Node[] | undefined
     cycleTrace: SelectorCycleSearch<Node, Token> | undefined
+    newEdgeProofDiagnostics: SelectorNewEdgeProofDiagnostics | undefined
     #nextToken = 1
     #selectorGraphVersion = 0
     #activeSession: SelectorEvaluationSession<Node> | undefined
@@ -194,6 +196,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
                 this,
                 session,
                 this.cycleTrace,
+                this.newEdgeProofDiagnostics,
             )
         } finally {
             this.#activeSession = previousSession
@@ -2805,6 +2808,152 @@ describe("v1 selector evaluator cycles", () => {
         for (const line of graph.lines) store.get(line)
     }
 
+    const runWarmNarrowProofSequence = (
+        proofs: readonly Readonly<{
+            node: string
+            chain?: string
+            chainDepth?: number
+            chainTail?: string
+        }>[],
+        depth = 64,
+        measured = true,
+    ) => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+
+        const chains = new Map<
+            string,
+            Readonly<{ depth: number; tail: string }>
+        >()
+        for (const proof of proofs) {
+            if (proof.chain === undefined) continue
+            chains.set(
+                proof.chain,
+                Object.freeze({
+                    depth: proof.chainDepth ?? depth,
+                    tail: proof.chainTail ?? "leaf",
+                }),
+            )
+        }
+        for (const [chain, config] of chains) {
+            const chainDepth = config.depth
+            for (let index = chainDepth - 1; index >= 0; index--) {
+                host.define({
+                    node: `${chain}-${index}`,
+                    get: get =>
+                        get(
+                            index + 1 === chainDepth
+                                ? config.tail
+                                : `${chain}-${index + 1}`,
+                        ),
+                })
+            }
+            expect(valueOf(host.read<number>(`${chain}-0`))).toBe(1)
+        }
+        for (const proof of proofs) {
+            host.define({
+                node: proof.node,
+                get: get => get(proof.chain ? `${proof.chain}-0` : "leaf"),
+            })
+            expect(valueOf(host.read<number>(proof.node))).toBe(1)
+        }
+
+        let expanded = false
+        const parent: SelectorDefinition<Node, number> = {
+            node: "parent",
+            get: get => {
+                let sum = get<number>("leaf")
+                if (expanded) {
+                    for (const proof of proofs) sum += get<number>(proof.node)
+                }
+                return sum
+            },
+        }
+        host.define(parent)
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        const setup = measured ? createInspectionRecorder() : undefined
+        if (setup !== undefined) {
+            const hostRef = setup.recorder.reference(host, "scope")
+            host.cycleTrace = (
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                acceptedPrefixLength,
+                newEdgeProofMemo,
+            ) =>
+                setup.recorder.findDependencyPath(
+                    "committed",
+                    hostRef,
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    acceptedPrefixLength,
+                    cycleHost.getSelectorGraphVersion(),
+                    session.getSelectorGraphPublicationCount(cycleHost),
+                    false,
+                    newEdgeProofMemo,
+                )
+        }
+
+        const diagnostics = {
+            admissionSkipped: 0,
+            disabled: 0,
+            graphVersionResets: 0,
+            searches: [] as Readonly<{
+                classification: string
+                seed?: string
+                disable?: string
+                mapProbes: number
+                prunedNodes: number
+                retainedEntries: number
+            }>[],
+        }
+        host.newEdgeProofDiagnostics = {
+            admissionSkipped: () => diagnostics.admissionSkipped++,
+            disabled: () => diagnostics.disabled++,
+            graphVersionReset: () => diagnostics.graphVersionResets++,
+            completeSearch: (
+                classification,
+                seed,
+                disable,
+                mapProbes = 0,
+                prunedNodes = 0,
+                retainedEntries = 0,
+            ) =>
+                diagnostics.searches.push({
+                    classification,
+                    ...(seed === undefined ? {} : { seed }),
+                    ...(disable === undefined ? {} : { disable }),
+                    mapProbes,
+                    prunedNodes,
+                    retainedEntries,
+                }),
+        }
+
+        expanded = true
+        host.markDirty("parent")
+        host.selectorDependencyNodeReadNodes.length = 0
+        expect(valueOf(host.read<number>("parent"))).toBe(1 + proofs.length)
+        const searches =
+            setup?.inspect
+                .export()
+                .details.filter(
+                    (detail): detail is CycleSearchInspectionDetail =>
+                        detail.type === "cycle-search" &&
+                        detail.site === "new-edge-proof",
+                ) ?? []
+        return Object.freeze({
+            searches,
+            diagnostics,
+            adjacencyReads: host.selectorDependencyNodeReadNodes.length,
+        })
+    }
+
     test("bounds ShiftX-shaped rewiring by changed topology rather than prefix width", () => {
         const graph = buildShiftXHub()
         const { store, inspect } = createInspectableStore({
@@ -2842,6 +2991,378 @@ describe("v1 selector evaluator cycles", () => {
         expect(operation.totals.cycle.visits).toBe(90_501)
     })
 
+    test("passively learns proof one for a warm narrow large-terminal-terminal-large sequence", () => {
+        const proofs = [
+            { node: "shared-a", chain: "shared" },
+            { node: "terminal-a" },
+            { node: "terminal-b" },
+            { node: "shared-b", chain: "shared" },
+        ] as const
+        const fast = runWarmNarrowProofSequence(proofs, 64, false)
+        const { searches, diagnostics, adjacencyReads } =
+            runWarmNarrowProofSequence(proofs)
+
+        expect(searches.map(search => search.visits)).toEqual([65, 1, 1, 2])
+        expect(fast.adjacencyReads).toBe(69)
+        expect(adjacencyReads).toBe(fast.adjacencyReads)
+        expect(diagnostics.searches).toEqual([
+            {
+                classification: "observing",
+                seed: "initial",
+                mapProbes: 0,
+                prunedNodes: 0,
+                retainedEntries: 65,
+            },
+            {
+                classification: "observing",
+                mapProbes: 0,
+                prunedNodes: 0,
+                retainedEntries: 65,
+            },
+            {
+                classification: "observing",
+                mapProbes: 0,
+                prunedNodes: 0,
+                retainedEntries: 65,
+            },
+            {
+                classification: "consulted-pruned",
+                seed: "hit-derived",
+                mapProbes: 2,
+                prunedNodes: 1,
+                retainedEntries: 67,
+            },
+        ])
+    })
+
+    test("replaces a passive proof-one anchor with a substantial proof three", () => {
+        const { searches, diagnostics } = runWarmNarrowProofSequence([
+            { node: "a-root", chain: "a" },
+            { node: "terminal" },
+            { node: "b-root", chain: "b" },
+            { node: "b-sibling", chain: "b" },
+        ])
+
+        expect(searches.map(search => search.visits)).toEqual([65, 1, 65, 2])
+        expect(diagnostics.searches.map(search => search.seed)).toEqual([
+            "initial",
+            undefined,
+            "activation-replacement",
+            "hit-derived",
+        ])
+        expect(diagnostics.searches.map(search => search.mapProbes)).toEqual([
+            0, 0, 0, 2,
+        ])
+    })
+
+    test("classifies an active terminal proof as consulted without probing", () => {
+        const host = new TestHost()
+        for (const leaf of ["leaf-a", "leaf-b", "leaf-c"]) {
+            host.setLeaf(leaf, 1)
+        }
+        for (let index = 31; index >= 0; index--) {
+            host.define({
+                node: `wide-${index}`,
+                get: get => get(index === 31 ? "leaf-a" : `wide-${index + 1}`),
+            })
+        }
+        expect(valueOf(host.read<number>("wide-0"))).toBe(1)
+        host.define({ node: "wide-root", get: get => get("wide-0") })
+        host.define({ node: "terminal", get: get => get("leaf-a") })
+        expect(valueOf(host.read<number>("wide-root"))).toBe(1)
+        expect(valueOf(host.read<number>("terminal"))).toBe(1)
+
+        let expanded = false
+        host.define({
+            node: "parent",
+            get: get => {
+                let sum =
+                    get<number>("leaf-a") +
+                    get<number>("leaf-b") +
+                    get<number>("leaf-c")
+                if (expanded) {
+                    sum += get<number>("wide-root")
+                    sum += get<number>("terminal")
+                }
+                return sum
+            },
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(3)
+        const completed: Readonly<{
+            classification: string
+            mapProbes: number
+        }>[] = []
+        host.newEdgeProofDiagnostics = {
+            admissionSkipped: () => {},
+            disabled: () => {},
+            graphVersionReset: () => {},
+            completeSearch: (classification, _seed, _disable, mapProbes = 0) =>
+                completed.push({ classification, mapProbes }),
+        }
+        expanded = true
+        host.markDirty("parent")
+
+        expect(valueOf(host.read<number>("parent"))).toBe(5)
+        expect(completed).toEqual([
+            { classification: "observing", mapProbes: 0 },
+            { classification: "consulted-no-prune", mapProbes: 0 },
+        ])
+    })
+
+    test("keeps warm-zero admission conservative and partitions every proof", () => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+        for (let index = 30; index >= 0; index--) {
+            host.define({
+                node: `large-${index}`,
+                get: get => get(index === 30 ? "leaf" : `large-${index + 1}`),
+            })
+        }
+        expect(valueOf(host.read<number>("large-0"))).toBe(1)
+        for (const [node, dependency] of [
+            ["terminal-a", "leaf"],
+            ["terminal-b", "leaf"],
+            ["large-root", "large-0"],
+        ] as const) {
+            host.define({ node, get: get => get(dependency) })
+            expect(valueOf(host.read<number>(node))).toBe(1)
+        }
+
+        let expanded = false
+        host.define({
+            node: "parent",
+            get: get => {
+                if (!expanded) return 0
+                return (
+                    get<number>("terminal-a") +
+                    get<number>("terminal-b") +
+                    get<number>("large-root")
+                )
+            },
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(0)
+
+        const setup = createInspectionRecorder()
+        const hostRef = setup.recorder.reference(host, "scope")
+        host.cycleTrace = (
+            start,
+            target,
+            cycleHost,
+            session,
+            site,
+            acceptedPrefixLength,
+            newEdgeProofMemo,
+        ) =>
+            setup.recorder.findDependencyPath(
+                "committed",
+                hostRef,
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                acceptedPrefixLength,
+                cycleHost.getSelectorGraphVersion(),
+                session.getSelectorGraphPublicationCount(cycleHost),
+                false,
+                newEdgeProofMemo,
+            )
+        const diagnostics = {
+            admissionSkipped: 0,
+            disabled: 0,
+            searches: 0,
+        }
+        host.newEdgeProofDiagnostics = {
+            admissionSkipped: () => diagnostics.admissionSkipped++,
+            disabled: () => diagnostics.disabled++,
+            graphVersionReset: () => {},
+            completeSearch: () => diagnostics.searches++,
+        }
+        expanded = true
+        host.markDirty("parent")
+
+        expect(valueOf(host.read<number>("parent"))).toBe(3)
+        const siteOneSearches = setup.inspect
+            .export()
+            .details.filter(
+                (detail): detail is CycleSearchInspectionDetail =>
+                    detail.type === "cycle-search" &&
+                    detail.site === "new-edge-proof",
+            )
+        expect(siteOneSearches).toHaveLength(3)
+        expect(diagnostics).toEqual({
+            admissionSkipped: 2,
+            disabled: 0,
+            searches: 1,
+        })
+        expect(
+            diagnostics.admissionSkipped +
+                diagnostics.disabled +
+                diagnostics.searches,
+        ).toBe(siteOneSearches.length)
+    })
+
+    test("bounds passive misses cumulatively across a short miss and a huge disjoint proof", () => {
+        const proofs = [
+            { node: "shared-root", chain: "shared", chainDepth: 64 },
+            { node: "terminal-a" },
+            { node: "terminal-b" },
+            { node: "short-root", chain: "short", chainDepth: 10 },
+            { node: "disjoint-root", chain: "disjoint", chainDepth: 256 },
+            { node: "after-disable" },
+        ] as const
+        const fast = runWarmNarrowProofSequence(proofs, 64, false)
+        const { searches, diagnostics, adjacencyReads } =
+            runWarmNarrowProofSequence(proofs)
+
+        expect(searches.map(search => search.visits)).toEqual([
+            65, 1, 1, 11, 257, 1,
+        ])
+        expect(diagnostics.searches.map(search => search.mapProbes)).toEqual([
+            0, 0, 0, 10, 120,
+        ])
+        expect(diagnostics.searches.at(-1)).toMatchObject({
+            classification: "consulted-no-prune",
+            disable: "passive-probe-budget",
+            mapProbes: 120,
+            prunedNodes: 0,
+            retainedEntries: 0,
+        })
+        expect(diagnostics.disabled).toBe(1)
+        expect(
+            diagnostics.admissionSkipped +
+                diagnostics.disabled +
+                diagnostics.searches.length,
+        ).toBe(searches.length)
+        expect(adjacencyReads).toBe(fast.adjacencyReads)
+    })
+
+    test("allows a passive-anchor hit on the final probe in its budget", () => {
+        const { searches, diagnostics } = runWarmNarrowProofSequence([
+            { node: "shared-root", chain: "shared", chainDepth: 31 },
+            { node: "terminal-a" },
+            { node: "terminal-b" },
+            {
+                node: "approach-root",
+                chain: "approach",
+                chainDepth: 62,
+                chainTail: "shared-0",
+            },
+        ])
+
+        expect(searches.map(search => search.visits)).toEqual([32, 1, 1, 64])
+        expect(diagnostics.searches.at(-1)).toMatchObject({
+            classification: "consulted-pruned",
+            mapProbes: 64,
+            prunedNodes: 1,
+        })
+        expect(diagnostics.searches.at(-1)?.disable).toBeUndefined()
+    })
+
+    test("keeps a warm narrow positive path canonical after passive learning", () => {
+        const run = (measured: boolean) => {
+            const host = new TestHost()
+            host.setLeaf("leaf", 1)
+            for (let index = 39; index >= 0; index--) {
+                host.define({
+                    node: `shared-${index}`,
+                    get: get =>
+                        get(index === 39 ? "leaf" : `shared-${index + 1}`),
+                })
+            }
+            expect(valueOf(host.read<number>("shared-0"))).toBe(1)
+            for (const [node, dependency] of [
+                ["large", "shared-0"],
+                ["terminal-a", "leaf"],
+                ["terminal-b", "leaf"],
+            ] as const) {
+                host.define({ node, get: get => get(dependency) })
+                expect(valueOf(host.read<number>(node))).toBe(1)
+            }
+
+            let expanded = false
+            const parent: SelectorDefinition<Node, number> = {
+                node: "parent",
+                get: get => {
+                    get("leaf")
+                    if (expanded) {
+                        get("large")
+                        get("terminal-a")
+                        get("terminal-b")
+                        get("cycle-start")
+                    }
+                    return 1
+                },
+            }
+            host.define(parent)
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+            host.define({ node: "bridge", get: get => get("parent") })
+            expect(valueOf(host.read<number>("bridge"))).toBe(1)
+            host.define({ node: "cycle-start", get: get => get("bridge") })
+            expect(valueOf(host.read<number>("cycle-start"))).toBe(1)
+
+            const setup = measured ? createInspectionRecorder() : undefined
+            if (setup !== undefined) {
+                const hostRef = setup.recorder.reference(host, "scope")
+                host.cycleTrace = (
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    acceptedPrefixLength,
+                    newEdgeProofMemo,
+                ) =>
+                    setup.recorder.findDependencyPath(
+                        "committed",
+                        hostRef,
+                        start,
+                        target,
+                        cycleHost,
+                        session,
+                        site,
+                        acceptedPrefixLength,
+                        cycleHost.getSelectorGraphVersion(),
+                        session.getSelectorGraphPublicationCount(cycleHost),
+                        false,
+                        newEdgeProofMemo,
+                    )
+            }
+            expanded = true
+            host.markDirty("parent")
+            host.selectorDependencyNodeReadNodes.length = 0
+            const error = normalizeCycleParityError(
+                errorOf(host.read("parent")),
+            )
+            const positive = setup?.inspect
+                .export()
+                .details.find(
+                    (detail): detail is CycleSearchInspectionDetail =>
+                        detail.type === "cycle-search" && detail.found,
+                )
+            return Object.freeze({
+                error,
+                positive,
+                adjacencyReads: host.selectorDependencyNodeReadNodes.length,
+            })
+        }
+
+        const fast = run(false)
+        const measured = run(true)
+        expect(measured.error).toEqual(fast.error)
+        expect(measured.adjacencyReads).toBe(fast.adjacencyReads)
+        expect(measured.error).toEqual({
+            name: "SelectorCircularDependencyError",
+            selector: "parent",
+            path: ["parent", "cycle-start", "bridge", "parent"],
+        })
+        expect(measured.positive).toMatchObject({
+            site: "new-edge-proof",
+            start: "cycle-start",
+            target: "parent",
+            path: ["cycle-start", "bridge", "parent"],
+        })
+    })
     test("shares fully negative warm re-proofs at one exact graph version", () => {
         const width = 200
         const depth = 400
@@ -3158,6 +3679,13 @@ describe("v1 selector evaluator cycles", () => {
                         newEdgeProofMemo,
                     )
             }
+            let graphVersionResets = 0
+            host.newEdgeProofDiagnostics = {
+                admissionSkipped: () => {},
+                disabled: () => {},
+                graphVersionReset: () => graphVersionResets++,
+                completeSearch: () => {},
+            }
             let rewired = false
             host.setServeEffect("trigger", () => {
                 if (rewired) return
@@ -3187,6 +3715,7 @@ describe("v1 selector evaluator cycles", () => {
                     .get("parent")!
                     .dependencies.map(dependency => dependency.node),
                 positives,
+                graphVersionResets,
             })
         }
 
@@ -3195,6 +3724,8 @@ describe("v1 selector evaluator cycles", () => {
 
         expect(measured.error).toEqual(fast.error)
         expect(measured.dependencies).toEqual(fast.dependencies)
+        expect(fast.graphVersionResets).toBe(1)
+        expect(measured.graphVersionResets).toBe(fast.graphVersionResets)
         expect(measured.error).toMatchObject({
             name: "SelectorCircularDependencyError",
             selector: "parent",

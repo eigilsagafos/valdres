@@ -1,25 +1,25 @@
 {
     "bun": "1.4.0",
     "dist": {
-        "raw": 167346,
-        "gzip": 47628
+        "raw": 182342,
+        "gzip": 51104
     },
     "distFiles": {
         "adapter-internals/v1.js": {
             "raw": 200,
             "gzip": 153
         },
-        "chunk-g4tkm20t.js": {
-            "raw": 54581,
-            "gzip": 14513
+        "chunk-k8zy7f8n.js": {
+            "raw": 58319,
+            "gzip": 15243
         },
         "development/adapter-internals/v1.js": {
             "raw": 200,
             "gzip": 153
         },
-        "development/chunk-g4tkm20t.js": {
-            "raw": 54581,
-            "gzip": 14513
+        "development/chunk-k8zy7f8n.js": {
+            "raw": 58319,
+            "gzip": 15243
         },
         "development/equality.js": {
             "raw": 7233,
@@ -27,11 +27,11 @@
         },
         "development/index.js": {
             "raw": 996,
-            "gzip": 562
+            "gzip": 563
         },
         "development/inspect.js": {
-            "raw": 20663,
-            "gzip": 6378
+            "raw": 24423,
+            "gzip": 7385
         },
         "equality.js": {
             "raw": 7233,
@@ -39,41 +39,41 @@
         },
         "index.js": {
             "raw": 996,
-            "gzip": 562
+            "gzip": 563
         },
         "inspect.js": {
-            "raw": 20663,
-            "gzip": 6378
+            "raw": 24423,
+            "gzip": 7385
         }
     },
     "packed": {
-        "raw": 231169,
-        "gzip": 52301
+        "raw": 249504,
+        "gzip": 63408
     },
     "fixtures": {
         "atom": {
-            "raw": 54482,
-            "gzip": 14485
+            "raw": 58218,
+            "gzip": 15192
         },
         "atom-selector-store": {
-            "raw": 54665,
-            "gzip": 14550
+            "raw": 58401,
+            "gzip": 15270
         },
         "all-exports": {
-            "raw": 55196,
-            "gzip": 14768
+            "raw": 58934,
+            "gzip": 15479
         },
         "inspect": {
-            "raw": 75113,
-            "gzip": 20312
+            "raw": 82612,
+            "gzip": 22027
         },
         "equality": {
             "raw": 7231,
             "gzip": 2210
         },
         "adapter-internals": {
-            "raw": 54451,
-            "gzip": 14450
+            "raw": 58187,
+            "gzip": 15164
         }
     }
 }

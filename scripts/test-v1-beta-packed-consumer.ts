@@ -378,7 +378,7 @@ assert.equal(inspectedValue, 2)
 const inspectionReport = inspectedReact.inspect.export()
 assert.equal(inspectionReport.schema, "valdres.react.inspect")
 assert.equal(inspectionReport.schemaVersion, 1)
-assert.equal(inspectionReport.core.schemaVersion, 2)
+assert.equal(inspectionReport.core.schemaVersion, 3)
 assert.equal(inspectionReport.core.recordingId, inspectionReport.react.coreRecordingId)
 assert.equal(inspectionReport.react.totals.subscriberCallbacks, 1)
 assert.equal(inspectionReport.react.totals.commitTimeGroups, 1)
@@ -521,6 +521,7 @@ import {
     createInspectableStore,
     type CycleSearchInspectionDetail,
     type InspectionCycleTotals,
+    type InspectionNewEdgeProofMemoTotals,
     type StateInspectionCapture,
 } from "valdres/inspect"
 
@@ -543,7 +544,9 @@ const capture: StateInspectionCapture =
     inspectableCore.inspect.capture(inspectableCore.store, count)
 const inspectionReport: InspectableReactExport =
     inspectedReact.inspect.export()
-const coreSchemaVersion: 2 = inspectionReport.core.schemaVersion
+const coreSchemaVersion: 3 = inspectionReport.core.schemaVersion
+const proofMemoTotals: InspectionNewEdgeProofMemoTotals =
+    inspectionReport.core.summaries[0]!.totals.cycle.newEdgeProofMemo
 const topologyDeltaSite: CycleSearchInspectionDetail["site"] =
     "topology-delta-proof"
 const topologyDeltaSearches: InspectionCycleTotals["bySite"]["topologyDeltaProof"] =
@@ -566,6 +569,7 @@ void selected
 void capture
 void inspectionReport
 void coreSchemaVersion
+void proofMemoTotals
 void topologyDeltaSite
 void topologyDeltaSearches
 void topologyDeltaBucket

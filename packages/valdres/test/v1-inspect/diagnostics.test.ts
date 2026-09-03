@@ -166,6 +166,117 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(search.sessionId).toBe(evaluation.sessionId as number)
     })
 
+    test("aggregates warm-narrow proof learning without per-node detail events", () => {
+        const mode = atom(false, { name: "memo/mode" })
+        const leaf = atom(1, { name: "memo/leaf" })
+        const shared: Selector<number>[] = []
+        for (let index = 63; index >= 0; index--) {
+            const dependency = index === 63 ? leaf : shared[index + 1]!
+            shared[index] = selector(get => get(dependency), {
+                name: `memo/shared-${index}`,
+            })
+        }
+        const sharedA = selector(get => get(shared[0]!), {
+            name: "memo/shared-a",
+        })
+        const sharedB = selector(get => get(shared[0]!), {
+            name: "memo/shared-b",
+        })
+        const terminalA = selector(get => get(leaf), {
+            name: "memo/terminal-a",
+        })
+        const terminalB = selector(get => get(leaf), {
+            name: "memo/terminal-b",
+        })
+        const { store, inspect } = createInspectableStore({
+            capacity: { summaries: 1_024, details: 16_384 },
+        })
+        const parent = selector(
+            get => {
+                const expanded = get(mode)
+                let sum = get(leaf)
+                if (expanded) {
+                    sum += inspect.span("memo proof 1", () => get(sharedA))
+                    sum += inspect.span("memo proof 2", () => get(terminalA))
+                    sum += inspect.span("memo proof 3", () => get(terminalB))
+                    sum += inspect.span("memo proof 4", () => get(sharedB))
+                }
+                return sum
+            },
+            { name: "memo/parent" },
+        )
+
+        expect(store.get(sharedA)).toBe(1)
+        expect(store.get(sharedB)).toBe(1)
+        expect(store.get(terminalA)).toBe(1)
+        expect(store.get(terminalB)).toBe(1)
+        expect(store.get(parent)).toBe(1)
+        inspect.reset()
+        store.txn(transaction => transaction.set(mode, true), "memo sequence")
+        expect(store.get(parent)).toBe(5)
+
+        const report = inspect.export()
+        const operation = operationNamed(report, "memo sequence")
+        const expected = {
+            admissionSkipped: 0,
+            observing: 3,
+            consultedNoPrune: 0,
+            consultedPruned: 1,
+            disabled: 0,
+            mapProbes: 2,
+            prunedNodes: 1,
+            resets: { graphVersion: 0 },
+            seeds: {
+                initial: 1,
+                activationReplacement: 0,
+                secondary: 0,
+                hitDerived: 1,
+            },
+            disables: {
+                missBudget: 0,
+                oversizedHitApproach: 0,
+                passiveProbeBudget: 0,
+            },
+            retained: { maxEntries: 67 },
+        }
+        expect(operation.totals.cycle).toMatchObject({
+            searches: 4,
+            visits: 69,
+            newEdgeProofMemo: expected,
+        })
+        expect(
+            expected.admissionSkipped +
+                expected.observing +
+                expected.consultedNoPrune +
+                expected.consultedPruned +
+                expected.disabled,
+        ).toBe(operation.totals.cycle.bySite.newEdgeProof)
+        const evaluation = detailsOfType(report, "selector-evaluation").find(
+            detail => detail.selector.name === "memo/parent",
+        )
+        expect(evaluation?.newEdgeProofMemo).toEqual(expected)
+        const spanClassifications = [
+            ["memo proof 1", "observing"],
+            ["memo proof 2", "observing"],
+            ["memo proof 3", "observing"],
+            ["memo proof 4", "consultedPruned"],
+        ] as const
+        for (const [name, classification] of spanClassifications) {
+            const span = spanNamed(report, name)
+            const memo = span.totals.cycle.newEdgeProofMemo
+            expect(span.totals.cycle.bySite.newEdgeProof).toBe(1)
+            expect(
+                memo.admissionSkipped +
+                    memo.observing +
+                    memo.consultedNoPrune +
+                    memo.consultedPruned +
+                    memo.disabled,
+            ).toBe(1)
+            expect(memo[classification]).toBe(1)
+        }
+        expect(detailsOfType(report, "cycle-search")).toHaveLength(4)
+    })
+
     test("reports deep-equal owner replacement as zero changed sources", () => {
         const initial = { id: 1, nested: { ready: true } }
         const value = atom(initial, {
