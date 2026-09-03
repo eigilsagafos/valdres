@@ -1,5 +1,17 @@
 # valdres
 
+## 1.0.0-beta.32
+
+### Patch Changes
+
+- [#372](https://github.com/eigilsagafos/valdres/pull/372)
+  [`4efd2ce`](https://github.com/eigilsagafos/valdres/commit/4efd2cefeecf9e5fab66e0273560e41f8695e7eb)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Reuse bounded
+  negative cycle proofs for warm selectors with one or two prior dependencies,
+  including large/terminal/terminal/large rewires, while keeping the first three
+  proofs lookup-free and bounding speculative probe work. Extend the aggregate
+  inspection report for proof-memo decisions and bump its schema to version 3.
+
 ## 1.0.0-beta.31
 
 ### Patch Changes
