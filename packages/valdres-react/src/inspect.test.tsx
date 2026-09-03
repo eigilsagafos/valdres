@@ -355,7 +355,7 @@ describe("createInspectableReact", () => {
             complete: true,
             core: {
                 schema: "valdres.inspect",
-                schemaVersion: 2,
+                schemaVersion: 3,
             },
             react: {
                 coreRecordingId: recording.core.recordingId,

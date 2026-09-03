@@ -84,7 +84,7 @@ const expectCompleteRecording = (
 ): void => {
     expect(recording).toMatchObject({
         schema: "valdres.inspect",
-        schemaVersion: 2,
+        schemaVersion: 3,
         recordingId: inspect.recordingId,
         complete: true,
         overflow: { summaries: 0, details: 0 },

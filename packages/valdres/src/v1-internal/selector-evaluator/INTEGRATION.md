@@ -107,15 +107,36 @@ copying them, seeds only from closures of 32 through 8,192 nodes, and lets an
 overlapping exhausted approach map extend that certificate up to the same
 maximum. An over-cap hit-derived approach disables sharing for that graph
 version instead of repeatedly resetting the miss budget. It keeps the two
-broadest layers. Warm parents with at least three prior dependencies can learn
-on the first re-proof; cold or narrow parents wait for three proofs at one
-unchanged graph version. Graph-terminal adjacency is classified before probing
-the maps, and terminal closures remain neutral. Non-overlapping proofs consume a
-cumulative 64-node miss-work budget, with each proof charged at most 32 nodes; a
-second substantial anchor receives one chance to demonstrate reuse even when its
-admission crosses that budget. Exhausting the budget disables the memo for that
-version. The inspectable strategy runs the identical protocol and reports
-physical visits after cached pruning.
+broadest layers.
+
+Warm parents with at least three prior dependencies can learn on the first
+re-proof. A warm parent with one or two prior dependencies instead observes its
+first three proofs without consulting a map: it may passively retain a bounded
+proof-one closure, and a substantial proof-three closure replaces that candidate
+before consultation starts on proof four. A terminal or small proof three leaves
+the proof-one candidate intact. This captures the representative
+`[large, terminal, terminal, large]` rewire without adding map probes to the
+first three proofs. Cold and warm-zero parents still wait until proof three to
+allocate a memo.
+
+The first active search against a proof-one passive candidate receives a
+cumulative failed-probe budget of `min(8,192, 2 * candidate size)`. Terminal
+roots consume none of it; the budget carries across short disjoint searches
+until the first hit or exhaustion, and exhaustion disables sharing for that
+exact graph version. Graph-terminal adjacency and the target are classified
+before probing. The existing non-passive protocol retains its cumulative 64-node
+miss-work budget, with each proof charged at most 32 nodes; a second substantial
+anchor receives one chance to demonstrate reuse even when its admission crosses
+that budget.
+
+Retained parent maps are evaluation-local and released when that evaluation
+ends. A passive warm-narrow evaluator retains at most one 8,192-entry map before
+activation; the active protocol can retain two maps (16,384 entries total).
+Nested selector evaluations therefore make retained memory depth-linear, not a
+global constant. Every graph-version change clears the certificates exactly. The
+inspectable strategy runs the identical protocol and reports aggregate
+admission, observation, consultation, pruning, reset, seed, disable, probe, and
+maximum-retention counters without per-node events.
 
 ```text
 foreign graph publication

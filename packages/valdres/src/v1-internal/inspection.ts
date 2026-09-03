@@ -22,6 +22,10 @@ import type {
     SelectorEvaluationProposal,
     SelectorEvaluationStrategy,
     SelectorEvaluationSession,
+    SelectorNewEdgeProofDiagnostics,
+    SelectorNewEdgeProofMemoDisableReason,
+    SelectorNewEdgeProofMemoSeedReason,
+    SelectorNewEdgeProofMemoSearchClassification,
     SelectorNewEdgeProofMemo,
 } from "./selector-evaluator/types"
 import { evaluateSelector } from "./selector-evaluator/evaluate"
@@ -83,6 +87,34 @@ export interface InspectionCycleBucket {
     readonly found: number
 }
 
+export type InspectionNewEdgeProofMemoTotals = Readonly<{
+    readonly admissionSkipped: number
+    readonly observing: number
+    readonly consultedNoPrune: number
+    readonly consultedPruned: number
+    readonly disabled: number
+    readonly mapProbes: number
+    readonly prunedNodes: number
+    readonly resets: Readonly<{
+        graphVersion: number
+    }>
+    readonly seeds: Readonly<{
+        initial: number
+        activationReplacement: number
+        secondary: number
+        hitDerived: number
+    }>
+    readonly disables: Readonly<{
+        missBudget: number
+        oversizedHitApproach: number
+        passiveProbeBudget: number
+    }>
+    readonly retained: Readonly<{
+        maxEntries: number
+    }>
+}> &
+    InspectionJsonObject
+
 export interface InspectionCycleTotals {
     readonly searches: number
     readonly visits: number
@@ -98,6 +130,8 @@ export interface InspectionCycleTotals {
         scratch: number
         hydration: number
     }>
+    /** Aggregate site-1 proof-sharing decisions; no per-node events. */
+    readonly newEdgeProofMemo: InspectionNewEdgeProofMemoTotals
     readonly byLane: Readonly<{
         committed: Readonly<{
             prefixRevalidation: InspectionCycleBucket
@@ -213,6 +247,7 @@ interface SelectorEvaluationInspectionBase extends InspectionDetailLinks {
     readonly graphVersionStart: number
     readonly graphVersionEnd: number
     readonly previousDependencyCount: number
+    readonly newEdgeProofMemo?: InspectionNewEdgeProofMemoTotals
 }
 
 export type SelectorEvaluationInspectionDetail =
@@ -278,7 +313,7 @@ export interface InspectionRecorderFault {
 
 export interface InspectionExport {
     readonly schema: "valdres.inspect"
-    readonly schemaVersion: 2
+    readonly schemaVersion: 3
     readonly recordingId: string
     readonly summaries: readonly InspectionSummary[]
     readonly details: readonly InspectionDetail[]
@@ -374,6 +409,25 @@ export interface InternalInspectionIntervalToken {
     readonly type: InternalInspectionIntervalType
 }
 
+type NewEdgeProofMemoWorkDelta = Readonly<{
+    admissionSkipped?: number
+    observing?: number
+    consultedNoPrune?: number
+    consultedPruned?: number
+    disabled?: number
+    mapProbes?: number
+    prunedNodes?: number
+    graphVersionResets?: number
+    initialSeeds?: number
+    activationReplacementSeeds?: number
+    secondarySeeds?: number
+    hitDerivedSeeds?: number
+    missBudgetDisables?: number
+    oversizedHitApproachDisables?: number
+    passiveProbeBudgetDisables?: number
+    maxRetainedEntries?: number
+}>
+
 export interface InspectionWorkDelta {
     readonly selectorEvaluations?: number
     readonly proposedTopologyChanges?: number
@@ -389,6 +443,7 @@ export interface InspectionWorkDelta {
         found?: number
         site?: "prefix-revalidation" | "new-edge-proof" | "topology-delta-proof"
         host?: "committed" | "scratch" | "hydration"
+        newEdgeProofMemo?: NewEdgeProofMemoWorkDelta
     }>
 }
 
@@ -432,6 +487,25 @@ export interface InternalInspectionSetup {
     readonly trace: InternalStoreTreeTrace
 }
 
+interface MutableNewEdgeProofMemoTotals {
+    admissionSkipped: number
+    observing: number
+    consultedNoPrune: number
+    consultedPruned: number
+    disabled: number
+    mapProbes: number
+    prunedNodes: number
+    graphVersionResets: number
+    initialSeeds: number
+    activationReplacementSeeds: number
+    secondarySeeds: number
+    hitDerivedSeeds: number
+    missBudgetDisables: number
+    oversizedHitApproachDisables: number
+    passiveProbeBudgetDisables: number
+    maxRetainedEntries: number
+}
+
 interface MutableCycleTotals {
     searches: number
     visits: number
@@ -443,6 +517,7 @@ interface MutableCycleTotals {
     committed: number
     scratch: number
     hydration: number
+    newEdgeProofMemo: MutableNewEdgeProofMemoTotals
     lanes: Record<
         "committed" | "scratch" | "hydration",
         Record<
@@ -611,6 +686,146 @@ const createMutableCycleBucket = () => ({
     found: 0,
 })
 
+const createMutableNewEdgeProofMemoTotals =
+    (): MutableNewEdgeProofMemoTotals => ({
+        admissionSkipped: 0,
+        observing: 0,
+        consultedNoPrune: 0,
+        consultedPruned: 0,
+        disabled: 0,
+        mapProbes: 0,
+        prunedNodes: 0,
+        graphVersionResets: 0,
+        initialSeeds: 0,
+        activationReplacementSeeds: 0,
+        secondarySeeds: 0,
+        hitDerivedSeeds: 0,
+        missBudgetDisables: 0,
+        oversizedHitApproachDisables: 0,
+        passiveProbeBudgetDisables: 0,
+        maxRetainedEntries: 0,
+    })
+
+const freezeNewEdgeProofMemoTotals = (
+    totals: MutableNewEdgeProofMemoTotals,
+): InspectionNewEdgeProofMemoTotals =>
+    Object.freeze({
+        admissionSkipped: totals.admissionSkipped,
+        observing: totals.observing,
+        consultedNoPrune: totals.consultedNoPrune,
+        consultedPruned: totals.consultedPruned,
+        disabled: totals.disabled,
+        mapProbes: totals.mapProbes,
+        prunedNodes: totals.prunedNodes,
+        resets: Object.freeze({
+            graphVersion: totals.graphVersionResets,
+        }),
+        seeds: Object.freeze({
+            initial: totals.initialSeeds,
+            activationReplacement: totals.activationReplacementSeeds,
+            secondary: totals.secondarySeeds,
+            hitDerived: totals.hitDerivedSeeds,
+        }),
+        disables: Object.freeze({
+            missBudget: totals.missBudgetDisables,
+            oversizedHitApproach: totals.oversizedHitApproachDisables,
+            passiveProbeBudget: totals.passiveProbeBudgetDisables,
+        }),
+        retained: Object.freeze({
+            maxEntries: totals.maxRetainedEntries,
+        }),
+    })
+
+const createNewEdgeProofDiagnostics = (
+    record: (delta: NewEdgeProofMemoWorkDelta) => void,
+): Readonly<{
+    sink: SelectorNewEdgeProofDiagnostics
+    finish(): MutableNewEdgeProofMemoTotals | undefined
+}> => {
+    const totals = createMutableNewEdgeProofMemoTotals()
+    let active = false
+    const sink: SelectorNewEdgeProofDiagnostics = {
+        admissionSkipped() {
+            active = true
+            totals.admissionSkipped++
+            record({ admissionSkipped: 1 })
+        },
+        disabled() {
+            active = true
+            totals.disabled++
+            record({ disabled: 1 })
+        },
+        graphVersionReset() {
+            active = true
+            totals.graphVersionResets++
+            record({ graphVersionResets: 1 })
+        },
+        completeSearch(
+            classification: SelectorNewEdgeProofMemoSearchClassification,
+            seed?: SelectorNewEdgeProofMemoSeedReason,
+            disable?: SelectorNewEdgeProofMemoDisableReason,
+            mapProbes = 0,
+            prunedNodes = 0,
+            retainedNodes = 0,
+        ) {
+            active = true
+            if (classification === "observing") totals.observing++
+            else if (classification === "consulted-no-prune") {
+                totals.consultedNoPrune++
+            } else {
+                totals.consultedPruned++
+            }
+            totals.mapProbes += mapProbes
+            totals.prunedNodes += prunedNodes
+            totals.maxRetainedEntries = Math.max(
+                totals.maxRetainedEntries,
+                retainedNodes,
+            )
+            if (seed === "initial") totals.initialSeeds++
+            else if (seed === "activation-replacement") {
+                totals.activationReplacementSeeds++
+            } else if (seed === "secondary") totals.secondarySeeds++
+            else if (seed === "hit-derived") totals.hitDerivedSeeds++
+            if (disable === "miss-budget") totals.missBudgetDisables++
+            else if (disable === "over-cap-hit") {
+                totals.oversizedHitApproachDisables++
+            } else if (disable === "passive-probe-budget") {
+                totals.passiveProbeBudgetDisables++
+            }
+            record({
+                ...(classification === "observing"
+                    ? { observing: 1 }
+                    : classification === "consulted-no-prune"
+                      ? { consultedNoPrune: 1 }
+                      : { consultedPruned: 1 }),
+                mapProbes,
+                prunedNodes,
+                maxRetainedEntries: retainedNodes,
+                ...(seed === "initial"
+                    ? { initialSeeds: 1 }
+                    : seed === "activation-replacement"
+                      ? { activationReplacementSeeds: 1 }
+                      : seed === "secondary"
+                        ? { secondarySeeds: 1 }
+                        : seed === "hit-derived"
+                          ? { hitDerivedSeeds: 1 }
+                          : {}),
+                ...(disable === "miss-budget"
+                    ? { missBudgetDisables: 1 }
+                    : disable === "over-cap-hit"
+                      ? { oversizedHitApproachDisables: 1 }
+                      : disable === "passive-probe-budget"
+                        ? { passiveProbeBudgetDisables: 1 }
+                        : {}),
+            })
+        },
+    }
+    return Object.freeze({
+        sink: Object.freeze(sink),
+        finish: () => (active ? totals : undefined),
+    })
+}
+
 const createMutableTotals = (): MutableWorkTotals => ({
     selectorEvaluations: 0,
     proposedTopologyChanges: 0,
@@ -630,6 +845,7 @@ const createMutableTotals = (): MutableWorkTotals => ({
         committed: 0,
         scratch: 0,
         hydration: 0,
+        newEdgeProofMemo: createMutableNewEdgeProofMemoTotals(),
         lanes: {
             committed: {
                 prefixRevalidation: createMutableCycleBucket(),
@@ -674,6 +890,9 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
                 scratch: totals.cycle.scratch,
                 hydration: totals.cycle.hydration,
             }),
+            newEdgeProofMemo: freezeNewEdgeProofMemoTotals(
+                totals.cycle.newEdgeProofMemo,
+            ),
             byLane: Object.freeze({
                 committed: Object.freeze({
                     prefixRevalidation: Object.freeze({
@@ -1120,6 +1339,74 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                     cycle.maxVisits ?? 0,
                 )
                 totals.cycle.found = addFinite(totals.cycle.found, cycle.found)
+                const memo = cycle.newEdgeProofMemo
+                if (memo !== undefined) {
+                    const aggregate = totals.cycle.newEdgeProofMemo
+                    aggregate.admissionSkipped = addFinite(
+                        aggregate.admissionSkipped,
+                        memo.admissionSkipped,
+                    )
+                    aggregate.observing = addFinite(
+                        aggregate.observing,
+                        memo.observing,
+                    )
+                    aggregate.consultedNoPrune = addFinite(
+                        aggregate.consultedNoPrune,
+                        memo.consultedNoPrune,
+                    )
+                    aggregate.consultedPruned = addFinite(
+                        aggregate.consultedPruned,
+                        memo.consultedPruned,
+                    )
+                    aggregate.disabled = addFinite(
+                        aggregate.disabled,
+                        memo.disabled,
+                    )
+                    aggregate.mapProbes = addFinite(
+                        aggregate.mapProbes,
+                        memo.mapProbes,
+                    )
+                    aggregate.prunedNodes = addFinite(
+                        aggregate.prunedNodes,
+                        memo.prunedNodes,
+                    )
+                    aggregate.graphVersionResets = addFinite(
+                        aggregate.graphVersionResets,
+                        memo.graphVersionResets,
+                    )
+                    aggregate.initialSeeds = addFinite(
+                        aggregate.initialSeeds,
+                        memo.initialSeeds,
+                    )
+                    aggregate.activationReplacementSeeds = addFinite(
+                        aggregate.activationReplacementSeeds,
+                        memo.activationReplacementSeeds,
+                    )
+                    aggregate.secondarySeeds = addFinite(
+                        aggregate.secondarySeeds,
+                        memo.secondarySeeds,
+                    )
+                    aggregate.hitDerivedSeeds = addFinite(
+                        aggregate.hitDerivedSeeds,
+                        memo.hitDerivedSeeds,
+                    )
+                    aggregate.missBudgetDisables = addFinite(
+                        aggregate.missBudgetDisables,
+                        memo.missBudgetDisables,
+                    )
+                    aggregate.oversizedHitApproachDisables = addFinite(
+                        aggregate.oversizedHitApproachDisables,
+                        memo.oversizedHitApproachDisables,
+                    )
+                    aggregate.passiveProbeBudgetDisables = addFinite(
+                        aggregate.passiveProbeBudgetDisables,
+                        memo.passiveProbeBudgetDisables,
+                    )
+                    aggregate.maxRetainedEntries = Math.max(
+                        aggregate.maxRetainedEntries,
+                        memo.maxRetainedEntries ?? 0,
+                    )
+                }
                 if (cycle.site === "prefix-revalidation") {
                     totals.cycle.prefixRevalidation += cycle.searches ?? 1
                 } else if (cycle.site === "new-edge-proof") {
@@ -1378,7 +1665,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 parentWasCold,
             },
         })
-        const consultMemo = newEdgeProofMemo?.beginSearch() ?? false
+        let consultMemo = newEdgeProofMemo?.beginSearch() ?? false
         const pending = [start]
         const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
             [start, DEPENDENCY_PATH_ROOT],
@@ -1411,8 +1698,11 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             if (transient) {
                 transientExpansions++
                 if (transient.length === 0) continue
-                if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) {
-                    continue
+                if (consultMemo) {
+                    const proven =
+                        newEdgeProofMemo!.hasProvenNoPathMeasured(node)
+                    if (!newEdgeProofMemo!.enabled) consultMemo = false
+                    if (proven) continue
                 }
                 edges += transient.length
                 for (const dependency of transient) {
@@ -1432,8 +1722,11 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 }
                 recordExpansions++
                 if (dependencies.length === 0) continue
-                if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) {
-                    continue
+                if (consultMemo) {
+                    const proven =
+                        newEdgeProofMemo!.hasProvenNoPathMeasured(node)
+                    if (!newEdgeProofMemo!.enabled) consultMemo = false
+                    if (proven) continue
                 }
                 edges += dependencies.length
                 for (const dependency of dependencies) {
@@ -1452,8 +1745,10 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             }
             recordExpansions++
             if (record.dependencies.length === 0) continue
-            if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) {
-                continue
+            if (consultMemo) {
+                const proven = newEdgeProofMemo!.hasProvenNoPathMeasured(node)
+                if (!newEdgeProofMemo!.enabled) consultMemo = false
+                if (proven) continue
             }
             edges += record.dependencies.length
             for (const dependency of record.dependencies) {
@@ -1464,7 +1759,11 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             if (pending.length > maxFrontier) maxFrontier = pending.length
         }
 
-        if (path === undefined) newEdgeProofMemo?.completeNegative(parent)
+        if (path === undefined) {
+            newEdgeProofMemo?.completeNegative(parent)
+        } else {
+            newEdgeProofMemo?.completePositive()
+        }
 
         this.addWork({
             cycle: {
@@ -1547,7 +1846,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const detailBounds = retainedBounds(details)
         return Object.freeze({
             schema: "valdres.inspect" as const,
-            schemaVersion: 2 as const,
+            schemaVersion: 3 as const,
             recordingId: this.#recordingId,
             summaries: Object.freeze(summaries),
             details: Object.freeze(details),
@@ -1935,6 +2234,16 @@ const createStoreTrace = (
             },
         })
         recorder.addWork({ selectorEvaluations: 1 })
+        const memoDiagnostics = createNewEdgeProofDiagnostics(delta =>
+            recorder.addWork({ cycle: { newEdgeProofMemo: delta } }),
+        )
+        const finishMemoDiagnostics = ():
+            | InspectionNewEdgeProofMemoTotals
+            | undefined => {
+            const totals = memoDiagnostics.finish()
+            if (totals === undefined) return undefined
+            return freezeNewEdgeProofMemoTotals(totals)
+        }
         const cycleSearch: SelectorCycleSearch<Node, Token> = (
             start,
             target,
@@ -1964,6 +2273,7 @@ const createStoreTrace = (
                 host,
                 session,
                 cycleSearch,
+                memoDiagnostics.sink,
             )
             const proposedTopologyChanged =
                 previousDependencies === undefined ||
@@ -1994,6 +2304,7 @@ const createStoreTrace = (
                     ? { proposedTopologyChanges: 1 }
                     : { proposedTopologyIdentical: 1 },
             )
+            const newEdgeProofMemo = finishMemoDiagnostics()
             recorder.finishInterval(interval, {
                 result: "returned",
                 fields: {
@@ -2003,15 +2314,18 @@ const createStoreTrace = (
                     proposedEdgesAdded,
                     proposedEdgesRemoved,
                     graphVersionEnd: host.getSelectorGraphVersion(),
+                    newEdgeProofMemo,
                 },
             })
             return proposal
         } catch (error) {
+            const newEdgeProofMemo = finishMemoDiagnostics()
             recorder.finishInterval(interval, {
                 result: "threw",
                 fields: {
                     outcome: "threw",
                     graphVersionEnd: host.getSelectorGraphVersion(),
+                    newEdgeProofMemo,
                 },
             })
             throw error

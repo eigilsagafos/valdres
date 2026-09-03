@@ -69,6 +69,43 @@ export interface SelectorEvaluationProposal<
 
 export type SelectorCycleSearchSite = 0 | 1 | 2
 
+/** @internal Inspection-only aggregate classification for one site-1 proof. */
+export type SelectorNewEdgeProofMemoSearchClassification =
+    | "observing"
+    | "consulted-no-prune"
+    | "consulted-pruned"
+
+/** @internal A bounded negative closure retained by one site-1 proof. */
+export type SelectorNewEdgeProofMemoSeedReason =
+    | "initial"
+    | "activation-replacement"
+    | "secondary"
+    | "hit-derived"
+
+/** @internal A site-1 proof-sharing coordinator stopped for this version. */
+export type SelectorNewEdgeProofMemoDisableReason =
+    | "miss-budget"
+    | "over-cap-hit"
+    | "passive-probe-budget"
+
+/**
+ * Optional evaluation-local diagnostics sink. Ordinary evaluation omits it;
+ * inspectable evaluation aggregates into its enclosing summaries.
+ */
+export interface SelectorNewEdgeProofDiagnostics {
+    admissionSkipped(): void
+    disabled(): void
+    graphVersionReset(): void
+    completeSearch(
+        classification: SelectorNewEdgeProofMemoSearchClassification,
+        seed?: SelectorNewEdgeProofMemoSeedReason,
+        disable?: SelectorNewEdgeProofMemoDisableReason,
+        mapProbes?: number,
+        prunedNodes?: number,
+        retainedNodes?: number,
+    ): void
+}
+
 /**
  * Evaluation-local coordinator for fully exhausted negative site-1 proofs.
  *
@@ -84,8 +121,16 @@ export interface SelectorNewEdgeProofMemo<Node> {
     beginSearch(): boolean
     /** Prunes a node covered by a retained fully-negative closure. */
     hasProvenNoPath(node: Node): boolean
+    /**
+     * Inspection-only equivalent that also updates aggregate probe counters.
+     * The ordinary evaluator deliberately uses the unmeasured method so its
+     * DFS inner loop does not pay a diagnostics branch.
+     */
+    hasProvenNoPathMeasured(node: Node): boolean
     /** Publishes a closure only after complete negative exhaustion. */
     completeNegative(closure: ReadonlyMap<Node, unknown>): void
+    /** Completes a physical search that found its target and retained nothing. */
+    completePositive(): void
 }
 
 /**
