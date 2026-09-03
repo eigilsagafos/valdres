@@ -2365,7 +2365,16 @@ describe("v1 contract manifest validation", () => {
     })
 })
 
+let pristineSet: ContractSet | undefined
+
+// Building the set executes the implemented test-owner files in a nested
+// `bun test`, so it is built once per process and handed out as clones.
 function readSet(): ContractSet {
+    pristineSet ??= buildSet()
+    return structuredClone(pristineSet)
+}
+
+function buildSet(): ContractSet {
     const testDispositionLedger = parseTestDispositionLedger(
         readFileSync(join(directory, "test-dispositions.jsonl"), "utf8"),
     )
@@ -2385,7 +2394,7 @@ function readSet(): ContractSet {
 }
 
 function mutableSet(): any {
-    return structuredClone(readSet())
+    return readSet()
 }
 
 function readJson(name: string): unknown {
