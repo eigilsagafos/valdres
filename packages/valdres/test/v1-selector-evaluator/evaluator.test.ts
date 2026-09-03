@@ -13,12 +13,20 @@ import {
     createInspectionRecorder,
     type CycleSearchInspectionDetail,
 } from "../../src/v1-internal/inspection"
+import { atom, selector } from "../../src/index"
+import { createInspectableStore } from "../../src/inspect"
+import {
+    createCommittedStoreTreeDomain,
+    type InternalStoreTreeTrace,
+} from "../../src/v1-internal/committed-store-tree/committed-store-tree"
+import { StoreScopeNode } from "../../src/v1-internal/committed-store-tree/scope-node"
 import type {
     SelectorComparisonBaseline,
     SelectorDefinition,
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
-    SelectorNegativePathMemo,
+    SelectorGraphEdgeAddition,
+    SelectorGraphObservation,
     SelectorRecordView,
     SelectorCycleSearch,
     ServedSelectorOutcome,
@@ -64,12 +72,19 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     #selectorGraphVersion = 0
     #activeSession: SelectorEvaluationSession<Node> | undefined
     #disposed = false
+    #graphObserverCount = 0
+    #observedEdges: SelectorGraphEdgeAddition<Node>[] | undefined
+    #observationIncomplete = false
+    graphObservationBegins = 0
+    graphObservationCloses = 0
 
     constructor(
         readonly mode: HostMode = "persistent-pre",
-        options: Readonly<{
+        readonly options: Readonly<{
             liveRecords?: Map<Node, TestRecord>
             comparisonRecords?: Map<Node, TestRecord>
+            observeSelectorGraph?: boolean
+            maxObservedEdges?: number
         }> = {},
     ) {
         this.liveRecords = options.liveRecords
@@ -212,6 +227,31 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
         this.records.set(node, record)
         this.dirty.delete(node)
         this.publications.push(proposal)
+        if (this.#graphObserverCount > 0 && !this.#observationIncomplete) {
+            const previousNodes = new Set(
+                previous?.dependencies.map(dependency => dependency.node),
+            )
+            for (const dependency of proposal.dependencies) {
+                if (
+                    !this.definitions.has(dependency.node) ||
+                    previousNodes.has(dependency.node)
+                ) {
+                    continue
+                }
+                const observed = this.#observedEdges
+                if (
+                    observed === undefined ||
+                    observed.length >= (this.options.maxObservedEdges ?? 4_096)
+                ) {
+                    this.#observationIncomplete = true
+                    this.#observedEdges = []
+                    break
+                }
+                observed.push(
+                    Object.freeze({ tail: node, head: dependency.node }),
+                )
+            }
+        }
         return served
     }
 
@@ -239,6 +279,55 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     getSelectorGraphVersion(): number {
         this.graphVersionReads++
         return this.#selectorGraphVersion
+    }
+
+    beginSelectorGraphObservation(
+        newlyAcceptedDependency: Node,
+    ): SelectorGraphObservation<Node> | undefined {
+        if (!this.definitions.has(newlyAcceptedDependency)) return undefined
+        this.graphObservationBegins++
+        const enabled =
+            this.options.observeSelectorGraph ??
+            (this.mode === "persistent-pre" || this.mode === "persistent-post")
+        if (!enabled) {
+            let closed = false
+            return Object.freeze({
+                takeAddedEdges: () => undefined,
+                close: () => {
+                    if (closed) return
+                    closed = true
+                    this.graphObservationCloses++
+                },
+            })
+        }
+        if (this.#graphObserverCount === 0) {
+            this.#observedEdges = []
+            this.#observationIncomplete = false
+        }
+        this.#graphObserverCount++
+        let cursor = this.#observedEdges?.length ?? 0
+        let closed = false
+        return Object.freeze({
+            takeAddedEdges: () => {
+                if (closed || this.#observationIncomplete) return undefined
+                const observed = this.#observedEdges
+                if (observed === undefined) return undefined
+                if (cursor === observed.length) return Object.freeze([])
+                const additions = Object.freeze(observed.slice(cursor))
+                cursor = observed.length
+                return additions
+            },
+            close: () => {
+                if (closed) return
+                closed = true
+                this.graphObservationCloses++
+                this.#graphObserverCount--
+                if (this.#graphObserverCount === 0) {
+                    this.#observedEdges = undefined
+                    this.#observationIncomplete = false
+                }
+            },
+        })
     }
 
     getComparisonBaseline(
@@ -389,7 +478,7 @@ const runCycleParityCase = (scenario: CycleParityCase): void => {
                 cycleHost,
                 session,
                 site,
-                negativeMemo,
+                acceptedPrefixLength,
             ) =>
                 setup.recorder.findDependencyPath(
                     scenario.hostKind,
@@ -399,10 +488,10 @@ const runCycleParityCase = (scenario: CycleParityCase): void => {
                     cycleHost,
                     session,
                     site,
+                    acceptedPrefixLength,
                     cycleHost.getSelectorGraphVersion(),
                     session.getSelectorGraphPublicationCount(cycleHost),
                     false,
-                    negativeMemo,
                 )
         }
         const served = scenario.mutate(host)
@@ -1028,7 +1117,13 @@ describe("v1 selector evaluator cycles", () => {
                             search.site === "new-edge-proof" && !search.found,
                     ),
                 ).toBe(true)
-                expect(searches.find(search => search.found)).toMatchObject({
+                expect(
+                    searches.find(
+                        search =>
+                            search.found &&
+                            search.site === "prefix-revalidation",
+                    ),
+                ).toMatchObject({
                     host: "committed",
                     site: "prefix-revalidation",
                     start: "new-edge",
@@ -1198,7 +1293,7 @@ describe("v1 selector evaluator cycles", () => {
             cycleHost,
             session,
             site,
-            negativeMemo,
+            acceptedPrefixLength,
         ) =>
             recorder.findDependencyPath(
                 "committed",
@@ -1208,10 +1303,10 @@ describe("v1 selector evaluator cycles", () => {
                 cycleHost,
                 session,
                 site,
+                acceptedPrefixLength,
                 cycleHost.getSelectorGraphVersion(),
                 session.getSelectorGraphPublicationCount(cycleHost),
                 false,
-                negativeMemo,
             )
         const leaves = Array.from({ length: 32 }, (_, index) => `leaf-${index}`)
         for (const leaf of leaves) host.setLeaf(leaf, 1)
@@ -1332,198 +1427,156 @@ describe("v1 selector evaluator cycles", () => {
         expect(host.selectorDependencyNodeReadNodes).toEqual(["start", "right"])
     })
 
-    test("keeps singleton prefix revalidation on the allocation-free search path", () => {
-        const host = new TestHost()
-        host.setLeaf("dependency", 1)
-        host.setLeaf("trigger", 1)
-        host.define({ node: "changed", get: () => 1 })
-        expect(valueOf(host.read<number>("changed"))).toBe(1)
-        const parent: SelectorDefinition<Node, number> = {
-            node: "parent",
-            get: get => {
-                get("dependency")
-                get("trigger")
-                return 1
-            },
-        }
-        host.define(parent)
-        expect(valueOf(host.read<number>("parent"))).toBe(1)
-
-        const prefixMemos: (SelectorNegativePathMemo<Node> | undefined)[] = []
-        host.cycleTrace = (
-            _start,
-            _target,
-            _cycleHost,
-            _session,
-            site,
-            negativeMemo,
-        ) => {
-            if (site === 0) prefixMemos.push(negativeMemo)
-            return undefined
-        }
-        host.define(parent)
-        host.define({ node: "changed", get: () => 2 })
-        let published = false
-        host.setServeEffect("trigger", () => {
-            if (published) return
-            published = true
-            expect(valueOf(host.read<number>("changed"))).toBe(2)
-        })
-
-        expect(valueOf(host.read<number>("parent"))).toBe(1)
-        expect(prefixMemos).toEqual([undefined])
-    })
-
-    test("shares proven-negative selector reads across one prefix revalidation batch", () => {
-        const host = new TestHost()
-        const width = 256
-        const depth = 512
-        host.setLeaf("tail", 1)
-        for (let index = depth - 1; index >= 0; index--) {
-            const dependency =
-                index + 1 === depth ? "tail" : `chain-${index + 1}`
-            host.define({
-                node: `chain-${index}`,
-                get: get => get(dependency),
+    test("replays exact foreign edge additions instead of a growing accepted prefix", () => {
+        const run = (observeSelectorGraph: boolean) => {
+            const host = new TestHost("persistent-pre", {
+                observeSelectorGraph,
             })
-        }
-        const prefix = Array.from(
-            { length: width },
-            (_, index) => `dependency-${index}`,
-        )
-        for (const dependency of prefix) {
-            host.define({
-                node: dependency,
-                get: get => get("chain-0"),
-            })
-        }
-        host.define({ node: "changed", get: () => 1 })
-        expect(valueOf(host.read<number>("changed"))).toBe(1)
-        const parent: SelectorDefinition<Node, number> = {
-            node: "parent",
-            get: get => {
-                for (const dependency of prefix) get(dependency)
-                get(prefix[0]!)
-                return 1
-            },
-        }
-        host.define(parent)
-        expect(valueOf(host.read<number>("parent"))).toBe(1)
-
-        host.define(parent)
-        host.define({ node: "changed", get: () => 2 })
-        let firstDependencyServes = 0
-        host.setServeEffect(prefix[0]!, () => {
-            firstDependencyServes++
-            if (firstDependencyServes === 2) {
-                expect(valueOf(host.read<number>("changed"))).toBe(2)
-            }
-        })
-        const { recorder, inspect } = createInspectionRecorder()
-        const hostRef = recorder.reference(host, "scope")
-        const prefixMemos = new Set<SelectorNegativePathMemo<Node>>()
-        host.cycleTrace = (
-            start,
-            target,
-            cycleHost,
-            session,
-            site,
-            negativeMemo,
-        ) => {
-            const path = recorder.findDependencyPath(
-                "committed",
-                hostRef,
-                start,
-                target,
-                cycleHost,
-                session,
-                site,
-                cycleHost.getSelectorGraphVersion(),
-                session.getSelectorGraphPublicationCount(cycleHost),
-                false,
-                negativeMemo,
-            )
-            if (site === 0 && negativeMemo !== undefined) {
-                prefixMemos.add(negativeMemo)
-            }
-            return path
-        }
-        host.selectorDependencyNodeReadNodes.length = 0
-
-        expect(valueOf(host.read<number>("parent"))).toBe(1)
-        expect(firstDependencyServes).toBe(2)
-        expect(prefixMemos.size).toBe(1)
-        expect(host.selectorDependencyNodeReadNodes).toHaveLength(width + depth)
-        expect(
-            host.selectorDependencyNodeReadNodes.filter(
-                node => node === "chain-0",
-            ),
-        ).toHaveLength(1)
-        const searches = inspect
-            .export()
-            .details.filter(detail => detail.type === "cycle-search")
-        expect(searches).toHaveLength(width)
-        expect(searches.reduce((sum, search) => sum + search.visits, 0)).toBe(
-            depth + 2 * width - 1,
-        )
-    })
-
-    test("disables negative learning after three disjoint non-terminal proofs", () => {
-        const host = new TestHost()
-        const width = 4
-        const depth = 4
-        const prefix = Array.from(
-            { length: width },
-            (_, branch) => `branch-${branch}-0`,
-        )
-        for (let branch = 0; branch < width; branch++) {
-            host.setLeaf(`leaf-${branch}`, 1)
-            for (let index = depth - 1; index >= 0; index--) {
+            const prefixWidth = 60
+            const closureDepth = 20
+            const publicationCount = 15
+            host.setLeaf("closure-tail", 1)
+            for (let index = closureDepth - 1; index >= 0; index--) {
                 host.define({
-                    node: `branch-${branch}-${index}`,
+                    node: `closure-${index}`,
                     get: get =>
                         get(
-                            index + 1 === depth
-                                ? `leaf-${branch}`
-                                : `branch-${branch}-${index + 1}`,
+                            index + 1 === closureDepth
+                                ? "closure-tail"
+                                : `closure-${index + 1}`,
                         ),
                 })
             }
+            const prefix = Array.from(
+                { length: prefixWidth },
+                (_, index) => `prefix-${index}`,
+            )
+            for (const dependency of prefix) {
+                host.define({
+                    node: dependency,
+                    get: get => get("closure-0"),
+                })
+                expect(valueOf(host.read<number>(dependency))).toBe(1)
+            }
+            for (let index = 0; index < publicationCount; index++) {
+                host.define({ node: `edge-head-${index}`, get: () => 1 })
+                host.define({ node: `foreign-${index}`, get: () => 1 })
+                expect(valueOf(host.read<number>(`edge-head-${index}`))).toBe(1)
+                expect(valueOf(host.read<number>(`foreign-${index}`))).toBe(1)
+            }
+
+            const parent: SelectorDefinition<Node, number> = {
+                node: "parent",
+                get: get => {
+                    for (const dependency of prefix) get(dependency)
+                    return 1
+                },
+            }
+            host.define(parent)
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+            const batchAtPrefix = Array.from(
+                { length: publicationCount },
+                (_, index) =>
+                    14 +
+                    Math.floor((index * (58 - 14)) / (publicationCount - 1)),
+            )
+            for (let index = 0; index < publicationCount; index++) {
+                host.define({
+                    node: `foreign-${index}`,
+                    get: get => get(`edge-head-${index}`),
+                })
+                const trigger = prefix[batchAtPrefix[index]!]!
+                host.setServeEffect(trigger, () => {
+                    expect(valueOf(host.read<number>(`foreign-${index}`))).toBe(
+                        1,
+                    )
+                })
+            }
+
+            const searches = [0, 0, 0]
+            const visits = [0, 0, 0]
+            host.cycleTrace = (start, target, cycleHost, session, site) => {
+                searches[site]++
+                const pending = [start]
+                const visited = new Set<Node>(pending)
+                while (pending.length > 0) {
+                    const node = pending.pop()!
+                    visits[site]++
+                    if (Object.is(node, target)) return Object.freeze([node])
+                    const transient = session.getTransientDependencies(
+                        cycleHost,
+                        node,
+                    )
+                    const dependencies =
+                        transient?.map(dependency => dependency.node) ??
+                        cycleHost.getSelectorDependencyNodes?.(node) ??
+                        []
+                    for (const dependency of dependencies) {
+                        if (visited.has(dependency)) continue
+                        visited.add(dependency)
+                        pending.push(dependency)
+                    }
+                }
+                return undefined
+            }
+            host.markDirty("parent")
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+            return { searches, visits }
         }
-        host.setLeaf("trigger", 1)
+
+        const fallback = run(false)
+        const delta = run(true)
+
+        expect(fallback.searches).toEqual([534, 61, 0])
+        expect(fallback.visits).toEqual([11_214, 981, 0])
+        expect(delta.searches).toEqual([0, 61, 15])
+        expect(delta.visits).toEqual([0, 981, 15])
+    })
+
+    test("a positive delta proof falls back to canonical first-read blame", () => {
+        const host = new TestHost("persistent-pre", {
+            observeSelectorGraph: true,
+        })
+        host.define({ node: "parent", get: () => 1 })
         host.define({ node: "changed", get: () => 1 })
-        expect(valueOf(host.read<number>("changed"))).toBe(1)
-        const parent: SelectorDefinition<Node, number> = {
+        host.define({ node: "new-edge", get: get => get("changed") })
+        host.define({ node: "cached", get: get => get("parent") })
+        host.define({ node: "later", get: () => 1 })
+        expect(valueOf(host.read<number>("new-edge"))).toBe(1)
+        expect(valueOf(host.read<number>("cached"))).toBe(1)
+        expect(valueOf(host.read<number>("later"))).toBe(1)
+
+        host.define({
             node: "parent",
             get: get => {
-                for (const dependency of prefix) get(dependency)
-                get("trigger")
+                get("new-edge")
+                get("later")
                 return 1
             },
-        }
-        host.define(parent)
-        expect(valueOf(host.read<number>("parent"))).toBe(1)
-
-        host.define(parent)
-        host.define({ node: "changed", get: () => 2 })
-        let published = false
-        host.setServeEffect("trigger", () => {
-            if (published) return
-            published = true
-            expect(valueOf(host.read<number>("changed"))).toBe(2)
         })
-        const { recorder, inspect } = createInspectionRecorder()
-        const hostRef = recorder.reference(host, "scope")
-        const memoEnabled: boolean[] = []
+        host.define({
+            node: "later",
+            get: () => {
+                host.define({
+                    node: "changed",
+                    get: get => get("cached"),
+                })
+                expect(valueOf(host.read<number>("changed"))).toBe(1)
+                return 1
+            },
+        })
+        const setup = createInspectionRecorder()
+        const hostRef = setup.recorder.reference(host, "scope")
         host.cycleTrace = (
             start,
             target,
             cycleHost,
             session,
             site,
-            negativeMemo,
-        ) => {
-            const path = recorder.findDependencyPath(
+            acceptedPrefixLength,
+        ) =>
+            setup.recorder.findDependencyPath(
                 "committed",
                 hostRef,
                 start,
@@ -1531,372 +1584,354 @@ describe("v1 selector evaluator cycles", () => {
                 cycleHost,
                 session,
                 site,
+                acceptedPrefixLength,
                 cycleHost.getSelectorGraphVersion(),
                 session.getSelectorGraphPublicationCount(cycleHost),
                 false,
-                negativeMemo,
             )
-            if (site === 0) memoEnabled.push(negativeMemo !== undefined)
-            return path
-        }
 
-        expect(valueOf(host.read<number>("parent"))).toBe(1)
-        expect(memoEnabled).toEqual([true, true, true, false])
-        const searches = inspect
+        const error = errorOf(host.read("parent"))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "new-edge",
+            "changed",
+            "cached",
+            "parent",
+        ])
+        expect(
+            host.records.get("parent")?.dependencies.map(({ node }) => node),
+        ).toEqual([])
+        const positiveProofs = setup.inspect
             .export()
             .details.filter(
                 (detail): detail is CycleSearchInspectionDetail =>
-                    detail.type === "cycle-search" &&
-                    detail.site === "prefix-revalidation",
+                    detail.type === "cycle-search" && detail.found,
             )
-        expect(searches).toHaveLength(width)
-        expect(searches.reduce((sum, search) => sum + search.visits, 0)).toBe(
-            width * depth,
+        expect(positiveProofs.map(proof => proof.site)).toEqual([
+            "topology-delta-proof",
+            "prefix-revalidation",
+        ])
+        expect(positiveProofs.map(proof => proof.acceptedPrefixLength)).toEqual(
+            [1, 1],
         )
+        expect(positiveProofs[1]).toMatchObject({
+            start: "new-edge",
+            target: "parent",
+            path: ["new-edge", "changed", "cached", "parent"],
+        })
     })
 
-    test("retains two learned closures through terminal noise until later reuse", () => {
-        for (const inspected of [false, true]) {
-            const host = new TestHost()
-            const firstDepth = 16
-            const sharedDepth = 32
-            host.setLeaf("first-tail", 1)
-            host.setLeaf("shared-tail", 1)
-            host.setLeaf("trigger", 1)
-            for (let index = firstDepth - 1; index >= 0; index--) {
-                host.define({
-                    node: `first-${index}`,
-                    get: get =>
-                        get(
-                            index + 1 === firstDepth
-                                ? "first-tail"
-                                : `first-${index + 1}`,
-                        ),
-                })
+    test("a committed scope turns a positive delta signal into canonical prefix blame", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const setup = createInspectionRecorder()
+        let scope: StoreScopeNode | undefined
+        const baseTrace = setup.trace
+        const trace = ((
+            code: number,
+            first?: unknown,
+            second?: unknown,
+            third?: unknown,
+        ) => {
+            if (code === 0 && scope === undefined) {
+                scope = second as StoreScopeNode
             }
-            for (let index = sharedDepth - 1; index >= 0; index--) {
-                host.define({
-                    node: `shared-${index}`,
-                    get: get =>
-                        get(
-                            index + 1 === sharedDepth
-                                ? "shared-tail"
-                                : `shared-${index + 1}`,
-                        ),
-                })
-            }
-            host.define({ node: "first-root", get: get => get("first-0") })
-            host.define({ node: "shared-a", get: get => get("shared-0") })
-            host.define({ node: "terminal-a", get: () => 1 })
-            host.define({ node: "terminal-b", get: () => 1 })
-            host.define({ node: "shared-b", get: get => get("shared-0") })
-            host.define({ node: "changed", get: () => 1 })
-            expect(valueOf(host.read<number>("changed"))).toBe(1)
-            const parent: SelectorDefinition<Node, number> = {
-                node: "parent",
-                get: get => {
-                    get("first-root")
-                    get("shared-a")
-                    get("terminal-a")
-                    get("terminal-b")
-                    get("shared-b")
-                    get("trigger")
-                    return 1
-                },
-            }
-            host.define(parent)
-            expect(valueOf(host.read<number>("parent"))).toBe(1)
+            baseTrace(code, first, second, third)
+        }) as InternalStoreTreeTrace
+        Object.assign(trace, { evaluate: baseTrace.evaluate })
+        const store = domain.createStoreTree(setup.instrumentation, trace)
+        const parentGate = domain.atom(false, {
+            name: "committed-delta/parent-gate",
+        })
+        const trigger = domain.atom(0, { name: "committed-delta/trigger" })
+        let closeCycle = false
+        let parent!: ReturnType<typeof domain.selector<number>>
+        let cached!: ReturnType<typeof domain.selector<number>>
+        const changing = domain.selector(
+            get => {
+                get(trigger)
+                return closeCycle ? get(cached) : 1
+            },
+            { name: "committed-delta/changing" },
+        )
+        parent = domain.selector(
+            get => {
+                if (!get(parentGate)) return 1
+                const value = get(changing)
+                // Drive the real propagation coordinator's fresh-session path
+                // after `changing` is already in the parent's transient prefix.
+                closeCycle = true
+                scope!.markDependents(trigger)
+                scope!.serve(changing, new SelectorEvaluationSession())
+                return value
+            },
+            { name: "committed-delta/parent" },
+        )
+        cached = domain.selector(get => get(parent), {
+            name: "committed-delta/cached",
+        })
 
-            let inspect:
-                | ReturnType<typeof createInspectionRecorder>["inspect"]
-                | undefined
-            if (inspected) {
-                const setup = createInspectionRecorder()
-                inspect = setup.inspect
-                const hostRef = setup.recorder.reference(host, "scope")
-                host.cycleTrace = (
-                    start,
-                    target,
-                    cycleHost,
-                    session,
-                    site,
-                    negativeMemo,
-                ) =>
-                    setup.recorder.findDependencyPath(
-                        "committed",
-                        hostRef,
-                        start,
-                        target,
-                        cycleHost,
-                        session,
-                        site,
-                        cycleHost.getSelectorGraphVersion(),
-                        session.getSelectorGraphPublicationCount(cycleHost),
-                        false,
-                        negativeMemo,
-                    )
-            }
+        expect(store.get(changing)).toBe(1)
+        expect(store.get(cached)).toBe(1)
+        setup.inspect.reset()
+        store.txn(
+            transaction => transaction.set(parentGate, true),
+            "positive committed delta",
+        )
 
-            host.define(parent)
-            host.define({ node: "changed", get: () => 2 })
-            let published = false
-            host.setServeEffect("trigger", () => {
-                if (published) return
-                published = true
-                expect(valueOf(host.read<number>("changed"))).toBe(2)
-            })
-            host.selectorDependencyNodeReadNodes.length = 0
-
-            expect(valueOf(host.read<number>("parent"))).toBe(1)
-            expect(
-                host.selectorDependencyNodeReadNodes.filter(
-                    node => node === "shared-0",
-                ),
-            ).toHaveLength(1)
-            expect(host.selectorDependencyNodeReadNodes).toHaveLength(
-                firstDepth + sharedDepth + 6,
+        let thrown: unknown
+        try {
+            store.get(parent)
+        } catch (error) {
+            thrown = error
+        }
+        expect(thrown).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((thrown as SelectorCircularDependencyError).path).toEqual([
+            parent,
+            changing,
+            cached,
+            parent,
+        ])
+        const positiveProofs = setup.inspect
+            .export()
+            .details.filter(
+                (detail): detail is CycleSearchInspectionDetail =>
+                    detail.type === "cycle-search" && detail.found,
             )
-            if (inspect !== undefined) {
-                const searches = inspect
-                    .export()
-                    .details.filter(
-                        (detail): detail is CycleSearchInspectionDetail =>
-                            detail.type === "cycle-search" &&
-                            detail.site === "prefix-revalidation",
-                    )
-                expect(searches).toHaveLength(5)
-                expect(
-                    searches.reduce((sum, search) => sum + search.visits, 0),
-                ).toBe(firstDepth + sharedDepth + 6)
-            }
-        }
+        expect(positiveProofs.map(proof => proof.site)).toEqual([
+            "topology-delta-proof",
+            "prefix-revalidation",
+        ])
+        expect(positiveProofs.map(proof => proof.acceptedPrefixLength)).toEqual(
+            [2, 2],
+        )
+        expect(
+            positiveProofs[1]?.path?.map(value =>
+                typeof value === "object" && value !== null && "name" in value
+                    ? value.name
+                    : undefined,
+            ),
+        ).toEqual([
+            "committed-delta/changing",
+            "committed-delta/cached",
+            "committed-delta/parent",
+        ])
     })
 
-    test("bounds locked negative learning and resets its miss streak on reuse", () => {
-        const host = new TestHost()
-        host.setLeaf("shared-tail", 1)
+    test("an incomplete delta interval falls back and the next observation resets", () => {
+        const host = new TestHost("persistent-pre", {
+            observeSelectorGraph: true,
+            maxObservedEdges: 1,
+        })
         host.setLeaf("trigger", 1)
-        host.define({ node: "shared-hub", get: get => get("shared-tail") })
-        for (const node of ["shared-a", "shared-b", "shared-c"]) {
-            host.define({ node, get: get => get("shared-hub") })
-        }
-        host.define({ node: "terminal-a", get: () => 1 })
-        host.define({ node: "terminal-b", get: () => 1 })
         for (const node of [
-            "disjoint-a",
-            "disjoint-b",
-            "disjoint-c",
-            "disjoint-d",
-            "disjoint-e",
-            "after-disabled",
+            "safe",
+            "head-a",
+            "head-b",
+            "large",
+            "small-head",
+            "small",
         ]) {
-            host.setLeaf(`${node}-tail`, 1)
-            host.define({
-                node: `${node}-child`,
-                get: get => get(`${node}-tail`),
-            })
-            host.define({ node, get: get => get(`${node}-child`) })
+            host.define({ node, get: () => 1 })
+            expect(valueOf(host.read<number>(node))).toBe(1)
         }
-        host.define({ node: "changed", get: () => 1 })
-        expect(valueOf(host.read<number>("changed"))).toBe(1)
-        const prefix = [
-            "shared-a",
-            "shared-b",
-            "terminal-a",
-            "disjoint-a",
-            "disjoint-b",
-            "shared-c",
-            "disjoint-c",
-            "terminal-b",
-            "disjoint-d",
-            "disjoint-e",
-            "after-disabled",
-        ]
         const parent: SelectorDefinition<Node, number> = {
             node: "parent",
             get: get => {
-                for (const dependency of prefix) get(dependency)
+                get("safe")
                 get("trigger")
                 return 1
             },
         }
         host.define(parent)
         expect(valueOf(host.read<number>("parent"))).toBe(1)
-
-        const setup = createInspectionRecorder()
-        const hostRef = setup.recorder.reference(host, "scope")
-        const memoEnabled: boolean[] = []
-        host.cycleTrace = (
-            start,
-            target,
-            cycleHost,
-            session,
-            site,
-            negativeMemo,
-        ) => {
-            if (site === 0) memoEnabled.push(negativeMemo !== undefined)
-            return setup.recorder.findDependencyPath(
-                "committed",
-                hostRef,
-                start,
-                target,
-                cycleHost,
-                session,
-                site,
-                cycleHost.getSelectorGraphVersion(),
-                session.getSelectorGraphPublicationCount(cycleHost),
-                false,
-                negativeMemo,
-            )
+        const sites: number[] = []
+        host.cycleTrace = (_start, _target, _host, _session, site) => {
+            sites.push(site)
+            return undefined
         }
 
-        host.define(parent)
-        host.define({ node: "changed", get: () => 2 })
-        let published = false
-        host.setServeEffect("trigger", () => {
-            if (published) return
-            published = true
-            expect(valueOf(host.read<number>("changed"))).toBe(2)
+        host.define({
+            node: "large",
+            get: get => {
+                get("head-a")
+                get("head-b")
+                return 1
+            },
         })
-        host.selectorDependencyNodeReadNodes.length = 0
-
+        host.define(parent)
+        host.setServeEffect("trigger", () => {
+            expect(valueOf(host.read<number>("large"))).toBe(1)
+        })
         expect(valueOf(host.read<number>("parent"))).toBe(1)
-        expect(memoEnabled).toEqual([
-            true,
-            true,
-            true,
-            true,
-            true,
-            true,
-            true,
-            true,
-            true,
-            true,
-            false,
-        ])
-        expect(
-            host.selectorDependencyNodeReadNodes.filter(
-                node => node === "shared-hub",
-            ),
-        ).toHaveLength(1)
+        expect(sites).toContain(0)
+
+        sites.length = 0
+        host.define({ node: "small", get: get => get("small-head") })
+        host.define(parent)
+        host.setServeEffect("trigger", () => {
+            expect(valueOf(host.read<number>("small"))).toBe(1)
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(sites).toContain(2)
+        expect(sites).not.toContain(0)
     })
 
-    test("a positive prefix proof keeps the canonical path after negative memo pruning", () => {
-        for (const inspected of [false, true]) {
-            const host = new TestHost()
-            host.setLeaf("leaf", 1)
-            host.setLeaf("trigger", 1)
-            host.define({ node: "dead", get: get => get("leaf") })
-            host.define({ node: "safe", get: get => get("dead") })
-            host.define({ node: "bridge", get: get => get("leaf") })
-            host.define({
-                node: "bad",
-                get: get => {
-                    get("bridge")
-                    get("dead")
-                    return 1
-                },
-            })
-            expect(valueOf(host.read<number>("bad"))).toBe(1)
-            let includeBad = false
-            const parent: SelectorDefinition<Node, number> = {
-                node: "parent",
-                get: get => {
-                    get("safe")
-                    if (includeBad) get("bad")
-                    get("trigger")
-                    return 1
-                },
-            }
-            host.define(parent)
-            expect(valueOf(host.read<number>("parent"))).toBe(1)
-            host.define({ node: "follower", get: get => get("parent") })
-            expect(valueOf(host.read<number>("follower"))).toBe(1)
-
-            let inspect:
-                | ReturnType<typeof createInspectionRecorder>["inspect"]
-                | undefined
-            if (inspected) {
-                const setup = createInspectionRecorder()
-                inspect = setup.inspect
-                const hostRef = setup.recorder.reference(host, "scope")
-                host.cycleTrace = (
-                    start,
-                    target,
-                    cycleHost,
-                    session,
-                    site,
-                    negativeMemo,
-                ) =>
-                    setup.recorder.findDependencyPath(
-                        "committed",
-                        hostRef,
-                        start,
-                        target,
-                        cycleHost,
-                        session,
-                        site,
-                        cycleHost.getSelectorGraphVersion(),
-                        session.getSelectorGraphPublicationCount(cycleHost),
-                        false,
-                        negativeMemo,
-                    )
-            }
-
-            includeBad = true
-            host.define(parent)
-            host.define({ node: "bridge", get: get => get("follower") })
-            let published = false
-            host.setServeEffect("trigger", () => {
-                if (published) return
-                published = true
-                expect(valueOf(host.read<number>("bridge"))).toBe(1)
-                host.selectorDependencyNodeReadNodes.length = 0
-            })
-            host.selectorDependencyNodeReadNodes.length = 0
-
-            const error = errorOf(host.read("parent"))
-
-            expect(error).toBeInstanceOf(SelectorCircularDependencyError)
-            expect((error as SelectorCircularDependencyError).path).toEqual([
-                "parent",
-                "bad",
-                "bridge",
-                "follower",
-                "parent",
-            ])
-            expect(host.selectorDependencyNodeReadNodes).toEqual([
-                "safe",
-                "dead",
-                "bad",
-                "bridge",
-                "follower",
-                "safe",
-                "dead",
-            ])
-            expect(
-                host.records
-                    .get("parent")
-                    ?.dependencies.map(({ node }) => node),
-            ).toEqual(["safe"])
-            if (inspect !== undefined) {
-                expect(
-                    inspect
-                        .export()
-                        .details.filter(
-                            (detail): detail is CycleSearchInspectionDetail =>
-                                detail.type === "cycle-search" && detail.found,
-                        ),
-                ).toEqual([
-                    expect.objectContaining({
-                        site: "prefix-revalidation",
-                        start: "bad",
-                        target: "parent",
-                        path: ["bad", "bridge", "follower", "parent"],
-                    }),
-                ])
-            }
+    test("edge removals and topology-identical publications skip prefix replay", () => {
+        const host = new TestHost("persistent-pre", {
+            observeSelectorGraph: true,
+        })
+        host.setLeaf("trigger", 1)
+        host.define({ node: "head", get: () => 1 })
+        host.define({ node: "foreign", get: get => get("head") })
+        host.define({ node: "safe", get: () => 1 })
+        for (const node of ["head", "foreign", "safe"]) {
+            expect(valueOf(host.read<number>(node))).toBe(1)
         }
+        const parent: SelectorDefinition<Node, number> = {
+            node: "parent",
+            get: get => {
+                get("safe")
+                get("trigger")
+                return 1
+            },
+        }
+        host.define(parent)
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        host.define({ node: "foreign", get: () => 1 })
+        host.define(parent)
+        host.setServeEffect("trigger", () => {
+            expect(valueOf(host.read<number>("foreign"))).toBe(1)
+        })
+        const sites: number[] = []
+        host.cycleTrace = (_start, _target, _host, _session, site) => {
+            sites.push(site)
+            return undefined
+        }
+
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(sites).not.toContain(0)
+        expect(sites).not.toContain(2)
+
+        sites.length = 0
+        host.define({ node: "foreign", get: () => 1 })
+        host.define(parent)
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(sites).not.toContain(0)
+        expect(sites).not.toContain(2)
+    })
+
+    test("opens graph observations lazily and closes them on every outcome", () => {
+        const host = new TestHost("persistent-pre", {
+            observeSelectorGraph: true,
+        })
+        host.setLeaf("leaf", 1)
+        host.define({ node: "empty", get: () => 1 })
+        expect(valueOf(host.read<number>("empty"))).toBe(1)
+        expect(host.graphObservationBegins).toBe(0)
+        expect(host.graphObservationCloses).toBe(0)
+
+        host.define({ node: "atom-only", get: get => get("leaf") })
+        expect(valueOf(host.read<number>("atom-only"))).toBe(1)
+        expect(host.graphObservationBegins).toBe(0)
+        expect(host.graphObservationCloses).toBe(0)
+
+        host.define({ node: "child", get: get => get("leaf") })
+        expect(valueOf(host.read<number>("child"))).toBe(1)
+        expect(host.graphObservationBegins).toBe(0)
+        expect(host.graphObservationCloses).toBe(0)
+
+        host.define({ node: "value", get: get => get("child") })
+        expect(valueOf(host.read<number>("value"))).toBe(1)
+        expect(host.graphObservationBegins).toBe(1)
+        expect(host.graphObservationCloses).toBe(1)
+
+        const failure = Object.freeze({ code: "EXPECTED" })
+        host.define({
+            node: "error",
+            get: get => {
+                get("child")
+                throw failure
+            },
+        })
+        expect(errorOf(host.read("error"))).toBeInstanceOf(SelectorGetterError)
+        expect(host.graphObservationBegins).toBe(2)
+        expect(host.graphObservationCloses).toBe(2)
+    })
+
+    test("committed graph observations keep independent cursors and release on record drop", () => {
+        const domain = createCommittedStoreTreeDomain()
+        let scope: StoreScopeNode | undefined
+        const trace = ((code: number, _first?: unknown, second?: unknown) => {
+            if (code === 0 && scope === undefined) {
+                scope = second as StoreScopeNode
+            }
+        }) as InternalStoreTreeTrace
+        const store = domain.createStoreTree(undefined, trace)
+        const firstHead = domain.selector(() => 1)
+        const firstTail = domain.selector(get => get(firstHead))
+        const secondHead = domain.selector(() => 2)
+        const secondTail = domain.selector(get => get(secondHead))
+        const thirdHead = domain.selector(() => 3)
+        const thirdTail = domain.selector(get => get(thirdHead))
+        const root = scope!
+
+        const outer = root.beginSelectorGraphObservation(firstHead)!
+        expect(store.get(firstTail)).toBe(1)
+        const inner = root.beginSelectorGraphObservation(secondHead)!
+        expect(store.get(secondTail)).toBe(2)
+        expect(outer.takeAddedEdges()).toEqual([
+            { tail: firstTail, head: firstHead },
+            { tail: secondTail, head: secondHead },
+        ])
+        expect(inner.takeAddedEdges()).toEqual([
+            { tail: secondTail, head: secondHead },
+        ])
+        outer.close()
+        outer.close()
+        expect(store.get(thirdTail)).toBe(3)
+        expect(inner.takeAddedEdges()).toEqual([
+            { tail: thirdTail, head: thirdHead },
+        ])
+
+        const versionBeforeDrop = root.getSelectorGraphVersion()
+        root.dropRecords()
+        expect(root.getSelectorGraphVersion()).toBe(versionBeforeDrop + 1)
+        expect(inner.takeAddedEdges()).toBeUndefined()
+        inner.close()
+
+        const next = root.beginSelectorGraphObservation(firstHead)!
+        expect(next.takeAddedEdges()).toEqual([])
+        next.close()
+    })
+
+    test("committed graph observations fail closed after the bounded edge capacity", () => {
+        const domain = createCommittedStoreTreeDomain()
+        let scope: StoreScopeNode | undefined
+        const trace = ((code: number, _first?: unknown, second?: unknown) => {
+            if (code === 0 && scope === undefined) {
+                scope = second as StoreScopeNode
+            }
+        }) as InternalStoreTreeTrace
+        const store = domain.createStoreTree(undefined, trace)
+        const heads = Array.from({ length: 4_097 }, (_, index) =>
+            domain.selector(() => index),
+        )
+        const tail = domain.selector(get => {
+            let sum = 0
+            for (const head of heads) sum += get(head)
+            return sum
+        })
+        const observation = scope!.beginSelectorGraphObservation(heads[0]!)!
+
+        expect(store.get(tail)).toBe((4_096 * 4_097) / 2)
+        expect(observation.takeAddedEdges()).toBeUndefined()
+        observation.close()
+
+        const next = scope!.beginSelectorGraphObservation(heads[0]!)!
+        expect(next.takeAddedEdges()).toEqual([])
+        next.close()
     })
 
     test("scratch and hydration hosts retain full-record closure traversal", () => {
@@ -2692,6 +2727,179 @@ describe("v1 selector evaluator cycles", () => {
             expect(host.records.get(second)?.dependencies[0]?.node).toBe(first)
         })
     }
+
+    const buildShiftXHub = (cycleAt = -1) => {
+        const width = 200
+        const firstDepth = 100
+        const secondDepth = 400
+        const source = atom(0, { name: "source" })
+        const close = atom(false, { name: "close" })
+        const firstChain: ReturnType<typeof selector<number>>[] = []
+        for (let index = firstDepth - 1; index >= 0; index--) {
+            const next =
+                index === firstDepth - 1 ? source : firstChain[index + 1]!
+            firstChain[index] = selector(get => get(next) + 1, {
+                name: `first/${index}`,
+            })
+        }
+        const lineIds = selector(get => get(firstChain[0]!), {
+            name: "lineIds",
+        })
+        const secondChain: ReturnType<typeof selector<number>>[] = []
+        for (let index = secondDepth - 1; index >= 0; index--) {
+            const next =
+                index === secondDepth - 1
+                    ? firstChain[firstDepth >> 1]!
+                    : secondChain[index + 1]!
+            secondChain[index] = selector(get => get(next) + 1, {
+                name: `second/${index}`,
+            })
+        }
+        let hub!: ReturnType<typeof selector<number>>
+        const echo = selector(get => get(hub), { name: "echo" })
+        const privates = Array.from({ length: width }, (_, index) =>
+            index === cycleAt
+                ? selector(
+                      get => (get(close) ? get(echo) : get(source) + index),
+                      { name: `private/${index}` },
+                  )
+                : selector(get => get(source) + index, {
+                      name: `private/${index}`,
+                  }),
+        )
+        const lines = privates.map((privateSelector, index) =>
+            selector(get => get(privateSelector) + get(secondChain[0]!), {
+                name: `line/${index}`,
+            }),
+        )
+        hub = selector(
+            get => {
+                if (get(source) === 0) return 0
+                let sum = get(lineIds)
+                for (const line of lines) sum += get(line)
+                return sum
+            },
+            { name: "hub" },
+        )
+        return {
+            width,
+            firstDepth,
+            secondDepth,
+            source,
+            close,
+            lineIds,
+            echo,
+            privates,
+            lines,
+            hub,
+        }
+    }
+
+    const warmShiftXHub = (
+        graph: ReturnType<typeof buildShiftXHub>,
+        store: ReturnType<typeof createInspectableStore>["store"],
+    ) => {
+        expect(store.get(graph.hub)).toBe(0)
+        expect(store.get(graph.echo)).toBe(0)
+        store.get(graph.lineIds)
+        for (const line of graph.lines) store.get(line)
+    }
+
+    test("bounds ShiftX-shaped rewiring by changed topology rather than prefix width", () => {
+        const graph = buildShiftXHub()
+        const { store, inspect } = createInspectableStore({
+            capacity: { summaries: 8_192, details: 250_000 },
+        })
+        warmShiftXHub(graph, store)
+        inspect.reset()
+        store.txn(transaction => transaction.set(graph.source, 1), "rewire")
+        expect(store.get(graph.hub)).toBe(
+            graph.firstDepth +
+                1 +
+                graph.width *
+                    (graph.secondDepth +
+                        graph.firstDepth -
+                        (graph.firstDepth >> 1) +
+                        1) +
+                (graph.width * (graph.width - 1)) / 2 +
+                graph.width,
+        )
+
+        const report = inspect.export()
+        const operation = report.summaries.find(
+            summary =>
+                summary.type === "operation" && summary.name === "rewire",
+        )!
+        expect(report.complete).toBe(true)
+        expect(operation.totals).toMatchObject({
+            selectorEvaluations:
+                2 * graph.width + graph.firstDepth + graph.secondDepth + 3,
+            proposedTopologyChanges: 1,
+        })
+        expect(operation.totals.cycle.found).toBe(0)
+        expect(operation.totals.cycle.bySite.prefixRevalidation).toBe(0)
+        expect(operation.totals.cycle.searches).toBe(201)
+        expect(operation.totals.cycle.visits).toBe(90_501)
+    })
+
+    test("keeps the ShiftX-shaped cached-cycle path exact", () => {
+        const cycleIndex = 100
+        const graph = buildShiftXHub(cycleIndex)
+        const { store, inspect } = createInspectableStore({
+            capacity: { summaries: 8_192, details: 250_000 },
+        })
+        warmShiftXHub(graph, store)
+        inspect.reset()
+        store.txn(transaction => {
+            transaction.set(graph.source, 1)
+            transaction.set(graph.close, true)
+        }, "rewire-cycle")
+
+        let thrown: unknown
+        try {
+            store.get(graph.hub)
+        } catch (error) {
+            thrown = error
+        }
+        expect(thrown).toBeInstanceOf(SelectorCircularDependencyError)
+        const cycle = thrown as SelectorCircularDependencyError
+        expect(cycle.selector).toBe(graph.hub)
+        expect([...cycle.path]).toEqual([
+            graph.hub,
+            graph.lines[cycleIndex],
+            graph.privates[cycleIndex],
+            graph.echo,
+            graph.hub,
+        ])
+
+        const report = inspect.export()
+        const operation = report.summaries.find(
+            summary =>
+                summary.type === "operation" && summary.name === "rewire-cycle",
+        )!
+        const positives = report.details.filter(
+            (detail): detail is CycleSearchInspectionDetail =>
+                detail.type === "cycle-search" &&
+                detail.operationId === operation.operationId &&
+                detail.found,
+        )
+        expect(positives).toHaveLength(1)
+        expect(positives[0]).toMatchObject({
+            site: "new-edge-proof",
+            start: { name: `line/${cycleIndex}` },
+            target: { name: "hub" },
+        })
+        expect(
+            positives[0]!.path!.map(
+                reference => (reference as { name?: string }).name,
+            ),
+        ).toEqual([
+            `line/${cycleIndex}`,
+            `private/${cycleIndex}`,
+            "echo",
+            "hub",
+        ])
+    })
 })
 
 describe("v1 selector evaluator faults and revocation", () => {

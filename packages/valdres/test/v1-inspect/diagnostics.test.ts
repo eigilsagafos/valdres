@@ -308,6 +308,7 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(operation.totals.cycle.byLane.scratch).toEqual({
             prefixRevalidation: EMPTY_CYCLE_BUCKET,
             newEdgeProof: EMPTY_CYCLE_BUCKET,
+            topologyDeltaProof: EMPTY_CYCLE_BUCKET,
         })
         expect(detailsOfType(report, "cycle-search")).toEqual([])
     })
@@ -438,6 +439,7 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(span.totals.cycle.byLane.hydration).toEqual({
             prefixRevalidation: EMPTY_CYCLE_BUCKET,
             newEdgeProof: EMPTY_CYCLE_BUCKET,
+            topologyDeltaProof: EMPTY_CYCLE_BUCKET,
         })
         expect(detailsOfType(report, "cycle-search")).toEqual([])
     })
@@ -504,6 +506,141 @@ describe("valdres/inspect public structural diagnostics", () => {
             ],
             operationId: operation.operationId,
             commitId: operation.commitId,
+        })
+    })
+
+    test("attributes a negative topology delta proof to the protected prefix", () => {
+        const parentGate = atom(false, { name: "delta-negative/parent-gate" })
+        const changedGate = atom(false, {
+            name: "delta-negative/changed-gate",
+        })
+        const laterGate = atom(false, { name: "delta-negative/later-gate" })
+        const extra = selector(() => 2, { name: "delta-negative/extra" })
+        const changed = selector(get => (get(changedGate) ? get(extra) : 1), {
+            name: "delta-negative/changed",
+        })
+        const newEdge = selector(get => get(changed), {
+            name: "delta-negative/new-edge",
+        })
+        const stable = selector(() => 0, {
+            name: "delta-negative/stable",
+        })
+        const parent = selector(
+            get => {
+                get(stable)
+                return get(parentGate) ? get(newEdge) : 1
+            },
+            { name: "delta-negative/parent" },
+        )
+        const later = selector(get => (get(laterGate) ? 1 : get(changed)), {
+            name: "delta-negative/later",
+        })
+        const { store, inspect } = createInspectableStore()
+
+        expect(store.get(newEdge)).toBe(1)
+        expect(store.get(later)).toBe(1)
+        expect(store.get(parent)).toBe(1)
+        inspect.reset()
+
+        store.txn(transaction => {
+            transaction.set(parentGate, true)
+            transaction.set(changedGate, true)
+            transaction.set(laterGate, true)
+        }, "negative topology delta")
+
+        expect(store.get(parent)).toBe(2)
+        const report = inspect.export()
+        const operation = operationNamed(report, "negative topology delta")
+        const committed = operation.totals.cycle.byLane.committed
+        const proofs = detailsOfType(report, "cycle-search").filter(
+            detail =>
+                detail.operationId === operation.operationId &&
+                detail.site === "topology-delta-proof",
+        )
+
+        expect(committed.topologyDeltaProof.searches).toBeGreaterThan(0)
+        expect(committed.topologyDeltaProof.found).toBe(0)
+        expect(operation.totals.cycle.bySite.topologyDeltaProof).toBe(
+            committed.topologyDeltaProof.searches,
+        )
+        expect(committed.prefixRevalidation).toEqual(EMPTY_CYCLE_BUCKET)
+        expect(proofs).toHaveLength(committed.topologyDeltaProof.searches)
+        expect(
+            proofs.every(
+                proof => proof.acceptedPrefixLength === 2 && !proof.found,
+            ),
+        ).toBe(true)
+    })
+
+    test("records a topology delta screen before a later canonical cycle proof", () => {
+        const parentGate = atom(false, { name: "delta-cycle/parent-gate" })
+        const changedGate = atom(false, { name: "delta-cycle/changed-gate" })
+        const laterGate = atom(false, { name: "delta-cycle/later-gate" })
+        let parent!: Selector<number>
+        let cached!: Selector<number>
+        const changed = selector(get => (get(changedGate) ? get(cached) : 1), {
+            name: "delta-cycle/changed",
+        })
+        const newEdge = selector(get => get(changed), {
+            name: "delta-cycle/new-edge",
+        })
+        const stable = selector(() => 0, {
+            name: "delta-cycle/stable",
+        })
+        parent = selector(
+            get => {
+                get(stable)
+                return get(parentGate) ? get(newEdge) : 1
+            },
+            { name: "delta-cycle/parent" },
+        )
+        cached = selector(get => get(parent), {
+            name: "delta-cycle/cached",
+        })
+        const later = selector(get => (get(laterGate) ? 1 : get(changed)), {
+            name: "delta-cycle/later",
+        })
+        const { store, inspect } = createInspectableStore()
+
+        expect(store.get(newEdge)).toBe(1)
+        expect(store.get(cached)).toBe(1)
+        expect(store.get(later)).toBe(1)
+        inspect.reset()
+
+        store.txn(transaction => {
+            transaction.set(parentGate, true)
+            transaction.set(changedGate, true)
+            transaction.set(laterGate, true)
+        }, "positive topology delta")
+
+        expect(() => store.get(parent)).toThrow(SelectorCircularDependencyError)
+        const report = inspect.export()
+        const operation = operationNamed(report, "positive topology delta")
+        const committed = operation.totals.cycle.byLane.committed
+        const positiveProofs = detailsOfType(report, "cycle-search").filter(
+            detail =>
+                detail.operationId === operation.operationId && detail.found,
+        )
+
+        expect(committed.topologyDeltaProof).toMatchObject({
+            searches: 1,
+            found: 0,
+        })
+        expect(committed.prefixRevalidation).toEqual(EMPTY_CYCLE_BUCKET)
+        expect(committed.newEdgeProof.found).toBe(1)
+        expect(positiveProofs.map(proof => proof.site)).toEqual([
+            "new-edge-proof",
+        ])
+        expect(positiveProofs[0]).toMatchObject({
+            acceptedPrefixLength: 2,
+            start: { kind: "state", name: "delta-cycle/new-edge" },
+            target: { kind: "state", name: "delta-cycle/parent" },
+            path: [
+                { kind: "state", name: "delta-cycle/new-edge" },
+                { kind: "state", name: "delta-cycle/changed" },
+                { kind: "state", name: "delta-cycle/cached" },
+                { kind: "state", name: "delta-cycle/parent" },
+            ],
         })
     })
 
@@ -839,7 +976,12 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(cycle.searches).toBeGreaterThan(0)
         expect(cycle.visits).toBeGreaterThanOrEqual(cycle.searches)
         expect(cycle.found).toBe(0)
-        expect(cycle.byLane.committed.prefixRevalidation.searches).toBe(2)
+        expect(cycle.byLane.committed.prefixRevalidation).toEqual(
+            EMPTY_CYCLE_BUCKET,
+        )
+        expect(cycle.byLane.committed.topologyDeltaProof).toEqual(
+            EMPTY_CYCLE_BUCKET,
+        )
         expect(cycle.byLane.committed.newEdgeProof.searches).toBeGreaterThan(0)
         expect(cycle.byHost).toEqual({
             committed: cycle.searches,
@@ -862,18 +1004,9 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(
             searches.some(detail => referenceName(detail.start) !== undefined),
         ).toBe(true)
-        expect(
-            searches.filter(detail => detail.site === "prefix-revalidation"),
-        ).toHaveLength(2)
-        expect(
-            searches
-                .filter(detail => detail.site === "prefix-revalidation")
-                .every(
-                    detail =>
-                        detail.evaluationGraphVersionDelta !==
-                        detail.evaluationAttributedPublicationDelta,
-                ),
-        ).toBe(true)
+        expect(searches.every(detail => detail.site === "new-edge-proof")).toBe(
+            true,
+        )
         expect(searches.some(detail => detail.site === "new-edge-proof")).toBe(
             true,
         )

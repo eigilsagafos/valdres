@@ -36,6 +36,21 @@ export interface SelectorRecordView<Node, Token extends object> {
     readonly dependencies: readonly SelectorDependencySnapshot<Node, Token>[]
 }
 
+export interface SelectorGraphEdgeAddition<Node> {
+    readonly tail: Node
+    readonly head: Node
+}
+
+/**
+ * Synchronous, bounded observation of exact selector-edge additions. An
+ * undefined read means the host could not retain a complete interval and the
+ * evaluator must use its canonical accepted-prefix proof instead.
+ */
+export interface SelectorGraphObservation<Node> {
+    takeAddedEdges(): readonly SelectorGraphEdgeAddition<Node>[] | undefined
+    close(): void
+}
+
 export type SelectorProposalOutcome<Value = unknown> = SelectorOutcome<Value>
 
 export interface SelectorEvaluationProposal<
@@ -52,30 +67,16 @@ export interface SelectorEvaluationProposal<
     readonly attemptedPrefix: readonly Node[]
 }
 
-export type SelectorCycleSearchSite = 0 | 1
-
-/** Proposal-local coordinator for fully exhausted negative path proofs. */
-export interface SelectorNegativePathMemo<Node> {
-    /** False after bounded learning found no reusable closure. */
-    readonly enabled: boolean
-    /** Starts one physical reachability search. */
-    beginSearch(): void
-    /** Prunes a node covered by a retained fully-negative closure. */
-    hasProvenNoPath(node: Node): boolean
-    /** Publishes the search map only after complete negative exhaustion. */
-    completeNegative(closure: ReadonlyMap<Node, unknown>): void
-}
+export type SelectorCycleSearchSite = 0 | 1 | 2
 
 /**
  * Optional inspectable-Store strategy. Live nodes are valid only for the
  * duration of the call; a recorder must translate them immediately.
  *
- * `negativeMemo`, when supplied, belongs only to one proposal-local prefix
- * revalidation at one exact graph observation. A strategy must call
- * `beginSearch` once, may use `hasProvenNoPath` before expanding each node, and
- * calls `completeNegative` only after the whole search exhausts without a
- * path. It must never publish a partial positive search or carry the memo to
- * another graph observation, prefix batch, or new-edge proof.
+ * Site 0 is the canonical accepted-prefix proof, site 1 is a newly proposed
+ * edge proof, and site 2 is a negative-only replay of an exact committed edge
+ * addition. A positive site-2 result must fall back to site 0 so first-read
+ * blame and the canonical cycle path remain unchanged.
  */
 export type SelectorCycleSearch<Node, Token extends object> = (
     start: Node,
@@ -83,7 +84,8 @@ export type SelectorCycleSearch<Node, Token extends object> = (
     host: SelectorEvaluationHost<Node, Token>,
     session: SelectorEvaluationSession<Node>,
     site: SelectorCycleSearchSite,
-    negativeMemo?: SelectorNegativePathMemo<Node>,
+    /** Length of the active selector prefix whose acyclicity this proves. */
+    acceptedPrefixLength: number,
 ) => readonly Node[] | undefined
 
 export interface SelectorEvaluationStrategy {
@@ -124,6 +126,18 @@ export interface SelectorEvaluationHost<Node, Token extends object> {
      * interleavable record removal/clear.
      */
     getSelectorGraphVersion(): number
+
+    /**
+     * Optional committed-host acceleration. Direct node references live only
+     * while at least one synchronous evaluator is observing the host. Returning
+     * `undefined` certifies that the passed dependency's identity cannot act as
+     * a selector-graph tail for the duration of this evaluation; the evaluator
+     * retries when it accepts a later dependency that can participate in the
+     * selector graph.
+     */
+    beginSelectorGraphObservation?(
+        newlyAcceptedDependency: Node,
+    ): SelectorGraphObservation<Node> | undefined
 
     /** Host-selected prior successful comparison baseline, if one exists. */
     getComparisonBaseline(

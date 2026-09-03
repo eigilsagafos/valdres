@@ -21,7 +21,6 @@ import type {
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
     SelectorEvaluationStrategy,
-    SelectorNegativePathMemo,
     SelectorEvaluationSession,
 } from "./selector-evaluator/types"
 import { evaluateSelector } from "./selector-evaluator/evaluate"
@@ -78,6 +77,8 @@ export interface InspectionCycleBucket {
     readonly searches: number
     readonly visits: number
     readonly maxVisits: number
+    /** Physical searches that reached their target. A conservative topology
+     * delta signal and its canonical prefix fallback may both contribute. */
     readonly found: number
 }
 
@@ -89,6 +90,7 @@ export interface InspectionCycleTotals {
     readonly bySite: Readonly<{
         prefixRevalidation: number
         newEdgeProof: number
+        topologyDeltaProof: number
     }>
     readonly byHost: Readonly<{
         committed: number
@@ -99,14 +101,17 @@ export interface InspectionCycleTotals {
         committed: Readonly<{
             prefixRevalidation: InspectionCycleBucket
             newEdgeProof: InspectionCycleBucket
+            topologyDeltaProof: InspectionCycleBucket
         }>
         scratch: Readonly<{
             prefixRevalidation: InspectionCycleBucket
             newEdgeProof: InspectionCycleBucket
+            topologyDeltaProof: InspectionCycleBucket
         }>
         hydration: Readonly<{
             prefixRevalidation: InspectionCycleBucket
             newEdgeProof: InspectionCycleBucket
+            topologyDeltaProof: InspectionCycleBucket
         }>
     }>
 }
@@ -224,7 +229,10 @@ export type SelectorEvaluationInspectionDetail =
 
 export interface CycleSearchInspectionDetail extends InspectionDetailLinks {
     readonly type: "cycle-search"
-    readonly site: "prefix-revalidation" | "new-edge-proof"
+    readonly site:
+        | "prefix-revalidation"
+        | "new-edge-proof"
+        | "topology-delta-proof"
     readonly host: "committed" | "scratch" | "hydration"
     readonly hostRef: InspectionReference
     readonly start: InspectionJsonValue
@@ -269,7 +277,7 @@ export interface InspectionRecorderFault {
 
 export interface InspectionExport {
     readonly schema: "valdres.inspect"
-    readonly schemaVersion: 1
+    readonly schemaVersion: 2
     readonly recordingId: string
     readonly summaries: readonly InspectionSummary[]
     readonly details: readonly InspectionDetail[]
@@ -378,7 +386,7 @@ export interface InspectionWorkDelta {
         visits?: number
         maxVisits?: number
         found?: number
-        site?: "prefix-revalidation" | "new-edge-proof"
+        site?: "prefix-revalidation" | "new-edge-proof" | "topology-delta-proof"
         host?: "committed" | "scratch" | "hydration"
     }>
 }
@@ -394,10 +402,10 @@ export interface InternalInspectionRecorder {
         host: SelectorEvaluationHost<Node, Token>,
         session: SelectorEvaluationSession<Node>,
         site: SelectorCycleSearchSite,
+        acceptedPrefixLength: number,
         evaluationGraphVersionStart: number,
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
-        negativeMemo?: SelectorNegativePathMemo<Node>,
     ): readonly Node[] | undefined
     reference(
         target: object,
@@ -429,13 +437,14 @@ interface MutableCycleTotals {
     found: number
     prefixRevalidation: number
     newEdgeProof: number
+    topologyDeltaProof: number
     committed: number
     scratch: number
     hydration: number
     lanes: Record<
         "committed" | "scratch" | "hydration",
         Record<
-            "prefixRevalidation" | "newEdgeProof",
+            "prefixRevalidation" | "newEdgeProof" | "topologyDeltaProof",
             {
                 searches: number
                 visits: number
@@ -615,6 +624,7 @@ const createMutableTotals = (): MutableWorkTotals => ({
         found: 0,
         prefixRevalidation: 0,
         newEdgeProof: 0,
+        topologyDeltaProof: 0,
         committed: 0,
         scratch: 0,
         hydration: 0,
@@ -622,14 +632,17 @@ const createMutableTotals = (): MutableWorkTotals => ({
             committed: {
                 prefixRevalidation: createMutableCycleBucket(),
                 newEdgeProof: createMutableCycleBucket(),
+                topologyDeltaProof: createMutableCycleBucket(),
             },
             scratch: {
                 prefixRevalidation: createMutableCycleBucket(),
                 newEdgeProof: createMutableCycleBucket(),
+                topologyDeltaProof: createMutableCycleBucket(),
             },
             hydration: {
                 prefixRevalidation: createMutableCycleBucket(),
                 newEdgeProof: createMutableCycleBucket(),
+                topologyDeltaProof: createMutableCycleBucket(),
             },
         },
     },
@@ -652,6 +665,7 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
             bySite: Object.freeze({
                 prefixRevalidation: totals.cycle.prefixRevalidation,
                 newEdgeProof: totals.cycle.newEdgeProof,
+                topologyDeltaProof: totals.cycle.topologyDeltaProof,
             }),
             byHost: Object.freeze({
                 committed: totals.cycle.committed,
@@ -666,6 +680,9 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
                     newEdgeProof: Object.freeze({
                         ...totals.cycle.lanes.committed.newEdgeProof,
                     }),
+                    topologyDeltaProof: Object.freeze({
+                        ...totals.cycle.lanes.committed.topologyDeltaProof,
+                    }),
                 }),
                 scratch: Object.freeze({
                     prefixRevalidation: Object.freeze({
@@ -674,6 +691,9 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
                     newEdgeProof: Object.freeze({
                         ...totals.cycle.lanes.scratch.newEdgeProof,
                     }),
+                    topologyDeltaProof: Object.freeze({
+                        ...totals.cycle.lanes.scratch.topologyDeltaProof,
+                    }),
                 }),
                 hydration: Object.freeze({
                     prefixRevalidation: Object.freeze({
@@ -681,6 +701,9 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
                     }),
                     newEdgeProof: Object.freeze({
                         ...totals.cycle.lanes.hydration.newEdgeProof,
+                    }),
+                    topologyDeltaProof: Object.freeze({
+                        ...totals.cycle.lanes.hydration.topologyDeltaProof,
                     }),
                 }),
             }),
@@ -1099,6 +1122,8 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                     totals.cycle.prefixRevalidation += cycle.searches ?? 1
                 } else if (cycle.site === "new-edge-proof") {
                     totals.cycle.newEdgeProof += cycle.searches ?? 1
+                } else if (cycle.site === "topology-delta-proof") {
+                    totals.cycle.topologyDeltaProof += cycle.searches ?? 1
                 }
                 if (cycle.host !== undefined) {
                     totals.cycle[cycle.host] += cycle.searches ?? 1
@@ -1107,7 +1132,9 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                     const site =
                         cycle.site === "prefix-revalidation"
                             ? "prefixRevalidation"
-                            : "newEdgeProof"
+                            : cycle.site === "new-edge-proof"
+                              ? "newEdgeProof"
+                              : "topologyDeltaProof"
                     const lane = totals.cycle.lanes[cycle.host][site]
                     lane.searches = addFinite(lane.searches, cycle.searches)
                     lane.visits = addFinite(lane.visits, cycle.visits)
@@ -1316,13 +1343,17 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         host: SelectorEvaluationHost<Node, Token>,
         session: SelectorEvaluationSession<Node>,
         site: SelectorCycleSearchSite,
+        acceptedPrefixLength: number,
         evaluationGraphVersionStart: number,
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
-        negativeMemo?: SelectorNegativePathMemo<Node>,
     ): readonly Node[] | undefined {
-        negativeMemo?.beginSearch()
-        const siteName = site === 0 ? "prefix-revalidation" : "new-edge-proof"
+        const siteName =
+            site === 0
+                ? "prefix-revalidation"
+                : site === 1
+                  ? "new-edge-proof"
+                  : "topology-delta-proof"
         const interval = this.beginInterval({
             type: "cycle-search",
             fields: {
@@ -1340,8 +1371,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 evaluationAttributedPublicationDelta:
                     session.getSelectorGraphPublicationCount(host) -
                     evaluationAttributedPublicationStart,
-                acceptedPrefixLength:
-                    session.getTransientDependencies(host, target)?.length ?? 0,
+                acceptedPrefixLength,
                 parentWasCold,
             },
         })
@@ -1373,8 +1403,6 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 path = Object.freeze(reversed)
                 break
             }
-            if (negativeMemo?.hasProvenNoPath(node)) continue
-
             const transient = session.getTransientDependencies(host, node)
             if (transient) {
                 transientExpansions++
@@ -1419,8 +1447,6 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             }
             if (pending.length > maxFrontier) maxFrontier = pending.length
         }
-
-        if (path === undefined) negativeMemo?.completeNegative(parent)
 
         this.addWork({
             cycle: {
@@ -1503,7 +1529,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const detailBounds = retainedBounds(details)
         return Object.freeze({
             schema: "valdres.inspect" as const,
-            schemaVersion: 1 as const,
+            schemaVersion: 2 as const,
             recordingId: this.#recordingId,
             summaries: Object.freeze(summaries),
             details: Object.freeze(details),
@@ -1897,7 +1923,7 @@ const createStoreTrace = (
             cycleHost,
             cycleSession,
             site,
-            negativeMemo,
+            acceptedPrefixLength,
         ) =>
             recorder.findDependencyPath(
                 hostKind,
@@ -1907,10 +1933,10 @@ const createStoreTrace = (
                 cycleHost,
                 cycleSession,
                 site,
+                acceptedPrefixLength,
                 graphVersionStart,
                 attributedPublicationStart,
                 previousDependencies === undefined,
-                negativeMemo,
             )
         try {
             const proposal = evaluateSelector(

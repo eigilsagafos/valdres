@@ -4,6 +4,8 @@ import type {
     SelectorDependencySnapshot,
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
+    SelectorGraphEdgeAddition,
+    SelectorGraphObservation,
     SelectorRecordView,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
@@ -64,6 +66,11 @@ interface SelectorRecord {
         | Readonly<{ value: unknown; token: OutcomeToken }>
         | undefined
 }
+
+const MAX_OBSERVED_SELECTOR_EDGE_ADDITIONS = 4_096
+const EMPTY_SELECTOR_EDGE_ADDITIONS = Object.freeze(
+    [],
+) as readonly SelectorGraphEdgeAddition<AnyState>[]
 
 export interface AtomViewRecord {
     readonly scope: StoreScopeNode
@@ -185,6 +192,11 @@ export class StoreScopeNode
     #reverseEdges = new WeakMap<AnyState, WeakHandleSet<AnySelector>>()
     #dirtySelectors = new WeakSet<AnySelector>()
     #selectorGraphVersion = 0
+    #selectorGraphObserverCount = 0
+    #observedSelectorEdgeAdditions:
+        | SelectorGraphEdgeAddition<AnyState>[]
+        | undefined
+    #selectorGraphObservationIncomplete = false
     #facade: object | undefined
     #status: "live" | "disposing" | "disposed" = "live"
 
@@ -336,6 +348,8 @@ export class StoreScopeNode
         this.#selectorDependencyNodes = undefined
         this.#reverseEdges = new WeakMap()
         this.#dirtySelectors = new WeakSet()
+        this.#selectorGraphVersion++
+        this.#invalidateSelectorGraphObservation()
     }
 
     serve(
@@ -433,6 +447,49 @@ export class StoreScopeNode
         return this.#selectorGraphVersion
     }
 
+    beginSelectorGraphObservation(
+        newlyAcceptedDependency: AnyState,
+    ): SelectorGraphObservation<AnyState> | undefined {
+        if (
+            !this.coordinator.runtimeDomain.selectors.has(
+                newlyAcceptedDependency,
+            )
+        ) {
+            return undefined
+        }
+        if (this.#selectorGraphObserverCount === 0) {
+            this.#observedSelectorEdgeAdditions = []
+            this.#selectorGraphObservationIncomplete = false
+        }
+        this.#selectorGraphObserverCount++
+        let cursor = this.#observedSelectorEdgeAdditions?.length ?? 0
+        let closed = false
+
+        return Object.freeze({
+            takeAddedEdges: () => {
+                if (closed || this.#selectorGraphObservationIncomplete) {
+                    return undefined
+                }
+                const additions = this.#observedSelectorEdgeAdditions
+                if (additions === undefined) return undefined
+                if (cursor === additions.length) {
+                    return EMPTY_SELECTOR_EDGE_ADDITIONS
+                }
+                const result = Object.freeze(additions.slice(cursor))
+                cursor = additions.length
+                return result
+            },
+            close: () => {
+                if (closed) return
+                closed = true
+                this.#selectorGraphObserverCount--
+                if (this.#selectorGraphObserverCount !== 0) return
+                this.#observedSelectorEdgeAdditions = undefined
+                this.#selectorGraphObservationIncomplete = false
+            },
+        })
+    }
+
     getComparisonBaseline(
         node: AnyState,
     ): SelectorComparisonBaseline<OutcomeToken> | undefined {
@@ -481,11 +538,21 @@ export class StoreScopeNode
             previous?.dependencies ?? EMPTY_DEPENDENCIES,
             proposal.dependencies,
         )
+        const addedSelectorEdges = topologyChanged
+            ? this.#collectObservedSelectorEdgeAdditions(
+                  selector,
+                  previous?.dependencies ?? EMPTY_DEPENDENCIES,
+                  proposal.dependencies,
+              )
+            : undefined
         if (topologyChanged) this.#selectorDependencyNodes?.delete(selector)
         this.#selectorGraphVersion++
         session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(selector, record)
         this.#dirtySelectors.delete(selector)
+        if (addedSelectorEdges !== undefined) {
+            this.#appendObservedSelectorEdgeAdditions(addedSelectorEdges)
+        }
 
         if (
             previous !== undefined &&
@@ -534,6 +601,71 @@ export class StoreScopeNode
             dependents.add(selector)
         }
         return true
+    }
+
+    #collectObservedSelectorEdgeAdditions(
+        selector: AnySelector,
+        previous: readonly SelectorDependencySnapshot<AnyState, OutcomeToken>[],
+        next: readonly SelectorDependencySnapshot<AnyState, OutcomeToken>[],
+    ): SelectorGraphEdgeAddition<AnyState>[] | undefined {
+        if (
+            this.#selectorGraphObserverCount === 0 ||
+            this.#selectorGraphObservationIncomplete
+        ) {
+            return undefined
+        }
+        const observed = this.#observedSelectorEdgeAdditions
+        if (observed === undefined) {
+            this.#invalidateSelectorGraphObservation()
+            return undefined
+        }
+        const remainingCapacity =
+            MAX_OBSERVED_SELECTOR_EDGE_ADDITIONS - observed.length
+        const selectors = this.coordinator.runtimeDomain.selectors
+        const previousSelectorNodes = new Set<AnyState>()
+        for (const dependency of previous) {
+            if (selectors.has(dependency.node)) {
+                previousSelectorNodes.add(dependency.node)
+            }
+        }
+        const added: SelectorGraphEdgeAddition<AnyState>[] = []
+        for (const dependency of next) {
+            if (
+                selectors.has(dependency.node) &&
+                !previousSelectorNodes.has(dependency.node)
+            ) {
+                added.push(
+                    Object.freeze({ tail: selector, head: dependency.node }),
+                )
+                if (added.length > remainingCapacity) {
+                    this.#invalidateSelectorGraphObservation()
+                    return undefined
+                }
+            }
+        }
+        return added
+    }
+
+    #appendObservedSelectorEdgeAdditions(
+        additions: readonly SelectorGraphEdgeAddition<AnyState>[],
+    ): void {
+        if (additions.length === 0) return
+        const observed = this.#observedSelectorEdgeAdditions
+        if (
+            observed === undefined ||
+            observed.length + additions.length >
+                MAX_OBSERVED_SELECTOR_EDGE_ADDITIONS
+        ) {
+            this.#invalidateSelectorGraphObservation()
+            return
+        }
+        observed.push(...additions)
+    }
+
+    #invalidateSelectorGraphObservation(): void {
+        if (this.#selectorGraphObserverCount === 0) return
+        this.#observedSelectorEdgeAdditions = []
+        this.#selectorGraphObservationIncomplete = true
     }
 
     #weakRoutes<Value extends object>(): WeakHandleSet<Value> {
