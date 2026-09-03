@@ -79,6 +79,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     #observationIncomplete = false
     graphObservationBegins = 0
     graphObservationCloses = 0
+    graphObservationTakes = 0
 
     constructor(
         readonly mode: HostMode = "persistent-pre",
@@ -312,6 +313,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
         let closed = false
         return Object.freeze({
             takeAddedEdges: () => {
+                this.graphObservationTakes++
                 if (closed || this.#observationIncomplete) return undefined
                 const observed = this.#observedEdges
                 if (observed === undefined) return undefined
@@ -2984,11 +2986,45 @@ describe("v1 selector evaluator cycles", () => {
             selectorEvaluations:
                 2 * graph.width + graph.firstDepth + graph.secondDepth + 3,
             proposedTopologyChanges: 1,
+            proposedTopologyIdentical: 902,
         })
         expect(operation.totals.cycle.found).toBe(0)
-        expect(operation.totals.cycle.bySite.prefixRevalidation).toBe(0)
+        expect(operation.totals.cycle.bySite).toEqual({
+            prefixRevalidation: 0,
+            newEdgeProof: 201,
+            topologyDeltaProof: 0,
+        })
+        expect(operation.totals.cycle.byHost).toEqual({
+            committed: 201,
+            scratch: 0,
+            hydration: 0,
+        })
         expect(operation.totals.cycle.searches).toBe(201)
-        expect(operation.totals.cycle.visits).toBe(90_501)
+        // Each cold child publication advances the graph, but its exact edge
+        // additions do not escape the retained negative closure. A2 carries
+        // that proof across versions instead of restarting the shared walk.
+        expect(operation.totals.cycle.visits).toBe(1_599)
+        expect(operation.totals.cycle.maxVisits).toBe(452)
+        expect(operation.totals.cycle.newEdgeProofMemo).toMatchObject({
+            observing: 3,
+            consultedPruned: 198,
+            mapProbes: 396,
+            prunedNodes: 198,
+            resets: { graphVersion: 0 },
+            seeds: {
+                initial: 1,
+                activationReplacement: 1,
+                hitDerived: 198,
+            },
+            retained: { maxEntries: 455 },
+        })
+        const searches = report.details.filter(
+            (detail): detail is CycleSearchInspectionDetail =>
+                detail.type === "cycle-search",
+        )
+        expect(searches.filter(search => search.visits === 101)).toHaveLength(1)
+        expect(searches.filter(search => search.visits === 452)).toHaveLength(2)
+        expect(searches.filter(search => search.visits === 3)).toHaveLength(198)
     })
 
     test("passively learns proof one for a warm narrow large-terminal-terminal-large sequence", () => {
@@ -3608,7 +3644,492 @@ describe("v1 selector evaluator cycles", () => {
         ])
     })
 
-    test("invalidates warm negative anchors on every graph-version change", () => {
+    test("carries one independently closed anchor across an exact safe graph addition", () => {
+        const run = (
+            inspected: boolean,
+            mutation: "outside" | "inside",
+            maxObservedEdges = 4_096,
+            publicationSession: "foreign" | "same" = "foreign",
+            outsideAdditions = 1,
+        ) => {
+            const host = new TestHost("persistent-pre", {
+                maxObservedEdges,
+            })
+            const depth = 40
+            host.setLeaf("leaf", 1)
+            for (let index = depth - 1; index >= 0; index--) {
+                host.define({
+                    node: `shared-${index}`,
+                    get: get =>
+                        get(
+                            index + 1 === depth
+                                ? "leaf"
+                                : `shared-${index + 1}`,
+                        ),
+                })
+            }
+            expect(valueOf(host.read<number>("shared-0"))).toBe(1)
+            for (const root of ["root-1", "root-2"]) {
+                host.define({ node: root, get: get => get("shared-0") })
+                expect(valueOf(host.read<number>(root))).toBe(1)
+            }
+            for (const terminal of ["warm-a", "warm-b", "trigger"]) {
+                host.define({ node: terminal, get: get => get("leaf") })
+                expect(valueOf(host.read<number>(terminal))).toBe(1)
+            }
+            const unrelated = Array.from(
+                { length: outsideAdditions },
+                (_, index) =>
+                    Object.freeze({
+                        tail: `unrelated-${index}`,
+                        head: `unrelated-child-${index}`,
+                    }),
+            )
+            for (const edge of unrelated) {
+                host.define({ node: edge.head, get: get => get("leaf") })
+                expect(valueOf(host.read<number>(edge.head))).toBe(1)
+                host.define({ node: edge.tail, get: get => get("leaf") })
+                expect(valueOf(host.read<number>(edge.tail))).toBe(1)
+            }
+
+            host.define({
+                node: "parent",
+                get: get => {
+                    get("warm-a")
+                    get("warm-b")
+                    get("trigger")
+                    return 1
+                },
+            })
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+            const setup = inspected ? createInspectionRecorder() : undefined
+            if (setup !== undefined) {
+                const hostRef = setup.recorder.reference(host, "scope")
+                host.cycleTrace = (
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    acceptedPrefixLength,
+                    newEdgeProofMemo,
+                ) =>
+                    setup.recorder.findDependencyPath(
+                        "committed",
+                        hostRef,
+                        start,
+                        target,
+                        cycleHost,
+                        session,
+                        site,
+                        acceptedPrefixLength,
+                        cycleHost.getSelectorGraphVersion(),
+                        session.getSelectorGraphPublicationCount(cycleHost),
+                        false,
+                        newEdgeProofMemo,
+                    )
+            }
+            let graphVersionResets = 0
+            let mapProbes = 0
+            host.newEdgeProofDiagnostics = {
+                admissionSkipped: () => {},
+                disabled: () => {},
+                graphVersionReset: () => graphVersionResets++,
+                recordMapProbes: count => (mapProbes += count),
+                completeSearch: (
+                    _classification,
+                    _seed,
+                    _disable,
+                    searchMapProbes = 0,
+                ) => (mapProbes += searchMapProbes),
+            }
+            let published = false
+            host.setServeEffect("trigger", session => {
+                if (published) return
+                published = true
+                if (mutation === "outside") {
+                    for (const edge of unrelated) {
+                        host.define({
+                            node: edge.tail,
+                            get: get => get(edge.head),
+                        })
+                        const served =
+                            publicationSession === "same"
+                                ? host.serve(edge.tail, session)
+                                : host.read<number>(edge.tail)
+                        expect(valueOf(served)).toBe(1)
+                    }
+                } else {
+                    host.define({
+                        node: "shared-0",
+                        get: get =>
+                            get<number>("shared-1") + get<number>("shared-2"),
+                    })
+                    expect(valueOf(host.read<number>("shared-0"))).toBe(2)
+                }
+            })
+            host.define({
+                node: "parent",
+                get: get => {
+                    get("root-1")
+                    get("trigger")
+                    get("root-2")
+                    return 1
+                },
+            })
+            host.graphObservationTakes = 0
+
+            const served = host.read<number>("parent")
+            const details = setup?.inspect.export().details ?? []
+            const searches = details.filter(
+                (detail): detail is CycleSearchInspectionDetail =>
+                    detail.type === "cycle-search" &&
+                    detail.site === "new-edge-proof" &&
+                    detail.target === "parent",
+            )
+            return Object.freeze({
+                value: valueOf(served),
+                dependencies: host.records
+                    .get("parent")!
+                    .dependencies.map(dependency => dependency.node),
+                graphVersionResets,
+                graphObservationTakes: host.graphObservationTakes,
+                mapProbes,
+                searches,
+                topologyDeltaSearches: details.filter(
+                    detail =>
+                        detail.type === "cycle-search" &&
+                        detail.site === "topology-delta-proof",
+                ).length,
+            })
+        }
+
+        const fast = run(false, "outside")
+        const measured = run(true, "outside")
+
+        expect(measured.value).toBe(fast.value)
+        expect(measured.dependencies).toEqual(fast.dependencies)
+        expect(measured.dependencies).toEqual(["root-1", "trigger", "root-2"])
+        expect(fast.graphVersionResets).toBe(0)
+        expect(measured.graphVersionResets).toBe(0)
+        expect(fast.graphObservationTakes).toBe(1)
+        expect(measured.graphObservationTakes).toBe(1)
+        expect(measured.searches.map(search => search.visits)).toEqual([
+            41, 1, 2,
+        ])
+        expect(measured.topologyDeltaSearches).toBe(1)
+        // One exact-delta tail check plus the root/shared cache hit.
+        expect(measured.mapProbes).toBe(3)
+
+        const sameSessionFast = run(false, "outside", 4_096, "same")
+        const sameSessionMeasured = run(true, "outside", 4_096, "same")
+        expect(sameSessionMeasured.value).toBe(sameSessionFast.value)
+        expect(sameSessionMeasured.dependencies).toEqual(
+            sameSessionFast.dependencies,
+        )
+        expect(sameSessionMeasured.graphVersionResets).toBe(0)
+        expect(sameSessionMeasured.graphObservationTakes).toBe(1)
+        expect(
+            sameSessionMeasured.searches.map(search => search.visits),
+        ).toEqual([41, 1, 2])
+        expect(sameSessionMeasured.topologyDeltaSearches).toBe(0)
+        expect(sameSessionMeasured.mapProbes).toBe(3)
+
+        const internalFast = run(false, "inside")
+        const internalMeasured = run(true, "inside")
+        expect(internalMeasured.value).toBe(internalFast.value)
+        expect(internalMeasured.dependencies).toEqual(internalFast.dependencies)
+        expect(internalMeasured.graphVersionResets).toBe(0)
+        expect(internalMeasured.graphObservationTakes).toBe(1)
+        expect(internalMeasured.searches.map(search => search.visits)).toEqual([
+            41, 1, 2,
+        ])
+        // An internal addition checks both its tail and head before the hit.
+        expect(internalMeasured.mapProbes).toBe(4)
+
+        const incompleteFast = run(false, "outside", 0)
+        const incompleteMeasured = run(true, "outside", 0)
+        expect(incompleteMeasured.value).toBe(incompleteFast.value)
+        expect(incompleteMeasured.dependencies).toEqual(
+            incompleteFast.dependencies,
+        )
+        expect(incompleteMeasured.graphVersionResets).toBe(1)
+        expect(incompleteMeasured.graphObservationTakes).toBe(1)
+        expect(
+            incompleteMeasured.searches.map(search => search.visits),
+        ).toEqual([41, 1, 41])
+        expect(incompleteMeasured.mapProbes).toBe(0)
+
+        const exhaustedFast = run(false, "outside", 4_096, "foreign", 82)
+        const exhaustedMeasured = run(true, "outside", 4_096, "foreign", 82)
+        expect(exhaustedMeasured.value).toBe(exhaustedFast.value)
+        expect(exhaustedMeasured.dependencies).toEqual(
+            exhaustedFast.dependencies,
+        )
+        expect(exhaustedMeasured.graphVersionResets).toBe(1)
+        expect(exhaustedMeasured.searches.map(search => search.visits)).toEqual(
+            [41, 1, 41],
+        )
+        // Validation stops after twice the 41-entry anchor rather than
+        // inheriting the observer's much larger 4,096-edge capacity.
+        expect(exhaustedMeasured.mapProbes).toBe(82)
+    })
+
+    test("keeps cross-version validation inside one cumulative probe budget", () => {
+        const run = (inspected: boolean) => {
+            const host = new TestHost()
+            host.setLeaf("leaf", 1)
+            for (let index = 30; index >= 0; index--) {
+                host.define({
+                    node: `shared-${index}`,
+                    get: get =>
+                        get(index === 30 ? "leaf" : `shared-${index + 1}`),
+                })
+            }
+            expect(valueOf(host.read<number>("shared-0"))).toBe(1)
+            for (const root of ["root-1", "root-2"]) {
+                host.define({ node: root, get: get => get("shared-0") })
+                expect(valueOf(host.read<number>(root))).toBe(1)
+            }
+            for (const terminal of [
+                "warm-a",
+                "warm-b",
+                "terminal-c",
+                "trigger-a",
+                "trigger-b",
+            ]) {
+                host.define({ node: terminal, get: get => get("leaf") })
+                expect(valueOf(host.read<number>(terminal))).toBe(1)
+            }
+            const additions = Array.from({ length: 65 }, (_, index) =>
+                Object.freeze({
+                    tail: `change-${index}`,
+                    head: `change-child-${index}`,
+                }),
+            )
+            for (const edge of additions) {
+                host.define({ node: edge.head, get: get => get("leaf") })
+                expect(valueOf(host.read<number>(edge.head))).toBe(1)
+                host.define({ node: edge.tail, get: get => get("leaf") })
+                expect(valueOf(host.read<number>(edge.tail))).toBe(1)
+            }
+            host.define({
+                node: "parent",
+                get: get => get("warm-a"),
+            })
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+            const setup = inspected ? createInspectionRecorder() : undefined
+            if (setup !== undefined) {
+                const hostRef = setup.recorder.reference(host, "scope")
+                host.cycleTrace = (
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    acceptedPrefixLength,
+                    newEdgeProofMemo,
+                ) =>
+                    setup.recorder.findDependencyPath(
+                        "committed",
+                        hostRef,
+                        start,
+                        target,
+                        cycleHost,
+                        session,
+                        site,
+                        acceptedPrefixLength,
+                        cycleHost.getSelectorGraphVersion(),
+                        session.getSelectorGraphPublicationCount(cycleHost),
+                        false,
+                        newEdgeProofMemo,
+                    )
+            }
+            let graphVersionResets = 0
+            let mapProbes = 0
+            host.newEdgeProofDiagnostics = {
+                admissionSkipped: () => {},
+                disabled: () => {},
+                graphVersionReset: () => graphVersionResets++,
+                recordMapProbes: count => (mapProbes += count),
+                completeSearch: (
+                    _classification,
+                    _seed,
+                    _disable,
+                    searchMapProbes = 0,
+                ) => (mapProbes += searchMapProbes),
+            }
+            let publishedA = false
+            let publishedB = false
+            const publish = (
+                edges: readonly Readonly<{ tail: string; head: string }>[],
+                session: SelectorEvaluationSession<Node>,
+            ): void => {
+                for (const edge of edges) {
+                    host.define({ node: edge.tail, get: get => get(edge.head) })
+                    expect(valueOf(host.serve(edge.tail, session))).toBe(1)
+                }
+            }
+            host.setServeEffect("trigger-a", session => {
+                if (publishedA) return
+                publishedA = true
+                publish(additions.slice(0, 32), session)
+            })
+            host.setServeEffect("trigger-b", session => {
+                if (publishedB) return
+                publishedB = true
+                publish(additions.slice(32), session)
+            })
+            host.define({
+                node: "parent",
+                get: get => {
+                    get("root-1")
+                    get("warm-b")
+                    get("terminal-c")
+                    get("trigger-a")
+                    get("trigger-b")
+                    get("root-2")
+                    return 1
+                },
+            })
+            host.graphObservationTakes = 0
+
+            const served = host.read<number>("parent")
+            const searches =
+                setup?.inspect
+                    .export()
+                    .details.filter(
+                        (detail): detail is CycleSearchInspectionDetail =>
+                            detail.type === "cycle-search" &&
+                            detail.site === "new-edge-proof" &&
+                            detail.target === "parent",
+                    ) ?? []
+            return Object.freeze({
+                value: valueOf(served),
+                graphVersionResets,
+                graphObservationTakes: host.graphObservationTakes,
+                mapProbes,
+                searches,
+            })
+        }
+
+        const fast = run(false)
+        const measured = run(true)
+
+        expect(measured.value).toBe(fast.value)
+        expect(measured.graphVersionResets).toBe(1)
+        expect(measured.graphObservationTakes).toBe(2)
+        expect(measured.searches.map(search => search.visits)).toEqual([
+            32, 1, 1, 1, 1, 32,
+        ])
+        // The first transition occurs exactly between passive proof three and
+        // active proof four. The 32-entry anchor grants 64 checks total;
+        // neither beginSearch nor the second transition may replenish them,
+        // and probe 65 is never attempted.
+        expect(measured.mapProbes).toBe(64)
+    })
+
+    test("carries the broader independently closed second anchor", () => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+        for (const node of [
+            "warm-a",
+            "warm-b",
+            "trigger",
+            "root-a",
+            "root-b",
+            "root-c",
+            "unrelated",
+        ]) {
+            host.define({ node, get: get => get("leaf") })
+            expect(valueOf(host.read<number>(node))).toBe(1)
+        }
+        host.define({
+            node: "parent",
+            get: get => {
+                get("warm-a")
+                get("warm-b")
+                get("trigger")
+                return 1
+            },
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        const makeClosure = (
+            prefix: string,
+            size: number,
+        ): ReadonlyMap<Node, unknown> => {
+            const closure = new Map<Node, unknown>()
+            for (let index = 0; index < size; index++) {
+                closure.set(`${prefix}-${index}`, undefined)
+            }
+            return closure
+        }
+        const closures = [
+            makeClosure("small", 32),
+            makeClosure("large", 64),
+            new Map<Node, unknown>([["trigger", undefined]]),
+            new Map<Node, unknown>([["root-c", undefined]]),
+        ]
+        let parentProof = 0
+        host.cycleTrace = (
+            _start,
+            target,
+            _cycleHost,
+            _session,
+            site,
+            _acceptedPrefixLength,
+            newEdgeProofMemo,
+        ) => {
+            if (site !== 1 || target !== "parent") return undefined
+            expect(newEdgeProofMemo).toBeDefined()
+            const consult = newEdgeProofMemo!.beginSearch()
+            if (parentProof === 0) expect(consult).toBe(false)
+            else expect(consult).toBe(true)
+            if (parentProof === 3) {
+                expect(newEdgeProofMemo!.hasProvenNoPath("large-0")).toBe(true)
+                expect(newEdgeProofMemo!.hasProvenNoPath("small-0")).toBe(false)
+            }
+            newEdgeProofMemo!.completeNegative(closures[parentProof]!)
+            parentProof++
+            return undefined
+        }
+        let published = false
+        host.setServeEffect("trigger", () => {
+            if (published) return
+            published = true
+            // A topology-identical publication produces a complete empty
+            // interval, which is sufficient to carry the broader closure.
+            host.define({ node: "unrelated", get: get => get("leaf") })
+            expect(valueOf(host.read<number>("unrelated"))).toBe(1)
+        })
+        let graphVersionResets = 0
+        host.newEdgeProofDiagnostics = {
+            admissionSkipped: () => {},
+            disabled: () => {},
+            graphVersionReset: () => graphVersionResets++,
+            completeSearch: () => {},
+        }
+        host.define({
+            node: "parent",
+            get: get => {
+                get("root-a")
+                get("root-b")
+                get("trigger")
+                get("root-c")
+                return 1
+            },
+        })
+
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(parentProof).toBe(4)
+        expect(graphVersionResets).toBe(0)
+        expect(host.graphObservationTakes).toBe(1)
+    })
+
+    test("invalidates a warm negative anchor when an added edge escapes it", () => {
         const run = (inspected: boolean) => {
             const host = new TestHost()
             const depth = 40
@@ -3744,6 +4265,143 @@ describe("v1 selector evaluator cycles", () => {
                 target: "parent",
                 path: ["root-3", "shared-0", "back", "parent"],
             }),
+        ])
+    })
+
+    test("never carries hit-derived approach maps without a closed anchor", () => {
+        const run = (inspected: boolean) => {
+            const host = new TestHost()
+            host.setLeaf("leaf", 1)
+            const defineChain = (
+                prefix: string,
+                depth: number,
+                tail: string,
+            ): void => {
+                for (let index = depth - 1; index >= 0; index--) {
+                    host.define({
+                        node: `${prefix}-${index}`,
+                        get: get =>
+                            get(
+                                index + 1 === depth
+                                    ? tail
+                                    : `${prefix}-${index + 1}`,
+                            ),
+                    })
+                }
+                expect(valueOf(host.read<number>(`${prefix}-0`))).toBe(1)
+            }
+            defineChain("seed", 32, "leaf")
+            defineChain("approach-a", 40, "seed-0")
+            defineChain("approach-b", 50, "approach-a-0")
+            host.define({ node: "approach-c", get: get => get("approach-b-0") })
+            expect(valueOf(host.read<number>("approach-c"))).toBe(1)
+
+            for (const terminal of [
+                "warm-a",
+                "warm-b",
+                "trigger",
+                "unrelated-child",
+            ]) {
+                host.define({ node: terminal, get: get => get("leaf") })
+                expect(valueOf(host.read<number>(terminal))).toBe(1)
+            }
+            host.define({ node: "unrelated", get: get => get("leaf") })
+            expect(valueOf(host.read<number>("unrelated"))).toBe(1)
+            host.define({
+                node: "parent",
+                get: get => {
+                    get("warm-a")
+                    get("warm-b")
+                    get("trigger")
+                    return 1
+                },
+            })
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+            const setup = inspected ? createInspectionRecorder() : undefined
+            if (setup !== undefined) {
+                const hostRef = setup.recorder.reference(host, "scope")
+                host.cycleTrace = (
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    acceptedPrefixLength,
+                    newEdgeProofMemo,
+                ) =>
+                    setup.recorder.findDependencyPath(
+                        "committed",
+                        hostRef,
+                        start,
+                        target,
+                        cycleHost,
+                        session,
+                        site,
+                        acceptedPrefixLength,
+                        cycleHost.getSelectorGraphVersion(),
+                        session.getSelectorGraphPublicationCount(cycleHost),
+                        false,
+                        newEdgeProofMemo,
+                    )
+            }
+            let graphVersionResets = 0
+            host.newEdgeProofDiagnostics = {
+                admissionSkipped: () => {},
+                disabled: () => {},
+                graphVersionReset: () => graphVersionResets++,
+                completeSearch: () => {},
+            }
+            let published = false
+            host.setServeEffect("trigger", () => {
+                if (published) return
+                published = true
+                host.define({
+                    node: "unrelated",
+                    get: get => get("unrelated-child"),
+                })
+                expect(valueOf(host.read<number>("unrelated"))).toBe(1)
+            })
+            host.define({
+                node: "parent",
+                get: get => {
+                    get("seed-0")
+                    get("approach-a-0")
+                    get("approach-b-0")
+                    get("trigger")
+                    get("approach-c")
+                    return 1
+                },
+            })
+
+            const served = host.read<number>("parent")
+            const searches =
+                setup?.inspect
+                    .export()
+                    .details.filter(
+                        (detail): detail is CycleSearchInspectionDetail =>
+                            detail.type === "cycle-search" &&
+                            detail.site === "new-edge-proof" &&
+                            detail.target === "parent",
+                    ) ?? []
+            return Object.freeze({
+                value: valueOf(served),
+                dependencies: host.records
+                    .get("parent")!
+                    .dependencies.map(dependency => dependency.node),
+                graphVersionResets,
+                searches,
+            })
+        }
+
+        const fast = run(false)
+        const measured = run(true)
+
+        expect(measured.value).toBe(fast.value)
+        expect(measured.dependencies).toEqual(fast.dependencies)
+        expect(measured.graphVersionResets).toBe(1)
+        expect(measured.searches.map(search => search.visits)).toEqual([
+            32, 41, 51, 1, 123,
         ])
     })
 

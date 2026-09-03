@@ -93,6 +93,7 @@ export type InspectionNewEdgeProofMemoTotals = Readonly<{
     readonly consultedNoPrune: number
     readonly consultedPruned: number
     readonly disabled: number
+    /** Retained-map membership checks in DFS and exact-delta validation. */
     readonly mapProbes: number
     readonly prunedNodes: number
     readonly resets: Readonly<{
@@ -759,6 +760,12 @@ const createNewEdgeProofDiagnostics = (
             active = true
             totals.graphVersionResets++
             record({ graphVersionResets: 1 })
+        },
+        recordMapProbes(count) {
+            if (count === 0) return
+            active = true
+            totals.mapProbes += count
+            record({ mapProbes: count })
         },
         completeSearch(
             classification: SelectorNewEdgeProofMemoSearchClassification,

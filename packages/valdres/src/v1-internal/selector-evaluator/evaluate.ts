@@ -21,6 +21,7 @@ import type {
     SelectorOutcome,
     SelectorCycleSearch,
     SelectorCycleSearchSite,
+    SelectorGraphEdgeAddition,
     SelectorGraphObservation,
 } from "./types"
 
@@ -114,6 +115,9 @@ const NEW_EDGE_MEMO_MAX_MISS_WORK = 2 * NEW_EDGE_MEMO_MIN_SEED_SIZE
 interface ResettableNewEdgeProofMemo<Node>
     extends SelectorNewEdgeProofMemo<Node> {
     reset(): void
+    advanceGraphVersion(
+        addedEdges: readonly SelectorGraphEdgeAddition<Node>[] | undefined,
+    ): boolean
 }
 
 class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
@@ -122,6 +126,8 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
     searches = 0
     declare first: ReadonlyMap<Node, unknown> | undefined
     declare second: ReadonlyMap<Node, unknown> | undefined
+    declare firstIndependentlyClosed: boolean | undefined
+    declare secondIndependentlyClosed: boolean | undefined
     declare hits: number | undefined
     declare missWork: number | undefined
     declare locked: boolean | undefined
@@ -165,7 +171,8 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
         if (
             consult &&
             this.passiveOrigin === true &&
-            this.searches === this.passiveSearches + 1
+            this.searches === this.passiveSearches + 1 &&
+            this.passiveProbeBudget === undefined
         ) {
             this.passiveProbeBudget = Math.min(
                 NEW_EDGE_MEMO_MAX_ANCHOR_SIZE,
@@ -179,13 +186,17 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
         if (!this.enabled) return false
         const first = this.first
         if (first !== undefined) {
+            const remaining = this.passiveProbeBudget
+            if (remaining === 0) {
+                this.disable("passive-probe-budget")
+                return false
+            }
             if (first.has(node)) {
                 this.hits = (this.hits ?? 0) | 1
                 this.passiveOrigin = undefined
                 this.passiveProbeBudget = undefined
                 return true
             }
-            const remaining = this.passiveProbeBudget
             if (remaining !== undefined) {
                 this.passiveProbeBudget = remaining - 1
                 if (remaining === 1) {
@@ -197,13 +208,17 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
 
         const second = this.second
         if (second !== undefined) {
+            const remaining = this.passiveProbeBudget
+            if (remaining === 0) {
+                this.disable("passive-probe-budget")
+                return false
+            }
             if (second.has(node)) {
                 this.hits = (this.hits ?? 0) | 2
                 this.passiveOrigin = undefined
                 this.passiveProbeBudget = undefined
                 return true
             }
-            const remaining = this.passiveProbeBudget
             if (remaining !== undefined) {
                 this.passiveProbeBudget = remaining - 1
                 if (remaining === 1) {
@@ -219,6 +234,11 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
         if (!this.enabled) return false
         const first = this.first
         if (first !== undefined) {
+            const remaining = this.passiveProbeBudget
+            if (remaining === 0) {
+                this.disable("passive-probe-budget")
+                return false
+            }
             this.mapProbes = (this.mapProbes ?? 0) + 1
             if (first.has(node)) {
                 this.hits = (this.hits ?? 0) | 1
@@ -227,7 +247,6 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
                 this.passiveProbeBudget = undefined
                 return true
             }
-            const remaining = this.passiveProbeBudget
             if (remaining !== undefined) {
                 this.passiveProbeBudget = remaining - 1
                 if (remaining === 1) {
@@ -239,6 +258,11 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
 
         const second = this.second
         if (second !== undefined) {
+            const remaining = this.passiveProbeBudget
+            if (remaining === 0) {
+                this.disable("passive-probe-budget")
+                return false
+            }
             this.mapProbes = (this.mapProbes ?? 0) + 1
             if (second.has(node)) {
                 this.hits = (this.hits ?? 0) | 2
@@ -247,7 +271,6 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
                 this.passiveProbeBudget = undefined
                 return true
             }
-            const remaining = this.passiveProbeBudget
             if (remaining !== undefined) {
                 this.passiveProbeBudget = remaining - 1
                 if (remaining === 1) {
@@ -276,6 +299,7 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
             let seed: SelectorNewEdgeProofMemoSeedReason | undefined
             if (this.searches === 1 && mayRetain) {
                 this.first = closure
+                this.firstIndependentlyClosed = true
                 this.passiveOrigin = true
                 seed = "initial"
             } else if (this.searches === this.passiveSearches && mayRetain) {
@@ -284,6 +308,9 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
                         ? "initial"
                         : "activation-replacement"
                 this.first = closure
+                this.firstIndependentlyClosed = true
+                this.second = undefined
+                this.secondIndependentlyClosed = undefined
                 this.passiveOrigin = undefined
                 this.passiveProbeBudget = undefined
             }
@@ -302,11 +329,17 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
             }
             const priorFirst = this.first
             const priorSecond = this.second
+            const priorFirstIndependentlyClosed =
+                this.firstIndependentlyClosed === true
+            const priorSecondIndependentlyClosed =
+                this.secondIndependentlyClosed === true
             this.first = undefined
             this.second = undefined
-            this.retain(priorFirst)
-            this.retain(priorSecond)
-            const retainedApproach = this.retain(closure)
+            this.firstIndependentlyClosed = undefined
+            this.secondIndependentlyClosed = undefined
+            this.retain(priorFirst, priorFirstIndependentlyClosed)
+            this.retain(priorSecond, priorSecondIndependentlyClosed)
+            const retainedApproach = this.retain(closure, false)
             this.locked = true
             this.missWork = 0
             this.completeDiagnostics(
@@ -325,7 +358,10 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
             closure.size >= NEW_EDGE_MEMO_MIN_SEED_SIZE &&
             closure.size <= NEW_EDGE_MEMO_MAX_ANCHOR_SIZE
         if (this.first === undefined) {
-            if (mayRetain) this.first = closure
+            if (mayRetain) {
+                this.first = closure
+                this.firstIndependentlyClosed = true
+            }
             this.completeDiagnostics(mayRetain ? "initial" : undefined)
             return
         }
@@ -337,6 +373,7 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
             // A second substantial closure receives one following proof to
             // demonstrate overlap even when admission crosses the miss budget.
             this.second = closure
+            this.secondIndependentlyClosed = true
             this.completeDiagnostics("secondary")
             return
         }
@@ -351,9 +388,96 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
         this.completeDiagnostics()
     }
 
+    advanceGraphVersion(
+        addedEdges: readonly SelectorGraphEdgeAddition<Node>[] | undefined,
+    ): boolean {
+        if (!this.enabled || addedEdges === undefined) {
+            this.reset()
+            return false
+        }
+
+        const closedFirst =
+            this.firstIndependentlyClosed === true ? this.first : undefined
+        const closedSecond =
+            this.secondIndependentlyClosed === true ? this.second : undefined
+        const anchor =
+            closedFirst === undefined ||
+            (closedSecond !== undefined && closedSecond.size > closedFirst.size)
+                ? closedSecond
+                : closedFirst
+        if (anchor === undefined) {
+            this.reset()
+            return false
+        }
+
+        // Until a carried anchor proves useful, one cumulative budget bounds
+        // both exact-delta membership checks and speculative DFS probes. A hit
+        // clears it, so a later version transition can start one fresh bounded
+        // trial for the still-local certificate. Safe transitions without an
+        // intervening hit never replenish the budget.
+        if (this.passiveProbeBudget === undefined) {
+            this.passiveOrigin = true
+            this.passiveProbeBudget = Math.min(
+                NEW_EDGE_MEMO_MAX_ANCHOR_SIZE,
+                2 * anchor.size,
+            )
+        }
+        let mapProbes = 0
+        for (const edge of addedEdges) {
+            const tailIsInside = this.hasWithinCrossVersionBudget(
+                anchor,
+                edge.tail,
+            )
+            if (tailIsInside === undefined) {
+                this.diagnostics?.recordMapProbes?.(mapProbes)
+                this.reset()
+                return false
+            }
+            mapProbes++
+            if (!tailIsInside) continue
+            const headIsInside = this.hasWithinCrossVersionBudget(
+                anchor,
+                edge.head,
+            )
+            if (headIsInside === undefined) {
+                this.diagnostics?.recordMapProbes?.(mapProbes)
+                this.reset()
+                return false
+            }
+            mapProbes++
+            if (!headIsInside) {
+                this.diagnostics?.recordMapProbes?.(mapProbes)
+                this.reset()
+                return false
+            }
+        }
+        this.diagnostics?.recordMapProbes?.(mapProbes)
+        if (this.passiveProbeBudget === 0) {
+            this.reset()
+            return false
+        }
+
+        // Hit-derived approach maps are only valid together with the map they
+        // pruned through. Cross-version survival keeps one independently
+        // exhausted, successor-closed map and never extends its lifetime with
+        // partial evidence.
+        this.first = anchor
+        this.firstIndependentlyClosed = true
+        this.second = undefined
+        this.secondIndependentlyClosed = undefined
+        this.hits = undefined
+        this.consultCurrentSearch = undefined
+        this.diagnosticsCompleted = undefined
+        this.mapProbes = undefined
+        this.prunedNodes = undefined
+        return true
+    }
+
     reset(): void {
         this.first = undefined
         this.second = undefined
+        this.firstIndependentlyClosed = undefined
+        this.secondIndependentlyClosed = undefined
         this.hits = undefined
         this.missWork = undefined
         this.locked = undefined
@@ -367,7 +491,10 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
         this.prunedNodes = undefined
     }
 
-    private retain(candidate: ReadonlyMap<Node, unknown> | undefined): boolean {
+    private retain(
+        candidate: ReadonlyMap<Node, unknown> | undefined,
+        independentlyClosed = false,
+    ): boolean {
         if (
             candidate === undefined ||
             candidate.size > NEW_EDGE_MEMO_MAX_ANCHOR_SIZE ||
@@ -377,11 +504,14 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
         }
         if (this.first === undefined || candidate.size > this.first.size) {
             this.second = this.first
+            this.secondIndependentlyClosed = this.firstIndependentlyClosed
             this.first = candidate
+            this.firstIndependentlyClosed = independentlyClosed
             return true
         }
         if (this.second === undefined || candidate.size > this.second.size) {
             this.second = candidate
+            this.secondIndependentlyClosed = independentlyClosed
             return true
         }
         return false
@@ -390,11 +520,24 @@ class NewEdgeProofMemo<Node> implements ResettableNewEdgeProofMemo<Node> {
     private disable(reason: SelectorNewEdgeProofMemoDisableReason): void {
         this.first = undefined
         this.second = undefined
+        this.firstIndependentlyClosed = undefined
+        this.secondIndependentlyClosed = undefined
         this.missWork = undefined
         this.disabled = true
         this.passiveOrigin = undefined
         this.passiveProbeBudget = undefined
         this.completeDiagnostics(undefined, reason)
+    }
+
+    private hasWithinCrossVersionBudget(
+        anchor: ReadonlyMap<Node, unknown>,
+        node: Node,
+    ): boolean | undefined {
+        const remaining = this.passiveProbeBudget
+        if (remaining === undefined || remaining === 0) return undefined
+        const contains = anchor.has(node)
+        this.passiveProbeBudget = remaining - 1
+        return contains
     }
 
     private completeDiagnostics(
@@ -589,29 +732,43 @@ export const evaluateSelector = <Node, Token extends object, Value>(
     let graphObservation: SelectorGraphObservation<Node> | undefined
     let graphObservationStarted = false
     let newEdgeProofMemoVersion = graphVersionAtEntry
-    let newEdgeProofsAtVersion = 0
+    let newEdgeProofsInEpoch = 0
     let newEdgeProofMemo: ResettableNewEdgeProofMemo<Node> | undefined
+
+    const reconcileNewEdgeProofMemoVersion = (
+        graphVersion: number,
+        addedEdges: readonly SelectorGraphEdgeAddition<Node>[] | undefined,
+    ): void => {
+        if (graphVersion === newEdgeProofMemoVersion) return
+        newEdgeProofMemoVersion = graphVersion
+        if (newEdgeProofMemo === undefined) {
+            newEdgeProofsInEpoch = 0
+            return
+        }
+        if (newEdgeProofMemo.advanceGraphVersion(addedEdges)) return
+        newEdgeProofsInEpoch = 0
+        newEdgeProofDiagnostics?.graphVersionReset()
+    }
 
     const getNewEdgeProofMemo = (
         graphVersion: number,
     ): SelectorNewEdgeProofMemo<Node> | undefined => {
         if (graphVersion !== newEdgeProofMemoVersion) {
-            newEdgeProofMemoVersion = graphVersion
-            newEdgeProofsAtVersion = 0
-            if (newEdgeProofMemo !== undefined) {
-                newEdgeProofMemo.reset()
-                newEdgeProofDiagnostics?.graphVersionReset()
-            }
+            // A graph transition normally reconciles through the observation
+            // consumed by revalidateOwnPrefix. Any unexplained mismatch is
+            // incomplete evidence and must fail closed.
+            reconcileNewEdgeProofMemoVersion(graphVersion, undefined)
         }
-        newEdgeProofsAtVersion++
+        newEdgeProofsInEpoch++
         // Warm wide parents activate learning on their first retained-edge
         // re-proof. Warm narrow parents may retain proof one passively because
         // their existing record rules out first-materialization noise. Cold
-        // and warm-zero proposals still wait for three proofs at one exact
-        // graph version, avoiding allocation on singleton paths.
+        // and warm-zero proposals still wait for three proofs in one exact or
+        // delta-certified learning epoch, avoiding allocation on singleton
+        // paths.
         if (
             (currentDependencies?.length ?? 0) === 0 &&
-            newEdgeProofsAtVersion < 3
+            newEdgeProofsInEpoch < 3
         ) {
             newEdgeProofDiagnostics?.admissionSkipped()
             return undefined
@@ -670,11 +827,15 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             // publication cannot add a path from that prefix back here. The
             // selector currently being served is not accepted yet and still
             // receives the ordinary new-edge proof below.
+            reconcileNewEdgeProofMemoVersion(graphVersion, undefined)
             prefixProofVersion = graphVersion
             prefixProofSessionPublications = sessionPublications
             return
         }
         const addedEdges = graphObservation?.takeAddedEdges()
+        // The observation cursor is destructive. Fan this one exact interval
+        // out to both proof systems before either takes an early return.
+        reconcileNewEdgeProofMemoVersion(graphVersion, addedEdges)
         if (onlyAttributed) {
             prefixProofVersion = graphVersion
             prefixProofSessionPublications = sessionPublications

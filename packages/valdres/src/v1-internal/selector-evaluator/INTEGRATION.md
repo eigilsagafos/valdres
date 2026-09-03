@@ -74,8 +74,10 @@ For every supplied `get(dependency)`:
    session. A warm parent's new edge is always proved, including when serving
    that dependency first materializes it. An unaccepted old-direct edge may be
    reused only when no publication occurred since entry. Repeated site-1 proofs
-   for one target may share fully exhausted negative closures only while the
-   host graph version remains exact; any version change clears that evidence.
+   for one target may share fully exhausted negative closures. One independently
+   exhausted, successor-closed closure may survive a graph-version change when
+   the host retained the complete exact addition interval and no added edge
+   leaves that closure. Incomplete evidence or a leaving edge clears it.
 5. Capture its token and edge only when the proposal remains acyclic.
 6. Serve its value or throw its error.
 
@@ -109,6 +111,17 @@ maximum. An over-cap hit-derived approach disables sharing for that graph
 version instead of repeatedly resetting the miss budget. It keeps the two
 broadest layers.
 
+Only a map produced by an independently exhausted search is successor-closed on
+its own. A hit-derived approach map can omit descendants hidden behind the map
+it pruned through, so that map never becomes cross-version evidence. On an
+observed version transition the evaluator keeps at most one independently closed
+map `C`, and only when every exact added edge `tail -> head` satisfies `tail`
+outside `C` or `head` inside `C`. Removals and topology-identical publications
+are safe because they add no path. An escaping addition, observer overflow,
+unsupported observation, or unexplained version jump resets the memo. The
+evaluator consumes the host's addition interval once and gives that same
+immutable list to both this check and accepted-prefix validation.
+
 Warm parents with at least three prior dependencies can learn on the first
 re-proof. A warm parent with one or two prior dependencies instead observes its
 first three proofs without consulting a map: it may passively retain a bounded
@@ -123,19 +136,21 @@ The first active search against a proof-one passive candidate receives a
 cumulative failed-probe budget of `min(8,192, 2 * candidate size)`. Terminal
 roots consume none of it; the budget carries across short disjoint searches
 until the first hit or exhaustion, and exhaustion disables sharing for that
-exact graph version. Graph-terminal adjacency and the target are classified
-before probing. The existing non-passive protocol retains its cumulative 64-node
-miss-work budget, with each proof charged at most 32 nodes; a second substantial
-anchor receives one chance to demonstrate reuse even when its admission crosses
-that budget.
+learning epoch. The same cumulative budget also bounds membership checks and DFS
+probes while an unconfirmed anchor crosses graph versions. Graph-terminal
+adjacency and the target are classified before probing. The existing non-passive
+protocol retains its cumulative 64-node miss-work budget, with each proof
+charged at most 32 nodes; a second substantial anchor receives one chance to
+demonstrate reuse even when its admission crosses that budget.
 
 Retained parent maps are evaluation-local and released when that evaluation
 ends. A passive warm-narrow evaluator retains at most one 8,192-entry map before
 activation; the active protocol can retain two maps (16,384 entries total).
 Nested selector evaluations therefore make retained memory depth-linear, not a
-global constant. Every graph-version change clears the certificates exactly. The
-inspectable strategy runs the identical protocol and reports aggregate
-admission, observation, consultation, pruning, reset, seed, disable, probe, and
+global constant. A safe exact-delta transition preserves only the one closed
+map; every other graph-version change clears the certificates. The inspectable
+strategy runs the identical protocol and reports aggregate admission,
+observation, consultation, pruning, reset, seed, disable, probe, and
 maximum-retention counters without per-node events.
 
 ```text

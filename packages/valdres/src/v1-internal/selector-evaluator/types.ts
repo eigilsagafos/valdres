@@ -96,6 +96,8 @@ export interface SelectorNewEdgeProofDiagnostics {
     admissionSkipped(): void
     disabled(): void
     graphVersionReset(): void
+    /** Adds non-search membership checks used to validate a retained proof. */
+    recordMapProbes?(count: number): void
     completeSearch(
         classification: SelectorNewEdgeProofMemoSearchClassification,
         seed?: SelectorNewEdgeProofMemoSeedReason,
@@ -111,8 +113,9 @@ export interface SelectorNewEdgeProofDiagnostics {
  *
  * A search may consult retained closures only when `beginSearch` returns true,
  * and may publish its parent map only after exhausting without finding the
- * target. The evaluator owns the coordinator's target, host, and exact graph
- * version lifetime; strategies must not retain it or use it at another site.
+ * target. The evaluator owns the coordinator's target, host, and synchronous
+ * graph-observation lifetime; strategies must not retain it or use it at
+ * another site.
  */
 export interface SelectorNewEdgeProofMemo<Node> {
     /** False after bounded admission found no reusable overlap. */
@@ -141,8 +144,9 @@ export interface SelectorNewEdgeProofMemo<Node> {
  * edge proof, and site 2 is a negative-only replay of an exact committed edge
  * addition. A positive site-2 result must fall back to site 0 so first-read
  * blame and the canonical cycle path remain unchanged. `newEdgeProofMemo` is
- * supplied only at site 1 and only while its evaluation-local graph-version
- * certificate remains exact.
+ * supplied only at site 1. Its evidence remains evaluation-local and may cross
+ * a graph version only when one exact addition interval preserves a fully
+ * exhausted, successor-closed negative proof.
  */
 export type SelectorCycleSearch<Node, Token extends object> = (
     start: Node,
