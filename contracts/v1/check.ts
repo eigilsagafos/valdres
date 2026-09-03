@@ -522,6 +522,7 @@ const requiredKinds = new Set<PublicEntry["kind"]>([
 ])
 const independentBetaOwner = "independent-beta"
 const gitCoordinateCache = new Map<string, string>()
+let workspaceBaselineVerified = false
 const frozenLegacyCoordinateInventorySha256 =
     "3d661c9b3ea5cb5e53202fc87c11aff36663abf269e5592701563170eeab986c"
 const frozenLegacyProvenanceInventorySha256 =
@@ -2668,6 +2669,7 @@ function assertFrozenLegacyGitProvenance(
 }
 
 function assertWorkspaceBaseline(): void {
+    if (workspaceBaselineVerified) return
     const result = spawnSync(
         "git",
         [
@@ -2694,6 +2696,7 @@ function assertWorkspaceBaseline(): void {
             packageJson.version === frozenWorkspaceBaseline.packageVersion,
         "pinned workspace package version differs from the recovery baseline",
     )
+    workspaceBaselineVerified = true
 }
 
 function assertGitCoordinate(
