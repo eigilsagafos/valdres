@@ -22,6 +22,7 @@ import type {
     SelectorEvaluationProposal,
     SelectorEvaluationStrategy,
     SelectorEvaluationSession,
+    SelectorNewEdgeProofMemo,
 } from "./selector-evaluator/types"
 import { evaluateSelector } from "./selector-evaluator/evaluate"
 
@@ -406,6 +407,7 @@ export interface InternalInspectionRecorder {
         evaluationGraphVersionStart: number,
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
+        newEdgeProofMemo?: SelectorNewEdgeProofMemo<Node>,
     ): readonly Node[] | undefined
     reference(
         target: object,
@@ -1347,6 +1349,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         evaluationGraphVersionStart: number,
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
+        newEdgeProofMemo?: SelectorNewEdgeProofMemo<Node>,
     ): readonly Node[] | undefined {
         const siteName =
             site === 0
@@ -1375,6 +1378,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 parentWasCold,
             },
         })
+        const consultMemo = newEdgeProofMemo?.beginSearch() ?? false
         const pending = [start]
         const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
             [start, DEPENDENCY_PATH_ROOT],
@@ -1406,6 +1410,10 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             const transient = session.getTransientDependencies(host, node)
             if (transient) {
                 transientExpansions++
+                if (transient.length === 0) continue
+                if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) {
+                    continue
+                }
                 edges += transient.length
                 for (const dependency of transient) {
                     if (parent.has(dependency.node)) continue
@@ -1423,6 +1431,10 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                     continue
                 }
                 recordExpansions++
+                if (dependencies.length === 0) continue
+                if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) {
+                    continue
+                }
                 edges += dependencies.length
                 for (const dependency of dependencies) {
                     if (parent.has(dependency)) continue
@@ -1439,6 +1451,10 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 continue
             }
             recordExpansions++
+            if (record.dependencies.length === 0) continue
+            if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) {
+                continue
+            }
             edges += record.dependencies.length
             for (const dependency of record.dependencies) {
                 if (parent.has(dependency.node)) continue
@@ -1447,6 +1463,8 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             }
             if (pending.length > maxFrontier) maxFrontier = pending.length
         }
+
+        if (path === undefined) newEdgeProofMemo?.completeNegative(parent)
 
         this.addWork({
             cycle: {
@@ -1924,6 +1942,7 @@ const createStoreTrace = (
             cycleSession,
             site,
             acceptedPrefixLength,
+            newEdgeProofMemo,
         ) =>
             recorder.findDependencyPath(
                 hostKind,
@@ -1937,6 +1956,7 @@ const createStoreTrace = (
                 graphVersionStart,
                 attributedPublicationStart,
                 previousDependencies === undefined,
+                newEdgeProofMemo,
             )
         try {
             const proposal = evaluateSelector(
