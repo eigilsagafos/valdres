@@ -1,5 +1,19 @@
 # valdres
 
+## 1.0.0-beta.30
+
+### Patch Changes
+
+- [#367](https://github.com/eigilsagafos/valdres/pull/367)
+  [`7b99ff4`](https://github.com/eigilsagafos/valdres/commit/7b99ff427b3d0e5ac3b11d651efae7d3fd319c96)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Replace repeated
+  selector-prefix cycle walks with bounded, exact topology-delta proofs while
+  preserving the existing ordered fallback for cycle attribution. The
+  `valdres.inspect` export is now schema version 2 and reports topology-delta
+  proofs through `bySite.topologyDeltaProof`, each host's
+  `byLane.*.topologyDeltaProof` bucket, and the `site: "topology-delta-proof"`
+  detail value.
+
 ## 1.0.0-beta.29
 
 ### Patch Changes
