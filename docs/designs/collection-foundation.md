@@ -79,21 +79,22 @@ overlay.
 
 ## Public API decision
 
-The manifest freezes the root exports `collection` and `presence` plus the
-`encodeKey` and future `indexes` option coordinates, but it does not yet freeze
-the exact `Collection`/`CollectionRow` type coordinates or generic order. This
-PR must amend the contract before exporting the runtime surface.
+The manifest freezes the root exports `collection` and `presence`, the exact
+`Collection`/`CollectionRow` type coordinates and generic order, and the
+`encodeKey` and future `indexes` option coordinates. T1 amended that authority
+before any runtime surface was exported.
 
-The current `State<Value>` is an Atom-or-Selector union and cannot represent a
-new readonly source kind. Introduce the private-symbol-branded invariant base
-and internal readonly arms first, while keeping the exported `State` alias and
-root surface unchanged in PRs 1-3. PR 4 atomically widens the exported union
-with the root collection API. Internals keep separate discriminated `AnyState`
-and `DefinitionState` unions for exhaustive dispatch and family-factory
-admission. The latter remains Atom-or-Selector: widening readable State must not
-silently let `family` factories return collection rows/collections.
+Before T6, the exported `State<Value>` was an Atom-or-Selector union and could
+not represent a readonly collection source. T1-T5 introduced the
+private-symbol-branded invariant base and internal readonly arms while keeping
+the exported alias narrow. The T6 checkpoint atomically widens the exported
+union with the root collection API. Internals retain separate discriminated
+`AnyState` and `DefinitionState` unions for exhaustive dispatch and
+family-factory admission. The latter remains Atom-or-Selector: widening readable
+State must not silently let `family` factories return collection rows or
+collection definitions.
 
-Recommended final PR 4 shape:
+Accepted T6 shape:
 
 ```ts
 export type CollectionKey = string | number | bigint | boolean | null
@@ -582,6 +583,42 @@ record hook. This keeps collection strings and mappings out of ordinary Store
 bundles while preserving append-only counter numbering once the extension is
 installed.
 
+T7 freezes that transport as one optional numeric recorder reached through the
+touched scope's existing Store coordinator. Counter codes `35..48` map, in the
+order listed under Performance requirements, to the fourteen collection
+counters; detail codes `64..76` distinguish canonical row intents, prepared
+effective changes, membership changes, source publication, and materialization.
+The runtime domain and collection vtable do not grow. Every retained summary
+exposes all fourteen flat totals, including zeros. Counter accumulation is
+independent of bounded detail retention, so a detail capacity of zero or a
+wrapped detail ring changes only `overflow.details`/`complete`, never the totals
+on a retained operation, commit, or span. Read-time materialization contributes
+totals only when the caller deliberately encloses it in `inspect.span`; T7 does
+not invent a report-wide aggregate or change the existing interval model.
+
+Collection inspection details contain only opaque scope, collection, and row
+references plus structural enums (`set`/`update`/`reset`/`delete`,
+`insert`/`update`/`remove`, `published`/`materialized`). `capture` classifies a
+same-domain row or collection only after ordinary State ownership succeeds and
+uses the frozen `kind` data descriptor; it never reads `row.key`. Direct
+`Store.delete` becomes a first-class inspected operation, while transaction
+delete remains part of its enclosing transaction interval.
+
+Effective-delta evidence is authoritative only for RowViews materialized before
+the corresponding commit. Membership publication evidence is likewise
+authoritative only for MembershipRecords that existed before the commit. Public
+reads and subscriptions may materialize either source; ownership work may
+install membership paths without materializing a RowView. The differential
+therefore ingests structural materialization details in sequence, projects the
+model against the pre-commit authority set, and admits phase-0/rewire/subscriber
+materializations only for later commands. It never prewarms every scope or
+enumerates all live scopes merely for inspection. Cross-scope delta cases may
+explicitly materialize only named coordinates; V1M-COLLECTION-010 deliberately
+keeps its child RowView cold and compares public semantics after projecting away
+that cold coordinate. The model keeps record-localization work in its commit
+audit but marks whether ordered membership actually changed; only those
+source-changing entries predict a runtime membership publication.
+
 ## Failure-mode audit
 
 | Failure/path                                  | Planned test                     | Handling                                             | User outcome                         |
@@ -604,6 +641,8 @@ installed.
 | Stale weak-cache finalizer                    | fake finalizer generation test   | Identity check preserves replacement                 | No visible failure                   |
 | Persistence subscription insert/delete races  | ShiftX adapter race fixture      | Preattach and generation-check cleanup               | No lost/stale persisted row          |
 | Legacy migration crash after any write        | fault-injected migration fixture | Resume from complete staging manifest                | Old or complete new view, never half |
+| Detail ring overflows during collection work  | inspect capacity `0`/`1` matrix  | Count before bounded detail insertion                | Incomplete report with exact totals  |
+| Differential inspection materializes cold row | cold-child V1M-010 translation   | Project to already-materialized coordinates only     | No semantic or route-order drift     |
 
 ## Performance requirements
 
@@ -634,14 +673,15 @@ Add 1k/5k/20k-row fixtures for lookup, absent reads, value updates, inserts,
 deletes, transaction overlay reads, and scope fanout. Pair before/after ordinary
 atom/core-load and the ShiftX rewire fixture. Add an explicit collection bundle
 fixture and separately reviewed feature budgets for `dist`, `packed`,
-`all-exports`, and the collection fixture. Do not refresh the ordinary control
-baselines or use an aggregate ratchet to hide retained collection code. In
-COL-008, after COL-006, require three byte-identical builds on pinned Bun 1.4.0
-and replace the provisional waiver with one fixed allowance equal to the exact
-maximum gzip overage above the immutable 2% ceilings across the affected
-ordinary fixtures. Add no cushion. Any later increase requires explicit
-architecture review; graph, no-call, no-allocation, counter, raw-byte, and <=10%
-timing gates do not move.
+`all-exports`, `inspect`, and the collection fixture. Inspection is a feature
+fixture after COL-007, not an ordinary-control ratchet. Do not refresh the
+ordinary control baselines or use an aggregate ratchet to hide retained
+collection code. In COL-008, after COL-006, require three byte-identical builds
+on pinned Bun 1.4.0 and replace the provisional waiver with one fixed allowance
+equal to the exact maximum gzip overage above the immutable 2% ceilings across
+the affected ordinary fixtures. Add no cushion. Any later increase requires
+explicit architecture review; graph, no-call, no-allocation, counter, raw-byte,
+and <=10% timing gates do not move.
 
 Required counters append after existing family counters without renumbering:
 
@@ -654,6 +694,33 @@ Required counters append after existing family counters without renumbering:
 - `collectionEffectiveDeltasPrepared`; and
 - `collectionOwnerRetentionSetsCreated`, `collectionOwnerRetains`, and
   `collectionOwnerReleases`.
+
+Their work boundaries are exact. `collectionRowIntentsStaged` counts every
+accepted non-noop row event, including overwritten, caught, and ultimately
+aborted events. `collectionRowIntentStorageAllocations` counts once on the first
+accepted row event in a draft; read-only lanes, rejected updates, and semantic
+no-ops are excluded. Final-resolution visits count final plan coordinates.
+Row-route visits count coordinates entered by committed RowView materialization,
+rewire materialization, or affected-route traversal. Membership-route visits
+count ancestry nodes entered while materializing or constructing a plan path and
+nodes entered by the affected-route traversal. An immediate plan-map or snapshot
+memo hit performs no route walk and counts zero. Disposal is deliberately
+outside both route-visit counters; owner releases and the existing route-removal
+instrumentation cover that lifecycle work.
+
+Membership-row scans count each array or placement entry actually examined while
+constructing, comparing, or reusing a draft/committed membership snapshot. They
+exclude inspection-only detail diffing and cached snapshot returns that examine
+no entries. Membership insert/remove classification piggybacks on the existing
+placement/snapshot pass. When phase 0 must emit or overflow-count those details,
+the plan aliases the already-built touched-placement map and iterates that
+alias; it adds no second membership snapshot diff, Set, or collection-sized
+buffer. Membership-array allocations count only newly frozen snapshots, not
+shared empties or exact-reference reuse. Source counters count phase-2
+publications; effective deltas count differing prepared materialized RowViews.
+Owner-retention counters count Set creation, absent-to-present pin transitions,
+and successful removal (including the exact retained-owner cardinality released
+by disposal).
 
 Atom-only work increments every collection counter by zero. Present-to-present
 updates have zero membership scans/arrays/publications independent of collection
@@ -688,8 +755,11 @@ Atom+row commit performs one propagation settlement and one callback snapshot.
   Atom -> RowView -> MembershipRecord -> dependent Selector -> callbacks
   collection-membership.test.ts + collection-subscriptions.test.ts
       |
-[GAP T6/T7] public State/root API -> inspect -> repaired model differential
-  collection-types.test.ts + collection-differential.test.ts + v1-inspect
+[TESTED T6] public State/root API -> Store/Transaction/selector/adapter/React
+  public-candidate type/runtime/export/declaration probes + React universal reads
+      |
+[GAP T7] inspect -> repaired model public-runtime differential
+  collection-differential.test.ts + v1-inspect
       |
 [GAP T8] tarball/runtime/lifecycle/scale evidence
   build + package-size + packed Node/Bun/TS/esbuild/React18/19
@@ -700,10 +770,11 @@ Atom+row commit performs one propagation settlement and one callback snapshot.
 ```
 
 The plan-approval baseline was 9 pure-model tests / 183 assertions and no
-production collection tests. The implemented T1-through-T5 checkpoint has 15
-collection-model cases / 304 assertions plus mirrored internal runtime cases;
-the public-runtime differential remains owned by T7 and the ShiftX end-to-end
-migration remains T9. The model repairs cover child-shadow history,
+production collection tests. The implemented T1-through-T6 checkpoint has 15
+collection-model cases / 304 assertions plus mirrored internal runtime cases and
+the public root/type/React surface. The seeded public-runtime differential
+remains owned by T7, final package evidence remains T8, and the ShiftX
+end-to-end migration remains T9. The model repairs cover child-shadow history,
 enabling-sequence order, native notification order, and same-draft true-gap
 rebirth/memo restoration. Presence notification ordering is not compared as a
 direct model target: production `presence(row)` is an ordinary Selector, so
@@ -823,9 +894,11 @@ not provide production cardinalities.
 
 ## Implementation sequence
 
-This is four stacked, green PRs. The root export appears only in PR 4 when the
-vertical slice is complete. Splitting an architecture this broad is safer than a
-single review, while withholding partial public behavior avoids an unusable API.
+The approved delivery plan groups the sequential task lake into four review
+slices. The root export appears only at T6, after the internal vertical slice is
+complete. This section records that plan; at the current checkpoint T1-T6 are
+accepted, while T7 inspection/differential, T8 final package evidence, and T9
+ShiftX acceptance remain open.
 
 1. **Contract, oracle, and identity.** Repair the three initial reference-model
    defects, reconcile the materialization-priority compile contract, freeze the
@@ -851,9 +924,12 @@ ShiftX sessions migration are accepted.
 ## Implementation tasks
 
 Synthesized from this review's findings. Each task derives from a concrete gap
-above; checkbox it only after its verification command is green.
+above. A checked box records acceptance of that task-local checkpoint, not the
+final production release gate: the remaining T7-T9 evidence is still required,
+and this document does not claim commands that have not been run for the final
+combined artifact.
 
-- [ ] **T1 (P1, human: ~2 days / CC: ~90 min)** — Authority — repair the oracle
+- [x] **T1 (P1, human: ~2 days / CC: ~90 min)** — Authority — repair the oracle
       and freeze the complete contract/State-base coordinates.
     - Surfaced by: Test/API/DX review — all three initial model defects
       reproduce, exact handle/error types are absent, and a private empty-index
@@ -863,7 +939,7 @@ above; checkbox it only after its verification command is green.
     - Verify: focused model tests, `bun run check:contracts-v1`,
       public-candidate typecheck, and a `declaration: true` installed-consumer
       probe.
-- [ ] **T2 (P1, human: ~2 days / CC: ~90 min)** — Definition — extract the
+- [x] **T2 (P1, human: ~2 days / CC: ~90 min)** — Definition — extract the
       neutral weak cache and implement row/presence identity.
     - Surfaced by: Architecture review — legacy families mix membership and
       release, while collection lookup must be inert, weak, and Store-free.
@@ -873,7 +949,7 @@ above; checkbox it only after its verification command is green.
       eagerly constructed domain never imports collection definition code.
     - Verify: focused family-cache and collection-definition tests, build graph,
       and ordinary atom-only allocation/reachability probes.
-- [ ] **T3 (P1, human: ~3 days / CC: ~2 hours)** — Draft kernel — install the
+- [x] **T3 (P1, human: ~3 days / CC: ~2 hours)** — Draft kernel — install the
       optional domain-local vtable and sequenced row-intent overlay.
     - Surfaced by: Architecture/performance review — direct kernel imports
       retain the feature in every Store bundle, while a second engine breaks
@@ -887,7 +963,7 @@ above; checkbox it only after its verification command is green.
       enabling over absent/injected baselines, and unchanged Atom transaction
       counters. Read-only lanes cover successful/committed-error release; staged
       lanes cover callback-abort/preflight release.
-- [ ] **T4 (P1, human: ~4 days / CC: ~3 hours)** — Scope kernel — implement
+- [x] **T4 (P1, human: ~4 days / CC: ~3 hours)** — Scope kernel — implement
       Present/Absent ownership, RowViews, lifecycle mirrors, and mixed apply.
     - Surfaced by: Failure/lifecycle review — tombstones need strong owner pins,
       while weak maps alone cannot synchronously detach retained disposed
@@ -902,7 +978,7 @@ above; checkbox it only after its verification command is green.
       quadratic fanout; a 1,024-deep inheritance/disposal chain stays iterative.
       Record the named provisional 71-gzip-byte COL-004 seam waiver without
       changing any other control gate.
-- [ ] **T5 (P1, human: ~4 days / CC: ~3 hours)** — Membership — implement
+- [x] **T5 (P1, human: ~4 days / CC: ~3 hours)** — Membership — implement
       history, continuous birth order, stable snapshots, and exact delivery.
     - Surfaced by: Semantics review — final intents lose Map order and public
       callback/error identity requires deterministic first-reaching tie-breaks.
@@ -914,31 +990,54 @@ above; checkbox it only after its verification command is green.
       routing-only silence; one rebuild per affected record; sparse 20k sibling
       traversal; linear 1,024-depth placement; and no increase to the fixed
       71-byte ordinary gzip seam cap. The public differential remains T7-owned.
-- [ ] **T6 (P1, human: ~2 days / CC: ~90 min)** — Public API — expose the
+- [x] **T6 (P1, human: ~2 days / CC: ~90 min)** — Public API — expose the
       complete root surface and widen public State atomically.
     - Surfaced by: Scope/API review — a partial root export would be unusable
       and a broad State migration could silently weaken family admission.
-    - Files: `src/v1.ts`, `src/index.ts`, State types, public-candidate/build
-      tests.
-    - Verify: runtime/type/export/declaration tests and React universal reads.
+    - Files: `src/v1.ts`, `src/index.ts`, committed-tree State/transaction/store
+      dispatch, public-candidate type/runtime/export/declaration tests,
+      committed collection tests migrated off the temporary internal row-writer
+      helper, and `valdres-react` universal-read/public-surface tests.
+    - Checkpoint acceptance: root `collection`, `presence`, named collection
+      errors, and collection types land with the four-arm readable `State`
+      union; family factories remain Atom-or-Selector. Public Store and
+      Transaction row overloads own set/update/reset/delete, the temporary
+      production row-writer helper is removed, and direct, rich-input, and
+      generic-wrapper declaration emit remains nameable. Row, collection, and
+      presence reads cover selectors, adapter hydration, and React universal
+      rendering; mutation negatives, closed `indexes?: never`, and exact
+      foreign-domain rejection remain pinned. Ordinary controls retain the fixed
+      provisional 71-byte gzip seam cap with graph/no-call/no-allocation/
+      counter/timing gates unchanged; T8 still owns the final reproducible
+      allowance and packed evidence.
 - [ ] **T7 (P1, human: ~2 days / CC: ~90 min)** — Inspection/differential — add
       structural recorder hooks and public-runtime oracle coverage.
     - Surfaced by: Privacy/test review — the new source kinds need exact bounded
       evidence without retaining values/keys, and production must match the
       repaired model.
-    - Files: collection kernel record sites, inspect runtime/tests, v1-model,
-      and `test/v1-public-candidate/collection-differential.test.ts`.
-    - Verify: exact overflow/counter/privacy tests plus deterministic and seeded
-      public-runtime differential traces.
+    - Files: numeric collection-inspection protocol; the Store-scope coordinator
+      and existing Store trace; collection kernel record sites; inspect
+      runtime/tests; shared v1-model scenarios; and
+      `test/v1-public-candidate/collection-differential.test.ts`.
+    - Verify: exact counter codes and totals through detail-ring overflow;
+      row/collection capture and direct-delete operation coverage; zero
+      key/value/input/error retention; deterministic cases 001-015 plus seeded
+      legal public-runtime traces; materialized-coordinate delta projection;
+      membership reference-equivalence checks; exact root-native notification
+      order; dedicated presence-Selector delivery/error order; and ordinary
+      graph/no-call/no-allocation/counter/timing/size gates.
 - [ ] **T8 (P1, human: ~2 days / CC: ~90 min)** — Package evidence — prove
       lifecycle, scale, bundle isolation, and installed compatibility.
     - Surfaced by: Lifecycle/performance review — collection implementation must
       be reclaimable, bounded, and absent from ordinary Store artifacts.
-    - Files: performance/GC fixtures, size baselines, and packed scripts.
+    - Files: performance/GC fixtures, immutable size-baseline schema and
+      checker, package scripts/toolchain assertions, and packed-consumer
+      scripts.
     - Verify: paired 1k/5k/20k benchmarks, three byte-identical pinned-Bun-1.4.0
       builds, immutable pre-collection ordinary baselines, an exact no-cushion
-      additive gzip seam allowance, separately reviewed collection feature
-      budgets, and Node/Bun/TS/esbuild/React 18/19 packed gates.
+      additive gzip seam allowance, separately reviewed
+      collection/dist/packed/all-exports/inspect feature budgets, and
+      Node/Bun/TS/esbuild/React 18/19 packed gates.
 - [ ] **T9 (P1, human: ~2 days / CC: ~90 min)** — ShiftX acceptance — run the
       sessions adapter migration fixture.
     - Surfaced by: ShiftX audit — the old family-wide persistence callback has
@@ -1006,10 +1105,10 @@ No two open PRs claim the same prerelease tuple.
 | ------------- | --------------------- | ------------------------------- | ---- | ------ | -------------------------------------------- |
 | CEO Review    | `/plan-ceo-review`    | Scope & strategy                | 0    | —      | Not run                                      |
 | Codex Review  | `/codex review`       | Independent 2nd opinion         | 0    | —      | Not run                                      |
-| Eng Review    | `/plan-eng-review`    | Architecture & tests (required) | 1    | CLEAR  | 42 issues folded, 0 critical gaps            |
+| Eng Review    | `/plan-eng-review`    | Architecture & tests (required) | 2    | CLEAR  | 47 issues folded, 0 critical gaps            |
 | Design Review | `/plan-design-review` | UI/UX gaps                      | 0    | —      | Not applicable to core runtime               |
 | DX Review     | `/plan-devex-review`  | Developer experience gaps       | 0    | —      | API/DX compile probes included in Eng Review |
 
-**VERDICT:** ENG CLEARED — ready to implement the sequential task lake.
+**VERDICT:** ENG CLEARED — T7 recorder and differential boundaries are locked.
 
 NO UNRESOLVED DECISIONS

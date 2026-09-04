@@ -805,7 +805,7 @@ export class ReferenceModel {
             }
         }
 
-        const { deltas: collectionDeltas, membershipChanged } =
+        const { deltas: collectionDeltas, membershipChanges } =
             this.recomputeCollections(
                 candidateTree,
                 touchedRows,
@@ -813,7 +813,7 @@ export class ReferenceModel {
                 draft,
             )
 
-        if (ownershipChanges.length === 0 && !membershipChanged) {
+        if (ownershipChanges.length === 0 && membershipChanges.length === 0) {
             if (fallbackPublicationChanged) {
                 this.trees.set(candidateTree.id, candidateTree)
             }
@@ -828,6 +828,7 @@ export class ReferenceModel {
             ownershipChanges: Object.freeze([...ownershipChanges]),
             effectiveAtomChanges: Object.freeze([...effectiveAtomChanges]),
             collectionDeltas: Object.freeze([...collectionDeltas]),
+            membershipChanges,
         })
         return this.notify(
             candidateTree,
@@ -877,13 +878,21 @@ export class ReferenceModel {
         draft: Draft,
     ): Readonly<{
         deltas: readonly EffectiveRowDelta[]
-        membershipChanged: boolean
+        membershipChanges: readonly Readonly<{
+            scope: ScopeId
+            collection: CollectionId
+            sourceChanged: boolean
+        }>[]
     }> {
         const collections = new Set<CollectionId>()
         for (const rowId of touchedRows)
             collections.add(this.row(rowId).collection)
         const deltas: EffectiveRowDelta[] = []
-        let membershipChanged = false
+        const membershipChanges: Array<{
+            scope: ScopeId
+            collection: CollectionId
+            sourceChanged: boolean
+        }> = []
         for (const scope of liveScopes(tree)) {
             for (const collectionId of collections) {
                 const collection = this.collection(collectionId)
@@ -927,12 +936,22 @@ export class ReferenceModel {
                               this.liveScope(tree, scope.parent),
                               collectionId,
                           ).rows
+                const sourceChanged = !sameStrings(
+                    beforeMembership.rows,
+                    nextRows,
+                )
                 if (
-                    !sameStrings(beforeMembership.rows, nextRows) ||
+                    sourceChanged ||
                     (scope.memberships.get(collectionId) === undefined &&
                         !sameStrings(inheritedRows, nextRows))
                 ) {
-                    membershipChanged = true
+                    membershipChanges.push(
+                        Object.freeze({
+                            scope: scope.id,
+                            collection: collectionId,
+                            sourceChanged,
+                        }),
+                    )
                     scope.memberships.set(
                         collectionId,
                         this.newMembership(nextRows),
@@ -972,7 +991,10 @@ export class ReferenceModel {
                 }
             }
         }
-        return { deltas, membershipChanged }
+        return {
+            deltas,
+            membershipChanges: Object.freeze(membershipChanges),
+        }
     }
 
     private notificationTargets(

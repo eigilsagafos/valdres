@@ -6,6 +6,11 @@ import {
     type Atom as InternalAtom,
     type AtomUpdater,
     type CommittedStoreTree,
+    type Collection as InternalCollection,
+    type CollectionKey as InternalCollectionKey,
+    type CollectionOptions as InternalCollectionOptions,
+    type CollectionRow as InternalCollectionRow,
+    type CollectionValue as InternalCollectionValue,
     type RootTransaction,
     type Selector as InternalSelector,
     type State as InternalState,
@@ -16,11 +21,38 @@ import {
     createFamilyAccessor,
     type FamilyKey as InternalFamilyKey,
 } from "./v1-internal/family"
+import {
+    InvalidCollectionKeyError,
+    createCollectionDefinition,
+    getCollectionPresence,
+} from "./v1-internal/collection"
+import {
+    InvalidSynchronousCollectionValueError,
+    MissingCollectionRowError,
+    UndefinedCollectionValueError,
+} from "./v1-internal/collection-kernel"
 import { v1Domain } from "./v1-internal/public-domain"
 
 export type Atom<Value> = InternalAtom<Value>
 export type Selector<Value> = InternalSelector<Value>
 export type State<Value> = InternalState<Value>
+export type CollectionKey = InternalCollectionKey
+export type CollectionValue = InternalCollectionValue
+export type CollectionRow<
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+> = InternalCollectionRow<Key, Value>
+export type Collection<
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+    Input = Key,
+    Indexes = never,
+> = InternalCollection<Key, Value, Input, Indexes>
+export type CollectionOptions<
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+    Input = Key,
+> = InternalCollectionOptions<Key, Value, Input>
 export type Store = CommittedStoreTree
 export type Transaction = RootTransaction
 export type FamilyKey = InternalFamilyKey
@@ -44,7 +76,7 @@ export interface SelectorOptions<Value> {
     readonly equal?: EqualFunc<Value>
 }
 
-type AnyFamilyFactory = (...args: any[]) => State<any>
+type AnyFamilyFactory = (...args: any[]) => Atom<any> | Selector<any>
 
 type PrimitiveFamilyFactory<Factory extends AnyFamilyFactory> =
     Parameters<Factory> extends [FamilyKey, ...FamilyKey[]] ? Factory : never
@@ -103,6 +135,28 @@ export const selector = <Value>(
     options: SelectorOptions<Value> = {},
 ): Selector<Value> => v1Domain.selector(read, options)
 
+export function collection<
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+>(options?: CollectionOptions<Key, Value, Key>): Collection<Key, Value, Key>
+export function collection<
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+    Input,
+>(options: CollectionOptions<Key, Value, Input>): Collection<Key, Value, Input>
+export function collection(
+    options?: unknown,
+): Collection<CollectionKey, CollectionValue, any> {
+    return createCollectionDefinition(v1Domain, options as never)
+}
+
+export const presence = <
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+>(
+    row: CollectionRow<Key, Value>,
+): Selector<boolean> => getCollectionPresence(v1Domain, row)
+
 const defineFamily = (
     ...parameters: unknown[]
 ): ((...args: any[]) => object) => {
@@ -143,7 +197,7 @@ const defineFamily = (
         member =>
             markReacquirableDefinitionState(
                 v1Domain,
-                member as InternalState<unknown>,
+                member as InternalAtom<unknown> | InternalSelector<unknown>,
             ),
         () => assertDefinitionFamilyCallAllowed(v1Domain),
     )
@@ -173,5 +227,12 @@ export {
     TransactionClosedError,
     TransactionPhaseError,
 } from "./v1-internal/committed-store-tree/committed-store-tree"
+
+export {
+    InvalidCollectionKeyError,
+    InvalidSynchronousCollectionValueError,
+    MissingCollectionRowError,
+    UndefinedCollectionValueError,
+}
 
 export { SelectorCircularDependencyError } from "./v1-internal/selector-evaluator/errors"

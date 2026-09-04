@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import * as publicApi from "../../src/index"
 import {
     atom,
+    collection,
     selector,
     store,
     type Atom,
@@ -30,9 +31,12 @@ describe("v1 public root", () => {
             [
                 "CallbackCapabilityError",
                 "InvalidAtomComparatorResultError",
+                "InvalidCollectionKeyError",
+                "InvalidSynchronousCollectionValueError",
                 "InvalidSynchronousAtomValueError",
                 "InvalidTransactionCallbackResultError",
                 "InvalidTransactionTargetError",
+                "MissingCollectionRowError",
                 "RuntimeMismatchError",
                 "ScopeNotFoundError",
                 "SelectorCapabilityError",
@@ -42,8 +46,11 @@ describe("v1 public root", () => {
                 "SubscriberNotificationError",
                 "TransactionClosedError",
                 "TransactionPhaseError",
+                "UndefinedCollectionValueError",
                 "atom",
+                "collection",
                 "family",
+                "presence",
                 "selector",
                 "store",
             ].sort(),
@@ -195,6 +202,7 @@ describe("v1 public root", () => {
             "set",
             "update",
             "reset",
+            "delete",
             "txn",
             "scope",
             "dispose",
@@ -207,7 +215,16 @@ describe("v1 public root", () => {
             ).toMatchObject({ writable: false, configurable: false })
         }
 
-        const { get, set, update, reset, txn, scope, sub } = target
+        const {
+            get,
+            set,
+            update,
+            reset,
+            delete: deleteRow,
+            txn,
+            scope,
+            sub,
+        } = target
         set(count, 2)
         expect(get(count)).toBe(2)
         update(count, current => current + 1)
@@ -216,12 +233,47 @@ describe("v1 public root", () => {
         unsubscribe()
         reset(count)
         expect(get(count)).toBe(0)
+        expect(() => Reflect.apply(deleteRow, undefined, [count])).toThrow(
+            TypeError,
+        )
         expect(scope()).not.toBe(target)
 
         if (false) {
             // @ts-expect-error Store operation fields are readonly.
             target.txn = callback => callback({} as Transaction)
         }
+    })
+
+    test("exposes stable readonly bound Transaction operation fields", () => {
+        const count = atom(0)
+        const target = store()
+
+        target.txn(transaction => {
+            const operations: (keyof Transaction)[] = [
+                "get",
+                "set",
+                "update",
+                "reset",
+                "delete",
+                "scope",
+            ]
+            expect(Object.keys(transaction)).toEqual(operations)
+            expect(Object.isFrozen(transaction)).toBe(true)
+            for (const operation of operations) {
+                expect(transaction[operation]).toBe(transaction[operation])
+                expect(
+                    Object.getOwnPropertyDescriptor(transaction, operation),
+                ).toMatchObject({ writable: false, configurable: false })
+            }
+
+            const { get, set, update, reset, scope } = transaction
+            set(count, 2)
+            update(count, current => current + 1)
+            expect(get(count)).toBe(3)
+            reset(count)
+            expect(get(count)).toBe(0)
+            expect(scope(target)).toBeDefined()
+        })
     })
 
     test("preserves named and anonymous scope identity rules", () => {
@@ -281,9 +333,15 @@ describe("v1 public root", () => {
         let transactionSeen: Transaction | undefined
         const subscribe: SubscribeFn = target.sub
         const transaction: TransactionFn<number> = current => current.get(state)
+        const sessions = collection<string, number>()
+        const session = sessions("typed-subscription")
 
         const unsubscribe = subscribe(state, () => undefined)
+        const unsubscribeRow = subscribe(session, () => undefined)
+        const unsubscribeCollection = subscribe(sessions, () => undefined)
         unsubscribe()
+        unsubscribeRow()
+        unsubscribeCollection()
         const result = target.txn(current => {
             transactionSeen = current
             current.update(count, value => value + 1)

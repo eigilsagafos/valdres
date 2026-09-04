@@ -3120,7 +3120,7 @@
                 "selector.pure-sync-dag"
             ],
             "decisionStatus": "approved",
-            "notes": "The final root State<Value> is the discriminated Atom | Selector | readonly collection-row | readonly collection union over one private invariant value base, preserving kind narrowing. Before the complete collection API is exposed, the current beta root State remains Atom | Selector and family factory admission remains that narrower definition union."
+            "notes": "The root State<Value> is the discriminated Atom | Selector | readonly collection-row | readonly collection union over one private invariant value base, preserving kind narrowing. Family factory admission deliberately remains the narrower Atom | Selector definition union and cannot return collection rows or collection definitions."
         },
         {
             "id": "core.type.store",
@@ -3214,9 +3214,12 @@
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
             },
-            "contractIds": ["notification.after-stability"],
+            "contractIds": [
+                "collection.invariant-readable-state",
+                "notification.after-stability"
+            ],
             "decisionStatus": "approved",
-            "notes": "SubscribeFn is exactly <Value>(state: Atom<Value> | Selector<Value>, callback: () => void) => () => void. It returns one idempotent unsubscribe; family callback and deep-equality parameters are removed."
+            "notes": "SubscribeFn is exactly <Value>(state: State<Value>, callback: () => void) => () => void. State includes Atom, Selector, collection-row, and collection inputs. It returns one idempotent unsubscribe; family callback and deep-equality parameters are removed."
         },
         {
             "id": "core.type.transaction",

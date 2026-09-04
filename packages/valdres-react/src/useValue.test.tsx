@@ -2,7 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { act, cleanup, renderHook } from "@testing-library/react"
 import { renderToString } from "react-dom/server"
 import type { ReactNode } from "react"
-import { atom, selector, store, type Store } from "valdres"
+import {
+    atom,
+    collection,
+    presence,
+    selector,
+    store,
+    type Store,
+} from "valdres"
 import { Provider } from "./Provider"
 import { useValue } from "./useValue"
 
@@ -37,6 +44,48 @@ describe("useValue", () => {
         act(() => explicitStore.set(count, 2))
 
         expect(result.current).toBe(2)
+    })
+
+    test("subscribes to collection rows, membership, and presence", () => {
+        const sessions = collection<string, { readonly id: string }>()
+        const row = sessions("a")
+        const isPresent = presence(row)
+        const selectedStore = store()
+        const { result } = renderHook(
+            () =>
+                [
+                    useValue(row),
+                    useValue(sessions),
+                    useValue(isPresent),
+                ] as const,
+            {
+                wrapper: ({ children }: { readonly children: ReactNode }) => (
+                    <Provider store={selectedStore}>{children}</Provider>
+                ),
+            },
+        )
+
+        expect(result.current).toEqual([undefined, [], false])
+        act(() => selectedStore.set(row, { id: "a" }))
+        expect(result.current).toEqual([{ id: "a" }, [row], true])
+        act(() => selectedStore.delete(row))
+        expect(result.current).toEqual([undefined, [], false])
+    })
+
+    test("reads collection States from an explicit Store", () => {
+        const sessions = collection<string, { readonly id: string }>()
+        const row = sessions("a")
+        const isPresent = presence(row)
+        const selectedStore = store()
+        selectedStore.set(row, { id: "a" })
+
+        const { result } = renderHook(() => [
+            useValue(row, selectedStore),
+            useValue(sessions, selectedStore),
+            useValue(isPresent, selectedStore),
+        ])
+
+        expect(result.current).toEqual([{ id: "a" }, [row], true])
     })
 
     test("always calls context before selecting an explicit Store", () => {
@@ -81,5 +130,27 @@ describe("useValue", () => {
         )
 
         expect(html).toContain(">7</span>")
+    })
+
+    test("server-renders collection rows, membership, and presence", () => {
+        const sessions = collection<string, { readonly id: string }>()
+        const row = sessions("a")
+        const isPresent = presence(row)
+        const selectedStore = store()
+        selectedStore.set(row, { id: "a" })
+        const Summary = () => {
+            const value = useValue(row)
+            const rows = useValue(sessions)
+            const present = useValue(isPresent)
+            return <span>{`${value?.id}:${rows.length}:${present}`}</span>
+        }
+
+        const html = renderToString(
+            <Provider store={selectedStore}>
+                <Summary />
+            </Provider>,
+        )
+
+        expect(html).toContain(">a:1:true</span>")
     })
 })

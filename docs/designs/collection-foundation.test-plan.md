@@ -65,12 +65,52 @@ Exact delivery-order matrix:
 - two collections proving cross-collection first-encounter interleave; and
 - overlapping parent/child intents proving first-discovery deduplication.
 
+T7 inspection/differential matrix:
+
+- freeze collection counter codes `35..48` and structural detail codes `64..76`;
+  every retained summary exposes all fourteen flat collection totals;
+- run the same collection work with detail capacities `0`, `1`, and default,
+  proving equal totals while only detail retention/overflow changes;
+- wrap read-time row and membership materialization in `inspect.span` when
+  asserting materialization totals; outside a span, assert only bounded details;
+- capture same-domain rows and collections without reading or retaining row
+  keys, values, inputs, updaters, callbacks, or errors; reject fake/foreign
+  handles through the ordinary ownership boundary;
+- record direct `Store.delete` as operation `delete`; retain transaction delete
+  under one transaction operation;
+- interpret one production-import-free deterministic scenario corpus against
+  both the model and one public inspectable Store; compare normalized results,
+  reads, commit status, structural deltas, notifications, ordered rows, frozen
+  arrays, and membership identity equivalence rather than raw snapshot IDs;
+- project model deltas to sources materialized before the corresponding commit.
+  Ingest no-commit materialization details before comparing that command, but
+  admit phase-0, rewire, and subscriber materializations only for later
+  commands. Distinguish ownership-installed membership paths from still-cold
+  RowViews. Compare membership publications only for model audit entries whose
+  ordered membership source changed, not record-localization-only work. Never
+  exhaustively read scopes to manufacture evidence; keep case 010's child
+  RowView cold and use named pre-materialization only in focused cross-scope
+  delta cases;
+- compare root-local native Atom/row/collection notification order exactly,
+  compare cross-scope and presence callbacks as counted multisets in the
+  differential, and separately pin exact presence Selector dependency-first
+  delivery and error identity;
+- generate complete programs before execution with a versioned deterministic
+  PRNG, fixed published seeds, bounded legal state, and failure output
+  containing seed, step, mismatch path, command prefix, and lossless
+  special-number tokens.
+
 ## Performance gates
 
 - Pair ordinary atom/core-load/rewire controls against the exact base artifact.
 - Measure collection lookup hit/miss and encoded hit in fresh processes.
 - Measure absent read, value update, insert, delete, and transaction membership
   reads at 1k/5k/20k rows.
+- Compare inspected/uninspected membership insert/delete at small and large
+  cardinality. The incremental slope must stay within 10%, and inspection detail
+  classification must reuse the existing placement pass. Phase-0 detail emission
+  may iterate the aliased touched-placement map, but must add no second
+  membership snapshot diff, Set, or collection-sized buffer.
 - Assert `Object.is`-distinct present-to-present update counters are independent
   of membership cardinality; same-value/NaN writes are full effective no-ops.
 - Assert every affected MembershipRecord is rebuilt at most once per commit.
@@ -92,7 +132,8 @@ Exact delivery-order matrix:
   and replace the provisional value with the exact maximum additive gzip
   allowance, with no cushion or baseline ratchet. Any later increase requires
   explicit architecture review. Keep distinct reviewed feature budgets for
-  collection/dist/packed/all-exports.
+  collection/dist/packed/all-exports/inspect; after COL-007, `inspect` is a
+  feature fixture rather than an ordinary control.
 
 ## ShiftX acceptance
 
@@ -124,16 +165,36 @@ Exact delivery-order matrix:
 
 ## Contract and packaging gates
 
-- Preserve `State.kind` narrowing while adding readonly collection source arms;
-  keep family factory admission Atom-or-Selector only.
+- Pin root `State<Value>` as exactly the discriminated Atom | Selector |
+  readonly collection-row | readonly collection union over the private invariant
+  base, preserving `State.kind` narrowing. Keep family factory admission
+  Atom-or-Selector only.
+- Pin the exact root runtime/type/error export set for `collection`, `presence`,
+  `Collection`, `CollectionKey`, `CollectionValue`, `CollectionRow`,
+  `CollectionOptions`, `InvalidCollectionKeyError`,
+  `InvalidSynchronousCollectionValueError`, `UndefinedCollectionValueError`, and
+  `MissingCollectionRowError` in direct and namespace entrypoints.
+- Exercise row set/update/reset/delete through both public Store and Transaction
+  cursors, including nested scopes and retained closed cursors. Remove the
+  temporary production internal row-writer/transaction helper and migrate
+  internal semantic suites through a test-only adapter over the public cursor.
 - Reject at compile time a `Value` generic containing `undefined`,
   `set(row, undefined)`, an undefined updater result, `delete(atom)`, and
   mutation of readonly row/collection sources. Function values use `set`, never
   updater dispatch. Reject foreign-domain handles at runtime with exact
   `RuntimeMismatchError` identity.
-- Declaration-emit installed-consumer fixtures export direct and rich-input
-  collection bindings so an unnameable inferred private type cannot escape.
+- Declaration-emit installed-consumer fixtures export direct, rich-input, and
+  generic-wrapper collection bindings so an unnameable inferred private type
+  cannot escape.
+- Cover row, collection-membership, and presence-selector reads through derived
+  selectors, adapter hydration, and React universal/SSR reads; pin the React
+  root surface without adding collection-specific scheduling or ownership.
 - Reconcile materialization priority to exactly `"user-visible" | "background"`
   in the contract type spike even though materialization runtime stays deferred.
 - Keep `CollectionOptions.indexes` closed as `indexes?: never`; accept no index
   descriptor or ignored option in this beta.
+- Through T6, keep immutable ordinary raw ceilings and the fixed provisional
+  71-byte gzip seam cap unchanged, alongside graph/no-call/no-allocation/
+  counter/<=10% timing gates. T8 still owns three byte-identical pinned-Bun
+  builds, the exact no-cushion replacement allowance, packed consumers, and
+  separately reviewed collection feature budgets.

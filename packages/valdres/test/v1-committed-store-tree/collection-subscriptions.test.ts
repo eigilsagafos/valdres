@@ -4,26 +4,23 @@ import {
     SubscriberNotificationError,
     createCommittedStoreTreeDomain,
     createInternalStoreTreeInstrumentation,
-    runInternalCollectionTransaction,
     type CommittedStoreTree,
+    type State,
 } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
 import {
     createCollectionDefinition,
     getCollectionPresence,
 } from "../../src/v1-internal/collection"
+import { runCollectionTransaction } from "./collection-test-transaction"
 
-type InternalRead = (state: object) => any
-type InternalSub = (state: object, callback: () => void) => () => void
-
-const read = <Value>(store: CommittedStoreTree, state: object): Value =>
-    (store.get as unknown as InternalRead)(state) as Value
+const read = <Value>(store: CommittedStoreTree, state: State<any>): Value =>
+    store.get(state) as Value
 
 const sub = (
     store: CommittedStoreTree,
-    state: object,
+    state: State<any>,
     callback: () => void,
-): (() => void) =>
-    (store.sub as unknown as InternalSub)(state, callback)
+): (() => void) => store.sub(state, callback)
 
 const thrownBy = (operation: () => unknown): unknown => {
     try {
@@ -51,7 +48,7 @@ describe("v1 committed collection subscriptions", () => {
         const settlements = instrumentation.read("propagationSettlements")
         const snapshots = instrumentation.read("notificationSnapshots")
 
-        runInternalCollectionTransaction(domain, store, (transaction, rows) => {
+        runCollectionTransaction(domain, store, (transaction, rows) => {
             rows.set(row, 1)
             transaction.set(count, 1)
         })
@@ -75,7 +72,7 @@ describe("v1 committed collection subscriptions", () => {
         const a = sessions("a")
         const b = sessions("b")
         const store = domain.createStoreTree()
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) => {
+        runCollectionTransaction(domain, store, (_transaction, rows) => {
             rows.set(a, 1)
             rows.set(b, 2)
         })
@@ -83,7 +80,7 @@ describe("v1 committed collection subscriptions", () => {
         sub(store, a, () => order.push("row"))
         sub(store, sessions, () => order.push("membership"))
 
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) => {
+        runCollectionTransaction(domain, store, (_transaction, rows) => {
             rows.delete(a)
             rows.set(a, 1)
         })
@@ -98,28 +95,24 @@ describe("v1 committed collection subscriptions", () => {
         const sessions = createCollectionDefinition<string, number>(domain)
         const row = sessions("a")
         const store = domain.createStoreTree()
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.set(row, 1),
         )
-        const baseline = read<readonly object[]>(store, sessions)
+        const baseline = store.get(sessions)
         const sourceEpoch = instrumentation.read("sourceEpoch")
         let membershipNotifications = 0
         let rowNotifications = 0
         sub(store, sessions, () => membershipNotifications++)
         sub(store, row, () => rowNotifications++)
 
-        runInternalCollectionTransaction(domain, store, (transaction, rows) => {
+        runCollectionTransaction(domain, store, (transaction, rows) => {
             rows.delete(row)
-            expect(
-                (transaction.get as unknown as InternalRead)(sessions),
-            ).toEqual([])
+            expect(transaction.get(sessions)).toEqual([])
             rows.set(row, 1)
-            expect(
-                (transaction.get as unknown as InternalRead)(sessions),
-            ).toBe(baseline)
+            expect(transaction.get(sessions)).toBe(baseline)
         })
 
-        expect(read<readonly object[]>(store, sessions)).toBe(baseline)
+        expect(store.get(sessions)).toBe(baseline)
         expect(rowNotifications).toBe(0)
         expect(membershipNotifications).toBe(0)
         expect(instrumentation.read("sourceEpoch")).toBe(sourceEpoch)
@@ -135,7 +128,7 @@ describe("v1 committed collection subscriptions", () => {
         const duplicate = () => duplicateCalls.push("same")
         sub(store, sessions, duplicate)
         sub(store, sessions, duplicate)
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.set(row, 1),
         )
         expect(duplicateCalls).toEqual(["same", "same"])
@@ -147,7 +140,7 @@ describe("v1 committed collection subscriptions", () => {
         store.sub(presence, () => sources.push("presence"))
         expect(store.get(presence)).toBe(true)
         duplicateCalls.length = 0
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.update(row, () => 2),
         )
 
@@ -164,7 +157,7 @@ describe("v1 committed collection subscriptions", () => {
         const row = sessions("a")
         const root = domain.createStoreTree()
         const child = root.scope("child")
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.set(row, 1),
         )
         const membership = read<readonly object[]>(child, sessions)
@@ -175,7 +168,7 @@ describe("v1 committed collection subscriptions", () => {
 
         const shadowEpoch = instrumentation.read("sourceEpoch")
         const routeRemoves = instrumentation.read("routeRemoves")
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.scope(child).set(row, 1),
         )
         expect(read<readonly object[]>(child, sessions)).toBe(membership)
@@ -186,7 +179,7 @@ describe("v1 committed collection subscriptions", () => {
 
         const resetEpoch = instrumentation.read("sourceEpoch")
         const routeAdds = instrumentation.read("routeAdds")
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.scope(child).reset(row),
         )
         expect(read<readonly object[]>(child, sessions)).toBe(membership)
@@ -221,7 +214,7 @@ describe("v1 committed collection subscriptions", () => {
         sub(secondCreated, sessions, () => order.push("membership-second"))
         sub(root, sessions, () => order.push("membership-root"))
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.set(row, 1),
         )
 
@@ -247,13 +240,13 @@ describe("v1 committed collection subscriptions", () => {
         const root = domain.createStoreTree()
         const child = root.scope("child")
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.set(firstA, 1),
         )
         const collectionOrder: string[] = []
         sub(root, second, () => collectionOrder.push("second"))
         sub(root, first, () => collectionOrder.push("first"))
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.update(firstA, value => (value as number) + 1)
             rows.set(secondB, 2)
             rows.set(firstC, 3)
@@ -265,7 +258,7 @@ describe("v1 committed collection subscriptions", () => {
         const rowB = first("row-b")
         sub(root, rowB, () => rowOrder.push("b"))
         sub(root, rowA, () => rowOrder.push("a"))
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.set(rowA, 1)
             rows.set(rowB, 2)
             rows.update(rowA, value => (value as number) + 1)
@@ -276,7 +269,7 @@ describe("v1 committed collection subscriptions", () => {
         const shared = first("shared")
         sub(root, first, () => overlap.push("root"))
         sub(child, first, () => overlap.push("child"))
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.set(shared, 1)
             rows.scope(child).set(shared, 1)
         })
@@ -313,14 +306,10 @@ describe("v1 committed collection subscriptions", () => {
         })
 
         const error = thrownBy(() =>
-            runInternalCollectionTransaction(
-                domain,
-                store,
-                (transaction, rows) => {
-                    rows.set(row, 1)
-                    transaction.set(count, 1)
-                },
-            ),
+            runCollectionTransaction(domain, store, (transaction, rows) => {
+                rows.set(row, 1)
+                transaction.set(count, 1)
+            }),
         )
         expect(error).toBeInstanceOf(SubscriberNotificationError)
         const notification = error as SubscriberNotificationError
@@ -355,12 +344,8 @@ describe("v1 committed collection subscriptions", () => {
         const row = sessions("a")
         const store = domain.createStoreTree()
         const selected = domain.selector(get => {
-            const value = (get as unknown as InternalRead)(row) as
-                | number
-                | undefined
-            return value === undefined
-                ? 0
-                : (get as unknown as InternalRead)(foreign)
+            const value = get(row) as number | undefined
+            return value === undefined ? 0 : get(foreign)
         })
         expect(store.get(selected)).toBe(0)
         store.sub(selected, () => {})
@@ -374,7 +359,7 @@ describe("v1 committed collection subscriptions", () => {
         })
 
         const error = thrownBy(() =>
-            runInternalCollectionTransaction(domain, store, (_txn, rows) =>
+            runCollectionTransaction(domain, store, (_txn, rows) =>
                 rows.set(row, 1),
             ),
         )
@@ -398,12 +383,8 @@ describe("v1 committed collection subscriptions", () => {
         const row = sessions("a")
         const store = domain.createStoreTree()
         const selected = domain.selector(get => {
-            const value = (get as unknown as InternalRead)(row) as
-                | number
-                | undefined
-            return value === undefined
-                ? 0
-                : (get as unknown as InternalRead)(foreign)
+            const value = get(row) as number | undefined
+            return value === undefined ? 0 : get(foreign)
         })
         expect(store.get(selected)).toBe(0)
         store.sub(selected, () => {})
@@ -411,7 +392,7 @@ describe("v1 committed collection subscriptions", () => {
         sub(store, sessions, () => membershipCalls++)
 
         const error = thrownBy(() =>
-            runInternalCollectionTransaction(domain, store, (_txn, rows) =>
+            runCollectionTransaction(domain, store, (_txn, rows) =>
                 rows.set(row, 1),
             ),
         )

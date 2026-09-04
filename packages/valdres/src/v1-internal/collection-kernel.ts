@@ -8,6 +8,35 @@ import type {
     SynchronousResult,
 } from "./committed-store-tree/runtime-domain"
 import {
+    COLLECTION_EFFECTIVE_DELTAS_PREPARED,
+    COLLECTION_EFFECTIVE_INSERT,
+    COLLECTION_EFFECTIVE_REMOVE,
+    COLLECTION_EFFECTIVE_UPDATE,
+    COLLECTION_INTENT_DELETE,
+    COLLECTION_INTENT_RESET,
+    COLLECTION_INTENT_SET,
+    COLLECTION_INTENT_UPDATE,
+    COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS,
+    COLLECTION_MEMBERSHIP_INSERT,
+    COLLECTION_MEMBERSHIP_MATERIALIZED,
+    COLLECTION_MEMBERSHIP_PUBLISHED,
+    COLLECTION_MEMBERSHIP_RECORD_CREATIONS,
+    COLLECTION_MEMBERSHIP_REMOVE,
+    COLLECTION_MEMBERSHIP_ROUTE_VISITS,
+    COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+    COLLECTION_MEMBERSHIP_SOURCES_CHANGED,
+    COLLECTION_OWNER_RELEASES,
+    COLLECTION_OWNER_RETAINS,
+    COLLECTION_OWNER_RETENTION_SETS_CREATED,
+    COLLECTION_ROW_FINAL_RESOLUTION_VISITS,
+    COLLECTION_ROW_INTENT_STORAGE_ALLOCATIONS,
+    COLLECTION_ROW_INTENTS_STAGED,
+    COLLECTION_ROW_MATERIALIZED,
+    COLLECTION_ROW_PUBLISHED,
+    COLLECTION_ROW_ROUTE_VISITS,
+    COLLECTION_ROW_SOURCES_CHANGED,
+} from "./collection-inspection-protocol"
+import {
     WeakHandleSet,
     type OutcomeToken,
     type StoreScopeNode,
@@ -104,6 +133,7 @@ interface RowApplyPlan {
 
 interface RowSettlementPlan extends CollectionCommitSource {
     readonly record: RowViewRecord
+    readonly before: CollectionDraftOutcome
     readonly outcome: CollectionDraftOutcome
 }
 
@@ -115,6 +145,8 @@ interface MembershipPlanNode {
     readonly beforeRows: readonly CollectionRowHandle[]
     readonly plannedChildren: MembershipPlanNode[]
     finalRows: readonly CollectionRowHandle[] | undefined
+    membershipChangedFromBefore: boolean | undefined
+    membershipChanges?: Map<CollectionRowHandle, MembershipPresenceTimeline>
     installed: MembershipRecord | undefined
     affected: boolean
     containsAffected: boolean
@@ -146,6 +178,15 @@ interface PresenceEvent {
 const BASELINE_BIRTH = Symbol("collection baseline birth")
 type EnablingBirth = number | typeof BASELINE_BIRTH
 
+interface MembershipPresenceTimeline {
+    readonly baselinePresent: boolean
+    readonly transitions: readonly Readonly<{
+        sequence: number
+        present: boolean
+    }>[]
+    readonly birth: EnablingBirth | undefined
+}
+
 interface DraftCoordinate {
     readonly scope: StoreScopeNode
     readonly row: CollectionRowHandle
@@ -154,6 +195,7 @@ interface DraftCoordinate {
     readonly discoveryIndex: number
     planIndex: number | undefined
     final: FinalRowIntent | undefined
+    finalOperation: CollectionMutationKind | undefined
     enablingBirth: EnablingBirth | undefined
 }
 
@@ -185,6 +227,7 @@ interface DraftLane {
         Map<CollectionHandle, MembershipMemo>
     >
     nextDiscoveryIndex: number
+    hasAcceptedIntent: boolean
 }
 
 export interface CollectionDraftInspection {
@@ -383,17 +426,6 @@ const servedOutcome = (outcome: CollectionDraftOutcome): SynchronousResult =>
         value: outcome.kind === "present" ? outcome.value : undefined,
     })
 
-const sameRows = (
-    first: readonly CollectionRowHandle[],
-    second: readonly CollectionRowHandle[],
-): boolean => {
-    if (first.length !== second.length) return false
-    for (let index = 0; index < first.length; index++) {
-        if (!Object.is(first[index], second[index])) return false
-    }
-    return true
-}
-
 /** @internal Tree-shakeable draft and committed-membership engine. The
  * optional baseline reader exists only for deterministic draft tests. */
 export const createCollectionKernel = (
@@ -406,6 +438,51 @@ export const createCollectionKernel = (
     let membershipPlacementTraceForTest:
         | { coordinates: number; states: number }
         | undefined
+
+    const extensionRecorder = (scope: StoreScopeNode) =>
+        scope.coordinator?.evaluate?.recordExtension
+
+    const recordCounter = (
+        scope: StoreScopeNode,
+        code: number,
+        amount = 1,
+    ): void => {
+        extensionRecorder(scope)?.(code, amount)
+    }
+
+    const recordDetail = (
+        scope: StoreScopeNode,
+        code: number,
+        target: object,
+        related?: object,
+    ): void => {
+        extensionRecorder(scope)?.(code, scope, target, related)
+    }
+
+    const sameRowsWhileProducingSnapshot = (
+        scope: StoreScopeNode,
+        first: readonly CollectionRowHandle[],
+        second: readonly CollectionRowHandle[],
+    ): boolean => {
+        if (first.length !== second.length) return false
+        const recorder = extensionRecorder(scope)
+        if (recorder === undefined) {
+            for (let index = 0; index < first.length; index++) {
+                if (!Object.is(first[index], second[index])) return false
+            }
+            return true
+        }
+        for (let index = 0; index < first.length; index++) {
+            if (!Object.is(first[index], second[index])) {
+                recorder(COLLECTION_MEMBERSHIP_ROWS_SCANNED, index + 1)
+                return false
+            }
+        }
+        if (first.length !== 0) {
+            recorder(COLLECTION_MEMBERSHIP_ROWS_SCANNED, first.length)
+        }
+        return true
+    }
 
     const sidecarFor = (scope: StoreScopeNode): CollectionScopeSidecar => {
         let sidecar = scopeSidecars.get(scope)
@@ -607,6 +684,12 @@ export const createCollectionKernel = (
         }
         rowViews.set(row, record)
         liveRowViews.add(record)
+        recordDetail(
+            scope,
+            COLLECTION_ROW_MATERIALIZED,
+            row,
+            bindings.lookupRow(row),
+        )
         if (inheritedFrom !== undefined) {
             inheritedFrom.inheritingChildren.add(record)
             scope.coordinator.recordCounter("routeAdds")
@@ -622,6 +705,7 @@ export const createCollectionKernel = (
         const unresolved: StoreScopeNode[] = []
         let current: RowViewRecord
         while (true) {
+            recordCounter(currentScope, COLLECTION_ROW_ROUTE_VISITS)
             const sidecar = scopeSidecars.get(currentScope)
             const materialized = sidecar?.rowViews?.get(row)
             if (materialized !== undefined) {
@@ -720,6 +804,8 @@ export const createCollectionKernel = (
         }
         memberships.set(collection, record)
         liveMemberships.add(record)
+        recordCounter(scope, COLLECTION_MEMBERSHIP_RECORD_CREATIONS)
+        recordDetail(scope, COLLECTION_MEMBERSHIP_MATERIALIZED, collection)
         return record
     }
 
@@ -750,6 +836,7 @@ export const createCollectionKernel = (
         const unresolved: StoreScopeNode[] = []
         let current: MembershipRecord
         while (true) {
+            recordCounter(currentScope, COLLECTION_MEMBERSHIP_ROUTE_VISITS)
             const materialized = scopeSidecars
                 .get(currentScope)
                 ?.memberships?.get(collection)
@@ -758,10 +845,15 @@ export const createCollectionKernel = (
                 break
             }
             if (currentScope.parent === undefined) {
+                const rows = Object.freeze([]) as readonly CollectionRowHandle[]
+                recordCounter(
+                    currentScope,
+                    COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS,
+                )
                 current = registerMembershipRecord(
                     currentScope,
                     collection,
-                    Object.freeze([]),
+                    rows,
                 )
                 break
             }
@@ -769,11 +861,18 @@ export const createCollectionKernel = (
             currentScope = currentScope.parent
         }
         for (let index = unresolved.length - 1; index >= 0; index--) {
-            const child = registerMembershipRecord(
-                unresolved[index] as StoreScopeNode,
-                collection,
-                Object.freeze([...membershipRows(current)]),
-            )
+            const scope = unresolved[index] as StoreScopeNode
+            const inheritedRows = membershipRows(current)
+            if (inheritedRows.length !== 0) {
+                recordCounter(
+                    scope,
+                    COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                    inheritedRows.length,
+                )
+            }
+            const rows = Object.freeze([...inheritedRows])
+            recordCounter(scope, COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS)
+            const child = registerMembershipRecord(scope, collection, rows)
             attachMembership(child, current)
             current = child
         }
@@ -788,6 +887,7 @@ export const createCollectionKernel = (
         for (const coordinates of lane.byScope.values()) {
             for (const coordinate of coordinates.values()) {
                 coordinate.final = undefined
+                coordinate.finalOperation = undefined
             }
             coordinates.clear()
         }
@@ -829,6 +929,7 @@ export const createCollectionKernel = (
             revisionByCollection: new Map(),
             membershipMemo: new Map(),
             nextDiscoveryIndex: 0,
+            hasAcceptedIntent: false,
         }
         draft.installRows(releaseDraft)
         lanes.set(draft, lane)
@@ -890,6 +991,7 @@ export const createCollectionKernel = (
             discoveryIndex: lane.nextDiscoveryIndex++,
             planIndex: undefined,
             final: undefined,
+            finalOperation: undefined,
             enablingBirth: undefined,
         }
         coordinates.set(row, coordinate)
@@ -923,6 +1025,7 @@ export const createCollectionKernel = (
     const installEvent = (
         draft: TreeDraft,
         coordinate: DraftCoordinate,
+        operation: CollectionMutationKind,
         final: FinalRowIntent,
         local: CollectionDraftLocal,
         effective: CollectionDraftOutcome,
@@ -941,6 +1044,16 @@ export const createCollectionKernel = (
         ) {
             return
         }
+        // This counter names the draft's first accepted intent storage, not
+        // read-only lane, coordinate, or membership-memo allocation.
+        if (!lane.hasAcceptedIntent) {
+            lane.hasAcceptedIntent = true
+            recordCounter(
+                coordinate.scope,
+                COLLECTION_ROW_INTENT_STORAGE_ALLOCATIONS,
+            )
+        }
+        recordCounter(coordinate.scope, COLLECTION_ROW_INTENTS_STAGED)
         const affectedCoordinates: {
             coordinate: DraftCoordinate
             effective: CollectionDraftOutcome
@@ -971,6 +1084,7 @@ export const createCollectionKernel = (
             lane.planOrder.push(coordinate)
         }
         coordinate.final = final
+        coordinate.finalOperation = operation
         const event = Object.freeze({
             coordinateId: coordinate.discoveryIndex,
             scope: coordinate.scope,
@@ -1021,9 +1135,7 @@ export const createCollectionKernel = (
                 candidate.enablingBirth = undefined
             }
             const placement =
-                after.kind === "present"
-                    ? candidate.enablingBirth
-                    : undefined
+                after.kind === "present" ? candidate.enablingBirth : undefined
             if (!Object.is(before.placement, placement)) {
                 placementChanged = true
             }
@@ -1085,6 +1197,7 @@ export const createCollectionKernel = (
         installEvent(
             draft,
             coordinate,
+            "set",
             Object.freeze({ kind: "present", value: admitted }),
             presentLocal(admitted),
             presentOutcome(admitted),
@@ -1113,6 +1226,7 @@ export const createCollectionKernel = (
         installEvent(
             draft,
             coordinate,
+            "update",
             Object.freeze({ kind: "present", value: admitted }),
             presentLocal(admitted),
             presentOutcome(admitted),
@@ -1128,6 +1242,7 @@ export const createCollectionKernel = (
         installEvent(
             draft,
             coordinate,
+            "delete",
             Object.freeze({ kind: "absent" }),
             ABSENT_LOCAL,
             ABSENT,
@@ -1152,6 +1267,7 @@ export const createCollectionKernel = (
         installEvent(
             draft,
             coordinate,
+            "reset",
             Object.freeze({ kind: "reset" }),
             NONE,
             inherited,
@@ -1209,6 +1325,13 @@ export const createCollectionKernel = (
             routeScope = routeScope.parent
         }
         const rows: CollectionRowHandle[] = []
+        if (baseline.length !== 0) {
+            recordCounter(
+                scope,
+                COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                baseline.length,
+            )
+        }
         for (const row of baseline) {
             const coordinate = candidates.get(row)
             if (
@@ -1219,6 +1342,13 @@ export const createCollectionKernel = (
             }
         }
         const births: DraftCoordinate[] = []
+        if (candidates.size !== 0) {
+            recordCounter(
+                scope,
+                COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                candidates.size,
+            )
+        }
         for (const coordinate of candidates.values()) {
             if (
                 typeof coordinate.enablingBirth === "number" &&
@@ -1241,11 +1371,18 @@ export const createCollectionKernel = (
             return (firstBirth as number) - (secondBirth as number)
         })
         for (const coordinate of births) rows.push(coordinate.row)
-        const snapshot = sameRows(baseline, rows)
-            ? baseline
-            : current !== undefined && sameRows(current.rows, rows)
-              ? current.rows
-              : Object.freeze(rows)
+        let snapshot: readonly CollectionRowHandle[]
+        if (sameRowsWhileProducingSnapshot(scope, baseline, rows)) {
+            snapshot = baseline
+        } else if (
+            current !== undefined &&
+            sameRowsWhileProducingSnapshot(scope, current.rows, rows)
+        ) {
+            snapshot = current.rows
+        } else {
+            snapshot = Object.freeze(rows)
+            recordCounter(scope, COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS)
+        }
         if (byCollection === undefined) {
             byCollection = new Map()
             lane.membershipMemo.set(scope, byCollection)
@@ -1340,15 +1477,8 @@ export const createCollectionKernel = (
             CollectionHandle,
             (typeof collectionSlots)[number]
         >()
-        type MembershipPresenceTransition = Readonly<{
-            sequence: number
-            present: boolean
-        }>
-        type MembershipPresenceTimeline = Readonly<{
-            baselinePresent: boolean
-            transitions: readonly MembershipPresenceTransition[]
-            birth: EnablingBirth | undefined
-        }>
+        type MembershipPresenceTransition =
+            MembershipPresenceTimeline["transitions"][number]
         const noMembershipTransitions = Object.freeze(
             [],
         ) as readonly MembershipPresenceTransition[]
@@ -1392,6 +1522,7 @@ export const createCollectionKernel = (
             let record: MembershipRecord | undefined = target
             let parent: MembershipPlanNode | undefined
             while (record !== undefined) {
+                recordCounter(record.scope, COLLECTION_MEMBERSHIP_ROUTE_VISITS)
                 const known = nodesByRecord.get(record)
                 if (known !== undefined) {
                     parent = known
@@ -1410,6 +1541,7 @@ export const createCollectionKernel = (
                     beforeRows: membershipRows(existing),
                     plannedChildren: [],
                     finalRows: undefined,
+                    membershipChangedFromBefore: undefined,
                     installed: undefined,
                     affected: false,
                     containsAffected: false,
@@ -1425,15 +1557,19 @@ export const createCollectionKernel = (
             collection: CollectionHandle,
         ): MembershipPlanNode => {
             const known = nodesByScope.get(scope)?.get(collection)
+            // A memo hit is only the target map lookup; no ancestry route node
+            // is entered again, even when another row shares this plan path.
             if (known !== undefined) return known
             const unresolved: StoreScopeNode[] = []
             let currentScope: StoreScopeNode | undefined = scope
             let parent: MembershipPlanNode | undefined
             while (currentScope !== undefined) {
-                const planned = nodesByScope
-                    .get(currentScope)
-                    ?.get(collection)
+                const planned = nodesByScope.get(currentScope)?.get(collection)
                 if (planned !== undefined) {
+                    recordCounter(
+                        currentScope,
+                        COLLECTION_MEMBERSHIP_ROUTE_VISITS,
+                    )
                     parent = planned
                     break
                 }
@@ -1444,6 +1580,7 @@ export const createCollectionKernel = (
                     parent = nodeForRecord(existing)
                     break
                 }
+                recordCounter(currentScope, COLLECTION_MEMBERSHIP_ROUTE_VISITS)
                 unresolved.push(currentScope)
                 currentScope = currentScope.parent
             }
@@ -1456,6 +1593,7 @@ export const createCollectionKernel = (
                     beforeRows: parent?.beforeRows ?? EMPTY_ROWS,
                     plannedChildren: [],
                     finalRows: undefined,
+                    membershipChangedFromBefore: undefined,
                     installed: undefined,
                     affected: false,
                     containsAffected: false,
@@ -1506,6 +1644,13 @@ export const createCollectionKernel = (
         ): boolean => {
             let rows = baselineRowsByNode.get(node)
             if (rows === undefined) {
+                if (node.beforeRows.length !== 0) {
+                    recordCounter(
+                        node.scope,
+                        COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                        node.beforeRows.length,
+                    )
+                }
                 rows = new Set(node.beforeRows)
                 baselineRowsByNode.set(node, rows)
             }
@@ -1532,8 +1677,7 @@ export const createCollectionKernel = (
 
             let parentPresent = parent.baselinePresent
             let present =
-                local === "present" ||
-                (local === "none" && parentPresent)
+                local === "present" || (local === "none" && parentPresent)
             const baselinePresent = present
             let birth: EnablingBirth | undefined = present
                 ? BASELINE_BIRTH
@@ -1567,8 +1711,7 @@ export const createCollectionKernel = (
                     eventIndex++
                 }
                 const nextPresent =
-                    local === "present" ||
-                    (local === "none" && parentPresent)
+                    local === "present" || (local === "none" && parentPresent)
                 if (nextPresent === present) continue
                 present = nextPresent
                 birth = present ? sequence : undefined
@@ -1589,19 +1732,13 @@ export const createCollectionKernel = (
             if (known !== undefined) return known
             const unresolved: MembershipPlanNode[] = []
             let current: MembershipPlanNode | undefined = target
-            while (
-                current !== undefined &&
-                !placementsByNode.has(current)
-            ) {
+            while (current !== undefined && !placementsByNode.has(current)) {
                 unresolved.push(current)
                 current = current.parent
             }
             let parentPlacements =
                 current === undefined
-                    ? new Map<
-                          CollectionRowHandle,
-                          MembershipPresenceTimeline
-                      >()
+                    ? new Map<CollectionRowHandle, MembershipPresenceTimeline>()
                     : (placementsByNode.get(current) as Map<
                           CollectionRowHandle,
                           MembershipPresenceTimeline
@@ -1626,6 +1763,13 @@ export const createCollectionKernel = (
                     CollectionRowHandle,
                     MembershipPresenceTimeline
                 >()
+                if (parentPlacements.size !== 0) {
+                    recordCounter(
+                        node.scope,
+                        COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                        parentPlacements.size,
+                    )
+                }
                 for (const [row, parentTimeline] of parentPlacements) {
                     placements.set(
                         row,
@@ -1675,8 +1819,24 @@ export const createCollectionKernel = (
                 readonly row: CollectionRowHandle
                 readonly birth: number
             }[] = []
+            const captureMembershipChanges =
+                node.existing !== undefined &&
+                extensionRecorder(node.scope) !== undefined
+            let classifiedPlacements:
+                | Map<CollectionRowHandle, MembershipPresenceTimeline>
+                | undefined
             if (readBaselineOverride === undefined) {
                 const placements = placementsFor(node)
+                if (captureMembershipChanges) {
+                    classifiedPlacements = placements
+                }
+                if (node.beforeRows.length !== 0) {
+                    recordCounter(
+                        node.scope,
+                        COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                        node.beforeRows.length,
+                    )
+                }
                 for (const row of node.beforeRows) {
                     const placement = placements.get(row)
                     if (
@@ -1686,7 +1846,23 @@ export const createCollectionKernel = (
                         next.push(row)
                     }
                 }
+                if (placements.size !== 0) {
+                    recordCounter(
+                        node.scope,
+                        COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                        placements.size,
+                    )
+                }
                 for (const [row, placement] of placements) {
+                    if (
+                        classifiedPlacements !== undefined &&
+                        ((placement.baselinePresent &&
+                            placement.birth === undefined) ||
+                            (!placement.baselinePresent &&
+                                typeof placement.birth === "number"))
+                    ) {
+                        node.membershipChanges = classifiedPlacements
+                    }
                     if (typeof placement.birth === "number") {
                         births.push({ row, birth: placement.birth })
                     }
@@ -1714,6 +1890,13 @@ export const createCollectionKernel = (
                     }
                     currentScope = currentScope.parent
                 }
+                if (node.beforeRows.length !== 0) {
+                    recordCounter(
+                        node.scope,
+                        COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                        node.beforeRows.length,
+                    )
+                }
                 for (const row of node.beforeRows) {
                     const coordinate = candidates.get(row)
                     if (
@@ -1722,6 +1905,13 @@ export const createCollectionKernel = (
                     ) {
                         next.push(row)
                     }
+                }
+                if (candidates.size !== 0) {
+                    recordCounter(
+                        node.scope,
+                        COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                        candidates.size,
+                    )
                 }
                 for (const coordinate of candidates.values()) {
                     if (
@@ -1744,16 +1934,31 @@ export const createCollectionKernel = (
                 return first.birth - second.birth
             })
             for (const birth of births) next.push(birth.row)
-            node.finalRows =
-                node.existing !== undefined && sameRows(node.beforeRows, next)
-                    ? node.beforeRows
-                    : Object.freeze(next)
+            const membershipChangedFromBefore = !sameRowsWhileProducingSnapshot(
+                node.scope,
+                node.beforeRows,
+                next,
+            )
+            node.membershipChangedFromBefore = membershipChangedFromBefore
+            if (node.existing !== undefined && !membershipChangedFromBefore) {
+                node.finalRows = node.beforeRows
+            } else {
+                node.finalRows = Object.freeze(next)
+                recordCounter(
+                    node.scope,
+                    COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS,
+                )
+            }
             return node.finalRows
         }
 
         for (const coordinate of lane.planOrder) {
             const final = coordinate.final
             if (final === undefined) continue
+            recordCounter(
+                coordinate.scope,
+                COLLECTION_ROW_FINAL_RESOLUTION_VISITS,
+            )
             const local =
                 final.kind === "present"
                     ? presentLocal(final.value)
@@ -1777,10 +1982,7 @@ export const createCollectionKernel = (
             )
             const localKindChanged = baseline.local.kind !== local.kind
             if (localKindChanged) {
-                ensureMembershipPath(
-                    coordinate.scope,
-                    coordinate.collection,
-                )
+                ensureMembershipPath(coordinate.scope, coordinate.collection)
             }
             const baselinePlacement =
                 baseline.effective.kind === "present"
@@ -1805,6 +2007,7 @@ export const createCollectionKernel = (
                 const record = pending.pop() as RowViewRecord
                 if (considered.has(record)) continue
                 considered.add(record)
+                recordCounter(record.scope, COLLECTION_ROW_ROUTE_VISITS)
                 const before =
                     record.served.outcome.kind === "value" &&
                     record.served.outcome.value !== undefined
@@ -1822,6 +2025,7 @@ export const createCollectionKernel = (
                         scope: record.scope,
                         atom: record.atom as AnyState,
                         record,
+                        before,
                         outcome: after,
                     }),
                 )
@@ -1849,6 +2053,7 @@ export const createCollectionKernel = (
                 const node = entry.node
                 if (visited.has(node)) continue
                 visited.add(node)
+                recordCounter(node.scope, COLLECTION_MEMBERSHIP_ROUTE_VISITS)
                 const affected = entry.affected || node.affected
                 if (affected) {
                     const finalRows = finalRowsFor(node)
@@ -1910,14 +2115,65 @@ export const createCollectionKernel = (
     const applyCommit = (planValue: CollectionCommitPlan): boolean => {
         const plan = planValue as ScopedCollectionCommitPlan
         let ownershipChanged = false
+        for (const settlement of plan.rowSettlements) {
+            const { record, before, outcome: after } = settlement
+            recordCounter(record.scope, COLLECTION_EFFECTIVE_DELTAS_PREPARED)
+            recordDetail(
+                record.scope,
+                before.kind === "absent"
+                    ? COLLECTION_EFFECTIVE_INSERT
+                    : after.kind === "absent"
+                      ? COLLECTION_EFFECTIVE_REMOVE
+                      : COLLECTION_EFFECTIVE_UPDATE,
+                record.atom,
+                bindings.lookupRow(record.atom),
+            )
+        }
+        for (const settlement of plan.membershipSettlements) {
+            for (const [row, placement] of settlement.node.membershipChanges ??
+                []) {
+                const code =
+                    placement.baselinePresent && placement.birth === undefined
+                        ? COLLECTION_MEMBERSHIP_REMOVE
+                        : !placement.baselinePresent &&
+                            typeof placement.birth === "number"
+                          ? COLLECTION_MEMBERSHIP_INSERT
+                          : undefined
+                if (code !== undefined) {
+                    recordDetail(
+                        settlement.node.scope,
+                        code,
+                        row,
+                        settlement.node.atom,
+                    )
+                }
+            }
+        }
         for (const rowPlan of plan.rows) {
+            const operation = rowPlan.coordinate.finalOperation
+            if (operation !== undefined) {
+                recordDetail(
+                    rowPlan.coordinate.scope,
+                    operation === "set"
+                        ? COLLECTION_INTENT_SET
+                        : operation === "update"
+                          ? COLLECTION_INTENT_UPDATE
+                          : operation === "reset"
+                            ? COLLECTION_INTENT_RESET
+                            : COLLECTION_INTENT_DELETE,
+                    rowPlan.coordinate.row,
+                    rowPlan.coordinate.collection,
+                )
+            }
             if (!rowPlan.ownershipChanged) continue
             ownershipChanged = true
             const { row, scope } = rowPlan.coordinate
             if (rowPlan.local.kind === "none") {
                 const sidecar = scopeSidecars.get(scope)
                 sidecar?.rowLocals?.delete(row)
-                sidecar?.ownedRows?.delete(row)
+                if (sidecar?.ownedRows?.delete(row)) {
+                    recordCounter(scope, COLLECTION_OWNER_RELEASES)
+                }
                 if (sidecar?.ownedRows?.size === 0) {
                     sidecar.ownedRows = undefined
                     sidecar.rowLocals = undefined
@@ -1940,9 +2196,13 @@ export const createCollectionKernel = (
             if (ownedRows === undefined) {
                 ownedRows = new Set()
                 sidecar.ownedRows = ownedRows
+                recordCounter(scope, COLLECTION_OWNER_RETENTION_SETS_CREATED)
             }
             rowLocals.set(row, rowPlan.local)
-            ownedRows.add(row)
+            if (!ownedRows.has(row)) {
+                ownedRows.add(row)
+                recordCounter(scope, COLLECTION_OWNER_RETAINS)
+            }
         }
         for (const node of plan.membershipInstalls) {
             node.installed = registerMembershipRecord(
@@ -1953,7 +2213,7 @@ export const createCollectionKernel = (
         }
         if (plan.membershipSettlements.length !== 0) return true
         for (const node of plan.membershipInstalls) {
-            if (!sameRows(node.beforeRows, node.finalRows!)) return true
+            if (node.membershipChangedFromBefore) return true
         }
         return ownershipChanged
     }
@@ -1990,6 +2250,13 @@ export const createCollectionKernel = (
                 token: record.scope.createOutcomeToken(),
                 outcome: servedOutcome(outcome),
             })
+            recordCounter(record.scope, COLLECTION_ROW_SOURCES_CHANGED)
+            recordDetail(
+                record.scope,
+                COLLECTION_ROW_PUBLISHED,
+                record.atom,
+                bindings.lookupRow(record.atom),
+            )
             record.scope.coordinator.reachSubscriptionTarget(
                 record.scope,
                 record.atom as AnyState,
@@ -2001,6 +2268,12 @@ export const createCollectionKernel = (
                 token: record.scope.createOutcomeToken(),
                 outcome: Object.freeze({ kind: "value", value: rows }),
             })
+            recordCounter(record.scope, COLLECTION_MEMBERSHIP_SOURCES_CHANGED)
+            recordDetail(
+                record.scope,
+                COLLECTION_MEMBERSHIP_PUBLISHED,
+                record.atom,
+            )
             record.scope.coordinator.reachSubscriptionTarget(
                 record.scope,
                 record.atom as AnyState,
@@ -2037,6 +2310,10 @@ export const createCollectionKernel = (
         })
         sidecar.liveRowViews?.clear()
         sidecar.liveMemberships?.clear()
+        const ownedRowCount = sidecar.ownedRows?.size ?? 0
+        if (ownedRowCount !== 0) {
+            recordCounter(scope, COLLECTION_OWNER_RELEASES, ownedRowCount)
+        }
         sidecar.ownedRows?.clear()
         sidecar.rowLocals = undefined
         sidecar.ownedRows = undefined
@@ -2102,10 +2379,8 @@ export const createCollectionKernel = (
                     .served
             }
             if (!bindings.lookupCollection(node)) return undefined
-            return materializeMembership(
-                scopeValue as StoreScopeNode,
-                node,
-            ).served
+            return materializeMembership(scopeValue as StoreScopeNode, node)
+                .served
         },
         plan: (_host: object, draftValue: object) => planCommit(draftValue),
         release: releaseDraft,
@@ -2123,7 +2398,9 @@ export const createCollectionKernel = (
             membershipRebuildTraceForTest = trace
             return () => {
                 if (trace === undefined) {
-                    throw new Error("The membership rebuild trace is already finished")
+                    throw new Error(
+                        "The membership rebuild trace is already finished",
+                    )
                 }
                 membershipRebuildTraceForTest = undefined
                 const result = Object.freeze([...trace])
@@ -2134,15 +2411,20 @@ export const createCollectionKernel = (
         },
         beginMembershipPlacementTraceForTest: () => {
             if (membershipPlacementTraceForTest !== undefined) {
-                throw new Error("A membership placement trace is already active")
+                throw new Error(
+                    "A membership placement trace is already active",
+                )
             }
-            let trace:
-                | { coordinates: number; states: number }
-                | undefined = { coordinates: 0, states: 0 }
+            let trace: { coordinates: number; states: number } | undefined = {
+                coordinates: 0,
+                states: 0,
+            }
             membershipPlacementTraceForTest = trace
             return () => {
                 if (trace === undefined) {
-                    throw new Error("The membership placement trace is already finished")
+                    throw new Error(
+                        "The membership placement trace is already finished",
+                    )
                 }
                 membershipPlacementTraceForTest = undefined
                 const result = Object.freeze({ ...trace })

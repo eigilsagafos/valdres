@@ -8,7 +8,7 @@ interface StateBase<Value> {
     readonly [privateStateValue]: (value: Value) => Value
 }
 
-/** @internal Readonly State arms staged for the collection runtime. */
+/** @internal Readonly State arms implemented by the optional collection runtime. */
 interface ReadonlyState<Value, Kind extends "collection-row" | "collection">
     extends StateBase<Value> {
     readonly kind: Kind
@@ -24,8 +24,12 @@ export interface Selector<Value> extends StateBase<Value> {
     readonly kind: "selector"
 }
 
-/** The root-readable surface stays Atom-or-Selector until the public collection slice. */
-export type State<Value> = Atom<Value> | Selector<Value>
+/** Any definition that can be read and subscribed through a Store. */
+export type State<Value> =
+    | Atom<Value>
+    | Selector<Value>
+    | ReadonlyState<Value, "collection-row">
+    | ReadonlyState<Value, "collection">
 
 export type CollectionKey = string | number | bigint | boolean | null
 
@@ -39,7 +43,7 @@ export type CollectionValue =
     | symbol
     | object
 
-/** @internal Candidate readonly row handle; not a root export yet. */
+/** One readonly, scope-local row in a Collection. */
 export interface CollectionRow<
     Key extends CollectionKey,
     Value extends CollectionValue,
@@ -48,7 +52,7 @@ export interface CollectionRow<
     readonly key: Key
 }
 
-/** @internal Candidate collection definition; not a root export yet. */
+/** A callable readonly State containing its currently present rows. */
 export interface Collection<
     Key extends CollectionKey,
     Value extends CollectionValue,
@@ -79,7 +83,7 @@ interface CollectionOptionCarrier<
     }
 }
 
-/** @internal Candidate collection options; not a root export yet. */
+/** Definition-time options for canonical or rich-input Collection keys. */
 export type CollectionOptions<
     Key extends CollectionKey,
     Value extends CollectionValue,
@@ -107,9 +111,23 @@ export type AtomUpdater<Value> = (current: Value) => Value
 /** A scope-bound revocable view over one internal StoreTree draft. */
 export interface RootTransaction {
     get<Value>(state: State<Value>): Value
+    set<Key extends CollectionKey, Value extends CollectionValue>(
+        row: CollectionRow<Key, Value>,
+        value: Value,
+    ): void
     set<Value>(atom: Atom<Value>, value: Value): void
+    update<Key extends CollectionKey, Value extends CollectionValue>(
+        row: CollectionRow<Key, Value>,
+        update: (current: Value) => Value,
+    ): void
     update<Value>(atom: Atom<Value>, update: AtomUpdater<Value>): void
+    reset<Key extends CollectionKey, Value extends CollectionValue>(
+        row: CollectionRow<Key, Value>,
+    ): void
     reset<Value>(atom: Atom<Value>): void
+    delete<Key extends CollectionKey, Value extends CollectionValue>(
+        row: CollectionRow<Key, Value>,
+    ): void
     scope(target: string | CommittedStoreTree): RootTransaction
     scope<Result>(
         target: string | CommittedStoreTree,
@@ -134,12 +152,29 @@ export interface CommittedStoreTree {
         state: State<Value>,
         callback: () => void,
     ) => () => void
-    readonly set: <Value>(atom: Atom<Value>, value: Value) => void
-    readonly update: <Value>(
-        atom: Atom<Value>,
-        update: AtomUpdater<Value>,
+    readonly set: {
+        <Key extends CollectionKey, Value extends CollectionValue>(
+            row: CollectionRow<Key, Value>,
+            value: Value,
+        ): void
+        <Value>(atom: Atom<Value>, value: Value): void
+    }
+    readonly update: {
+        <Key extends CollectionKey, Value extends CollectionValue>(
+            row: CollectionRow<Key, Value>,
+            update: (current: Value) => Value,
+        ): void
+        <Value>(atom: Atom<Value>, update: AtomUpdater<Value>): void
+    }
+    readonly reset: {
+        <Key extends CollectionKey, Value extends CollectionValue>(
+            row: CollectionRow<Key, Value>,
+        ): void
+        <Value>(atom: Atom<Value>): void
+    }
+    readonly delete: <Key extends CollectionKey, Value extends CollectionValue>(
+        row: CollectionRow<Key, Value>,
     ) => void
-    readonly reset: <Value>(atom: Atom<Value>) => void
     readonly txn: <Result>(
         callback: TransactionCallback<Result>,
         name?: string,

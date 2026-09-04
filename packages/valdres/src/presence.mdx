@@ -1,0 +1,75 @@
+---
+title: presence
+description: Reactively test whether a collection row is present
+---
+
+# presence
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+    <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">
+        Signature
+    </div>
+    <code className="text-sm font-mono text-accent-500">
+        presence&lt;Key extends CollectionKey, Value extends
+        CollectionValue&gt;(row: CollectionRow&lt;Key, Value&gt;):
+        Selector&lt;boolean&gt;
+    </code>
+    <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
+            valdres
+        </span>
+        Derive reactive collection-row presence
+    </div>
+</div>
+
+> **Adapter compatibility:** This beta is certified with `valdres-react` and
+> framework-free `valdres` usage. The Vue, Svelte, Solid, and Angular adapters
+> remain on the legacy core API and must not be combined with this beta yet.
+
+`presence` returns a readonly selector that is `true` when a collection row is
+effectively present in the Store or scope reading it.
+
+```ts
+import { collection, presence, store } from "valdres"
+
+const sessions = collection<string, { active: boolean }>()
+const session = sessions("session-1")
+const sessionIsPresent = presence(session)
+const app = store()
+
+app.get(sessionIsPresent) // false
+app.set(session, { active: true })
+app.get(sessionIsPresent) // true
+app.delete(session)
+app.get(sessionIsPresent) // false
+```
+
+## Semantics
+
+The result behaves like an ordinary selector equivalent to
+`selector(get => get(row) !== undefined)`. You can pass it to `get`, `sub`,
+another selector, or the certified React adapter's `useValue` hook.
+
+Presence follows effective scoped state. A child `delete(row)` makes it false
+even if the parent has a value. `reset(row)` removes the child's local deletion
+or value, so presence follows the parent again.
+
+A value-only update keeps presence `true`. It may cause the selector to check
+the row again, but equality pruning preserves the boolean result and does not
+notify presence subscribers.
+
+## Identity and input validation
+
+Repeated calls return the same selector while it remains live. The memoization
+is weak, so Valdres may create a new equivalent selector after no caller or
+Store dependency retains the old one.
+
+`presence` accepts only a genuine `CollectionRow` from the same Valdres runtime
+domain. A foreign branded row throws `RuntimeMismatchError`; a forged row-shaped
+object or another kind of State throws `TypeError`.
+
+## See also
+
+- [collection](/valdres/collection) - define and enumerate collection rows
+- [store](/valdres/store) - set, update, delete, or reset a row
+- [selector](/valdres/selector) - compose derived state

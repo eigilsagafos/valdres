@@ -3,6 +3,10 @@ import { createInspectableStoreTree } from "./v1-internal/public-domain"
 import { createInspectionRecorder } from "./v1-internal/inspection"
 import type {
     CommitInspection,
+    CollectionEffectiveDeltaInspectionDetail,
+    CollectionIntentInspectionDetail,
+    CollectionMembershipInspectionDetail,
+    CollectionSourceInspectionDetail,
     CycleSearchInspectionDetail,
     InspectableStoreOptions,
     InspectionCycleBucket,
@@ -52,6 +56,10 @@ export const createInspectableStore = (
 
 export type {
     CommitInspection,
+    CollectionEffectiveDeltaInspectionDetail,
+    CollectionIntentInspectionDetail,
+    CollectionMembershipInspectionDetail,
+    CollectionSourceInspectionDetail,
     CycleSearchInspectionDetail,
     InspectableStoreOptions,
     InspectionCycleBucket,

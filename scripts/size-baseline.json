@@ -7,7 +7,6 @@
             "fixture atom",
             "fixture atom-selector-store",
             "fixture family",
-            "fixture all-exports",
             "fixture adapter-internals"
         ]
     },
@@ -20,7 +19,20 @@
             "raw": 387391,
             "gzip": 102270
         },
-        "fixtures": {}
+        "fixtures": {
+            "collection": {
+                "raw": 95353,
+                "gzip": 26195
+            },
+            "all-exports": {
+                "raw": 98775,
+                "gzip": 27217
+            },
+            "inspect": {
+                "raw": 97552,
+                "gzip": 25985
+            }
+        }
     },
     "dist": {
         "raw": 212506,

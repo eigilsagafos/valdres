@@ -14,6 +14,33 @@ import type {
     State,
     TransactionCallback,
 } from "./committed-store-tree/types"
+import {
+    COLLECTION_EFFECTIVE_INSERT,
+    COLLECTION_EFFECTIVE_REMOVE,
+    COLLECTION_INTENT_DELETE,
+    COLLECTION_INTENT_SET,
+    COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS,
+    COLLECTION_MEMBERSHIP_INSERT,
+    COLLECTION_MEMBERSHIP_MATERIALIZED,
+    COLLECTION_MEMBERSHIP_PUBLISHED,
+    COLLECTION_MEMBERSHIP_RECORD_CREATIONS,
+    COLLECTION_MEMBERSHIP_REMOVE,
+    COLLECTION_MEMBERSHIP_ROUTE_VISITS,
+    COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+    COLLECTION_MEMBERSHIP_SOURCES_CHANGED,
+    COLLECTION_OWNER_RELEASES,
+    COLLECTION_OWNER_RETAINS,
+    COLLECTION_OWNER_RETENTION_SETS_CREATED,
+    COLLECTION_ROW_FINAL_RESOLUTION_VISITS,
+    COLLECTION_ROW_INTENT_STORAGE_ALLOCATIONS,
+    COLLECTION_ROW_INTENTS_STAGED,
+    COLLECTION_ROW_MATERIALIZED,
+    COLLECTION_ROW_PUBLISHED,
+    COLLECTION_ROW_ROUTE_VISITS,
+    COLLECTION_ROW_SOURCES_CHANGED,
+    COLLECTION_EFFECTIVE_DELTAS_PREPARED,
+} from "./collection-inspection-protocol"
+import { COLLECTION_KERNEL } from "./committed-store-tree/runtime-domain"
 import type {
     SelectorCycleSearch,
     SelectorCycleSearchSite,
@@ -41,7 +68,7 @@ import {
 type StoreRecorderEvent =
     | readonly [
           event: 0,
-          operation: 0 | 1 | 2 | 3,
+          operation: 0 | 1 | 2 | 3 | 4,
           scope: object,
           scopeName: string | undefined,
           name: string | undefined,
@@ -75,6 +102,8 @@ export type InspectionReferenceKind =
     | "state"
     | "atom"
     | "selector"
+    | "collection-row"
+    | "collection"
     | "scratch-host"
     | "subscription"
     | "callback"
@@ -220,6 +249,21 @@ export interface InspectionWorkTotals {
     readonly propagationSettled: number
     readonly notificationTargets: number
     readonly subscriberCallbacks: number
+    readonly collectionRowIntentsStaged: number
+    /** First accepted collection-intent storage per draft; excludes reads. */
+    readonly collectionRowIntentStorageAllocations: number
+    readonly collectionRowFinalResolutionVisits: number
+    readonly collectionRowRouteVisits: number
+    readonly collectionMembershipRecordCreations: number
+    readonly collectionMembershipRouteVisits: number
+    readonly collectionMembershipRowsScanned: number
+    readonly collectionMembershipArrayAllocations: number
+    readonly collectionRowSourcesChanged: number
+    readonly collectionMembershipSourcesChanged: number
+    readonly collectionEffectiveDeltasPrepared: number
+    readonly collectionOwnerRetentionSetsCreated: number
+    readonly collectionOwnerRetains: number
+    readonly collectionOwnerReleases: number
     readonly cycle: InspectionCycleTotals
 }
 
@@ -252,7 +296,7 @@ export interface OperationInspection extends InspectionIntervalBase {
     readonly type: "operation"
     readonly operationId: number
     readonly spanId?: number
-    readonly operation: "set" | "update" | "reset" | "transaction"
+    readonly operation: "set" | "update" | "reset" | "delete" | "transaction"
     readonly name?: string
     readonly scope?: InspectionReference
     readonly commitId?: number
@@ -298,6 +342,46 @@ export interface IntentInspectionDetail extends InspectionDetailLinks {
     readonly intent: "set" | "reset"
     readonly scope: InspectionReference
     readonly atom: InspectionReference
+}
+
+export interface CollectionIntentInspectionDetail
+    extends InspectionDetailLinks {
+    readonly type: "collection-intent"
+    readonly intent: "set" | "update" | "reset" | "delete"
+    readonly scope: InspectionReference
+    readonly row: InspectionReference
+    readonly collection: InspectionReference
+}
+
+export interface CollectionEffectiveDeltaInspectionDetail
+    extends InspectionDetailLinks {
+    readonly type: "collection-effective-delta"
+    readonly change: "insert" | "update" | "remove"
+    readonly before: "absent" | "present"
+    readonly after: "absent" | "present"
+    readonly membership: "insert" | "remove" | "unchanged"
+    readonly scope: InspectionReference
+    readonly row: InspectionReference
+    readonly collection: InspectionReference
+}
+
+export interface CollectionMembershipInspectionDetail
+    extends InspectionDetailLinks {
+    readonly type: "collection-membership"
+    readonly change: "insert" | "remove"
+    readonly scope: InspectionReference
+    readonly row: InspectionReference
+    readonly collection: InspectionReference
+}
+
+export interface CollectionSourceInspectionDetail
+    extends InspectionDetailLinks {
+    readonly type: "collection-source"
+    readonly action: "published" | "materialized"
+    readonly source: "row" | "membership"
+    readonly scope: InspectionReference
+    readonly state: InspectionReference
+    readonly collection?: InspectionReference
 }
 
 interface SelectorEvaluationInspectionBase extends InspectionDetailLinks {
@@ -360,6 +444,10 @@ export interface CycleSearchInspectionDetail extends InspectionDetailLinks {
 
 export type InspectionDetail =
     | IntentInspectionDetail
+    | CollectionIntentInspectionDetail
+    | CollectionEffectiveDeltaInspectionDetail
+    | CollectionMembershipInspectionDetail
+    | CollectionSourceInspectionDetail
     | SelectorEvaluationInspectionDetail
     | CycleSearchInspectionDetail
 
@@ -382,7 +470,7 @@ export interface InspectionRecorderFault {
 
 export interface InspectionExport {
     readonly schema: "valdres.inspect"
-    readonly schemaVersion: 5
+    readonly schemaVersion: 6
     readonly recordingId: string
     readonly summaries: readonly InspectionSummary[]
     readonly details: readonly InspectionDetail[]
@@ -468,7 +556,12 @@ export interface InternalInspectionIntervalFinish {
 }
 
 export interface InternalInspectionDetailInput {
-    readonly type: "intent"
+    readonly type:
+        | "intent"
+        | "collection-intent"
+        | "collection-effective-delta"
+        | "collection-membership"
+        | "collection-source"
     readonly links?: InternalInspectionLinks
     readonly fields?: Readonly<Record<string, InspectionJsonValue | undefined>>
 }
@@ -535,6 +628,12 @@ export interface InspectionWorkDelta {
 
 export interface InternalInspectionRecorder {
     recordStoreEvent(...event: StoreRecorderEvent): void
+    recordExtension(
+        code: number,
+        first?: unknown,
+        second?: unknown,
+        third?: unknown,
+    ): void
     hasActiveStoreOperation(): boolean
     findDependencyPath<Node, Token extends object>(
         hostKind: "committed" | "scratch" | "hydration",
@@ -657,6 +756,20 @@ interface MutableWorkTotals {
     propagationSettled: number
     notificationTargets: number
     subscriberCallbacks: number
+    collectionRowIntentsStaged: number
+    collectionRowIntentStorageAllocations: number
+    collectionRowFinalResolutionVisits: number
+    collectionRowRouteVisits: number
+    collectionMembershipRecordCreations: number
+    collectionMembershipRouteVisits: number
+    collectionMembershipRowsScanned: number
+    collectionMembershipArrayAllocations: number
+    collectionRowSourcesChanged: number
+    collectionMembershipSourcesChanged: number
+    collectionEffectiveDeltasPrepared: number
+    collectionOwnerRetentionSetsCreated: number
+    collectionOwnerRetains: number
+    collectionOwnerReleases: number
     cycle: MutableCycleTotals
 }
 
@@ -680,6 +793,7 @@ interface ActiveInterval {
 
 type CounterSnapshot = Readonly<{
     sourceEpoch: number
+    fallbackPublications: number
     transientSelectorHostsCreated: number
     propagationSettled: number
     notificationTargets: number
@@ -725,6 +839,46 @@ const RAW_FIELD_KEYS = new Set([
     "callback",
     "updater",
 ])
+type CollectionInspectionCounterName =
+    | "collectionRowIntentsStaged"
+    | "collectionRowIntentStorageAllocations"
+    | "collectionRowFinalResolutionVisits"
+    | "collectionRowRouteVisits"
+    | "collectionMembershipRecordCreations"
+    | "collectionMembershipRouteVisits"
+    | "collectionMembershipRowsScanned"
+    | "collectionMembershipArrayAllocations"
+    | "collectionRowSourcesChanged"
+    | "collectionMembershipSourcesChanged"
+    | "collectionEffectiveDeltasPrepared"
+    | "collectionOwnerRetentionSetsCreated"
+    | "collectionOwnerRetains"
+    | "collectionOwnerReleases"
+
+const COLLECTION_COUNTER_NAME_BY_CODE: Readonly<
+    Partial<Record<number, CollectionInspectionCounterName>>
+> = Object.freeze({
+    [COLLECTION_ROW_INTENTS_STAGED]: "collectionRowIntentsStaged",
+    [COLLECTION_ROW_INTENT_STORAGE_ALLOCATIONS]:
+        "collectionRowIntentStorageAllocations",
+    [COLLECTION_ROW_FINAL_RESOLUTION_VISITS]:
+        "collectionRowFinalResolutionVisits",
+    [COLLECTION_ROW_ROUTE_VISITS]: "collectionRowRouteVisits",
+    [COLLECTION_MEMBERSHIP_RECORD_CREATIONS]:
+        "collectionMembershipRecordCreations",
+    [COLLECTION_MEMBERSHIP_ROUTE_VISITS]: "collectionMembershipRouteVisits",
+    [COLLECTION_MEMBERSHIP_ROWS_SCANNED]: "collectionMembershipRowsScanned",
+    [COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS]:
+        "collectionMembershipArrayAllocations",
+    [COLLECTION_ROW_SOURCES_CHANGED]: "collectionRowSourcesChanged",
+    [COLLECTION_MEMBERSHIP_SOURCES_CHANGED]:
+        "collectionMembershipSourcesChanged",
+    [COLLECTION_EFFECTIVE_DELTAS_PREPARED]: "collectionEffectiveDeltasPrepared",
+    [COLLECTION_OWNER_RETENTION_SETS_CREATED]:
+        "collectionOwnerRetentionSetsCreated",
+    [COLLECTION_OWNER_RETAINS]: "collectionOwnerRetains",
+    [COLLECTION_OWNER_RELEASES]: "collectionOwnerReleases",
+})
 const NOOP = (): void => {}
 const DEPENDENCY_PATH_ROOT = Symbol("inspection dependency path root")
 
@@ -1056,6 +1210,20 @@ const createMutableTotals = (): MutableWorkTotals => ({
     propagationSettled: 0,
     notificationTargets: 0,
     subscriberCallbacks: 0,
+    collectionRowIntentsStaged: 0,
+    collectionRowIntentStorageAllocations: 0,
+    collectionRowFinalResolutionVisits: 0,
+    collectionRowRouteVisits: 0,
+    collectionMembershipRecordCreations: 0,
+    collectionMembershipRouteVisits: 0,
+    collectionMembershipRowsScanned: 0,
+    collectionMembershipArrayAllocations: 0,
+    collectionRowSourcesChanged: 0,
+    collectionMembershipSourcesChanged: 0,
+    collectionEffectiveDeltasPrepared: 0,
+    collectionOwnerRetentionSetsCreated: 0,
+    collectionOwnerRetains: 0,
+    collectionOwnerReleases: 0,
     cycle: {
         searches: 0,
         visits: 0,
@@ -1113,6 +1281,27 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
         propagationSettled: totals.propagationSettled,
         notificationTargets: totals.notificationTargets,
         subscriberCallbacks: totals.subscriberCallbacks,
+        collectionRowIntentsStaged: totals.collectionRowIntentsStaged,
+        collectionRowIntentStorageAllocations:
+            totals.collectionRowIntentStorageAllocations,
+        collectionRowFinalResolutionVisits:
+            totals.collectionRowFinalResolutionVisits,
+        collectionRowRouteVisits: totals.collectionRowRouteVisits,
+        collectionMembershipRecordCreations:
+            totals.collectionMembershipRecordCreations,
+        collectionMembershipRouteVisits: totals.collectionMembershipRouteVisits,
+        collectionMembershipRowsScanned: totals.collectionMembershipRowsScanned,
+        collectionMembershipArrayAllocations:
+            totals.collectionMembershipArrayAllocations,
+        collectionRowSourcesChanged: totals.collectionRowSourcesChanged,
+        collectionMembershipSourcesChanged:
+            totals.collectionMembershipSourcesChanged,
+        collectionEffectiveDeltasPrepared:
+            totals.collectionEffectiveDeltasPrepared,
+        collectionOwnerRetentionSetsCreated:
+            totals.collectionOwnerRetentionSetsCreated,
+        collectionOwnerRetains: totals.collectionOwnerRetains,
+        collectionOwnerReleases: totals.collectionOwnerReleases,
         cycle: Object.freeze({
             searches: totals.cycle.searches,
             visits: totals.cycle.visits,
@@ -1375,13 +1564,35 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             }
             const atom = domain.atoms.get(stateTarget)
             const selector = domain.selectors.get(stateTarget)
-            if (atom === undefined && selector === undefined) {
+            let referenceKind: InspectionReferenceKind | undefined =
+                atom === undefined
+                    ? selector === undefined
+                        ? undefined
+                        : "selector"
+                    : "atom"
+            if (
+                referenceKind === undefined &&
+                domain[COLLECTION_KERNEL]?.has(state as never)
+            ) {
+                const descriptor = Object.getOwnPropertyDescriptor(
+                    stateTarget,
+                    "kind",
+                )
+                if (descriptor !== undefined && "value" in descriptor) {
+                    if (descriptor.value === "collection-row") {
+                        referenceKind = "collection-row"
+                    } else if (descriptor.value === "collection") {
+                        referenceKind = "collection"
+                    }
+                }
+            }
+            if (referenceKind === undefined) {
                 throw new TypeError("Inspection capture requires a valid State")
             }
             const definitionName = atom?.name ?? selector?.name
             stateReference = this.reference(
                 stateTarget,
-                atom === undefined ? "selector" : "atom",
+                referenceKind,
                 typeof definitionName === "string" ? definitionName : undefined,
             )
         }
@@ -1728,7 +1939,12 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
     }
 
     beginStoreOperation(input: {
-        readonly operation: "set" | "update" | "reset" | "transaction"
+        readonly operation:
+            | "set"
+            | "update"
+            | "reset"
+            | "delete"
+            | "transaction"
         readonly scope: object
         readonly scopeName?: string
         readonly name?: string
@@ -1785,7 +2001,8 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
     ): void {
         const operation = this.#findActive("operation")
         if (operation !== undefined) {
-            operation.commitSourceApplied ||= input.sourceApplied
+            operation.commitSourceApplied ||=
+                input.sourceApplied || input.ownershipChanged === true
             operation.commitFailurePhase = input.failurePhase
         }
         this.finishInterval(token, {
@@ -1825,7 +2042,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const code = event[0]
         if (code === 0) {
             const operation = (
-                ["set", "update", "reset", "transaction"] as const
+                ["set", "update", "reset", "transaction", "delete"] as const
             )[event[1]]
             this.beginStoreOperation({
                 operation,
@@ -1874,7 +2091,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         if (code === 3) {
             const commit = this.#findActive("commit")
             if (commit !== undefined) {
-                commit.commitSourceApplied = true
+                commit.commitSourceApplied = event[1] > 0
                 commit.commitChangedSources = event[1]
             }
             return
@@ -1887,6 +2104,165 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             ...(event[3] === undefined ? {} : { scopeName: event[3] }),
             atom: event[4],
             ...(event[5] === undefined ? {} : { atomName: event[5] }),
+        })
+    }
+
+    recordExtension(
+        code: number,
+        first?: unknown,
+        second?: unknown,
+        third?: unknown,
+    ): void {
+        if (this.#fault !== undefined) return
+        const counterName = COLLECTION_COUNTER_NAME_BY_CODE[code]
+        if (counterName !== undefined) {
+            const amount = first === undefined ? 1 : first
+            if (
+                typeof amount !== "number" ||
+                !Number.isSafeInteger(amount) ||
+                amount <= 0
+            ) {
+                this.#recordFault("collection-counter")
+                return
+            }
+            for (const frame of this.#active) {
+                const totals = frame.totals
+                if (totals === undefined) continue
+                const next = totals[counterName] + amount
+                if (!Number.isSafeInteger(next)) {
+                    this.#recordFault("collection-counter-overflow")
+                    return
+                }
+                totals[counterName] = next
+            }
+            return
+        }
+
+        const asObject = (value: unknown): object | undefined =>
+            (typeof value === "object" && value !== null) ||
+            typeof value === "function"
+                ? (value as object)
+                : undefined
+        const scopeTarget = asObject(first)
+        const stateTarget = asObject(second)
+        const collectionTarget = asObject(third)
+        if (scopeTarget === undefined || stateTarget === undefined) {
+            this.#recordFault("collection-detail")
+            return
+        }
+        const scope = this.reference(scopeTarget, "scope")
+
+        if (code >= COLLECTION_INTENT_SET && code <= COLLECTION_INTENT_DELETE) {
+            if (collectionTarget === undefined) {
+                this.#recordFault("collection-intent-detail")
+                return
+            }
+            const intent = (["set", "update", "reset", "delete"] as const)[
+                code - COLLECTION_INTENT_SET
+            ]
+            const operationFrame = this.#findActive("operation")
+            if (operationFrame !== undefined) {
+                operationFrame.operationIntents++
+            }
+            this.record({
+                type: "collection-intent",
+                fields: {
+                    intent,
+                    scope,
+                    row: this.reference(stateTarget, "collection-row"),
+                    collection: this.reference(collectionTarget, "collection"),
+                },
+            })
+            return
+        }
+
+        if (
+            code >= COLLECTION_EFFECTIVE_INSERT &&
+            code <= COLLECTION_EFFECTIVE_REMOVE
+        ) {
+            if (collectionTarget === undefined) {
+                this.#recordFault("collection-effective-detail")
+                return
+            }
+            const change = (["insert", "update", "remove"] as const)[
+                code - COLLECTION_EFFECTIVE_INSERT
+            ]
+            this.record({
+                type: "collection-effective-delta",
+                fields: {
+                    change,
+                    before: change === "insert" ? "absent" : "present",
+                    after: change === "remove" ? "absent" : "present",
+                    membership:
+                        change === "insert"
+                            ? "insert"
+                            : change === "remove"
+                              ? "remove"
+                              : "unchanged",
+                    scope,
+                    row: this.reference(stateTarget, "collection-row"),
+                    collection: this.reference(collectionTarget, "collection"),
+                },
+            })
+            return
+        }
+
+        if (
+            code === COLLECTION_MEMBERSHIP_INSERT ||
+            code === COLLECTION_MEMBERSHIP_REMOVE
+        ) {
+            if (collectionTarget === undefined) {
+                this.#recordFault("collection-membership-detail")
+                return
+            }
+            this.record({
+                type: "collection-membership",
+                fields: {
+                    change:
+                        code === COLLECTION_MEMBERSHIP_INSERT
+                            ? "insert"
+                            : "remove",
+                    scope,
+                    row: this.reference(stateTarget, "collection-row"),
+                    collection: this.reference(collectionTarget, "collection"),
+                },
+            })
+            return
+        }
+
+        const rowSource =
+            code === COLLECTION_ROW_PUBLISHED ||
+            code === COLLECTION_ROW_MATERIALIZED
+        const membershipSource =
+            code === COLLECTION_MEMBERSHIP_PUBLISHED ||
+            code === COLLECTION_MEMBERSHIP_MATERIALIZED
+        if (!rowSource && !membershipSource) return
+        if (rowSource && collectionTarget === undefined) {
+            this.#recordFault("collection-source-detail")
+            return
+        }
+        const published =
+            code === COLLECTION_ROW_PUBLISHED ||
+            code === COLLECTION_MEMBERSHIP_PUBLISHED
+        this.record({
+            type: "collection-source",
+            fields: {
+                action: published ? "published" : "materialized",
+                source: rowSource ? "row" : "membership",
+                scope,
+                state: this.reference(
+                    stateTarget,
+                    rowSource ? "collection-row" : "collection",
+                ),
+                ...(collectionTarget === undefined
+                    ? {}
+                    : {
+                          collection: this.reference(
+                              collectionTarget,
+                              "collection",
+                          ),
+                      }),
+            },
         })
     }
 
@@ -2190,7 +2566,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const detailBounds = retainedBounds(details)
         return Object.freeze({
             schema: "valdres.inspect" as const,
-            schemaVersion: 5 as const,
+            schemaVersion: 6 as const,
             recordingId: this.#recordingId,
             summaries: Object.freeze(summaries),
             details: Object.freeze(details),
@@ -2393,6 +2769,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             this.#instrumentation.read(counter)
         return {
             sourceEpoch: read("sourceEpoch"),
+            fallbackPublications: read("fallbackPublications"),
             transientSelectorHostsCreated: read("scratchHostAllocations"),
             propagationSettled: read("propagationSettlements"),
             notificationTargets: read("notificationTargetsReached"),
@@ -2407,6 +2784,9 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const end = this.#captureCounters()
         if (frame.token.type === "commit") {
             frame.commitOwnershipChanged = end.sourceEpoch !== start.sourceEpoch
+            frame.commitSourceApplied ||=
+                frame.commitOwnershipChanged ||
+                end.fallbackPublications !== start.fallbackPublications
         }
         const totals = frame.totals
         if (totals === undefined) return
@@ -2463,6 +2843,7 @@ type MutableStoreOperations = {
         | "set"
         | "update"
         | "reset"
+        | "delete"
         | "txn"]: CommittedStoreTree[Key]
 }
 
@@ -2470,7 +2851,7 @@ const createStoreTrace = (
     recorder: StructuralInspectionRecorder,
 ): InternalStoreTreeTrace => {
     const run = <Result>(
-        operation: 0 | 1 | 2 | 3,
+        operation: 0 | 1 | 2 | 3 | 4,
         scope: StoreScopeNode,
         name: string | undefined,
         callback: () => Result,
@@ -2491,7 +2872,16 @@ const createStoreTrace = (
         }
     }
 
-    const trace = ((code: number, first?: unknown, second?: unknown): void => {
+    const trace = ((
+        code: number,
+        first?: unknown,
+        second?: unknown,
+        third?: unknown,
+    ): void => {
+        if (code >= 35) {
+            recorder.recordExtension(code, first, second, third)
+            return
+        }
         if (code === 0) {
             const store = first as CommittedStoreTree
             const scope = second as StoreScopeNode
@@ -2500,12 +2890,24 @@ const createStoreTrace = (
             const set = store.set
             const update = store.update
             const reset = store.reset
+            const deleteRow = store.delete
             const txn = store.txn
-            mutable.set = (atom, value) =>
-                run(0, scope, undefined, () => set(atom, value))
-            mutable.update = (atom, updater) =>
-                run(1, scope, undefined, () => update(atom, updater))
-            mutable.reset = atom => run(2, scope, undefined, () => reset(atom))
+            mutable.set = ((target: unknown, value: unknown) =>
+                run(0, scope, undefined, () =>
+                    Reflect.apply(set, undefined, [target, value]),
+                )) as CommittedStoreTree["set"]
+            mutable.update = ((target: unknown, updater: unknown) =>
+                run(1, scope, undefined, () =>
+                    Reflect.apply(update, undefined, [target, updater]),
+                )) as CommittedStoreTree["update"]
+            mutable.reset = ((target: unknown) =>
+                run(2, scope, undefined, () =>
+                    Reflect.apply(reset, undefined, [target]),
+                )) as CommittedStoreTree["reset"]
+            mutable.delete = ((target: unknown) =>
+                run(4, scope, undefined, () =>
+                    Reflect.apply(deleteRow, undefined, [target]),
+                )) as CommittedStoreTree["delete"]
             mutable.txn = <Result>(
                 callback: TransactionCallback<Result>,
                 name?: string,
@@ -2695,6 +3097,7 @@ const createStoreTrace = (
             throw error
         }
     }
+    Object.defineProperty(evaluate, "recordExtension", { value: trace })
     Object.assign(trace, {
         evaluate,
     })

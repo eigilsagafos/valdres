@@ -114,6 +114,7 @@ try {
         atom: `export { atom } from "valdres"`,
         "atom-selector-store": `export { atom, selector, store } from "valdres"`,
         family: `export { atom, family } from "valdres"`,
+        collection: `export { collection, presence, store } from "valdres"`,
         "all-exports": `export * from "valdres"`,
         inspect: `export * from "valdres/inspect"`,
         equality: `export { deepEqual } from "valdres/equality"`,
@@ -142,14 +143,17 @@ try {
         )
         if (name === "atom") {
             const JavaScript = new TextDecoder().decode(bytes)
-            for (const familySentinel of [
+            for (const optionalFeatureSentinel of [
                 "family cannot recursively construct the same member",
                 "family members require at least one key",
                 "family keys must be primitive; use encodeKey for structured arguments",
+                "collection options must be an object",
+                "collection indexes are not available in this beta",
+                "Cannot update an absent collection row",
             ]) {
-                if (JavaScript.includes(familySentinel)) {
+                if (JavaScript.includes(optionalFeatureSentinel)) {
                     throw new Error(
-                        `atom-only fixture retained family implementation: ${familySentinel}`,
+                        `atom-only fixture retained optional feature implementation: ${optionalFeatureSentinel}`,
                     )
                 }
             }

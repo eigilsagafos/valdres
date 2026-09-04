@@ -4,20 +4,18 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import {
     atom,
+    collection,
     family,
     selector,
+    store,
+    type Collection,
+    type CollectionKey,
+    type CollectionOptions,
+    type CollectionRow,
+    type CollectionValue,
     type State as PublicState,
 } from "../../src/index"
-import type {
-    Atom,
-    Collection,
-    CollectionKey,
-    CollectionOptions,
-    CollectionRow,
-    CollectionValue,
-    Selector,
-    State as InternalState,
-} from "../../src/v1-internal/committed-store-tree/types"
+import type { State as InternalState } from "../../src/v1-internal/committed-store-tree/types"
 
 type Equal<Left, Right> =
     (<Value>() => Value extends Left ? 1 : 2) extends <
@@ -38,7 +36,7 @@ interface SessionLookup {
     readonly id: string
 }
 
-test("stages invariant readonly collection arms without widening root State", () => {
+test("exports invariant readonly collection arms through root State", () => {
     assertType<
         Equal<CollectionKey, string | number | bigint | boolean | null>
     >()
@@ -48,8 +46,27 @@ test("stages invariant readonly collection arms without widening root State", ()
             null | boolean | number | bigint | string | symbol | object
         >
     >()
-    assertType<Equal<InternalState<number>, Atom<number> | Selector<number>>>()
-    assertType<Equal<PublicState<number>, Atom<number> | Selector<number>>>()
+    assertType<Equal<InternalState<number>, PublicState<number>>>()
+    assertType<
+        Equal<
+            CollectionRow<string, Session> extends PublicState<
+                Session | undefined
+            >
+                ? true
+                : false,
+            true
+        >
+    >()
+    assertType<
+        Equal<
+            Collection<string, Session> extends PublicState<
+                readonly CollectionRow<string, Session>[]
+            >
+                ? true
+                : false,
+            true
+        >
+    >()
     assertType<
         Equal<
             Collection<string, Session>,
@@ -83,6 +100,9 @@ test("stages invariant readonly collection arms without widening root State", ()
     >()
 
     const source = atom(1)
+    const sessions = collection<string, Session>()
+    const row = sessions("session")
+    const target = store()
     const atomMembers = family((key: string) => atom(key.length))
     const selectorMembers = family((factor: number) =>
         selector(get => get(source) * factor),
@@ -91,22 +111,25 @@ test("stages invariant readonly collection arms without widening root State", ()
     expect(atomMembers("a").kind).toBe("atom")
     expect(selectorMembers(2).kind).toBe("selector")
 
+    const rowState: PublicState<Session | undefined> = row
+    const internalRowState: InternalState<Session | undefined> = row
+    target.set(row, { id: "session", active: true })
+    target.update(row, current => ({ ...current, active: false }))
+    target.reset(row)
+    target.delete(row)
+    void [rowState, internalRowState]
+
     if (false) {
-        const row = undefined as unknown as CollectionRow<string, Session>
-        const collection = undefined as unknown as Collection<string, Session>
+        const rows = undefined as unknown as Collection<string, Session>
         const fakeRow = {
             kind: "collection-row" as const,
             key: "session",
         }
 
-        // @ts-expect-error readonly collection arms do not enter root State yet.
-        const rowState: PublicState<Session | undefined> = row
-        // @ts-expect-error readonly collection arms do not enter internal State yet.
-        const internalRowState: InternalState<Session | undefined> = row
         // @ts-expect-error family admission remains Atom-or-Selector.
         family(() => row)
         // @ts-expect-error family admission remains Atom-or-Selector.
-        family(() => collection)
+        family(() => rows)
         // @ts-expect-error the private State marker rejects structural fakes.
         const structuralFake: CollectionRow<string, Session> = fakeRow
         // @ts-expect-error CollectionRow.kind is readonly.
@@ -114,11 +137,19 @@ test("stages invariant readonly collection arms without widening root State", ()
         // @ts-expect-error CollectionRow.key is readonly.
         row.key = "other"
         // @ts-expect-error Collection.kind is readonly.
-        collection.kind = "collection"
+        rows.kind = "collection"
         // @ts-expect-error `undefined` is reserved for row absence.
-        const invalidValue: Collection<string, Session | undefined> = collection
+        const invalidValue: Collection<string, Session | undefined> = rows
+        // @ts-expect-error undefined is the absence sentinel, not a row value.
+        target.set(row, undefined)
+        // @ts-expect-error row updaters cannot return the absence sentinel.
+        target.update(row, () => undefined)
+        // @ts-expect-error Atoms cannot be deleted.
+        target.delete(source)
+        // @ts-expect-error Collections are readonly membership States.
+        target.set(rows, [])
 
-        void [rowState, internalRowState, structuralFake, invalidValue]
+        void [structuralFake, invalidValue]
     }
 })
 
@@ -211,7 +242,10 @@ test("emits nameable direct and rich-input collection declarations", async () =>
             "utf8",
         )
         expect(internalDeclaration).toContain(
-            "export type State<Value> = Atom<Value> | Selector<Value>;",
+            'ReadonlyState<Value, "collection-row">',
+        )
+        expect(internalDeclaration).toContain(
+            'ReadonlyState<Value, "collection">',
         )
         expect(internalDeclaration).toContain("export interface Collection<")
         expect(internalDeclaration).toContain("export type CollectionOptions<")
@@ -222,23 +256,13 @@ test("emits nameable direct and rich-input collection declarations", async () =>
 
         await writeFile(
             join(temporaryRoot, "consumer.ts"),
-            `import type {
-    Collection,
-    CollectionKey,
-    CollectionOptions,
-    CollectionValue,
-} from "./library/v1-internal/committed-store-tree/types.js"
-
-declare function collection<
-    Key extends CollectionKey,
-    Value extends CollectionValue,
->(options?: CollectionOptions<Key, Value, Key>): Collection<Key, Value, Key>
-
-declare function collection<
-    Key extends CollectionKey,
-    Value extends CollectionValue,
-    Input,
->(options: CollectionOptions<Key, Value, Input>): Collection<Key, Value, Input>
+            `import {
+    collection,
+    type Collection,
+    type CollectionKey,
+    type CollectionOptions,
+    type CollectionValue,
+} from "./library/index.js"
 
 export interface Session {
     readonly id: string
@@ -258,6 +282,16 @@ export const directOptions: CollectionOptions<string, Session> = {}
 export const richOptions: CollectionOptions<string, Session, SessionLookup> = {
     encodeKey: input => \`${"${input.tenant}:${input.id}"}\`,
 }
+export const defineDirect = <
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+>() => collection<Key, Value>()
+export const defineRich = <
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+    Input,
+>(options: CollectionOptions<Key, Value, Input>) =>
+    collection<Key, Value, Input>(options)
 `,
         )
         await writeFile(
@@ -295,16 +329,22 @@ export const richOptions: CollectionOptions<string, Session, SessionLookup> = {
             "utf8",
         )
         expect(consumerDeclaration).toContain(
-            "sessions: Collection<string, Session, string, never>",
+            'sessions: import("./library/v1.js").Collection<string, Session, string, never>',
         )
         expect(consumerDeclaration).toContain(
-            "richSessions: Collection<string, Session, SessionLookup, never>",
+            'richSessions: import("./library/v1.js").Collection<string, Session, SessionLookup, never>',
         )
         expect(consumerDeclaration).toContain(
             "directOptions: CollectionOptions<string, Session>",
         )
         expect(consumerDeclaration).toContain(
             "richOptions: CollectionOptions<string, Session, SessionLookup>",
+        )
+        expect(consumerDeclaration).toContain(
+            'defineDirect: <Key extends CollectionKey, Value extends CollectionValue>() => import("./library/v1.js").Collection<Key, Value, Key, never>',
+        )
+        expect(consumerDeclaration).toContain(
+            'defineRich: <Key extends CollectionKey, Value extends CollectionValue, Input>(options: CollectionOptions<Key, Value, Input>) => import("./library/v1.js").Collection<Key, Value, Input, never>',
         )
         expect(consumerDeclaration).not.toContain("StateBase")
         expect(consumerDeclaration).not.toContain("ReadonlyState")

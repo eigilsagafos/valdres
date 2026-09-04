@@ -3,22 +3,21 @@ import {
     createCommittedStoreTreeDomain,
     createInternalStoreTreeInstrumentation,
     getCollectionKernel,
-    runInternalCollectionTransaction,
     type CommittedStoreTree,
     type RootTransaction,
+    type State,
 } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
 import type { CollectionDraftKernel } from "../../src/v1-internal/collection-kernel"
 import { createCollectionDefinition } from "../../src/v1-internal/collection"
+import { runCollectionTransaction } from "./collection-test-transaction"
 
-type InternalRead = (state: object) => any
-
-const read = <Value>(store: CommittedStoreTree, state: object): Value =>
-    (store.get as unknown as InternalRead)(state) as Value
+const read = <Value>(store: CommittedStoreTree, state: State<any>): Value =>
+    store.get(state) as Value
 
 const readTransaction = <Value>(
     transaction: RootTransaction,
-    state: object,
-): Value => (transaction.get as unknown as InternalRead)(state) as Value
+    state: State<any>,
+): Value => transaction.get(state) as Value
 
 describe("v1 committed collection membership", () => {
     test("keeps frozen coordinate-local committed identities and transaction-private changed snapshots", () => {
@@ -38,14 +37,14 @@ describe("v1 committed collection membership", () => {
         expect(read<readonly object[]>(root, sessions)).toBe(rootEmpty)
         expect(read<readonly object[]>(child, sessions)).toBe(childEmpty)
 
-        runInternalCollectionTransaction(domain, root, transaction => {
-            expect(readTransaction<readonly object[]>(transaction, sessions)).toBe(
-                rootEmpty,
-            )
+        runCollectionTransaction(domain, root, transaction => {
+            expect(
+                readTransaction<readonly object[]>(transaction, sessions),
+            ).toBe(rootEmpty)
         })
 
         let draftRows: readonly object[] | undefined
-        runInternalCollectionTransaction(domain, root, (transaction, rows) => {
+        runCollectionTransaction(domain, root, (transaction, rows) => {
             rows.set(a, 1)
             draftRows = readTransaction<readonly object[]>(
                 transaction,
@@ -62,7 +61,7 @@ describe("v1 committed collection membership", () => {
         expect(committedA).not.toBe(draftRows)
         expect(Object.isFrozen(committedA)).toBe(true)
 
-        runInternalCollectionTransaction(domain, root, (transaction, rows) => {
+        runCollectionTransaction(domain, root, (transaction, rows) => {
             rows.set(b, 2)
             rows.update(a, value => (value as number) + 1)
             expect(
@@ -71,7 +70,7 @@ describe("v1 committed collection membership", () => {
         })
         const committedAB = read<readonly object[]>(root, sessions)
         expect(committedAB).toEqual([a, b])
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.update(a, value => (value as number) + 1),
         )
         expect(read<readonly object[]>(root, sessions)).toBe(committedAB)
@@ -84,7 +83,7 @@ describe("v1 committed collection membership", () => {
         const a = sessions("a")
         const b = sessions("b")
         const root = domain.createStoreTree()
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.set(a, 1)
             rows.set(b, 2)
         })
@@ -92,16 +91,13 @@ describe("v1 committed collection membership", () => {
         const epoch = instrumentation.read("sourceEpoch")
 
         let afterGap: readonly object[] | undefined
-        runInternalCollectionTransaction(domain, root, (transaction, rows) => {
+        runCollectionTransaction(domain, root, (transaction, rows) => {
             rows.delete(a)
             expect(
                 readTransaction<readonly object[]>(transaction, sessions),
             ).toEqual([b])
             rows.set(a, 1)
-            afterGap = readTransaction<readonly object[]>(
-                transaction,
-                sessions,
-            )
+            afterGap = readTransaction<readonly object[]>(transaction, sessions)
             expect(afterGap).toEqual([b, a])
             expect(
                 readTransaction<readonly object[]>(transaction, sessions),
@@ -113,7 +109,7 @@ describe("v1 committed collection membership", () => {
         expect(committed).not.toBe(afterGap)
         expect(instrumentation.read("sourceEpoch")).toBe(epoch + 1)
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.delete(b)
             rows.set(b, 2)
         })
@@ -128,7 +124,7 @@ describe("v1 committed collection membership", () => {
         const empty = read<readonly object[]>(root, sessions)
         let changed: readonly object[] | undefined
 
-        runInternalCollectionTransaction(domain, root, (transaction, rows) => {
+        runCollectionTransaction(domain, root, (transaction, rows) => {
             rows.set(row, 1)
             changed = readTransaction<readonly object[]>(transaction, sessions)
             expect(changed).toEqual([row])
@@ -149,20 +145,20 @@ describe("v1 committed collection membership", () => {
         const a = sessions("a")
         const b = sessions("b")
         const root = domain.createStoreTree()
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.set(a, 1)
             rows.set(b, 2)
         })
         const original = read<readonly object[]>(root, sessions)
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.delete(a),
         )
         const removed = read<readonly object[]>(root, sessions)
         expect(removed).toEqual([b])
         expect(original).toEqual([a, b])
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.set(a, 3),
         )
         const reinserted = read<readonly object[]>(root, sessions)
@@ -181,16 +177,16 @@ describe("v1 committed collection membership", () => {
         const root = domain.createStoreTree()
         const equalChild = root.scope("equal")
         const unequalChild = root.scope("unequal")
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.set(a, 1)
             rows.set(b, 2)
         })
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.scope(equalChild).set(a, 1)
             rows.scope(unequalChild).set(a, 10)
         })
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.delete(a),
         )
         const equalRows = read<readonly object[]>(equalChild, sessions)
@@ -199,7 +195,7 @@ describe("v1 committed collection membership", () => {
         expect(unequalRows).toEqual([a, b])
         expect(read<readonly object[]>(root, sessions)).toEqual([b])
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.set(a, 3),
         )
         expect(read<readonly object[]>(root, sessions)).toEqual([b, a])
@@ -208,7 +204,7 @@ describe("v1 committed collection membership", () => {
             unequalRows,
         )
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.scope(equalChild).reset(a)
             rows.scope(unequalChild).reset(a)
         })
@@ -228,11 +224,11 @@ describe("v1 committed collection membership", () => {
             const b = sessions("b")
             const root = domain.createStoreTree()
             const child = root.scope("child")
-            runInternalCollectionTransaction(domain, root, (_txn, rows) =>
+            runCollectionTransaction(domain, root, (_txn, rows) =>
                 rows.scope(child).delete(a),
             )
 
-            runInternalCollectionTransaction(domain, root, (_txn, rows) => {
+            runCollectionTransaction(domain, root, (_txn, rows) => {
                 if (rootFirst) {
                     rows.set(a, 1)
                     rows.set(b, 2)
@@ -254,13 +250,13 @@ describe("v1 committed collection membership", () => {
         const b = sessions("b")
         const root = domain.createStoreTree()
         const child = root.scope("child")
-        runInternalCollectionTransaction(domain, root, (_txn, rows) => {
+        runCollectionTransaction(domain, root, (_txn, rows) => {
             rows.set(a, 1)
             rows.set(b, 2)
             rows.scope(child).delete(a)
         })
         expect(read<readonly object[]>(child, sessions)).toEqual([b])
-        runInternalCollectionTransaction(domain, root, (_txn, rows) =>
+        runCollectionTransaction(domain, root, (_txn, rows) =>
             rows.scope(child).reset(a),
         )
         expect(read<readonly object[]>(child, sessions)).toEqual([b, a])
@@ -282,7 +278,7 @@ describe("v1 committed collection membership", () => {
         })
 
         expect(() =>
-            runInternalCollectionTransaction(domain, root, (_txn, rows) => {
+            runCollectionTransaction(domain, root, (_txn, rows) => {
                 rows.scope(child).set(a, 1)
                 throw abort
             }),
@@ -290,7 +286,7 @@ describe("v1 committed collection membership", () => {
         expect(instrumentation.read("routeAdds")).toBe(0)
 
         expect(() =>
-            runInternalCollectionTransaction(domain, root, (txn, rows) => {
+            runCollectionTransaction(domain, root, (txn, rows) => {
                 rows.scope(child).set(a, 1)
                 txn.set(guarded, 1)
             }),
@@ -315,7 +311,7 @@ describe("v1 committed collection membership", () => {
         const kernel = getCollectionKernel(domain) as CollectionDraftKernel
         const finishTrace = kernel.beginMembershipRebuildTraceForTest()
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.set(a, 1)
             rows.scope(child).set(b, 2)
             rows.scope(descendant).set(c, 3)
@@ -328,11 +324,7 @@ describe("v1 committed collection membership", () => {
         expect(() => finishTrace()).toThrow("already finished")
         expect(read<readonly object[]>(root, sessions)).toEqual([a])
         expect(read<readonly object[]>(child, sessions)).toEqual([a, b])
-        expect(read<readonly object[]>(descendant, sessions)).toEqual([
-            a,
-            b,
-            c,
-        ])
+        expect(read<readonly object[]>(descendant, sessions)).toEqual([a, b, c])
     })
 
     test("plans deep root membership changes in linear placement work", () => {
@@ -351,14 +343,10 @@ describe("v1 committed collection membership", () => {
             const finishRebuild = kernel.beginMembershipRebuildTraceForTest()
             const finishPlacement =
                 kernel.beginMembershipPlacementTraceForTest()
-            runInternalCollectionTransaction(
-                domain,
-                root,
-                (_transaction, rows) => {
-                    if (operation === "set") rows.set(row, 1)
-                    else rows.delete(row)
-                },
-            )
+            runCollectionTransaction(domain, root, (_transaction, rows) => {
+                if (operation === "set") rows.set(row, 1)
+                else rows.delete(row)
+            })
             const rebuilt = finishRebuild()
             const placement = finishPlacement()
             expect(rebuilt).toHaveLength(depth + 1)
@@ -387,7 +375,7 @@ describe("v1 committed collection membership", () => {
         const routeVisits = instrumentation.read("routeVisits")
         const changed = scopes[scopes.length - 1] as CommittedStoreTree
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.scope(changed).set(row, 1),
         )
 

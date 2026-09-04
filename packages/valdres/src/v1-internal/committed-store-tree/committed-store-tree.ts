@@ -79,7 +79,6 @@ import {
 import type {
     Atom,
     AtomOptions,
-    AtomUpdater,
     CommittedStoreTree,
     CommittedStoreTreeAdapter,
     CommittedStoreTreeDomain,
@@ -197,165 +196,6 @@ export const getCollectionKernel = (
     domain: InternalCommittedStoreTreeDomain,
 ): OptionalCollectionVTable | undefined =>
     domain[definitionDomainRecords][COLLECTION_KERNEL]
-
-/** Deep-internal bridge retained only until COL-006 exposes the reviewed
- * public mutation overloads. It deliberately remains outside the root graph. */
-export interface InternalRowWriter {
-    set(row: CollectionRow<any, any>, value: unknown): void
-    update(
-        row: CollectionRow<any, any>,
-        update: (current: unknown) => unknown,
-    ): void
-    reset(row: CollectionRow<any, any>): void
-    delete(row: CollectionRow<any, any>): void
-    scope(target: string | CommittedStoreTree): InternalRowWriter
-}
-
-const resolveInternalRowWriterScope = (
-    records: RuntimeDomainRecords,
-    current: StoreScopeNode,
-    target: string | CommittedStoreTree,
-): StoreScopeNode => {
-    if (typeof target === "string") {
-        const child = current.namedChildren.get(target)
-        if (child === undefined) throw new ScopeNotFoundError()
-        if (child.status !== "live") throw new StoreDisposedError()
-        return child
-    }
-    const targetObject = target as unknown as object
-    const registeredStore = records.stores.get(targetObject)
-    if (registeredStore !== undefined) {
-        const scope = registeredStore as StoreScopeNode
-        if (scope.status !== "live") throw new StoreDisposedError()
-        if (!Object.is(scope.coordinator, current.coordinator)) {
-            throw new StoreTreeMismatchError()
-        }
-        return scope
-    }
-    const registeredCursor = records.transactionCursors.get(targetObject)
-    if (registeredCursor !== undefined) {
-        if (!(registeredCursor as TreeDraft).active) {
-            throw new TransactionClosedError()
-        }
-        throw new InvalidTransactionTargetError()
-    }
-    throw new InvalidTransactionTargetError()
-}
-
-const stageInternalCollectionRow = (
-    records: RuntimeDomainRecords,
-    draft: TreeDraft,
-    scope: StoreScopeNode,
-    operation: CollectionMutationKind,
-    row: CollectionRow<any, any>,
-    input?: unknown,
-): void => {
-    const node = row as unknown as AnyState
-    const session = new SelectorEvaluationSession<AnyState>()
-    const owner = classifyEntryOwner(records, node, session)
-    assertCursorOperationAllowed(records, draft.transaction, draft.active)
-    if (scope.status !== "live") throw new StoreDisposedError()
-    const kernel = owner === "local" ? collectionSource(records, node) : false
-    if (!kernel) {
-        throw new TypeError(
-            "Internal collection mutation requires a valid CollectionRow",
-        )
-    }
-    kernel.stage(draft, scope, operation, node, input, session)
-}
-
-const createInternalRowWriter = (
-    records: RuntimeDomainRecords,
-    draft: TreeDraft,
-    scope: StoreScopeNode,
-): InternalRowWriter =>
-    Object.freeze({
-        set: (row: CollectionRow<any, any>, value: unknown): void =>
-            stageInternalCollectionRow(
-                records,
-                draft,
-                scope,
-                "set",
-                row,
-                value,
-            ),
-        update: (
-            row: CollectionRow<any, any>,
-            update: (current: unknown) => unknown,
-        ): void =>
-            stageInternalCollectionRow(
-                records,
-                draft,
-                scope,
-                "update",
-                row,
-                update,
-            ),
-        reset: (row: CollectionRow<any, any>): void =>
-            stageInternalCollectionRow(records, draft, scope, "reset", row),
-        delete: (row: CollectionRow<any, any>): void =>
-            stageInternalCollectionRow(records, draft, scope, "delete", row),
-        scope: (target: string | CommittedStoreTree): InternalRowWriter => {
-            if (typeof target !== "string") {
-                classifyEntryOwner(
-                    records,
-                    target,
-                    new SelectorEvaluationSession<AnyState>(),
-                )
-            }
-            assertCursorOperationAllowed(
-                records,
-                draft.transaction,
-                draft.active,
-            )
-            return createInternalRowWriter(
-                records,
-                draft,
-                resolveInternalRowWriterScope(records, scope, target),
-            )
-        },
-    })
-
-export const runInternalCollectionTransaction = <Result>(
-    domain: InternalCommittedStoreTreeDomain,
-    store: CommittedStoreTree,
-    callback: (transaction: RootTransaction, rows: InternalRowWriter) => Result,
-): Result => {
-    const records = domain[definitionDomainRecords]
-    const session = new SelectorEvaluationSession<AnyState>()
-    const owner = classifyEntryOwner(records, store, session)
-    const scope =
-        owner === "local"
-            ? (records.stores.get(store as unknown as object) as
-                  | StoreScopeNode
-                  | undefined)
-            : undefined
-    if (scope === undefined) {
-        throw new TypeError(
-            "Internal collection transaction requires a valid Store",
-        )
-    }
-    return (scope.coordinator as CommittedStoreTreeHost).txn(
-        scope,
-        (transaction => {
-            if (typeof callback !== "function") {
-                throw new TypeError(
-                    "Internal collection transaction requires a callback",
-                )
-            }
-            const draft = records.transactionCursors.get(
-                transaction as unknown as object,
-            ) as TreeDraft | undefined
-            if (draft === undefined) {
-                throw new Error("Internal collection draft is missing")
-            }
-            return callback(
-                transaction,
-                createInternalRowWriter(records, draft, scope),
-            )
-        }) as TransactionCallback<Result>,
-    )
-}
 
 export type DefinitionCallbackPhase =
     | "factory"
@@ -601,9 +441,7 @@ const collectionSource = (
     domain: RuntimeDomainRecords,
     node: AnyState,
 ): OptionalCollectionVTable | undefined =>
-    domain[COLLECTION_KERNEL]?.has(node)
-        ? domain[COLLECTION_KERNEL]
-        : undefined
+    domain[COLLECTION_KERNEL]?.has(node) ? domain[COLLECTION_KERNEL] : undefined
 
 const readCollectionValue = (
     kernel: OptionalCollectionVTable,
@@ -1028,28 +866,6 @@ class CommittedStoreTreeHost
         if (targets?.size === 0) this.#subscriptionTargets = undefined
     }
 
-    set<Value>(scope: StoreScopeNode, atom: Atom<Value>, value: Value): void {
-        this.#runDirectAtomIntent(scope, atom, "StoreTree.set", "set", value)
-    }
-
-    update<Value>(
-        scope: StoreScopeNode,
-        atom: Atom<Value>,
-        update: AtomUpdater<Value>,
-    ): void {
-        this.#runDirectAtomIntent(
-            scope,
-            atom,
-            "StoreTree.update",
-            "update",
-            update,
-        )
-    }
-
-    reset<Value>(scope: StoreScopeNode, atom: Atom<Value>): void {
-        this.#runDirectAtomIntent(scope, atom, "StoreTree.reset", "reset")
-    }
-
     scope(
         parent: StoreScopeNode,
         argumentCount: number,
@@ -1292,64 +1108,83 @@ class CommittedStoreTreeHost
         return scratchHost.readSelector<Value>(node)
     }
 
-    transactionSet<Value>(
-        draft: TreeDraft,
+    mutate(
+        draft: TreeDraft | undefined,
         scope: StoreScopeNode,
-        atom: Atom<Value>,
-        value: Value,
+        intent: CollectionMutationKind,
+        target: Atom<unknown> | CollectionRow<any, any>,
+        input?: unknown,
     ): void {
-        const node = atom as unknown as AnyAtom
+        const node = target as unknown as AnyState
         const session = new SelectorEvaluationSession<AnyState>()
-        this.#validateTransactionAtom(
-            draft,
-            scope,
-            node,
-            session,
-            "Transaction.set",
-        )
-        this.#stageAtomSet(draft, scope, node, value, session)
-    }
+        const operation = `${draft === undefined ? "StoreTree" : "Transaction"}.${intent}`
+        const ownerStatus = classifyEntryOwner(this.#domain, node, session)
+        if (draft === undefined) {
+            assertStoreOperationAllowed(this.#domain, operation)
+        } else {
+            assertCursorOperationAllowed(
+                this.#domain,
+                draft.transaction,
+                draft.active,
+            )
+        }
+        this.#assertScopeLive(scope)
 
-    transactionUpdate<Value>(
-        draft: TreeDraft,
-        scope: StoreScopeNode,
-        atom: Atom<Value>,
-        update: AtomUpdater<Value>,
-    ): void {
-        const node = atom as unknown as AnyAtom
-        const session = new SelectorEvaluationSession<AnyState>()
-        this.#validateTransactionAtom(
-            draft,
-            scope,
-            node,
-            session,
-            "Transaction.update",
-        )
-        this.#stageAtomUpdate(
-            draft,
-            scope,
-            node,
-            update as (current: unknown) => unknown,
-            session,
-            "Transaction.update",
-        )
-    }
+        const atom = ownerStatus === "local" && this.#domain.atoms.has(node)
+        let kernel: OptionalCollectionVTable | undefined
+        const invalid = atom
+            ? intent === "delete"
+            : ownerStatus !== "local" ||
+              typeof node === "function" ||
+              (kernel = collectionSource(this.#domain, node)) === undefined
+        if (invalid) {
+            throw new TypeError(`${operation} requires a valid State`)
+        }
 
-    transactionReset<Value>(
-        draft: TreeDraft,
-        scope: StoreScopeNode,
-        atom: Atom<Value>,
-    ): void {
-        const node = atom as unknown as AnyAtom
-        const session = new SelectorEvaluationSession<AnyState>()
-        this.#validateTransactionAtom(
-            draft,
-            scope,
-            node,
-            session,
-            "Transaction.reset",
-        )
-        this.#stageAtomReset(draft, scope, node, session)
+        const ownDraft = draft === undefined
+        const activeDraft = draft ?? this.#createDraft()
+        try {
+            if (kernel !== undefined) {
+                kernel.stage(activeDraft, scope, intent, node, input, session)
+            } else if (intent === "set") {
+                this.#stageAtomSet(
+                    activeDraft,
+                    scope,
+                    node as AnyAtom,
+                    input,
+                    session,
+                )
+            } else if (intent === "update") {
+                this.#stageAtomUpdate(
+                    activeDraft,
+                    scope,
+                    node as AnyAtom,
+                    input as (current: unknown) => unknown,
+                    session,
+                    operation,
+                )
+            } else {
+                this.#stageAtomReset(
+                    activeDraft,
+                    scope,
+                    node as AnyAtom,
+                    session,
+                )
+            }
+        } catch (error) {
+            if (ownDraft) {
+                activeDraft.close()
+                activeDraft.release()
+            }
+            throw error
+        }
+        if (!ownDraft) return
+        activeDraft.close()
+        try {
+            this.#commitDraft(activeDraft)
+        } finally {
+            activeDraft.release()
+        }
     }
 
     transactionScope<Result>(
@@ -1516,57 +1351,6 @@ class CommittedStoreTreeHost
         if (scope.status !== "live") throw new StoreDisposedError()
     }
 
-    #validateDirectAtom(
-        scope: StoreScopeNode,
-        atom: AnyAtom,
-        session: SelectorEvaluationSession<AnyState>,
-        operation: string,
-    ): void {
-        const ownerStatus = classifyEntryOwner(this.#domain, atom, session)
-        assertStoreOperationAllowed(this.#domain, operation)
-        this.#assertScopeLive(scope)
-        this.#assertAtomKind(atom, ownerStatus, operation)
-    }
-
-    #runDirectAtomIntent<Value>(
-        scope: StoreScopeNode,
-        atom: Atom<Value>,
-        operation: string,
-        intent: "set" | "update" | "reset",
-        input?: unknown,
-    ): void {
-        const node = atom as unknown as AnyAtom
-        const session = new SelectorEvaluationSession<AnyState>()
-        this.#validateDirectAtom(scope, node, session, operation)
-        const draft = this.#createDraft()
-        try {
-            if (intent === "set") {
-                this.#stageAtomSet(draft, scope, node, input, session)
-            } else if (intent === "update") {
-                this.#stageAtomUpdate(
-                    draft,
-                    scope,
-                    node,
-                    input as (current: unknown) => unknown,
-                    session,
-                    operation,
-                )
-            } else {
-                this.#stageAtomReset(draft, scope, node, session)
-            }
-        } catch (error) {
-            draft.close()
-            draft.release()
-            throw error
-        }
-        draft.close()
-        try {
-            this.#commitDraft(draft)
-        } finally {
-            draft.release()
-        }
-    }
-
     #dropSubscriptions(scope: StoreScopeNode): void {
         const targets = this.#subscriptionTargets
         const byState = targets?.get(scope)
@@ -1594,33 +1378,6 @@ class CommittedStoreTreeHost
             this.recordCounter("activeSubscriptions", -removed)
             this.recordCounter("activeSubscriptionTargets", -byState.size)
             this.recordCounter("activeSubscriptionScopes", -1)
-        }
-    }
-
-    #validateTransactionAtom(
-        draft: TreeDraft,
-        scope: StoreScopeNode,
-        atom: AnyAtom,
-        session: SelectorEvaluationSession<AnyState>,
-        operation: string,
-    ): void {
-        const ownerStatus = classifyEntryOwner(this.#domain, atom, session)
-        assertCursorOperationAllowed(
-            this.#domain,
-            draft.transaction,
-            draft.active,
-        )
-        this.#assertScopeLive(scope)
-        this.#assertAtomKind(atom, ownerStatus, operation)
-    }
-
-    #assertAtomKind(
-        atom: AnyAtom,
-        ownerStatus: "local" | "invalid",
-        operation: string,
-    ): void {
-        if (ownerStatus === "invalid" || !this.#domain.atoms.has(atom)) {
-            throw new TypeError(`${operation} requires a valid Atom`)
         }
     }
 
@@ -2745,26 +2502,24 @@ class CommittedStoreTreeHost
 }
 
 class CommittedStoreTreeFacade implements CommittedStoreTree {
-    readonly get: <Value>(state: State<Value>) => Value
-    readonly sub: <Value>(
+    declare readonly get: <Value>(state: State<Value>) => Value
+    declare readonly sub: <Value>(
         state: State<Value>,
         callback: () => void,
     ) => () => void
-    readonly set: <Value>(atom: Atom<Value>, value: Value) => void
-    readonly update: <Value>(
-        atom: Atom<Value>,
-        update: AtomUpdater<Value>,
-    ) => void
-    readonly reset: <Value>(atom: Atom<Value>) => void
-    readonly txn: <Result>(
+    declare readonly set: CommittedStoreTree["set"]
+    declare readonly update: CommittedStoreTree["update"]
+    declare readonly reset: CommittedStoreTree["reset"]
+    declare readonly delete: CommittedStoreTree["delete"]
+    declare readonly txn: <Result>(
         callback: TransactionCallback<Result>,
         name?: string,
     ) => Result
-    readonly scope: {
+    declare readonly scope: {
         (): CommittedStoreTree
         (id: string): CommittedStoreTree
     }
-    readonly dispose: () => void
+    declare readonly dispose: () => void
 
     constructor(
         host: CommittedStoreTreeHost,
@@ -2773,9 +2528,42 @@ class CommittedStoreTreeFacade implements CommittedStoreTree {
     ) {
         this.get = state => host.get(scope, state)
         this.sub = (state, callback) => host.sub(scope, state, callback)
-        this.set = (atom, value) => host.set(scope, atom, value)
-        this.update = (atom, update) => host.update(scope, atom, update)
-        this.reset = atom => host.reset(scope, atom)
+        this.set = ((
+            target: Atom<unknown> | CollectionRow<any, any>,
+            value: unknown,
+        ) =>
+            host.mutate(
+                undefined,
+                scope,
+                "set",
+                target,
+                value,
+            )) as CommittedStoreTree["set"]
+        this.update = ((
+            target: Atom<unknown> | CollectionRow<any, any>,
+            update: (current: any) => any,
+        ) =>
+            host.mutate(
+                undefined,
+                scope,
+                "update",
+                target,
+                update,
+            )) as CommittedStoreTree["update"]
+        this.reset = ((target: Atom<unknown> | CollectionRow<any, any>) =>
+            host.mutate(
+                undefined,
+                scope,
+                "reset",
+                target,
+            )) as CommittedStoreTree["reset"]
+        this.delete = ((row: CollectionRow<any, any>) =>
+            host.mutate(
+                undefined,
+                scope,
+                "delete",
+                row,
+            )) as CommittedStoreTree["delete"]
         this.txn = (callback, name) => host.txn(scope, callback, name)
         this.scope = function (id?: string): CommittedStoreTree {
             return host.scope(scope, arguments.length, id)
@@ -3014,6 +2802,11 @@ export type {
     CommittedStoreTree,
     CommittedStoreTreeAdapter,
     CommittedStoreTreeDomain,
+    Collection,
+    CollectionKey,
+    CollectionOptions,
+    CollectionRow,
+    CollectionValue,
     RootTransaction,
     Selector,
     SelectorOptions,

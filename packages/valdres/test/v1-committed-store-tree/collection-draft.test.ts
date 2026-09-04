@@ -133,6 +133,27 @@ const createFakeExtensionRuntime = (
 }
 
 describe("v1 optional collection draft kernel", () => {
+    test("never probes the collection vtable when delete rejects an Atom", () => {
+        const fake = createFakeExtensionRuntime()
+        const instrumentation = createInternalStoreTreeInstrumentation()
+        const store = fake.domain.createStoreTree(instrumentation)
+        const atom = fake.domain.atom(0)
+
+        expect(() => Reflect.apply(store.delete, store, [atom])).toThrow(
+            TypeError,
+        )
+        expect(fake.classifyCalls()).toBe(0)
+        expect(instrumentation.read("draftCreations")).toBe(0)
+        store.txn(transaction => {
+            expect(() =>
+                Reflect.apply(transaction.delete, transaction, [atom]),
+            ).toThrow(TypeError)
+            expect(fake.classifyCalls()).toBe(0)
+        })
+        expect(fake.classifyCalls()).toBe(0)
+        expect(instrumentation.read("draftCreations")).toBe(1)
+    })
+
     test("installs once only after a successful definition and remains live for pre-existing Stores", () => {
         const domain = createCommittedStoreTreeDomain()
         const preExistingStore = domain.createStoreTree()
