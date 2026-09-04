@@ -32,6 +32,13 @@ subsequence lazily, reuses it only while the complete ordered node topology is
 unchanged, and invalidates it when that topology changes; hosts that omit the
 lookup retain the full-record traversal.
 
+A persistent host may also expose complete authoritative incoming selector
+edges. The visitor is synchronous and cancellable: it decrements a shared work
+budget for every underlying weak-reference probe, including dead references, and
+reports whether it exhausted the adjacency. The evaluator uses this index only
+for bounded negative proofs. It never constructs a public cycle path from
+reverse traversal.
+
 A persistent host may also expose a bounded synchronous observation of exact
 selector-edge additions. The observation starts lazily after an evaluator has
 accepted its first selector dependency, has an independent cursor for each
@@ -99,6 +106,24 @@ preserve selector blame, prefix truncation, and the canonical cycle path.
 Incomplete intervals and hosts without observation support take that same
 fallback. An observation is never reused after it closes or across hosts.
 
+Before a site-1 forward walk, a committed host may prove the negative from the
+opposite direction. A selector or atom with no selector dependencies is terminal
+immediately. Otherwise the evaluator walks authoritative incoming edges from the
+active target with a combined 128-unit node/probe budget. A complete traversal
+that does not find the proposed dependency proves the edge safe without
+allocating the forward parent map. Finding the dependency or exhausting the
+budget falls back to the unchanged ordered forward DFS, which alone owns
+positive-path construction and blame. After one budget exhaustion, reverse
+traversal stays disabled for the rest of that evaluation.
+
+Committed reverse adjacency is exact only when the target is the host's sole
+active selector frame. Another same-host frame may expose a transient edge that
+is intentionally absent from the committed reverse index, so those nested proofs
+use the forward graph. Frames belonging to another host do not block the
+optimization. Scratch and hydration hosts omit reverse adjacency and keep their
+existing forward proofs. Topology-delta proofs remain forward-only because their
+target need not be the current active selector.
+
 Site-1 sharing is strictly evaluator-local, and therefore also target- and
 host-local. It never participates in canonical prefix proofs or topology-delta
 proofs. The ordinary DFS parent map becomes reusable evidence only after the
@@ -151,7 +176,9 @@ global constant. A safe exact-delta transition preserves only the one closed
 map; every other graph-version change clears the certificates. The inspectable
 strategy runs the identical protocol and reports aggregate admission,
 observation, consultation, pruning, reset, seed, disable, probe, and
-maximum-retention counters without per-node events.
+maximum-retention counters without per-node events. It records reverse outcomes
+and bounded reverse work separately; the existing cycle visit counters remain
+forward-only.
 
 ```text
 foreign graph publication

@@ -18,11 +18,13 @@ import type {
     SelectorEvaluationProposal,
     SelectorEvaluationSession,
     SelectorNewEdgeProofMemo,
+    SelectorNewEdgeProofMemoProvider,
     SelectorOutcome,
     SelectorCycleSearch,
     SelectorCycleSearchSite,
     SelectorGraphEdgeAddition,
     SelectorGraphObservation,
+    SelectorGraphTraversalBudget,
 } from "./types"
 
 type InspectedThenable =
@@ -111,6 +113,23 @@ const EMPTY_ATTEMPTED_PREFIX = Object.freeze([]) as readonly never[]
 const NEW_EDGE_MEMO_MIN_SEED_SIZE = 32
 const NEW_EDGE_MEMO_MAX_ANCHOR_SIZE = 8_192
 const NEW_EDGE_MEMO_MAX_MISS_WORK = 2 * NEW_EDGE_MEMO_MIN_SEED_SIZE
+const REVERSE_PROOF_MAX_WORK = 128
+
+export type SelectorReverseProofOutcome =
+    | "unsupported"
+    | "ineligible-active-frames"
+    | "proven-terminal"
+    | "proven-reverse"
+    | "path-possible"
+    | "budget-exhausted"
+    | "disabled"
+
+export interface SelectorReverseProofMeasurement {
+    nodeVisits: number
+    dependentProbes: number
+    liveDependents: number
+    maxFrontier: number
+}
 
 interface ResettableNewEdgeProofMemo<Node>
     extends SelectorNewEdgeProofMemo<Node> {
@@ -570,6 +589,149 @@ const createNewEdgeProofMemo = <Node>(
     diagnostics?: SelectorNewEdgeProofDiagnostics,
 ): ResettableNewEdgeProofMemo<Node> =>
     new NewEdgeProofMemo(passiveSearches, diagnostics)
+
+const finishReverseProof = (
+    outcome: SelectorReverseProofOutcome,
+    budget: SelectorGraphTraversalBudget,
+    nodeVisits: number,
+    liveDependents: number,
+    maxFrontier: number,
+    measurement?: SelectorReverseProofMeasurement,
+): SelectorReverseProofOutcome => {
+    if (measurement !== undefined) {
+        measurement.nodeVisits = nodeVisits
+        measurement.dependentProbes =
+            REVERSE_PROOF_MAX_WORK - budget.remaining - nodeVisits
+        measurement.liveDependents = liveDependents
+        measurement.maxFrontier = maxFrontier
+    }
+    return outcome
+}
+
+/**
+ * Try the cheap direction first for a site-1 proof. The persistent host's
+ * reverse index describes the effective graph exactly only while `target` is
+ * its sole active frame: changing the target's own outgoing prefix cannot add
+ * a path into the target. Any possible positive or bounded/ineligible case is
+ * deliberately left to the canonical ordered forward DFS.
+ */
+export const tryProveNoDependencyPathReverse = <Node, Token extends object>(
+    start: Node,
+    target: Node,
+    host: SelectorEvaluationHost<Node, Token>,
+    session: SelectorEvaluationSession<Node>,
+    measurement?: SelectorReverseProofMeasurement,
+    allowTraversal = true,
+): SelectorReverseProofOutcome => {
+    if (measurement !== undefined) {
+        measurement.nodeVisits = 0
+        measurement.dependentProbes = 0
+        measurement.liveDependents = 0
+        measurement.maxFrontier = 0
+    }
+    const visitDependents = host.visitSelectorDependents
+    if (visitDependents === undefined) return "unsupported"
+    if (!session.isSoleActiveSelector(host, target)) {
+        return "ineligible-active-frames"
+    }
+    if (!Object.is(start, target)) {
+        const getDependencies = host.getSelectorDependencyNodes
+        if (getDependencies !== undefined) {
+            const dependencies = getDependencies.call(host, start)
+            if (dependencies === undefined || dependencies.length === 0) {
+                return "proven-terminal"
+            }
+        }
+    }
+    if (!allowTraversal) return "disabled"
+
+    const budget: SelectorGraphTraversalBudget = {
+        remaining: REVERSE_PROOF_MAX_WORK,
+    }
+    const pending = [target]
+    const visited = new Set<Node>(pending)
+    let nodeVisits = 0
+    let liveDependents = 0
+    let maxFrontier = 1
+
+    while (pending.length > 0) {
+        if (budget.remaining === 0) {
+            return finishReverseProof(
+                "budget-exhausted",
+                budget,
+                nodeVisits,
+                liveDependents,
+                maxFrontier,
+                measurement,
+            )
+        }
+        budget.remaining--
+        nodeVisits++
+        const node = pending.pop() as Node
+        if (Object.is(node, start)) {
+            return finishReverseProof(
+                "path-possible",
+                budget,
+                nodeVisits,
+                liveDependents,
+                maxFrontier,
+                measurement,
+            )
+        }
+
+        let reachedStart = false
+        const exhausted = visitDependents.call(
+            host,
+            node,
+            budget,
+            dependent => {
+                liveDependents++
+                if (Object.is(dependent, start)) {
+                    reachedStart = true
+                    return false
+                }
+                if (!visited.has(dependent)) {
+                    visited.add(dependent)
+                    pending.push(dependent)
+                    if (pending.length > maxFrontier) {
+                        maxFrontier = pending.length
+                    }
+                }
+                return true
+            },
+        )
+        if (reachedStart) {
+            return finishReverseProof(
+                "path-possible",
+                budget,
+                nodeVisits,
+                liveDependents,
+                maxFrontier,
+                measurement,
+            )
+        }
+        if (!exhausted) {
+            return finishReverseProof(
+                "budget-exhausted",
+                budget,
+                nodeVisits,
+                liveDependents,
+                maxFrontier,
+                measurement,
+            )
+        }
+    }
+
+    return finishReverseProof(
+        "proven-reverse",
+        budget,
+        nodeVisits,
+        liveDependents,
+        maxFrontier,
+        measurement,
+    )
+}
+
 const findDependencyPathFast = <Node, Token extends object>(
     start: Node,
     target: Node,
@@ -577,8 +739,31 @@ const findDependencyPathFast = <Node, Token extends object>(
     session: SelectorEvaluationSession<Node>,
     _site: SelectorCycleSearchSite,
     _acceptedPrefixLength: number,
-    newEdgeProofMemo?: SelectorNewEdgeProofMemo<Node>,
+    getNewEdgeProofMemo?: SelectorNewEdgeProofMemoProvider<Node>,
 ): readonly Node[] | undefined => {
+    if (_site === 1) {
+        const reverseProof = tryProveNoDependencyPathReverse(
+            start,
+            target,
+            host,
+            session,
+            undefined,
+            getNewEdgeProofMemo?.reverseProofEnabled ?? true,
+        )
+        if (
+            reverseProof === "proven-terminal" ||
+            reverseProof === "proven-reverse"
+        ) {
+            return undefined
+        }
+        if (
+            reverseProof === "budget-exhausted" &&
+            getNewEdgeProofMemo !== undefined
+        ) {
+            getNewEdgeProofMemo.reverseProofEnabled = false
+        }
+    }
+    const newEdgeProofMemo = getNewEdgeProofMemo?.()
     let consultMemo = newEdgeProofMemo?.beginSearch() ?? false
     const pending = [start]
     const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
@@ -734,6 +919,10 @@ export const evaluateSelector = <Node, Token extends object, Value>(
     let newEdgeProofMemoVersion = graphVersionAtEntry
     let newEdgeProofsInEpoch = 0
     let newEdgeProofMemo: ResettableNewEdgeProofMemo<Node> | undefined
+    let requestedNewEdgeProofMemoVersion = graphVersionAtEntry
+    let provideNewEdgeProofMemo:
+        | SelectorNewEdgeProofMemoProvider<Node>
+        | undefined
 
     const reconcileNewEdgeProofMemoVersion = (
         graphVersion: number,
@@ -789,7 +978,6 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         }
         return newEdgeProofMemo
     }
-
     const beginGraphObservation = (dependency: Node): void => {
         if (graphObservationStarted) return
         const observation = host.beginSelectorGraphObservation?.(dependency)
@@ -1026,6 +1214,14 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 sessionPublicationsAfterServe,
             )
         if (!mayReusePriorProof && !maySkipColdParentGraphProof) {
+            requestedNewEdgeProofMemoVersion = graphVersionAfterServe
+            if (provideNewEdgeProofMemo === undefined) {
+                provideNewEdgeProofMemo = (() =>
+                    getNewEdgeProofMemo(
+                        requestedNewEdgeProofMemoVersion,
+                    )) as SelectorNewEdgeProofMemoProvider<Node>
+                provideNewEdgeProofMemo.reverseProofEnabled = true
+            }
             const cyclePath = cycleSearch(
                 dependency,
                 selector,
@@ -1033,7 +1229,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 session,
                 1,
                 dependencies.length,
-                getNewEdgeProofMemo(graphVersionAfterServe),
+                provideNewEdgeProofMemo,
             )
             if (cyclePath) {
                 const controlFault = session.getControlFault()

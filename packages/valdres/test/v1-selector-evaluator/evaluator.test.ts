@@ -8,7 +8,10 @@ import {
     SelectorGetterError,
     SelectorReadRevokedError,
 } from "../../src/v1-internal/selector-evaluator/errors"
-import { evaluateSelector } from "../../src/v1-internal/selector-evaluator/evaluate"
+import {
+    evaluateSelector,
+    tryProveNoDependencyPathReverse,
+} from "../../src/v1-internal/selector-evaluator/evaluate"
 import {
     createInspectionRecorder,
     type CycleSearchInspectionDetail,
@@ -27,6 +30,7 @@ import type {
     SelectorEvaluationProposal,
     SelectorGraphEdgeAddition,
     SelectorGraphObservation,
+    SelectorGraphTraversalBudget,
     SelectorNewEdgeProofDiagnostics,
     SelectorRecordView,
     SelectorCycleSearch,
@@ -68,6 +72,11 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     readonly getSelectorDependencyNodes?: (
         node: Node,
     ) => readonly Node[] | undefined
+    readonly visitSelectorDependents?: (
+        node: Node,
+        budget: SelectorGraphTraversalBudget,
+        visitor: (dependent: Node) => boolean,
+    ) => boolean
     cycleTrace: SelectorCycleSearch<Node, Token> | undefined
     newEdgeProofDiagnostics: SelectorNewEdgeProofDiagnostics | undefined
     #nextToken = 1
@@ -77,6 +86,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     #graphObserverCount = 0
     #observedEdges: SelectorGraphEdgeAddition<Node>[] | undefined
     #observationIncomplete = false
+    readonly #reverseDependents = new Map<Node, Set<Node>>()
     graphObservationBegins = 0
     graphObservationCloses = 0
     graphObservationTakes = 0
@@ -88,6 +98,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
             comparisonRecords?: Map<Node, TestRecord>
             observeSelectorGraph?: boolean
             maxObservedEdges?: number
+            reverseSelectorGraph?: boolean
         }> = {},
     ) {
         this.liveRecords = options.liveRecords
@@ -104,6 +115,17 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
                         )
                         .map(dependency => dependency.node),
                 )
+            }
+            if (options.reverseSelectorGraph === true) {
+                this.visitSelectorDependents = (node, budget, visitor) => {
+                    for (const dependent of this.#reverseDependents.get(node) ??
+                        []) {
+                        if (budget.remaining === 0) return false
+                        budget.remaining--
+                        if (!visitor(dependent)) return false
+                    }
+                    return true
+                }
             }
         }
     }
@@ -228,6 +250,21 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
                       })
                     : previous?.lastSuccess,
         })
+        for (const dependency of previous?.dependencies ?? []) {
+            const dependents = this.#reverseDependents.get(dependency.node)
+            dependents?.delete(node)
+            if (dependents?.size === 0) {
+                this.#reverseDependents.delete(dependency.node)
+            }
+        }
+        for (const dependency of proposal.dependencies) {
+            let dependents = this.#reverseDependents.get(dependency.node)
+            if (dependents === undefined) {
+                dependents = new Set()
+                this.#reverseDependents.set(dependency.node, dependents)
+            }
+            dependents.add(node)
+        }
         this.records.set(node, record)
         this.dirty.delete(node)
         this.publications.push(proposal)
@@ -457,6 +494,7 @@ interface CycleParityCase {
     readonly name: string
     readonly mode: HostMode
     readonly hostKind: "committed" | "scratch" | "hydration"
+    readonly reverseSelectorGraph?: boolean
     readonly prepare: (host: TestHost) => void
     readonly mutate: (host: TestHost) => ServedSelectorOutcome<Token>
     readonly verify: (searches: readonly CycleSearchInspectionDetail[]) => void
@@ -469,7 +507,12 @@ const runCycleParityCase = (scenario: CycleParityCase): void => {
         snapshot: unknown
         searches: readonly CycleSearchInspectionDetail[]
     }> => {
-        const host = new TestHost(scenario.mode)
+        const host = new TestHost(
+            scenario.mode,
+            scenario.reverseSelectorGraph === true
+                ? { reverseSelectorGraph: true }
+                : {},
+        )
         scenario.prepare(host)
         const setup = measured ? createInspectionRecorder() : undefined
         if (setup !== undefined) {
@@ -973,6 +1016,7 @@ describe("v1 selector evaluator cycles", () => {
             name: "committed positive new edge preserves exact DFS order",
             mode: "persistent-pre",
             hostKind: "committed",
+            reverseSelectorGraph: true,
             prepare(host) {
                 for (const leaf of [
                     "noise-before",
@@ -1015,6 +1059,7 @@ describe("v1 selector evaluator cycles", () => {
                     edges: 3,
                     recordExpansions: 2,
                     terminalPrunes: 0,
+                    reverseProof: { outcome: "path-possible" },
                 })
             },
         },
@@ -1080,6 +1125,7 @@ describe("v1 selector evaluator cycles", () => {
             name: "fresh publication revalidates an accepted prefix",
             mode: "persistent-pre",
             hostKind: "committed",
+            reverseSelectorGraph: true,
             prepare(host) {
                 host.define({ node: "parent", get: () => 1 })
                 host.define({ node: "changed", get: () => 1 })
@@ -1142,6 +1188,7 @@ describe("v1 selector evaluator cycles", () => {
             name: "same-session proof expands a transient parent prefix",
             mode: "persistent-pre",
             hostKind: "committed",
+            reverseSelectorGraph: true,
             prepare(host) {
                 host.define({ node: "parent", get: () => 1 })
                 host.define({ node: "changed", get: () => 1 })
@@ -1181,6 +1228,7 @@ describe("v1 selector evaluator cycles", () => {
                     visits: 4,
                     transientExpansions: 1,
                     recordExpansions: 2,
+                    reverseProof: { outcome: "active-frames" },
                 })
             },
         },
@@ -2677,14 +2725,46 @@ describe("v1 selector evaluator cycles", () => {
     })
 
     test("active selector frames remain isolated across two hosts", () => {
-        const first = new TestHost()
-        const second = new TestHost()
+        const first = new TestHost("persistent-pre", {
+            reverseSelectorGraph: true,
+        })
+        const second = new TestHost("persistent-pre", {
+            reverseSelectorGraph: true,
+        })
         let child: ServedSelectorOutcome<Token, number> | undefined
 
         first.setLeaf("bridge", 1)
         first.define({ node: "outer", get: get => get("bridge") })
         second.define({ node: "outer", get: () => 2 })
+        expect(valueOf(second.read<number>("outer"))).toBe(2)
+        second.define({ node: "child", get: () => 0 })
+        expect(valueOf(second.read<number>("child"))).toBe(0)
         second.define({ node: "child", get: get => get("outer") })
+        const setup = createInspectionRecorder()
+        const hostRef = setup.recorder.reference(second, "scope")
+        second.cycleTrace = (
+            start,
+            target,
+            cycleHost,
+            session,
+            site,
+            acceptedPrefixLength,
+            getNewEdgeProofMemo,
+        ) =>
+            setup.recorder.findDependencyPath(
+                "committed",
+                hostRef,
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                acceptedPrefixLength,
+                cycleHost.getSelectorGraphVersion(),
+                session.getSelectorGraphPublicationCount(cycleHost),
+                false,
+                getNewEdgeProofMemo,
+            )
         first.setServeEffect("bridge", session => {
             child = second.serve("child", session) as ServedSelectorOutcome<
                 Token,
@@ -2697,6 +2777,14 @@ describe("v1 selector evaluator cycles", () => {
         expect(
             second.records.get("child")?.dependencies.map(({ node }) => node),
         ).toEqual(["outer"])
+        expect(
+            setup.inspect
+                .export()
+                .details.find(
+                    (detail): detail is CycleSearchInspectionDetail =>
+                        detail.type === "cycle-search",
+                )?.reverseProof,
+        ).toMatchObject({ outcome: "terminal" })
     })
 
     test("selector-record removal must preserve graph-closed absence", () => {
@@ -2732,6 +2820,175 @@ describe("v1 selector evaluator cycles", () => {
             expect(host.records.get(second)?.dependencies[0]?.node).toBe(first)
         })
     }
+
+    test("does not infer a terminal start when only reverse adjacency is available", () => {
+        const host: SelectorEvaluationHost<Node, Token> = {
+            serve: () => {
+                throw new Error("not used")
+            },
+            getSelectorRecord: () => undefined,
+            visitSelectorDependents: (_node, budget, visitor) => {
+                if (budget.remaining === 0) return false
+                budget.remaining--
+                return visitor("start")
+            },
+            getSelectorGraphVersion: () => 0,
+            getComparisonBaseline: () => undefined,
+            createOutcomeToken: () => Object.freeze({ id: 1 }),
+        }
+        const session = new SelectorEvaluationSession<Node>()
+        session.enter(host, "target", [])
+        try {
+            expect(
+                tryProveNoDependencyPathReverse(
+                    "start",
+                    "target",
+                    host,
+                    session,
+                ),
+            ).toBe("path-possible")
+        } finally {
+            session.leave(host, "target")
+        }
+    })
+
+    test("uses the current reverse index after a selector removes an old edge", () => {
+        const host = new TestHost("persistent-pre", {
+            reverseSelectorGraph: true,
+        })
+        host.setLeaf("leaf", 1)
+        host.define({ node: "child", get: get => get("leaf") })
+        host.define({ node: "parent", get: () => 1 })
+        host.define({ node: "candidate", get: get => get("parent") })
+        expect(valueOf(host.read<number>("child"))).toBe(1)
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(valueOf(host.read<number>("candidate"))).toBe(1)
+
+        host.define({ node: "candidate", get: get => get("child") })
+        expect(valueOf(host.read<number>("candidate"))).toBe(1)
+
+        const setup = createInspectionRecorder()
+        const hostRef = setup.recorder.reference(host, "scope")
+        host.cycleTrace = (
+            start,
+            target,
+            cycleHost,
+            session,
+            site,
+            acceptedPrefixLength,
+            getNewEdgeProofMemo,
+        ) =>
+            setup.recorder.findDependencyPath(
+                "committed",
+                hostRef,
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                acceptedPrefixLength,
+                cycleHost.getSelectorGraphVersion(),
+                session.getSelectorGraphPublicationCount(cycleHost),
+                false,
+                getNewEdgeProofMemo,
+            )
+        host.define({ node: "parent", get: get => get("candidate") })
+
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        const search = setup.inspect
+            .export()
+            .details.find(
+                (detail): detail is CycleSearchInspectionDetail =>
+                    detail.type === "cycle-search" &&
+                    detail.site === "new-edge-proof",
+            )!
+        expect(search).toMatchObject({
+            start: "candidate",
+            target: "parent",
+            visits: 0,
+            reverseProof: {
+                outcome: "proven",
+                nodeVisits: 1,
+                dependentProbes: 0,
+            },
+        })
+    })
+
+    test("bounds reverse fan-in once and disables it for the evaluation", () => {
+        const host = new TestHost("persistent-pre", {
+            reverseSelectorGraph: true,
+        })
+        host.setLeaf("leaf", 1)
+        host.define({ node: "parent", get: () => 1 })
+        for (const root of ["root-a", "root-b"] as const) {
+            const child = `${root}/child`
+            host.define({ node: child, get: get => get("leaf") })
+            host.define({ node: root, get: get => get(child) })
+            expect(valueOf(host.read<number>(root))).toBe(1)
+        }
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        for (let index = 0; index < 130; index++) {
+            const watcher = `watcher-${index}`
+            host.define({ node: watcher, get: get => get("parent") })
+            expect(valueOf(host.read<number>(watcher))).toBe(1)
+        }
+
+        const setup = createInspectionRecorder()
+        const hostRef = setup.recorder.reference(host, "scope")
+        host.cycleTrace = (
+            start,
+            target,
+            cycleHost,
+            session,
+            site,
+            acceptedPrefixLength,
+            getNewEdgeProofMemo,
+        ) =>
+            setup.recorder.findDependencyPath(
+                "committed",
+                hostRef,
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                acceptedPrefixLength,
+                cycleHost.getSelectorGraphVersion(),
+                session.getSelectorGraphPublicationCount(cycleHost),
+                false,
+                getNewEdgeProofMemo,
+            )
+        host.define({
+            node: "parent",
+            get: get => get<number>("root-a") + get<number>("root-b"),
+        })
+
+        expect(valueOf(host.read<number>("parent"))).toBe(2)
+        const searches = setup.inspect
+            .export()
+            .details.filter(
+                (detail): detail is CycleSearchInspectionDetail =>
+                    detail.type === "cycle-search" &&
+                    detail.site === "new-edge-proof",
+            )
+        expect(searches.map(search => search.visits)).toEqual([2, 2])
+        expect(searches.map(search => search.reverseProof)).toEqual([
+            {
+                outcome: "budget-exhausted",
+                nodeVisits: 1,
+                dependentProbes: 127,
+                liveDependents: 127,
+                maxFrontier: 127,
+            },
+            {
+                outcome: "disabled",
+                nodeVisits: 0,
+                dependentProbes: 0,
+                liveDependents: 0,
+                maxFrontier: 0,
+            },
+        ])
+    })
 
     const buildShiftXHub = (cycleAt = -1) => {
         const width = 200
@@ -3000,31 +3257,47 @@ describe("v1 selector evaluator cycles", () => {
             hydration: 0,
         })
         expect(operation.totals.cycle.searches).toBe(201)
-        // Each cold child publication advances the graph, but its exact edge
-        // additions do not escape the retained negative closure. A2 carries
-        // that proof across versions instead of restarting the shared walk.
-        expect(operation.totals.cycle.visits).toBe(1_599)
-        expect(operation.totals.cycle.maxVisits).toBe(452)
+        // Every forward closure is hundreds of nodes, while the reverse
+        // ancestor closure is exactly hub <- echo. The logical proof count is
+        // unchanged, but no canonical forward traversal is needed.
+        expect(operation.totals.cycle.visits).toBe(0)
+        expect(operation.totals.cycle.maxVisits).toBe(0)
+        expect(operation.totals.cycle.reverseProof).toEqual({
+            terminal: 0,
+            proven: 201,
+            pathPossible: 0,
+            budgetExhausted: 0,
+            disabled: 0,
+            activeFrames: 0,
+            unsupported: 0,
+            nodeVisits: 402,
+            dependentProbes: 201,
+            liveDependents: 201,
+            maxWork: 3,
+            maxFrontier: 1,
+        })
         expect(operation.totals.cycle.newEdgeProofMemo).toMatchObject({
-            observing: 3,
-            consultedPruned: 198,
-            mapProbes: 396,
-            prunedNodes: 198,
-            resets: { graphVersion: 0 },
-            seeds: {
-                initial: 1,
-                activationReplacement: 1,
-                hitDerived: 198,
-            },
-            retained: { maxEntries: 455 },
+            observing: 0,
+            consultedPruned: 0,
+            mapProbes: 0,
+            prunedNodes: 0,
+            seeds: { initial: 0, hitDerived: 0 },
+            retained: { maxEntries: 0 },
         })
         const searches = report.details.filter(
             (detail): detail is CycleSearchInspectionDetail =>
                 detail.type === "cycle-search",
         )
-        expect(searches.filter(search => search.visits === 101)).toHaveLength(1)
-        expect(searches.filter(search => search.visits === 452)).toHaveLength(2)
-        expect(searches.filter(search => search.visits === 3)).toHaveLength(198)
+        expect(searches).toHaveLength(201)
+        expect(
+            searches.every(
+                search =>
+                    search.visits === 0 &&
+                    search.reverseProof?.outcome === "proven" &&
+                    search.reverseProof.nodeVisits === 2 &&
+                    search.reverseProof.dependentProbes === 1,
+            ),
+        ).toBe(true)
     })
 
     test("passively learns proof one for a warm narrow large-terminal-terminal-large sequence", () => {
@@ -4081,9 +4354,10 @@ describe("v1 selector evaluator cycles", () => {
             _session,
             site,
             _acceptedPrefixLength,
-            newEdgeProofMemo,
+            getNewEdgeProofMemo,
         ) => {
             if (site !== 1 || target !== "parent") return undefined
+            const newEdgeProofMemo = getNewEdgeProofMemo?.()
             expect(newEdgeProofMemo).toBeDefined()
             const consult = newEdgeProofMemo!.beginSearch()
             if (parentProof === 0) expect(consult).toBe(false)
@@ -4470,11 +4744,19 @@ describe("v1 selector evaluator cycles", () => {
             session,
             site,
             acceptedPrefixLength,
-            newEdgeProofMemo,
+            getNewEdgeProofMemo,
         ) => {
+            const newEdgeProofMemo = getNewEdgeProofMemo?.()
             if (site === 1) {
                 memoAvailability.push(newEdgeProofMemo !== undefined)
             }
+            const provideMemo =
+                getNewEdgeProofMemo === undefined
+                    ? undefined
+                    : Object.assign(() => newEdgeProofMemo, {
+                          reverseProofEnabled:
+                              getNewEdgeProofMemo.reverseProofEnabled,
+                      })
             return setup.recorder.findDependencyPath(
                 "committed",
                 hostRef,
@@ -4487,7 +4769,7 @@ describe("v1 selector evaluator cycles", () => {
                 cycleHost.getSelectorGraphVersion(),
                 session.getSelectorGraphPublicationCount(cycleHost),
                 false,
-                newEdgeProofMemo,
+                provideMemo,
             )
         }
         host.define(kick)
@@ -4564,9 +4846,10 @@ describe("v1 selector evaluator cycles", () => {
             _session,
             site,
             _acceptedPrefixLength,
-            newEdgeProofMemo,
+            getNewEdgeProofMemo,
         ) => {
             if (site !== 1) return undefined
+            const newEdgeProofMemo = getNewEdgeProofMemo?.()
             memoAvailability.push(newEdgeProofMemo !== undefined)
             if (proof === 0) {
                 expect(newEdgeProofMemo?.beginSearch()).toBe(false)
@@ -4639,9 +4922,10 @@ describe("v1 selector evaluator cycles", () => {
             _session,
             site,
             _acceptedPrefixLength,
-            newEdgeProofMemo,
+            getNewEdgeProofMemo,
         ) => {
             if (site !== 1) return undefined
+            const newEdgeProofMemo = getNewEdgeProofMemo?.()
             expect(newEdgeProofMemo).toBeDefined()
             beginResults.push(newEdgeProofMemo!.beginSearch())
             if (proof === 4) {

@@ -339,6 +339,25 @@ describe("v1 scope-keyed committed StoreTree host", () => {
         expect(counters.read("disposalVisits") - visitsBeforeRoot).toBe(1)
     })
 
+    test("bounds weak-handle traversal by underlying reference probes", () => {
+        const handles = new WeakHandleSet<object>()
+        const retained = Array.from({ length: 100_000 }, (_, index) => ({
+            index,
+        }))
+        for (const handle of retained) handles.add(handle)
+
+        const budget = { remaining: 128 }
+        let visited = 0
+        expect(
+            handles.visitWithin(budget, () => {
+                visited++
+                return true
+            }),
+        ).toBe(false)
+        expect(visited).toBe(128)
+        expect(budget.remaining).toBe(0)
+    })
+
     test("keeps inheritance live while equal shadow and reset change only routing", () => {
         const counters = counterHarness()
         const domain = createCommittedStoreTreeDomain(counters.instrumentation)

@@ -114,17 +114,18 @@ describe("valdres/inspect public structural diagnostics", () => {
                 proposedTopologyIdentical: 0,
                 cycle: {
                     searches: 1,
-                    visits: 1,
-                    maxVisits: 1,
+                    visits: 0,
+                    maxVisits: 0,
                     found: 0,
+                    reverseProof: { terminal: 1 },
                 },
             },
         })
         expect(committed.prefixRevalidation).toEqual(EMPTY_CYCLE_BUCKET)
         expect(committed.newEdgeProof).toEqual({
             searches: 1,
-            visits: 1,
-            maxVisits: 1,
+            visits: 0,
+            maxVisits: 0,
             found: 0,
         })
         expect(operation.totals.cycle.byLane.scratch.newEdgeProof).toEqual(
@@ -150,8 +151,13 @@ describe("valdres/inspect public structural diagnostics", () => {
                 kind: "state",
                 name: "negative-edge/root",
             },
-            visits: 1,
+            visits: 0,
             found: false,
+            reverseProof: {
+                outcome: "terminal",
+                nodeVisits: 0,
+                dependentProbes: 0,
+            },
             evaluationGraphVersionDelta: 0,
             evaluationAttributedPublicationDelta: 0,
             acceptedPrefixLength: 1,
@@ -166,7 +172,7 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(search.sessionId).toBe(evaluation.sessionId as number)
     })
 
-    test("aggregates warm-narrow proof learning without per-node detail events", () => {
+    test("aggregates reverse-first outcomes without per-node detail events", () => {
         const mode = atom(false, { name: "memo/mode" })
         const leaf = atom(1, { name: "memo/leaf" })
         const shared: Selector<number>[] = []
@@ -219,65 +225,58 @@ describe("valdres/inspect public structural diagnostics", () => {
         const operation = operationNamed(report, "memo sequence")
         const expected = {
             admissionSkipped: 0,
-            observing: 3,
+            observing: 0,
             consultedNoPrune: 0,
-            consultedPruned: 1,
+            consultedPruned: 0,
             disabled: 0,
-            mapProbes: 2,
-            prunedNodes: 1,
+            mapProbes: 0,
+            prunedNodes: 0,
             resets: { graphVersion: 0 },
             seeds: {
-                initial: 1,
+                initial: 0,
                 activationReplacement: 0,
                 secondary: 0,
-                hitDerived: 1,
+                hitDerived: 0,
             },
             disables: {
                 missBudget: 0,
                 oversizedHitApproach: 0,
                 passiveProbeBudget: 0,
             },
-            retained: { maxEntries: 67 },
+            retained: { maxEntries: 0 },
         }
         expect(operation.totals.cycle).toMatchObject({
             searches: 4,
-            visits: 69,
+            visits: 0,
             newEdgeProofMemo: expected,
+            reverseProof: {
+                terminal: 2,
+                proven: 2,
+                nodeVisits: 2,
+                dependentProbes: 0,
+                maxWork: 1,
+                maxFrontier: 1,
+            },
         })
-        expect(
-            expected.admissionSkipped +
-                expected.observing +
-                expected.consultedNoPrune +
-                expected.consultedPruned +
-                expected.disabled,
-        ).toBe(operation.totals.cycle.bySite.newEdgeProof)
         const evaluation = detailsOfType(report, "selector-evaluation").find(
             detail => detail.selector.name === "memo/parent",
         )
-        expect(evaluation?.newEdgeProofMemo).toEqual(expected)
-        const spanClassifications = [
-            ["memo proof 1", "observing"],
-            ["memo proof 2", "observing"],
-            ["memo proof 3", "observing"],
-            ["memo proof 4", "consultedPruned"],
+        expect(evaluation?.newEdgeProofMemo).toBeUndefined()
+        const spanOutcomes = [
+            ["memo proof 1", "proven"],
+            ["memo proof 2", "terminal"],
+            ["memo proof 3", "terminal"],
+            ["memo proof 4", "proven"],
         ] as const
-        for (const [name, classification] of spanClassifications) {
+        for (const [name, outcome] of spanOutcomes) {
             const span = spanNamed(report, name)
-            const memo = span.totals.cycle.newEdgeProofMemo
             expect(span.totals.cycle.bySite.newEdgeProof).toBe(1)
-            expect(
-                memo.admissionSkipped +
-                    memo.observing +
-                    memo.consultedNoPrune +
-                    memo.consultedPruned +
-                    memo.disabled,
-            ).toBe(1)
-            expect(memo[classification]).toBe(1)
+            expect(span.totals.cycle.reverseProof[outcome]).toBe(1)
         }
         expect(detailsOfType(report, "cycle-search")).toHaveLength(4)
     })
 
-    test("attributes exact-delta memo validation once in public summaries", () => {
+    test("attributes reverse proofs across same-session graph publications", () => {
         const childCount = 6
         const source = atom(0, { name: "cross-version/source" })
         const leaf = atom(1, { name: "cross-version/leaf" })
@@ -330,23 +329,17 @@ describe("valdres/inspect public structural diagnostics", () => {
         )
 
         expect(parentSearches.map(search => search.visits)).toEqual([
-            41, 41, 41, 2, 2, 2,
+            0, 0, 0, 0, 0, 0,
         ])
-        expect(evaluation?.newEdgeProofMemo).toMatchObject({
-            observing: 3,
-            consultedPruned: 3,
-            mapProbes: 11,
-            prunedNodes: 3,
-            resets: { graphVersion: 0 },
-            seeds: {
-                initial: 1,
-                activationReplacement: 1,
-                hitDerived: 3,
-            },
-        })
-        // Five exact-delta tail checks plus six search probes are aggregated
-        // once. Omitting transition probes would incorrectly report six.
-        expect(operation.totals.cycle.newEdgeProofMemo.mapProbes).toBe(11)
+        expect(
+            parentSearches.every(
+                search => search.reverseProof?.outcome === "proven",
+            ),
+        ).toBe(true)
+        expect(evaluation?.newEdgeProofMemo).toBeUndefined()
+        expect(
+            operation.totals.cycle.reverseProof.proven,
+        ).toBeGreaterThanOrEqual(childCount)
         expect(operation.totals.cycle.bySite.topologyDeltaProof).toBe(0)
         unsubscribe()
     })
@@ -847,16 +840,17 @@ describe("valdres/inspect public structural diagnostics", () => {
 
             expect(operation.totals.cycle).toMatchObject({
                 searches: 1,
-                visits: 1,
-                maxVisits: 1,
+                visits: 0,
+                maxVisits: 0,
                 found: 0,
+                reverseProof: { terminal: 1 },
             })
             expect(
                 operation.totals.cycle.byLane.committed.newEdgeProof,
             ).toEqual({
                 searches: 1,
-                visits: 1,
-                maxVisits: 1,
+                visits: 0,
+                maxVisits: 0,
                 found: 0,
             })
             expect(report.details).toHaveLength(detailCapacity)
@@ -1043,10 +1037,11 @@ describe("valdres/inspect public structural diagnostics", () => {
         ).toEqual(EMPTY_CYCLE_BUCKET)
         expect(operation.totals.cycle.byLane.committed.newEdgeProof).toEqual({
             searches: childCount,
-            visits: childCount,
-            maxVisits: 1,
+            visits: 0,
+            maxVisits: 0,
             found: 0,
         })
+        expect(operation.totals.cycle.reverseProof.terminal).toBe(childCount)
         expect(evaluations).toHaveLength(childCount + 1)
         expect(new Set(evaluations.map(detail => detail.sessionId)).size).toBe(
             1,
@@ -1159,7 +1154,15 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(checksum).toBe(8_198)
         expect(notifications).toBe(8)
         expect(cycle.searches).toBeGreaterThan(0)
-        expect(cycle.visits).toBeGreaterThanOrEqual(cycle.searches)
+        expect(
+            cycle.reverseProof.terminal +
+                cycle.reverseProof.proven +
+                cycle.reverseProof.pathPossible +
+                cycle.reverseProof.budgetExhausted +
+                cycle.reverseProof.disabled +
+                cycle.reverseProof.activeFrames +
+                cycle.reverseProof.unsupported,
+        ).toBe(cycle.bySite.newEdgeProof)
         expect(cycle.found).toBe(0)
         expect(cycle.byLane.committed.prefixRevalidation).toEqual(
             EMPTY_CYCLE_BUCKET,
