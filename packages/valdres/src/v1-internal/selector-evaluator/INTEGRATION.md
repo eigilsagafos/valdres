@@ -106,23 +106,39 @@ preserve selector blame, prefix truncation, and the canonical cycle path.
 Incomplete intervals and hosts without observation support take that same
 fallback. An observation is never reused after it closes or across hosts.
 
-Before a site-1 forward walk, a committed host may prove the negative from the
-opposite direction. A selector or atom with no selector dependencies is terminal
-immediately. Otherwise the evaluator walks authoritative incoming edges from the
-active target with a combined 128-unit node/probe budget. A complete traversal
-that does not find the proposed dependency proves the edge safe without
-allocating the forward parent map. Finding the dependency or exhausting the
-budget falls back to the unchanged ordered forward DFS, which alone owns
-positive-path construction and blame. After one budget exhaustion, reverse
-traversal stays disabled for the rest of that evaluation.
+Before a site-1 or site-2 forward walk, a committed host may prove the negative
+from the opposite direction. An inactive selector-only-terminal node, or an
+active selector with an empty accepted prefix, is terminal immediately.
+Otherwise the evaluator walks incoming edges with a combined 128-unit node/probe
+budget. A complete traversal that does not find the proposed dependency proves
+the edge safe without allocating the forward parent map. Finding the dependency
+or exhausting the budget falls back to the unchanged ordered forward DFS, which
+alone owns positive-path construction and blame. After one budget exhaustion,
+reverse traversal stays disabled for the rest of that site-1 evaluation or exact
+site-2 replay batch.
 
-Committed reverse adjacency is exact only when the target is the host's sole
-active selector frame. Another same-host frame may expose a transient edge that
-is intentionally absent from the committed reverse index, so those nested proofs
-use the forward graph. Frames belonging to another host do not block the
-optimization. Scratch and hydration hosts omit reverse adjacency and keep their
-existing forward proofs. Topology-delta proofs remain forward-only because their
-target need not be the current active selector.
+Committed reverse adjacency alone is exact only when the target is the host's
+sole active selector frame. For one complete site-2 addition interval, the
+evaluator scans up to 4,096 active session frames and snapshots up to 4,096
+edges from their same-host transient prefixes, then unions those reverse edges
+with the committed index. It deliberately keeps stale committed edges: those can
+only cause a conservative forward fallback, while omitting a transient edge
+could make a negative certificate unsound. Ambiguous frames, a mismatched
+prefix, or an oversized snapshot fail closed to the canonical forward proof.
+Frames belonging to another host are scanned for the bound but excluded from the
+snapshot. Scratch and hydration hosts omit reverse adjacency and keep their
+existing forward proofs.
+
+On reverse-capable hosts, inspectable evaluation records one
+snapshot-construction attempt per nonempty exact site-2 replay batch,
+independently of the number of added edges replayed. Completed, overflow, and
+unavailable outcomes partition those attempts. A host without reverse adjacency
+instead reports unsupported reverse proofs and zero snapshot attempts. Totals
+report all active session frames and same-host prefix edges scanned by every
+attempt, plus the same-host frames and edges captured by completed snapshots;
+each has a maximum so overflow and batch shape remain visible without per-frame
+events. Construction work is attributed at event time to the active evaluation
+and any enclosing span, operation, and commit.
 
 Site-1 sharing is strictly evaluator-local, and therefore also target- and
 host-local. It never participates in canonical prefix proofs or topology-delta
@@ -177,8 +193,9 @@ map; every other graph-version change clears the certificates. The inspectable
 strategy runs the identical protocol and reports aggregate admission,
 observation, consultation, pruning, reset, seed, disable, probe, and
 maximum-retention counters without per-node events. It records reverse outcomes
-and bounded reverse work separately; the existing cycle visit counters remain
-forward-only.
+and bounded reverse work separately across site 1 and site 2; the existing cycle
+visit counters remain forward-only. This broader aggregate contract is inspect
+schema version 5.
 
 ```text
 foreign graph publication

@@ -34,6 +34,7 @@ import type {
     SelectorNewEdgeProofDiagnostics,
     SelectorRecordView,
     SelectorCycleSearch,
+    SelectorTopologyDeltaReverseSnapshotDiagnostics,
     ServedSelectorOutcome,
 } from "../../src/v1-internal/selector-evaluator/types"
 import { SelectorEvaluationSession } from "../../src/v1-internal/selector-evaluator/types"
@@ -79,6 +80,9 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     ) => boolean
     cycleTrace: SelectorCycleSearch<Node, Token> | undefined
     newEdgeProofDiagnostics: SelectorNewEdgeProofDiagnostics | undefined
+    topologyDeltaReverseSnapshotDiagnostics:
+        | SelectorTopologyDeltaReverseSnapshotDiagnostics
+        | undefined
     #nextToken = 1
     #selectorGraphVersion = 0
     #activeSession: SelectorEvaluationSession<Node> | undefined
@@ -220,6 +224,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
                 session,
                 this.cycleTrace,
                 this.newEdgeProofDiagnostics,
+                this.topologyDeltaReverseSnapshotDiagnostics,
             )
         } finally {
             this.#activeSession = previousSession
@@ -433,6 +438,92 @@ const errorOf = (served: ServedSelectorOutcome<Token>): unknown => {
     return served.outcome.error
 }
 
+const attachCycleInspection = (
+    host: TestHost,
+    hostKind: "committed" | "scratch" | "hydration" = "committed",
+    options?: Parameters<typeof createInspectionRecorder>[0],
+) => {
+    const setup = createInspectionRecorder(options)
+    const hostRef = setup.recorder.reference(
+        host,
+        hostKind === "committed" ? "scope" : "scratch-host",
+    )
+    host.cycleTrace = (
+        start,
+        target,
+        cycleHost,
+        session,
+        site,
+        acceptedPrefixLength,
+        getNewEdgeProofMemo,
+        topologyDeltaReverseProof,
+    ) =>
+        setup.recorder.findDependencyPath(
+            hostKind,
+            hostRef,
+            start,
+            target,
+            cycleHost,
+            session,
+            site,
+            acceptedPrefixLength,
+            cycleHost.getSelectorGraphVersion(),
+            session.getSelectorGraphPublicationCount(cycleHost),
+            false,
+            getNewEdgeProofMemo,
+            topologyDeltaReverseProof,
+        )
+    return setup
+}
+
+const defineSelectorChain = (
+    host: TestHost,
+    prefix: string,
+    depth: number,
+): string => {
+    for (let index = depth - 1; index >= 0; index--) {
+        host.define({
+            node: `${prefix}-${index}`,
+            get: get =>
+                get(index + 1 === depth ? "leaf" : `${prefix}-${index + 1}`),
+        })
+    }
+    const root = `${prefix}-0`
+    expect(valueOf(host.read<number>(root))).toBe(1)
+    return root
+}
+
+const runTopologyDeltaReplay = (
+    host: TestHost,
+    publish: () => void,
+    hostKind: "committed" | "scratch" | "hydration" = "committed",
+    options?: Parameters<typeof createInspectionRecorder>[0],
+): readonly CycleSearchInspectionDetail[] => {
+    const parent: SelectorDefinition<Node, number> = {
+        node: "parent",
+        get: get => get<number>("safe") + get<number>("trigger"),
+    }
+    host.define(parent)
+    expect(valueOf(host.read<number>("parent"))).toBe(2)
+
+    const setup = attachCycleInspection(host, hostKind, options)
+    let published = false
+    host.setServeEffect("trigger", () => {
+        if (published) return
+        published = true
+        publish()
+    })
+    host.define(parent)
+    expect(valueOf(host.read<number>("parent"))).toBe(2)
+    return setup.inspect
+        .export()
+        .details.filter(
+            (detail): detail is CycleSearchInspectionDetail =>
+                detail.type === "cycle-search" &&
+                detail.site === "topology-delta-proof",
+        )
+}
+
 const normalizeCycleParityError = (error: unknown): unknown => {
     if (error instanceof SelectorCircularDependencyError) {
         return Object.freeze({
@@ -514,34 +605,9 @@ const runCycleParityCase = (scenario: CycleParityCase): void => {
                 : {},
         )
         scenario.prepare(host)
-        const setup = measured ? createInspectionRecorder() : undefined
-        if (setup !== undefined) {
-            const hostRef = setup.recorder.reference(
-                host,
-                scenario.hostKind === "committed" ? "scope" : "scratch-host",
-            )
-            host.cycleTrace = (
-                start,
-                target,
-                cycleHost,
-                session,
-                site,
-                acceptedPrefixLength,
-            ) =>
-                setup.recorder.findDependencyPath(
-                    scenario.hostKind,
-                    hostRef,
-                    start,
-                    target,
-                    cycleHost,
-                    session,
-                    site,
-                    acceptedPrefixLength,
-                    cycleHost.getSelectorGraphVersion(),
-                    session.getSelectorGraphPublicationCount(cycleHost),
-                    false,
-                )
-        }
+        const setup = measured
+            ? attachCycleInspection(host, scenario.hostKind)
+            : undefined
         const served = scenario.mutate(host)
         const searches =
             setup?.inspect
@@ -1163,6 +1229,21 @@ describe("v1 selector evaluator cycles", () => {
             },
             verify(searches) {
                 expect(
+                    searches.find(
+                        search =>
+                            search.found &&
+                            search.site === "topology-delta-proof",
+                    ),
+                ).toMatchObject({
+                    host: "committed",
+                    site: "topology-delta-proof",
+                    start: "cached",
+                    target: "changed",
+                    found: true,
+                    path: ["cached", "parent", "new-edge", "changed"],
+                    reverseProof: { outcome: "path-possible" },
+                })
+                expect(
                     searches.some(
                         search =>
                             search.site === "new-edge-proof" && !search.found,
@@ -1587,9 +1668,163 @@ describe("v1 selector evaluator cycles", () => {
         expect(delta.visits).toEqual([0, 981, 15])
     })
 
+    test("bounds 584 ShiftX-shaped topology delta proofs by reverse ancestry", () => {
+        const topologyCheckCount = 584
+        const forwardDepth = 64
+        const host = new TestHost("persistent-pre", {
+            observeSelectorGraph: true,
+            reverseSelectorGraph: true,
+        })
+        host.setLeaf("leaf", 1)
+        const forwardRoot = defineSelectorChain(host, "forward", forwardDepth)
+        host.define({ node: "safe", get: get => get("leaf") })
+        host.define({ node: "trigger", get: get => get("leaf") })
+        expect(valueOf(host.read<number>("safe"))).toBe(1)
+        expect(valueOf(host.read<number>("trigger"))).toBe(1)
+
+        const tails = Array.from(
+            { length: topologyCheckCount },
+            (_, index) => `foreign-${index}`,
+        )
+        for (const tail of tails) {
+            host.define({ node: tail, get: () => 1 })
+            expect(valueOf(host.read<number>(tail))).toBe(1)
+        }
+        const snapshots: Readonly<{
+            outcome: string
+            scannedFrames: number
+            activeFrames: number
+            prefixEdges: number
+        }>[] = []
+        host.topologyDeltaReverseSnapshotDiagnostics = {
+            recordSnapshot(outcome, scannedFrames, activeFrames, prefixEdges) {
+                snapshots.push({
+                    outcome,
+                    scannedFrames,
+                    activeFrames,
+                    prefixEdges,
+                })
+            },
+        }
+        const topologyProofs = runTopologyDeltaReplay(
+            host,
+            () => {
+                for (const tail of tails) {
+                    host.define({ node: tail, get: get => get(forwardRoot) })
+                    expect(valueOf(host.read<number>(tail))).toBe(1)
+                }
+            },
+            "committed",
+            {
+                capacity: { summaries: 8_192, details: 8_192 },
+            },
+        )
+
+        expect(topologyProofs).toHaveLength(topologyCheckCount)
+        expect(snapshots).toEqual([
+            {
+                outcome: "completed",
+                scannedFrames: 1,
+                activeFrames: 1,
+                prefixEdges: 1,
+            },
+        ])
+        expect(
+            topologyProofs.every(
+                proof =>
+                    !proof.found &&
+                    proof.visits === 0 &&
+                    proof.reverseProof?.outcome === "proven" &&
+                    proof.reverseProof.nodeVisits <= 2 &&
+                    proof.reverseProof.dependentProbes <= 2,
+            ),
+        ).toBe(true)
+    })
+
+    test("falls back to canonical topology traversal when reverse fan-in exceeds its budget", () => {
+        const reverseWidth = 130
+        const forwardDepth = 16
+        const host = new TestHost("persistent-pre", {
+            observeSelectorGraph: true,
+            reverseSelectorGraph: true,
+        })
+        host.setLeaf("leaf", 1)
+        const forwardRoot = defineSelectorChain(host, "forward", forwardDepth)
+        host.define({ node: "safe", get: get => get("leaf") })
+        host.define({ node: "trigger", get: get => get("leaf") })
+        for (const foreign of ["foreign-a", "foreign-b"]) {
+            host.define({ node: foreign, get: () => 1 })
+        }
+        expect(valueOf(host.read<number>("safe"))).toBe(1)
+        expect(valueOf(host.read<number>("trigger"))).toBe(1)
+        expect(valueOf(host.read<number>("foreign-a"))).toBe(1)
+        expect(valueOf(host.read<number>("foreign-b"))).toBe(1)
+        for (let index = 0; index < reverseWidth; index++) {
+            const watcher = `watcher-${index}`
+            host.define({ node: watcher, get: get => get("foreign-a") })
+            expect(valueOf(host.read<number>(watcher))).toBe(1)
+        }
+        const topologyProofs = runTopologyDeltaReplay(host, () => {
+            for (const foreign of ["foreign-a", "foreign-b"]) {
+                host.define({ node: foreign, get: get => get(forwardRoot) })
+                expect(valueOf(host.read<number>(foreign))).toBe(1)
+            }
+        })
+        expect(topologyProofs).toHaveLength(2)
+        expect(topologyProofs[0]).toMatchObject({
+            start: "forward-0",
+            target: "foreign-a",
+            found: false,
+            visits: forwardDepth,
+            reverseProof: { outcome: "budget-exhausted" },
+        })
+        expect(topologyProofs[1]).toMatchObject({
+            start: "forward-0",
+            target: "foreign-b",
+            found: false,
+            visits: forwardDepth,
+            reverseProof: { outcome: "disabled" },
+        })
+    })
+
+    test("scratch and hydration topology proofs fail closed to full records", () => {
+        for (const mode of ["scratch", "hydration"] as const) {
+            const host = new TestHost(mode, { observeSelectorGraph: true })
+            host.setLeaf("leaf", 1)
+            host.define({ node: "forward", get: get => get("leaf") })
+            host.define({ node: "safe", get: get => get("leaf") })
+            host.define({ node: "trigger", get: get => get("leaf") })
+            host.define({ node: "foreign", get: () => 1 })
+            for (const node of ["forward", "safe", "trigger", "foreign"]) {
+                expect(valueOf(host.read<number>(node))).toBe(1)
+            }
+            const topologyProofs = runTopologyDeltaReplay(
+                host,
+                () => {
+                    host.define({
+                        node: "foreign",
+                        get: get => get("forward"),
+                    })
+                    expect(valueOf(host.read<number>("foreign"))).toBe(1)
+                },
+                mode,
+            )
+            expect(topologyProofs).toHaveLength(1)
+            expect(topologyProofs[0]).toMatchObject({
+                host: mode,
+                start: "forward",
+                target: "foreign",
+                found: false,
+                visits: 2,
+                reverseProof: { outcome: "unsupported" },
+            })
+        }
+    })
+
     test("a positive delta proof falls back to canonical first-read blame", () => {
         const host = new TestHost("persistent-pre", {
             observeSelectorGraph: true,
+            reverseSelectorGraph: true,
         })
         host.define({ node: "parent", get: () => 1 })
         host.define({ node: "changed", get: () => 1 })
@@ -1619,29 +1854,7 @@ describe("v1 selector evaluator cycles", () => {
                 return 1
             },
         })
-        const setup = createInspectionRecorder()
-        const hostRef = setup.recorder.reference(host, "scope")
-        host.cycleTrace = (
-            start,
-            target,
-            cycleHost,
-            session,
-            site,
-            acceptedPrefixLength,
-        ) =>
-            setup.recorder.findDependencyPath(
-                "committed",
-                hostRef,
-                start,
-                target,
-                cycleHost,
-                session,
-                site,
-                acceptedPrefixLength,
-                cycleHost.getSelectorGraphVersion(),
-                session.getSelectorGraphPublicationCount(cycleHost),
-                false,
-            )
+        const setup = attachCycleInspection(host)
 
         const error = errorOf(host.read("parent"))
 
@@ -1669,11 +1882,79 @@ describe("v1 selector evaluator cycles", () => {
         expect(positiveProofs.map(proof => proof.acceptedPrefixLength)).toEqual(
             [1, 1],
         )
+        expect(positiveProofs[0]).toMatchObject({
+            start: "cached",
+            target: "changed",
+            path: ["cached", "parent", "new-edge", "changed"],
+            reverseProof: { outcome: "path-possible" },
+        })
         expect(positiveProofs[1]).toMatchObject({
             start: "new-edge",
             target: "parent",
             path: ["new-edge", "changed", "cached", "parent"],
         })
+    })
+
+    test("a stale committed active edge can only force a canonical negative fallback", () => {
+        const host = new TestHost("persistent-pre", {
+            reverseSelectorGraph: true,
+        })
+        host.define({ node: "tail", get: () => 1 })
+        host.define({ node: "stale", get: get => get("tail") })
+        host.define({ node: "parent", get: get => get("stale") })
+        host.define({ node: "head", get: get => get("parent") })
+        host.define({ node: "safe", get: () => 1 })
+        expect(valueOf(host.read<number>("head"))).toBe(1)
+        expect(valueOf(host.read<number>("safe"))).toBe(1)
+
+        const session = new SelectorEvaluationSession<Node>()
+        session.enter(host, "parent", [{ node: "safe" }])
+        session.setPrefixRevalidator(host, "parent", () => {})
+        try {
+            const transientDependents =
+                session.captureTransientReverseDependents(
+                    host,
+                    "parent",
+                    1,
+                    4_096,
+                )!
+            const setup = createInspectionRecorder()
+            const hostRef = setup.recorder.reference(host, "scope")
+            expect(
+                setup.recorder.findDependencyPath(
+                    "committed",
+                    hostRef,
+                    "head",
+                    "tail",
+                    host,
+                    session,
+                    2,
+                    1,
+                    host.getSelectorGraphVersion(),
+                    session.getSelectorGraphPublicationCount(host),
+                    false,
+                    undefined,
+                    { transientDependents, reverseProofEnabled: true },
+                ),
+            ).toBeUndefined()
+            const topologyProofs = setup.inspect
+                .export()
+                .details.filter(
+                    (detail): detail is CycleSearchInspectionDetail =>
+                        detail.type === "cycle-search" &&
+                        detail.site === "topology-delta-proof",
+                )
+            expect(topologyProofs).toHaveLength(1)
+            expect(topologyProofs[0]).toMatchObject({
+                start: "head",
+                target: "tail",
+                found: false,
+                visits: 3,
+                reverseProof: { outcome: "path-possible" },
+            })
+        } finally {
+            session.leave(host, "parent")
+        }
     })
 
     test("a committed scope turns a positive delta signal into canonical prefix blame", () => {
@@ -2787,6 +3068,292 @@ describe("v1 selector evaluator cycles", () => {
         ).toMatchObject({ outcome: "terminal" })
     })
 
+    test("site-2 reverse traversal includes two transient frames but excludes another host", () => {
+        const host = new TestHost("persistent-pre", {
+            reverseSelectorGraph: true,
+        })
+        const otherHost = {}
+        host.setLeaf("leaf", 1)
+        host.define({ node: "tail", get: () => 1 })
+        host.define({ node: "inner", get: () => 1 })
+        host.define({ node: "bridge", get: get => get("inner") })
+        host.define({ node: "outer", get: () => 1 })
+        host.define({ node: "other-dependency", get: () => 1 })
+        host.define({
+            node: "other-start",
+            get: get => get("other-dependency"),
+        })
+        for (const node of ["tail", "bridge", "outer", "other-start"]) {
+            expect(valueOf(host.read<number>(node))).toBe(1)
+        }
+
+        const session = new SelectorEvaluationSession<Node>()
+        session.enter(otherHost, "other-start", [{ node: "tail" }])
+        session.enter(host, "outer", [{ node: "bridge" }])
+        session.setPrefixRevalidator(host, "outer", () => {})
+        session.enter(host, "inner", [{ node: "tail" }])
+        session.setPrefixRevalidator(host, "inner", () => {})
+        try {
+            const snapshots: Readonly<{
+                outcome: string
+                scannedFrames: number
+                activeFrames: number
+                prefixEdges: number
+            }>[] = []
+            const diagnostics: SelectorTopologyDeltaReverseSnapshotDiagnostics =
+                {
+                    recordSnapshot(
+                        outcome,
+                        scannedFrames,
+                        activeFrames,
+                        prefixEdges,
+                    ) {
+                        snapshots.push({
+                            outcome,
+                            scannedFrames,
+                            activeFrames,
+                            prefixEdges,
+                        })
+                    },
+                }
+            const transientDependents =
+                session.captureTransientReverseDependents(
+                    host,
+                    "outer",
+                    1,
+                    4_096,
+                    diagnostics,
+                )
+            expect(transientDependents).toEqual(
+                new Map([
+                    ["bridge", ["outer"]],
+                    ["tail", ["inner"]],
+                ]),
+            )
+
+            // `outer` is terminal in committed state. Only the two transient
+            // frames complete outer -> bridge -> inner -> tail.
+            expect(
+                tryProveNoDependencyPathReverse(
+                    "outer",
+                    "tail",
+                    host,
+                    session,
+                    undefined,
+                    true,
+                    transientDependents,
+                ),
+            ).toBe("path-possible")
+            // The other host contributes the same tail edge but must not leak
+            // into this host's proof view.
+            expect(
+                tryProveNoDependencyPathReverse(
+                    "other-start",
+                    "tail",
+                    host,
+                    session,
+                    undefined,
+                    true,
+                    transientDependents,
+                ),
+            ).toBe("proven-reverse")
+            expect(
+                session.captureTransientReverseDependents(
+                    host,
+                    "missing",
+                    0,
+                    4_096,
+                    diagnostics,
+                ),
+            ).toBeUndefined()
+            expect(snapshots).toEqual([
+                {
+                    outcome: "completed",
+                    scannedFrames: 3,
+                    activeFrames: 2,
+                    prefixEdges: 2,
+                },
+                {
+                    outcome: "unavailable",
+                    scannedFrames: 3,
+                    activeFrames: 2,
+                    prefixEdges: 2,
+                },
+            ])
+        } finally {
+            session.leave(host, "inner")
+            session.leave(host, "outer")
+            session.leave(otherHost, "other-start")
+        }
+    })
+
+    test("captures 4096 transient edges and reports overflow work at 4097", () => {
+        const host = {}
+        const prefix = Array.from({ length: 4_097 }, (_, index) => ({
+            node: `dependency-${index}`,
+        }))
+        const snapshots: Readonly<{
+            outcome: string
+            scannedFrames: number
+            activeFrames: number
+            prefixEdges: number
+        }>[] = []
+        const diagnostics: SelectorTopologyDeltaReverseSnapshotDiagnostics = {
+            recordSnapshot(outcome, scannedFrames, activeFrames, prefixEdges) {
+                snapshots.push({
+                    outcome,
+                    scannedFrames,
+                    activeFrames,
+                    prefixEdges,
+                })
+            },
+        }
+        const boundarySession = new SelectorEvaluationSession<Node>()
+        const boundary = prefix.slice(0, 4_096)
+        boundarySession.enter(host, "outer", boundary)
+        boundarySession.setPrefixRevalidator(host, "outer", () => {})
+        try {
+            expect(
+                boundarySession.captureTransientReverseDependents(
+                    host,
+                    "outer",
+                    boundary.length,
+                    4_096,
+                    diagnostics,
+                )?.size,
+            ).toBe(4_096)
+        } finally {
+            boundarySession.leave(host, "outer")
+        }
+
+        const overflowSession = new SelectorEvaluationSession<Node>()
+        overflowSession.enter(host, "outer", prefix)
+        overflowSession.setPrefixRevalidator(host, "outer", () => {})
+        try {
+            expect(
+                overflowSession.captureTransientReverseDependents(
+                    host,
+                    "outer",
+                    prefix.length,
+                    4_096,
+                    diagnostics,
+                ),
+            ).toBeUndefined()
+        } finally {
+            overflowSession.leave(host, "outer")
+        }
+        expect(snapshots).toEqual([
+            {
+                outcome: "completed",
+                scannedFrames: 1,
+                activeFrames: 1,
+                prefixEdges: 4_096,
+            },
+            {
+                outcome: "overflow",
+                scannedFrames: 1,
+                activeFrames: 1,
+                prefixEdges: 4_097,
+            },
+        ])
+    })
+
+    test("bounds zero-prefix active-frame snapshot work", () => {
+        const host = {}
+        const maxEntries = 4
+        const snapshots: Readonly<{
+            outcome: string
+            scannedFrames: number
+            activeFrames: number
+            prefixEdges: number
+        }>[] = []
+        const diagnostics: SelectorTopologyDeltaReverseSnapshotDiagnostics = {
+            recordSnapshot(outcome, scannedFrames, activeFrames, prefixEdges) {
+                snapshots.push({
+                    outcome,
+                    scannedFrames,
+                    activeFrames,
+                    prefixEdges,
+                })
+            },
+        }
+        const capture = (frameCount: number) => {
+            const session = new SelectorEvaluationSession<Node>()
+            const selectors = Array.from(
+                { length: frameCount },
+                (_, index) => `frame-${index}`,
+            )
+            for (const selector of selectors) {
+                session.enter(host, selector, [])
+                session.setPrefixRevalidator(host, selector, () => {})
+            }
+            try {
+                return session.captureTransientReverseDependents(
+                    host,
+                    selectors[selectors.length - 1]!,
+                    0,
+                    maxEntries,
+                    diagnostics,
+                )
+            } finally {
+                for (let index = selectors.length - 1; index >= 0; index--) {
+                    session.leave(host, selectors[index]!)
+                }
+            }
+        }
+
+        expect(capture(maxEntries)).toEqual(new Map())
+        expect(capture(maxEntries + 1)).toBeUndefined()
+        const foreignHost = {}
+        const mixedSession = new SelectorEvaluationSession<Node>()
+        const foreignSelectors = Array.from(
+            { length: maxEntries },
+            (_, index) => `foreign-frame-${index}`,
+        )
+        for (const selector of foreignSelectors) {
+            mixedSession.enter(foreignHost, selector, [])
+            mixedSession.setPrefixRevalidator(foreignHost, selector, () => {})
+        }
+        mixedSession.enter(host, "target", [])
+        mixedSession.setPrefixRevalidator(host, "target", () => {})
+        try {
+            expect(
+                mixedSession.captureTransientReverseDependents(
+                    host,
+                    "target",
+                    0,
+                    maxEntries,
+                    diagnostics,
+                ),
+            ).toBeUndefined()
+        } finally {
+            mixedSession.leave(host, "target")
+            for (let index = foreignSelectors.length - 1; index >= 0; index--) {
+                mixedSession.leave(foreignHost, foreignSelectors[index]!)
+            }
+        }
+        expect(snapshots).toEqual([
+            {
+                outcome: "completed",
+                scannedFrames: maxEntries,
+                activeFrames: maxEntries,
+                prefixEdges: 0,
+            },
+            {
+                outcome: "overflow",
+                scannedFrames: maxEntries + 1,
+                activeFrames: maxEntries,
+                prefixEdges: 0,
+            },
+            {
+                outcome: "overflow",
+                scannedFrames: maxEntries + 1,
+                activeFrames: 0,
+                prefixEdges: 0,
+            },
+        ])
+    })
+
     test("selector-record removal must preserve graph-closed absence", () => {
         const host = new TestHost()
         host.define({ node: "parent", get: () => 1 })
@@ -3275,6 +3842,20 @@ describe("v1 selector evaluator cycles", () => {
             liveDependents: 201,
             maxWork: 3,
             maxFrontier: 1,
+            topologyDeltaSnapshot: {
+                attempts: 0,
+                completed: 0,
+                overflow: 0,
+                unavailable: 0,
+                scannedActiveFrames: 0,
+                scannedPrefixEdges: 0,
+                maxScannedActiveFrames: 0,
+                maxScannedPrefixEdges: 0,
+                capturedActiveFrames: 0,
+                capturedPrefixEdges: 0,
+                maxCapturedActiveFrames: 0,
+                maxCapturedPrefixEdges: 0,
+            },
         })
         expect(operation.totals.cycle.newEdgeProofMemo).toMatchObject({
             observing: 0,

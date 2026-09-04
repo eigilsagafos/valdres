@@ -66,7 +66,7 @@ const report = inspect.export()
 inspect.reset()
 ```
 
-The report correlates human labels with opaque operation, commit, evaluation, session, and search IDs. It includes selector work, proposed topology changes, forward cycle-search visits by host and call site, bounded reverse-proof outcomes and work, aggregate negative-proof memo admission/probe/prune counters, transient selector-host counts, and propagation/notification totals. Completed summaries and details use separate bounded rings with explicit overflow. Exports are immutable and JSON-safe; application values, callbacks, errors, and live State handles are never recorded. Labels are metadata, not identity. The core inspection schema is version 4.
+The report correlates human labels with opaque operation, commit, evaluation, session, and search IDs. It includes selector work, proposed topology changes, forward cycle-search visits by host and call site, bounded reverse-proof outcomes and work, topology-delta reverse-snapshot attempts/outcomes/scanned and captured work, aggregate negative-proof memo admission/probe/prune counters, transient selector-host counts, and propagation/notification totals. Completed summaries and details use separate bounded rings with explicit overflow. Exports are immutable and JSON-safe; application values, callbacks, errors, and live State handles are never recorded. Labels are metadata, not identity. The core inspection schema is version 5.
 
 Inspection adds recording and timing work only to the Store created by `createInspectableStore`. The recorder stays outside the ordinary root entry and ordinary consumer bundles remain within their existing size budget.
 

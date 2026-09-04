@@ -25,6 +25,8 @@ import type {
     SelectorGraphEdgeAddition,
     SelectorGraphObservation,
     SelectorGraphTraversalBudget,
+    SelectorTopologyDeltaReverseProofContext,
+    SelectorTopologyDeltaReverseSnapshotDiagnostics,
 } from "./types"
 
 type InspectedThenable =
@@ -114,6 +116,7 @@ const NEW_EDGE_MEMO_MIN_SEED_SIZE = 32
 const NEW_EDGE_MEMO_MAX_ANCHOR_SIZE = 8_192
 const NEW_EDGE_MEMO_MAX_MISS_WORK = 2 * NEW_EDGE_MEMO_MIN_SEED_SIZE
 const REVERSE_PROOF_MAX_WORK = 128
+const TOPOLOGY_DELTA_REVERSE_SNAPSHOT_MAX_ENTRIES = 4_096
 
 export type SelectorReverseProofOutcome =
     | "unsupported"
@@ -609,11 +612,12 @@ const finishReverseProof = (
 }
 
 /**
- * Try the cheap direction first for a site-1 proof. The persistent host's
- * reverse index describes the effective graph exactly only while `target` is
- * its sole active frame: changing the target's own outgoing prefix cannot add
- * a path into the target. Any possible positive or bounded/ineligible case is
- * deliberately left to the canonical ordered forward DFS.
+ * Try the cheap direction first for a new-edge or topology-delta proof. Without
+ * an overlay, committed reverse adjacency describes the relevant effective
+ * graph only while `target` is the host's sole active frame. A topology-delta
+ * snapshot adds every active transient-prefix edge. Stale committed edges are
+ * retained deliberately: they can only cause conservative canonical fallback.
+ * Any positive, bounded, or ineligible case is left to the ordered forward DFS.
  */
 export const tryProveNoDependencyPathReverse = <Node, Token extends object>(
     start: Node,
@@ -622,6 +626,7 @@ export const tryProveNoDependencyPathReverse = <Node, Token extends object>(
     session: SelectorEvaluationSession<Node>,
     measurement?: SelectorReverseProofMeasurement,
     allowTraversal = true,
+    transientDependents?: ReadonlyMap<Node, readonly Node[]>,
 ): SelectorReverseProofOutcome => {
     if (measurement !== undefined) {
         measurement.nodeVisits = 0
@@ -631,15 +636,26 @@ export const tryProveNoDependencyPathReverse = <Node, Token extends object>(
     }
     const visitDependents = host.visitSelectorDependents
     if (visitDependents === undefined) return "unsupported"
-    if (!session.isSoleActiveSelector(host, target)) {
+    if (
+        transientDependents === undefined &&
+        !session.isSoleActiveSelector(host, target)
+    ) {
         return "ineligible-active-frames"
     }
     if (!Object.is(start, target)) {
-        const getDependencies = host.getSelectorDependencyNodes
-        if (getDependencies !== undefined) {
-            const dependencies = getDependencies.call(host, start)
-            if (dependencies === undefined || dependencies.length === 0) {
-                return "proven-terminal"
+        const transient =
+            transientDependents === undefined
+                ? undefined
+                : session.getTransientDependencies(host, start)
+        if (transient !== undefined) {
+            if (transient.length === 0) return "proven-terminal"
+        } else {
+            const getDependencies = host.getSelectorDependencyNodes
+            if (getDependencies !== undefined) {
+                const dependencies = getDependencies.call(host, start)
+                if (dependencies === undefined || dependencies.length === 0) {
+                    return "proven-terminal"
+                }
             }
         }
     }
@@ -680,25 +696,26 @@ export const tryProveNoDependencyPathReverse = <Node, Token extends object>(
         }
 
         let reachedStart = false
+        const visitDependent = (dependent: Node): boolean => {
+            liveDependents++
+            if (Object.is(dependent, start)) {
+                reachedStart = true
+                return false
+            }
+            if (!visited.has(dependent)) {
+                visited.add(dependent)
+                pending.push(dependent)
+                if (pending.length > maxFrontier) {
+                    maxFrontier = pending.length
+                }
+            }
+            return true
+        }
         const exhausted = visitDependents.call(
             host,
             node,
             budget,
-            dependent => {
-                liveDependents++
-                if (Object.is(dependent, start)) {
-                    reachedStart = true
-                    return false
-                }
-                if (!visited.has(dependent)) {
-                    visited.add(dependent)
-                    pending.push(dependent)
-                    if (pending.length > maxFrontier) {
-                        maxFrontier = pending.length
-                    }
-                }
-                return true
-            },
+            visitDependent,
         )
         if (reachedStart) {
             return finishReverseProof(
@@ -720,6 +737,33 @@ export const tryProveNoDependencyPathReverse = <Node, Token extends object>(
                 measurement,
             )
         }
+
+        const transient = transientDependents?.get(node)
+        if (transient !== undefined) {
+            for (const dependent of transient) {
+                if (budget.remaining === 0) {
+                    return finishReverseProof(
+                        "budget-exhausted",
+                        budget,
+                        nodeVisits,
+                        liveDependents,
+                        maxFrontier,
+                        measurement,
+                    )
+                }
+                budget.remaining--
+                if (!visitDependent(dependent)) {
+                    return finishReverseProof(
+                        "path-possible",
+                        budget,
+                        nodeVisits,
+                        liveDependents,
+                        maxFrontier,
+                        measurement,
+                    )
+                }
+            }
+        }
     }
 
     return finishReverseProof(
@@ -740,15 +784,19 @@ const findDependencyPathFast = <Node, Token extends object>(
     _site: SelectorCycleSearchSite,
     _acceptedPrefixLength: number,
     getNewEdgeProofMemo?: SelectorNewEdgeProofMemoProvider<Node>,
+    topologyDeltaReverseProof?: SelectorTopologyDeltaReverseProofContext<Node>,
 ): readonly Node[] | undefined => {
-    if (_site === 1) {
+    if (_site === 1 || _site === 2) {
         const reverseProof = tryProveNoDependencyPathReverse(
             start,
             target,
             host,
             session,
             undefined,
-            getNewEdgeProofMemo?.reverseProofEnabled ?? true,
+            _site === 1
+                ? (getNewEdgeProofMemo?.reverseProofEnabled ?? true)
+                : (topologyDeltaReverseProof?.reverseProofEnabled ?? true),
+            topologyDeltaReverseProof?.transientDependents,
         )
         if (
             reverseProof === "proven-terminal" ||
@@ -756,11 +804,12 @@ const findDependencyPathFast = <Node, Token extends object>(
         ) {
             return undefined
         }
-        if (
-            reverseProof === "budget-exhausted" &&
-            getNewEdgeProofMemo !== undefined
-        ) {
-            getNewEdgeProofMemo.reverseProofEnabled = false
+        if (reverseProof === "budget-exhausted") {
+            if (_site === 1 && getNewEdgeProofMemo !== undefined) {
+                getNewEdgeProofMemo.reverseProofEnabled = false
+            } else if (topologyDeltaReverseProof !== undefined) {
+                topologyDeltaReverseProof.reverseProofEnabled = false
+            }
         }
     }
     const newEdgeProofMemo = getNewEdgeProofMemo?.()
@@ -881,6 +930,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
     session: SelectorEvaluationSession<Node>,
     cycleSearch: SelectorCycleSearch<Node, Token> = findDependencyPathFast,
     newEdgeProofDiagnostics?: SelectorNewEdgeProofDiagnostics,
+    topologyDeltaReverseSnapshotDiagnostics?: SelectorTopologyDeltaReverseSnapshotDiagnostics,
 ): SelectorEvaluationProposal<Node, Token, Value> => {
     const { node: selector } = definition
     const dependencies: SelectorDependencySnapshot<Node, Token>[] = []
@@ -1035,6 +1085,26 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             // graph must contain the complementary head -> tail path. This is
             // a negative-only certificate: a positive result falls back to
             // the ordered proof below for canonical blame and path.
+            const transientDependents =
+                addedEdges.length === 0 ||
+                host.visitSelectorDependents === undefined
+                    ? undefined
+                    : session.captureTransientReverseDependents(
+                          host,
+                          selector,
+                          dependencies.length,
+                          TOPOLOGY_DELTA_REVERSE_SNAPSHOT_MAX_ENTRIES,
+                          topologyDeltaReverseSnapshotDiagnostics,
+                      )
+            const topologyDeltaReverseProof:
+                | SelectorTopologyDeltaReverseProofContext<Node>
+                | undefined =
+                addedEdges.length === 0
+                    ? undefined
+                    : {
+                          transientDependents,
+                          reverseProofEnabled: true,
+                      }
             let addedEdgeMayCloseCycle = false
             for (const edge of addedEdges) {
                 if (
@@ -1045,6 +1115,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                         session,
                         2,
                         dependencies.length,
+                        undefined,
+                        topologyDeltaReverseProof,
                     ) !== undefined
                 ) {
                     addedEdgeMayCloseCycle = true
