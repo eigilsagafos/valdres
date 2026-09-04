@@ -1,0 +1,84 @@
+---
+title: family
+description: Memoize one Atom or Selector per key
+---
+
+# family
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+    <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">
+        Signature
+    </div>
+    <code className="text-sm font-mono text-accent-500">
+        family&lt;Args, State&gt;(factory: (...args: Args) =&gt; State, options?: FamilyOptions&lt;Args&gt;): (...args: Args) =&gt; State
+    </code>
+    <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
+            valdres
+        </span>
+        Parameterized Atom or Selector identity
+    </div>
+</div>
+
+`family(factory)` memoizes one Atom or Selector per non-empty ordered tuple of
+primitive keys (`string`, `number`, `bigint`, `boolean`, `symbol`, `null`, or
+`undefined`). Keys use SameValueZero, so `NaN` matches `NaN` and `0` matches
+`-0`; tuple arity and order still matter.
+
+## Usage
+
+```ts
+import { atom, family } from "valdres"
+
+const cellValue = family((sheetId: string, row: number) => atom(""))
+cellValue("budget", 4) === cellValue("budget", 4) // true
+```
+
+## Structured keys
+
+Structured arguments require a synchronous `encodeKey` that returns one
+canonical primitive key:
+
+```ts
+type Step = { readonly id: string; readonly title: string }
+
+const stepProgress = family((step: Step) => atom(0), {
+    encodeKey: step => step.id,
+})
+
+stepProgress({ id: "step-1", title: "Draft" }) ===
+    stepProgress({ id: "step-1", title: "Review" }) // true
+```
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `factory` | `(...args: Args) => Atom<T> \| Selector<T>` | Constructs the member for a given key. Called at most once per distinct key while a member is live. |
+| `options.encodeKey` | `(...args: Args) => FamilyKey` | Required for structured (non-primitive) arguments. Reduces the arguments to one canonical primitive key. |
+
+The exported `FamilyKey` type names the primitive-key union for reusable APIs.
+
+## Construction rules
+
+The factory must construct and return its Atom or Selector during that
+member's construction, or return any member already published by a family.
+Returning an arbitrary pre-existing State is rejected.
+
+Factories and encoders are synchronous definition callbacks, not Store work.
+Neither may perform Store, scope, transaction, or subscription operations or
+borrow an active selector's `get`. Encoders also cannot construct State
+definitions or call a family; factories may do both. A violation throws
+without caching a member.
+
+## Lifecycle
+
+The family cache is weak. A live reference, a committed Store override for a
+family Atom, an active subscription, or a retained selector dependency keeps
+that member alive. Reset or disposal releases Store ownership, and
+unsubscription releases subscription ownership. After the last owner
+disappears, a later lookup may run the factory again.
+
+A family is only a callable identity cache. It has no membership or
+enumeration API and no `delete`, `release`, `index`, Store, or collection
+surface.

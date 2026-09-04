@@ -79,6 +79,7 @@ const apiRoles: Record<string, ApiMapping> = {
 const coreApiNames = [
     "atom",
     "selector",
+    "family",
     "atomFamily",
     "selectorFamily",
     "index",

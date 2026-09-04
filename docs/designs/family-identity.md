@@ -74,10 +74,10 @@ explicit releases. Ordinary Atom writes and cold family reads must leave all
 three at zero. The packed atom-only fixture must contain no family cache or
 accessor sentinel; only the small Store ownership/quarantine seam is shared.
 
-On pinned Bun 1.4.0, the family seam adds a measured raw/gzip delta to the
-atom-only fixture versus a freshly rebuilt pre-family artifact. The
-cache/accessor implementation itself still tree-shakes away; that delta is the
-construction quarantine, lifecycle pin, exact work counters, and the
+On pinned Bun 1.4.0, the family seam adds 1,313 raw / 413 gzip bytes to the
+atom-only fixture versus a freshly rebuilt beta.35 artifact (+2.07% / +2.51%).
+The cache/accessor implementation itself still tree-shakes away; that delta is
+the construction quarantine, lifecycle pin, exact work counters, and the
 selector-capability guard across every distinct active selector session.
 Prototypes that preserved domain/session encapsulation saved at most 32 gzip
 bytes; a module-global guard saved 82 gzip bytes but coupled independent
