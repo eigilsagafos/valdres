@@ -1,5 +1,18 @@
 # valdres
 
+## 1.0.0-beta.35
+
+### Patch Changes
+
+- [#378](https://github.com/eigilsagafos/valdres/pull/378)
+  [`6e54949`](https://github.com/eigilsagafos/valdres/commit/6e5494928cee861191b03064e938680d3aaffcf0)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Speed up dynamic
+  selector rewiring by proving topology-delta safety from bounded reverse
+  ancestry, including active transient prefixes while preserving canonical cycle
+  reporting. Inspection exports now use core schema v5 because reverse-proof
+  totals cover both new-edge and topology-delta proofs, including the
+  construction cost and fail-closed outcomes of transient-prefix snapshots.
+
 ## 1.0.0-beta.34
 
 ### Patch Changes
