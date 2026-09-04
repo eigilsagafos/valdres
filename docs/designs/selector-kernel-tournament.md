@@ -826,7 +826,10 @@ Allowed paths:
   `scripts/lib/robust-estimators*`, and benchmark result parsing;
 - root or package `package.json` script entries only;
 - one manual/dispatch-only tournament workflow and its tests, if needed;
-- this document when implementation reveals a factual spec defect.
+- this document when implementation reveals a factual spec defect;
+- exactly one empty, non-release `.changeset/selector-kernel-foundation.md`,
+  containing only `---` / `---` YAML frontmatter, naming no package and requesting
+  no version bump (required by the ordinary package-change PR CI gate).
 
 Forbidden paths:
 
@@ -835,7 +838,8 @@ Forbidden paths:
 - public export maps or declaration surfaces;
 - family implementation, docs, contracts, or frozen public tests;
 - existing semantic expectations changed merely to match beta.36;
-- package versions, lockfile, package changelog, and Changesets.
+- package versions, lockfile, package changelog, and all Changesets except the
+  single empty non-release marker explicitly allowed above.
 
 The foundation PR ends by freezing its merge SHA, runner hashes, expected
 traces/checksums, and a green beta.36 control evidence bundle.

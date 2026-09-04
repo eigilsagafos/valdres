@@ -3,7 +3,7 @@
     "id": "valdres-selector-kernel-tournament-v1",
     "spec": {
         "path": "docs/designs/selector-kernel-tournament.md",
-        "sha256": "818b315646c23c6d4cb54cc40d1f4d9177923cb5982b2ebbe878bd460c53a362"
+        "sha256": "5afa53aa2132050e54a9da138ad03eacf83f4204a946b0561297523ea05de59c"
     },
     "control": {
         "package": "valdres",
@@ -106,6 +106,10 @@
         {
             "path": "packages/valdres/test/v1-public-candidate/family-work.test.ts",
             "sha256": "fd95dd98b78dd2dcc3066f88adb2766eb45f28a947bd270e61ba05115e5d03e3"
+        },
+        {
+            "path": "packages/valdres/src/family.mdx",
+            "sha256": "a411d7587aca6aa7344f2e7161b8c01b74ff291b4888f1e6134745d947ece8b9"
         }
     ],
     "implementations": [
