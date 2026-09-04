@@ -12,9 +12,40 @@ export function memoryProcessSummary(sample) {
             "pid",
             "unitCount",
             "samples",
+            "samplerCalibration",
         ],
         "MEMORY-SCHEMA",
     )
+    strictKeys(
+        sample.samplerCalibration,
+        ["kind", "publicOperations", "samples"],
+        "MEMORY-CALIBRATION",
+    )
+    requireGate(
+        sample.samplerCalibration.kind === "empty-sampler" &&
+            sample.samplerCalibration.publicOperations === 0 &&
+            sample.samplerCalibration.samples.length === 3,
+        "MEMORY-CALIBRATION",
+        "missing empty sampler calibration",
+    )
+    for (const row of sample.samplerCalibration.samples) {
+        strictKeys(
+            row,
+            ["before", "retainedHeap", "releasedHeaps"],
+            "MEMORY-CALIBRATION",
+        )
+        requireGate(
+            Number.isSafeInteger(row.before) &&
+                row.before >= 0 &&
+                Number.isSafeInteger(row.retainedHeap) &&
+                row.retainedHeap >= 0 &&
+                Array.isArray(row.releasedHeaps) &&
+                row.releasedHeaps.length === 3 &&
+                row.releasedHeaps.every(n => Number.isSafeInteger(n) && n >= 0),
+            "MEMORY-CALIBRATION",
+            "missing raw sampler observations",
+        )
+    }
     const scenario = manifest.memoryScenarios.find(s => s.id === sample.id)
     requireGate(
         sample.schemaVersion === 2 &&

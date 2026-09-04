@@ -221,6 +221,15 @@ test("retained-memory and every raw/gzip size gate preserve absolute and relativ
         runtime: "node",
         pid: 1,
         unitCount: scenario.units,
+        samplerCalibration: {
+            kind: "empty-sampler",
+            publicOperations: 0,
+            samples: Array.from({ length: 3 }, () => ({
+                before: 1000,
+                retainedHeap: 1000,
+                releasedHeaps: [1000, 1000, 1000],
+            })),
+        },
         samples: Array.from({ length: 3 }, () => ({
             before: 1000000,
             retainedHeap: 1000000 + scenario.units * 100,

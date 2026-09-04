@@ -20,40 +20,51 @@ const { makeMemoryFactory, settleMemory, readMemoryHeap } = await import(
     pathToFileURL(wrapperPath)
 )
 const create = makeMemoryFactory(id, api)
-// Allocate recording slots before the initial drain, so taking later readings
-// does not itself grow an array or retain the just-released scenario.
-const samples = Array.from({ length: 3 }, () => ({
-    before: 0.5,
-    retainedHeap: 0.5,
-    releasedHeaps: Array(3).fill(0.5),
-}))
-const leakKey = Symbol.for("valdres.tournament.memory-red-retention")
-if (mutation) globalThis[leakKey] = null
-for (let index = 0; index < 3; index++) {
-    const sample = samples[index]
+// Prime only the measurement machinery with an empty factory. No State or
+// Store operation runs here. A cold standalone Node process otherwise reports
+// its own sampler initialization as monotonically growing retained memory.
+// Preserve every calibration reading separately from the three scored samples.
+async function measure(create, units, mutation) {
+    const samples = Array.from({ length: 3 }, () => ({
+        before: 0.5,
+        retainedHeap: 0.5,
+        releasedHeaps: Array(3).fill(0.5),
+    }))
+    const leakKey = Symbol.for("valdres.tournament.memory-red-retention")
     if (mutation) globalThis[leakKey] = null
-    await settleMemory()
-    sample.before = Math.round(readMemoryHeap())
-    let scenario = create()
-    assert.equal(
-        scenario.units,
-        row.units,
-        "MEMORY-UNITS: frozen unit count changed",
-    )
-    if (mutation) {
-        const payload = Array(262144).fill(index + 1)
-        globalThis[leakKey] = api.selector(() => payload)
-    }
-    await settleMemory()
-    scenario.verify?.()
-    sample.retainedHeap = Math.round(readMemoryHeap())
-    scenario.release()
-    scenario = undefined
-    for (let drain = 0; drain < 3; drain++) {
+    for (let index = 0; index < 3; index++) {
+        const sample = samples[index]
+        if (mutation) globalThis[leakKey] = null
         await settleMemory()
-        sample.releasedHeaps[drain] = Math.round(readMemoryHeap())
+        sample.before = Math.round(readMemoryHeap())
+        let scenario = create()
+        assert.equal(
+            scenario.units,
+            units,
+            "MEMORY-UNITS: frozen unit count changed",
+        )
+        if (mutation) {
+            const payload = Array(262144).fill(index + 1)
+            globalThis[leakKey] = api.selector(() => payload)
+        }
+        await settleMemory()
+        scenario.verify?.()
+        sample.retainedHeap = Math.round(readMemoryHeap())
+        scenario.release()
+        scenario = undefined
+        for (let drain = 0; drain < 3; drain++) {
+            await settleMemory()
+            sample.releasedHeaps[drain] = Math.round(readMemoryHeap())
+        }
     }
+    return samples
 }
+const samplerCalibration = {
+    kind: "empty-sampler",
+    publicOperations: 0,
+    samples: await measure(() => ({ units: 0, release() {} }), 0, undefined),
+}
+const samples = await measure(create, row.units, mutation)
 console.log(
     JSON.stringify({
         schemaVersion: 2,
@@ -63,5 +74,6 @@ console.log(
         pid: process.pid,
         unitCount: row.units,
         samples,
+        samplerCalibration,
     }),
 )

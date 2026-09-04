@@ -22,6 +22,15 @@ function observations() {
                         runtime,
                         pid: 1,
                         unitCount: s.units,
+                        samplerCalibration: {
+                            kind: "empty-sampler",
+                            publicOperations: 0,
+                            samples: Array.from({ length: 3 }, () => ({
+                                before: 1000,
+                                retainedHeap: 1000,
+                                releasedHeaps: [1000, 1000, 1000],
+                            })),
+                        },
                         samples: Array.from({ length: 3 }, () => ({
                             before: 1000000,
                             retainedHeap: 1000000 + s.units * 40,
