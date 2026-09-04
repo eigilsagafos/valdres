@@ -60,7 +60,7 @@ export function inspectArtifact(tarball, metadata, mode = "timed") {
     )
     const artifact = extractPackedArtifact(tarball)
     try {
-        const pkg = artifact.packageJson
+        const pkg = json(artifact.packageJsonPath)
         requireGate(
             JSON.stringify(Object.keys(pkg.exports).sort()) ===
                 JSON.stringify(
