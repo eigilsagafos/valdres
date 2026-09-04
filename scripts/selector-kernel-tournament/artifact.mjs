@@ -145,7 +145,7 @@ export function assertPackedImports(
     }
     visit(ast)
 }
-export function command(argv, cwd, options = {}) {
+export function captureCommand(argv, cwd, options = {}) {
     for (const key of ["NODE_OPTIONS", "NODE_PATH", "BUN_OPTIONS"]) {
         requireGate(
             !process.env[key] && !options.env?.[key],
@@ -176,6 +176,7 @@ export function command(argv, cwd, options = {}) {
         "ARTIFACT-ENVIRONMENT",
         "subprocess environment overrides are not allowed",
     )
+    const startedAt = new Date().toISOString()
     const result = spawnSync(argv[0], argv.slice(1), {
         cwd,
         encoding: "utf8",
@@ -184,10 +185,24 @@ export function command(argv, cwd, options = {}) {
         ...options,
         env: { ...environment, NODE_ENV: "production", FORCE_COLOR: "0" },
     })
+    return {
+        argv,
+        cwd,
+        startedAt,
+        endedAt: new Date().toISOString(),
+        status: result.status,
+        signal: result.signal,
+        error: result.error?.message ?? null,
+        stdout: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+    }
+}
+export function command(argv, cwd, options = {}) {
+    const result = captureCommand(argv, cwd, options)
     requireGate(
         !result.error && result.status === 0,
         "ARTIFACT-COMMAND",
-        `${JSON.stringify(argv)}: ${result.error?.message ?? result.stderr ?? result.stdout}`,
+        `${JSON.stringify(argv)}: ${result.error ?? result.stderr ?? result.stdout}`,
     )
     return result.stdout
 }

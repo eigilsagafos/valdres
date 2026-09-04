@@ -45,3 +45,21 @@ test("normative causal path checks reject concrete structural mutations", () => 
         "absent effective edge",
     )
 })
+
+test("cached raw rotation preserves exactly the same causal graph", () => {
+    const input = {
+        parent: 2,
+        dependency: 0,
+        effective: [[1], [2], []],
+        installed: [[1], [2], []],
+    }
+    expect(() =>
+        validateCyclePath({ ...input, path: [2, 0, 1, 2], origin: "parent" }),
+    ).not.toThrow()
+    expect(() =>
+        validateCyclePath({ ...input, path: [0, 1, 2, 0], origin: "parent" }),
+    ).toThrow("cached path")
+    expect(() =>
+        validateCyclePath({ ...input, path: [2, 1, 0, 2], origin: "parent" }),
+    ).toThrow("causally closing edge")
+})

@@ -1,4 +1,4 @@
-import { requireGate } from "../../../../scripts/selector-kernel-tournament/inputs.mjs"
+import { requireGate } from "../../../../scripts/selector-kernel-tournament/gate.mjs"
 
 // Independent Boolean transitive closure. Neither production search policy nor
 // the selector oracle's DFS participates in this edge-admission expectation.

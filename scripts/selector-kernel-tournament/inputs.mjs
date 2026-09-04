@@ -14,9 +14,8 @@ export const sha256 = bytes => createHash("sha256").update(bytes).digest("hex")
 export const fileHash = path => sha256(readFileSync(path))
 export const git = (args, root = ROOT) =>
     execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim()
-export function requireGate(condition, id, message) {
-    if (!condition) throw new Error(`${id}: ${message}`)
-}
+import { requireGate } from "./gate.mjs"
+export { requireGate } from "./gate.mjs"
 export const manifest = json(
     resolve(ROOT, DIRECTORY, "fixture-manifest.v2.json"),
 )
