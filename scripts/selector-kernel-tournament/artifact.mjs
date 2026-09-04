@@ -70,6 +70,48 @@ export function assertPackedImports(
         )
     }
     function visit(node) {
+        if (
+            ts.isPropertyAccessExpression(node) &&
+            node.name.text === "constructor"
+        ) {
+            requireGate(
+                false,
+                "ARTIFACT-SOURCE-IMPORT",
+                `${filename}: reflective constructor loading`,
+            )
+        }
+        if (ts.isElementAccessExpression(node)) {
+            requireGate(
+                !(
+                    ts.isStringLiteral(node.argumentExpression) &&
+                    ["constructor", "require", "eval", "Function"].includes(
+                        node.argumentExpression.text,
+                    )
+                ),
+                "ARTIFACT-SOURCE-IMPORT",
+                `${filename}: reflective loader access`,
+            )
+        }
+        if (ts.isIdentifier(node) && node.text === "globalThis") {
+            const parent = node.parent
+            const performanceRead =
+                ts.isPropertyAccessExpression(parent) &&
+                parent.expression === node &&
+                parent.name.text === "performance"
+            const marker =
+                ts.isElementAccessExpression(parent) &&
+                ts.isCallExpression(parent.argumentExpression) &&
+                parent.argumentExpression.expression.getText(ast) ===
+                    "Symbol.for" &&
+                parent.argumentExpression.arguments.length === 1 &&
+                ts.isStringLiteral(parent.argumentExpression.arguments[0]) &&
+                parent.argumentExpression.arguments[0].text === EVIDENCE_MARKER
+            requireGate(
+                performanceRead || marker,
+                "ARTIFACT-SOURCE-IMPORT",
+                `${filename}: opaque global access`,
+            )
+        }
         // A packed kernel must have a statically inspectable module graph.
         // Reject executable-code factories and require references, including
         // aliases, rather than pretending a regex sees through generated code.

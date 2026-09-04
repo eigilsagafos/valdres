@@ -63,6 +63,9 @@ describe("F1 artifact admission", () => {
             'Function("s", "return import(s)")("node:fs")',
             'globalThis.require("node:fs")',
             'const loader = require; loader("node:fs")',
+            'globalThis["Function"]("s", "return import(s)")("node:fs")',
+            'Function.prototype.toString.constructor("s", "return import(s)")("node:fs")',
+            'const g = globalThis; g["Fun" + "ction"]("return import(\"node:fs\")")()',
         ]) {
             expect(() =>
                 assertPackedImports(source, "/synthetic/dist/index.js"),
