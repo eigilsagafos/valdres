@@ -64,3 +64,11 @@ test("released residual and every one of the original three samples remain obser
     sample.samples.pop()
     expect(() => memoryProcessSummary(sample)).toThrow("MEMORY-SAMPLES")
 })
+
+test("post-release leak detection compares retained residual, not heap changes below the pre-run baseline", () => {
+    const sample = observations()[0].sample
+    sample.samples[2].releasedHeaps = [999994, 999996, 999998]
+    expect(() => memoryProcessSummary(sample)).not.toThrow()
+    sample.samples[2].releasedHeaps = [1000000, 1000002, 1000004]
+    expect(() => memoryProcessSummary(sample)).toThrow("MEMORY-MONOTONIC-LEAK")
+})

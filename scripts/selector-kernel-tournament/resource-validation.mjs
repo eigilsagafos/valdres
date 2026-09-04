@@ -46,11 +46,11 @@ export function memoryProcessSummary(sample) {
             "MEMORY-SAMPLES",
             "missing raw heaps or drains",
         )
+        const residuals = row.releasedHeaps.map(heap =>
+            Math.max(0, heap - row.before),
+        )
         requireGate(
-            !(
-                row.releasedHeaps[0] < row.releasedHeaps[1] &&
-                row.releasedHeaps[1] < row.releasedHeaps[2]
-            ),
+            !(residuals[0] < residuals[1] && residuals[1] < residuals[2]),
             "MEMORY-MONOTONIC-LEAK",
             sample.id,
         )
