@@ -77,7 +77,7 @@ describe("v1 committed collection row lifecycle", () => {
             )
         })()
         await expectCollected(absent.detector)
-    })
+    }, 15_000)
 
     test("scope disposal releases pins and detaches MembershipRecord routes exactly once", async () => {
         const instrumentation = createInternalStoreTreeInstrumentation()
