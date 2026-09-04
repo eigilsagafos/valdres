@@ -39,7 +39,20 @@ export interface ControlFaultSession {
 
 export interface DefinitionCallbackFrame {
     readonly session: ControlFaultSession
-    readonly definitions: WeakSet<object>
+    /** Allocated only when allowDefinitions is true (phase === "factory").
+     * Every other phase (encoder, family-encoder, collection-encoder) can
+     * never construct a State: registerRuntimeStateHandle, the one call site
+     * that adds to this set, always runs
+     * assertRuntimeDefinitionConstructionAllowed first, which throws for a
+     * non-factory frame before that call is reached. Leaving this undefined
+     * for those phases keeps a per-call encoder invocation (e.g. family's
+     * encodeKey, run on every access, not just on a cache miss) free of a
+     * WeakSet it can structurally never populate. A phase added later must
+     * preserve this invariant — allowDefinitions must stay the single
+     * source of truth for "does this frame own a definitions set" — rather
+     * than introduce a case that is sometimes allowed to construct under a
+     * non-factory phase. */
+    readonly definitions: WeakSet<object> | undefined
     readonly allowDefinitions: boolean
     /** Optional accessor-only policy. Collection owns its TypeError text and
      * injects the factory only for a collection encoder frame. */
@@ -720,6 +733,11 @@ export const registerRuntimeStateHandle = <Handle extends object>(
         brandRuntimeHandle(mutableHandle, domain.ownerToken),
     )
     domain.states.add(handle)
-    frame?.definitions.add(handle)
+    // assertRuntimeDefinitionConstructionAllowed above already rejected this
+    // call unless frame is undefined or frame.allowDefinitions is true, and
+    // only a factory-phase frame (allowDefinitions: true) ever allocates
+    // definitions — see runDefinitionCallback. The `?.` is for frame itself,
+    // not for this structurally-guaranteed set.
+    frame?.definitions?.add(handle)
     return handle
 }
