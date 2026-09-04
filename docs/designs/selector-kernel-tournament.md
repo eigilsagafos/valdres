@@ -803,10 +803,13 @@ Owns only:
 
 - this specification;
 - `fixture-manifest.v1.json`;
-- `candidate-report.schema.json`.
+- `candidate-report.schema.json`;
+- `.changeset/selector-kernel-tournament-spec.md`, containing only empty YAML
+  frontmatter as the repository's required non-release CI marker.
 
 It MUST NOT change runtime source, tests, build scripts, package manifests,
-lockfiles, workflows, or Changesets.
+lockfiles, workflows, or any release-bearing Changeset. The empty Changeset
+MUST name no package and request no version bump.
 
 ### 2. Foundation
 
@@ -1200,7 +1203,7 @@ resource gates.
 
 | When                                          | Workspace / branch                             | Base                                                                | Agent assignment                                                               |
 | --------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| now                                           | `spec-selector-kernel-tournament`              | beta.36 `1c03f126`                                                  | finish, verify, and land only these three declarative artifacts                |
+| now                                           | `spec-selector-kernel-tournament`              | beta.36 `1c03f126`                                                  | land three declarative artifacts plus the required empty non-release CI marker |
 | after the spec lands                          | `test-selector-kernel-foundation`              | exact spec merge SHA on `origin/main`                               | one implementation agent owns F0-F9 sequentially; run `/review` before merge   |
 | after foundation F9 and green/red bundles     | `spike-selector-kernel-incumbent-lite`         | exact frozen foundation merge SHA                                   | one candidate agent, Contract C and declared intended lanes only               |
 | same gate, in parallel                        | `spike-selector-kernel-reactive-currentness`   | same frozen foundation merge SHA                                    | one candidate agent, Contract C and declared intended lanes only               |
