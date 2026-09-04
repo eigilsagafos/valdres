@@ -1,5 +1,15 @@
 # valdres
 
+## 1.0.0-beta.36
+
+### Minor Changes
+
+- [#380](https://github.com/eigilsagafos/valdres/pull/380)
+  [`f61e619`](https://github.com/eigilsagafos/valdres/commit/f61e6199f0199c192b3b3701e81c8a11d63ef38b)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add identity-only
+  `family()` definitions with primitive tuple identity, explicit structured-key
+  encoding, exact Atom/Selector subtype preservation, and the `FamilyKey` type.
+
 ## 1.0.0-beta.35
 
 ### Patch Changes
