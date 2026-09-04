@@ -112,14 +112,13 @@ const createFakeExtensionRuntime = (
             throw new Error("Fake collection staging must not run")
         },
         scope: () => undefined,
-        plan: (_host: object, draftValue: object) => {
+        plan: (draftValue: object) => {
             preparedDrafts.push(draftValue as TreeDraft)
             if (options.prepareError !== undefined) {
                 throw options.prepareError
             }
             return undefined
         },
-        release: releaseDraft,
     })
     ensureCollectionKernel(domain, () => vtable)
     return {
@@ -227,7 +226,7 @@ describe("v1 optional collection draft kernel", () => {
         expect(empty).toEqual([])
         expect(Object.isFrozen(empty)).toBe(true)
         expect(kernel.readDraftCollection(draft, scope, sessions)).toBe(empty)
-        expect(kernel.hasDraftLane(draft)).toBe(true)
+        expect(kernel.inspectDraft(draft)).not.toBeUndefined()
         expect(draft.hasRows).toBe(false)
         expect(draft.generation).toBe(0)
 
@@ -659,7 +658,7 @@ describe("v1 optional collection draft kernel", () => {
                 [],
             )
             invalidDraft.release()
-            expect(invalidKernel.hasDraftLane(invalidDraft)).toBe(false)
+            expect(invalidKernel.inspectDraft(invalidDraft)).toBeUndefined()
         }
     })
 
@@ -728,13 +727,12 @@ describe("v1 optional collection draft kernel", () => {
         expect(
             Reflect.ownKeys(retainedInspection!.planOrder[0] ?? {}),
         ).not.toContain("collection")
-        expect(kernel.hasDraftLane(draft)).toBe(true)
+        expect(kernel.inspectDraft(draft)).not.toBeUndefined()
         expect(runtimeDomain.transactionCursors.get(cursor as object)).toBe(
             draft,
         )
         draft.close()
         draft.release()
-        expect(kernel.hasDraftLane(draft)).toBe(false)
         expect(kernel.inspectDraft(draft)).toBeUndefined()
         expect(draft.hasRows).toBe(false)
         expect(runtimeDomain.transactionCursors.get(cursor as object)).toBe(
@@ -745,14 +743,14 @@ describe("v1 optional collection draft kernel", () => {
             { id: 0, final: "present" },
         ])
         draft.release()
-        expect(kernel.hasDraftLane(draft)).toBe(false)
+        expect(kernel.inspectDraft(draft)).toBeUndefined()
 
         const readOnlyDraft = new TreeDraft()
         kernel.readDraftCollection(readOnlyDraft, scope, rows)
         expect(readOnlyDraft.hasRows).toBe(false)
-        expect(kernel.hasDraftLane(readOnlyDraft)).toBe(true)
+        expect(kernel.inspectDraft(readOnlyDraft)).not.toBeUndefined()
         readOnlyDraft.release()
-        expect(kernel.hasDraftLane(readOnlyDraft)).toBe(false)
+        expect(kernel.inspectDraft(readOnlyDraft)).toBeUndefined()
 
         const collisionDraft = new TreeDraft()
         let otherReleaseCalls = 0
@@ -762,7 +760,7 @@ describe("v1 optional collection draft kernel", () => {
         expect(() =>
             kernel.readDraftCollection(collisionDraft, scope, rows),
         ).toThrow(Error)
-        expect(kernel.hasDraftLane(collisionDraft)).toBe(false)
+        expect(kernel.inspectDraft(collisionDraft)).toBeUndefined()
         collisionDraft.release()
         expect(otherReleaseCalls).toBe(1)
     })

@@ -1,0 +1,55 @@
+{
+    "schemaVersion": 2,
+    "kind": "valdres-collection-performance-policy",
+    "cwd": "packages/valdres",
+    "toolchain": {
+        "runtime": "bun",
+        "version": "1.4.0"
+    },
+    "policy": {
+        "primaryGate": "deterministic-structural",
+        "timingRole": "advisory-smoke",
+        "processCount": 1,
+        "rounds": 8,
+        "warmupBatches": 4,
+        "directIterationsPerBatch": 40000,
+        "transactionIterationsPerBatch": 20000,
+        "advisoryTargetRatio": 1.1,
+        "catastrophicRatio": 1.5,
+        "decisionMetric": "geometric-median-wall-ratio"
+    },
+    "cardinalities": {
+        "membership": [1000, 5000, 20000],
+        "siblingFanout": 20000,
+        "inheritanceDepth": 1024
+    },
+    "deterministic": {
+        "command": "bun run test:collection:performance",
+        "normalCiCommand": "bun run test:runtime",
+        "testPath": "test/performance/collection.performance.test.ts",
+        "claims": {
+            "collectionCountersZero": true,
+            "atomVtableRebuildTraceEmpty": true,
+            "atomVtablePlacementZero": true,
+            "exactMembershipWorkAtScale": true,
+            "presentUpdateMembershipWorkZero": true,
+            "absentReadMembershipWorkZero": true,
+            "inspectionDetailAttemptsConstant": true,
+            "siblingRouteVisitsZero": true,
+            "depthPlacementLinear": true
+        }
+    },
+    "timingSmoke": {
+        "command": "bun run test:collection:timing",
+        "testPath": "test/performance/collection.timing.ts",
+        "scenarios": ["atom-direct", "atom-transaction"],
+        "pairing": "adjacent-ab-ba",
+        "wallClock": "Bun.nanoseconds",
+        "cpuDiagnostic": "process.cpuUsage",
+        "persistsResults": false
+    },
+    "lifecycle": {
+        "command": "bun run test:collection:memory:bun",
+        "testPath": "test/performance/collection.memory.ts"
+    }
+}

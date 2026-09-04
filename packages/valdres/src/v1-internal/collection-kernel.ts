@@ -296,7 +296,6 @@ export interface CollectionDraftKernel extends OptionalCollectionVTable {
         coordinates: number
         states: number
     }>
-    hasDraftLane(draft: TreeDraft): boolean
     inspectDraft(draft: TreeDraft): CollectionDraftInspection | undefined
 }
 
@@ -478,7 +477,7 @@ export const createCollectionKernel = (
                 return false
             }
         }
-        if (first.length !== 0) {
+        if (first.length) {
             recorder(COLLECTION_MEMBERSHIP_ROWS_SCANNED, first.length)
         }
         return true
@@ -770,10 +769,37 @@ export const createCollectionKernel = (
             ? (record.served.outcome.value as readonly CollectionRowHandle[])
             : EMPTY_ROWS
 
+    const copyMembershipRows = (
+        scope: StoreScopeNode,
+        rows: readonly CollectionRowHandle[],
+    ): readonly CollectionRowHandle[] => {
+        if (rows.length) {
+            recordCounter(
+                scope,
+                COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                rows.length,
+            )
+        }
+        const copy = Object.freeze([...rows])
+        recordCounter(scope, COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS)
+        return copy
+    }
+
+    const servedMembership = (
+        scope: StoreScopeNode,
+        rows: readonly CollectionRowHandle[],
+        token: OutcomeToken = scope.createOutcomeToken(),
+    ): MembershipRecord["served"] =>
+        Object.freeze({
+            token,
+            outcome: Object.freeze({ kind: "value", value: rows }),
+        })
+
     const registerMembershipRecord = (
         scope: StoreScopeNode,
         collection: CollectionHandle,
         rows: readonly CollectionRowHandle[],
+        deferred = false,
     ): MembershipRecord => {
         const sidecar = sidecarFor(scope)
         const current = sidecar.memberships?.get(collection)
@@ -781,10 +807,14 @@ export const createCollectionKernel = (
         const record: MembershipRecord = {
             scope,
             atom: collection,
-            served: Object.freeze({
-                token: scope.createOutcomeToken(),
-                outcome: Object.freeze({ kind: "value", value: rows }),
-            }),
+            served: servedMembership(
+                scope,
+                rows,
+                // A deferred record must retain its own historical rows even
+                // if its parent publishes again before the first child read.
+                // EMPTY_ROWS cannot collide with a scope-created token.
+                deferred ? (EMPTY_ROWS as unknown as OutcomeToken) : undefined,
+            ),
             inheritedFrom: undefined,
             inheritingChildren: new WeakHandleSet(() =>
                 scope.coordinator.recordCounter("deadRouteCompactions"),
@@ -842,18 +872,23 @@ export const createCollectionKernel = (
                 ?.memberships?.get(collection)
             if (materialized !== undefined) {
                 current = materialized
+                if (
+                    current.served.token ===
+                    (EMPTY_ROWS as unknown as OutcomeToken)
+                ) {
+                    const rows = copyMembershipRows(
+                        currentScope,
+                        membershipRows(current),
+                    )
+                    current.served = servedMembership(currentScope, rows)
+                }
                 break
             }
             if (currentScope.parent === undefined) {
-                const rows = Object.freeze([]) as readonly CollectionRowHandle[]
-                recordCounter(
-                    currentScope,
-                    COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS,
-                )
                 current = registerMembershipRecord(
                     currentScope,
                     collection,
-                    rows,
+                    copyMembershipRows(currentScope, EMPTY_ROWS),
                 )
                 break
             }
@@ -862,16 +897,7 @@ export const createCollectionKernel = (
         }
         for (let index = unresolved.length - 1; index >= 0; index--) {
             const scope = unresolved[index] as StoreScopeNode
-            const inheritedRows = membershipRows(current)
-            if (inheritedRows.length !== 0) {
-                recordCounter(
-                    scope,
-                    COLLECTION_MEMBERSHIP_ROWS_SCANNED,
-                    inheritedRows.length,
-                )
-            }
-            const rows = Object.freeze([...inheritedRows])
-            recordCounter(scope, COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS)
+            const rows = copyMembershipRows(scope, membershipRows(current))
             const child = registerMembershipRecord(scope, collection, rows)
             attachMembership(child, current)
             current = child
@@ -1325,7 +1351,7 @@ export const createCollectionKernel = (
             routeScope = routeScope.parent
         }
         const rows: CollectionRowHandle[] = []
-        if (baseline.length !== 0) {
+        if (baseline.length) {
             recordCounter(
                 scope,
                 COLLECTION_MEMBERSHIP_ROWS_SCANNED,
@@ -1644,7 +1670,7 @@ export const createCollectionKernel = (
         ): boolean => {
             let rows = baselineRowsByNode.get(node)
             if (rows === undefined) {
-                if (node.beforeRows.length !== 0) {
+                if (node.beforeRows.length) {
                     recordCounter(
                         node.scope,
                         COLLECTION_MEMBERSHIP_ROWS_SCANNED,
@@ -1717,7 +1743,7 @@ export const createCollectionKernel = (
                 birth = present ? sequence : undefined
                 transitions.push({ sequence, present })
             }
-            if (transitions.length === 0) {
+            if (!transitions.length) {
                 return present
                     ? presentMembershipTimeline
                     : absentMembershipTimeline
@@ -1830,7 +1856,7 @@ export const createCollectionKernel = (
                 if (captureMembershipChanges) {
                     classifiedPlacements = placements
                 }
-                if (node.beforeRows.length !== 0) {
+                if (node.beforeRows.length) {
                     recordCounter(
                         node.scope,
                         COLLECTION_MEMBERSHIP_ROWS_SCANNED,
@@ -1890,7 +1916,7 @@ export const createCollectionKernel = (
                     }
                     currentScope = currentScope.parent
                 }
-                if (node.beforeRows.length !== 0) {
+                if (node.beforeRows.length) {
                     recordCounter(
                         node.scope,
                         COLLECTION_MEMBERSHIP_ROWS_SCANNED,
@@ -2003,7 +2029,7 @@ export const createCollectionKernel = (
                 ?.rowViews?.get(coordinate.row)
             if (materialized === undefined) continue
             const pending = [materialized]
-            while (pending.length !== 0) {
+            while (pending.length) {
                 const record = pending.pop() as RowViewRecord
                 if (considered.has(record)) continue
                 considered.add(record)
@@ -2048,7 +2074,7 @@ export const createCollectionKernel = (
                 readonly node: MembershipPlanNode
                 readonly affected: boolean
             }[] = [{ node: top, affected: false }]
-            while (pending.length !== 0) {
+            while (pending.length) {
                 const entry = pending.pop()!
                 const node = entry.node
                 if (visited.has(node)) continue
@@ -2096,9 +2122,16 @@ export const createCollectionKernel = (
                 }
             }
         }
-        for (const node of membershipInstalls) finalRowsFor(node)
+        for (const node of membershipInstalls) {
+            if (node.finalRows !== undefined) continue
+            if (node.parent === undefined) {
+                finalRowsFor(node)
+                continue
+            }
+            node.finalRows = node.beforeRows
+            node.membershipChangedFromBefore = false
+        }
         const plan: ScopedCollectionCommitPlan = {
-            kind: "collection-commit-plan",
             commit: commitPlan,
             rows: Object.freeze(rows),
             rowSettlements: Object.freeze(rowSettlements),
@@ -2209,9 +2242,10 @@ export const createCollectionKernel = (
                 node.scope,
                 node.atom,
                 node.finalRows as readonly CollectionRowHandle[],
+                node.parent !== undefined && node.finalRows === node.beforeRows,
             )
         }
-        if (plan.membershipSettlements.length !== 0) return true
+        if (plan.membershipSettlements.length) return true
         for (const node of plan.membershipInstalls) {
             if (node.membershipChangedFromBefore) return true
         }
@@ -2264,10 +2298,7 @@ export const createCollectionKernel = (
         }
         for (const settlement of plan.membershipSettlements) {
             const { record, rows } = settlement
-            record.served = Object.freeze({
-                token: record.scope.createOutcomeToken(),
-                outcome: Object.freeze({ kind: "value", value: rows }),
-            })
+            record.served = servedMembership(record.scope, rows)
             recordCounter(record.scope, COLLECTION_MEMBERSHIP_SOURCES_CHANGED)
             recordDetail(
                 record.scope,
@@ -2279,12 +2310,11 @@ export const createCollectionKernel = (
                 record.atom as AnyState,
             )
         }
-        return plan.sources.length === 0 ? undefined : plan.sources
+        return plan.sources.length ? plan.sources : undefined
     }
 
     const commitPlan = function (
         this: ScopedCollectionCommitPlan,
-        _host: object,
         phase: 0 | 1 | 2,
     ) {
         if (phase === 0) return applyCommit(this)
@@ -2303,10 +2333,11 @@ export const createCollectionKernel = (
         sidecar.liveMemberships?.forEach(record => {
             detachMembership(record)
             record.inheritingChildren.clear()
-            record.served = Object.freeze({
-                token: record.served.token,
-                outcome: Object.freeze({ kind: "value", value: EMPTY_ROWS }),
-            })
+            record.served = servedMembership(
+                record.scope,
+                EMPTY_ROWS,
+                record.served.token,
+            )
         })
         sidecar.liveRowViews?.clear()
         sidecar.liveMemberships?.clear()
@@ -2382,8 +2413,7 @@ export const createCollectionKernel = (
             return materializeMembership(scopeValue as StoreScopeNode, node)
                 .served
         },
-        plan: (_host: object, draftValue: object) => planCommit(draftValue),
-        release: releaseDraft,
+        plan: planCommit,
         stageSet,
         stageUpdate,
         stageDelete,
@@ -2432,7 +2462,6 @@ export const createCollectionKernel = (
                 return result
             }
         },
-        hasDraftLane: (draft: TreeDraft): boolean => lanes.has(draft),
         inspectDraft,
     })
     return kernel

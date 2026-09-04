@@ -1,11 +1,26 @@
 import * as v1 from "./v1"
 
+interface CollectionFactory {
+    <Key extends CollectionKey, Value extends CollectionValue>(
+        options?: CollectionOptions<Key, Value, Key>,
+    ): Collection<Key, Value, Key>
+    <Key extends CollectionKey, Value extends CollectionValue, Input>(
+        options: CollectionOptions<Key, Value, Input>,
+    ): Collection<Key, Value, Input>
+}
+
+interface PresenceFactory {
+    <Key extends CollectionKey, Value extends CollectionValue>(
+        row: CollectionRow<Key, Value>,
+    ): Selector<boolean>
+}
+
 // Concrete entry-owned bindings avoid a Bun split-entry re-export bug while
 // preserving the exact constructor/function identities from src/v1.ts.
 export const atom: typeof v1.atom = v1.atom
-export const collection: typeof v1.collection = v1.collection
+export const collection: CollectionFactory = v1.collection
 export const family: typeof v1.family = v1.family
-export const presence: typeof v1.presence = v1.presence
+export const presence: PresenceFactory = v1.presence
 export const selector: typeof v1.selector = v1.selector
 export const store: typeof v1.store = v1.store
 

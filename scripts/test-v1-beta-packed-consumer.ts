@@ -1,10 +1,33 @@
 import { strict as assert } from "node:assert"
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import {
+    cp,
+    mkdir,
+    mkdtemp,
+    readFile,
+    readdir,
+    rm,
+    writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { basename, join } from "node:path"
+import { basename, join, relative } from "node:path"
 
 const rootDirectory = join(import.meta.dir, "..")
 const keepWorkspace = process.env.VALDRES_KEEP_PACKED_SMOKE === "1"
+const requiredBunVersion = "1.4.0"
+const pinnedBunVersion = (
+    await readFile(join(rootDirectory, ".bun-version"), "utf8")
+).trim()
+assert.equal(
+    pinnedBunVersion,
+    requiredBunVersion,
+    ".bun-version must remain pinned to the COL-008 certification toolchain",
+)
+assert.equal(
+    Bun.version,
+    requiredBunVersion,
+    "packed certification must run on the pinned Bun",
+)
 
 interface CommandResult {
     readonly stdout: string
@@ -50,6 +73,57 @@ const requireFile = async (path: string, label: string): Promise<void> => {
     const file = Bun.file(path)
     assert.equal(await file.exists(), true, `${label} is missing: ${path}`)
     assert.ok(file.size > 0, `${label} is empty: ${path}`)
+}
+
+interface RuntimeBuildManifestEntry {
+    readonly path: string
+    readonly size: number
+    readonly sha256: string
+}
+
+interface RuntimeBuildEvidence {
+    readonly sha256: string
+    readonly files: readonly RuntimeBuildManifestEntry[]
+}
+
+const listRuntimeJavaScript = async (directory: string): Promise<string[]> => {
+    const entries = await readdir(directory, {
+        recursive: true,
+        withFileTypes: true,
+    })
+    return entries
+        .filter(entry => entry.isFile() && entry.name.endsWith(".js"))
+        .map(entry => join(entry.parentPath, entry.name))
+        .sort()
+}
+
+const runtimeBuildEvidence = async (): Promise<RuntimeBuildEvidence> => {
+    const files = (
+        await Promise.all(
+            (["valdres", "valdres-react"] as const).map(name =>
+                listRuntimeJavaScript(
+                    join(rootDirectory, "packages", name, "dist"),
+                ),
+            ),
+        )
+    )
+        .flat()
+        .sort()
+    assert.ok(files.length > 0, "certified runtime build emitted no JavaScript")
+    const manifest: RuntimeBuildManifestEntry[] = []
+    for (const file of files) {
+        const path = relative(rootDirectory, file).replaceAll("\\", "/")
+        const bytes = new Uint8Array(await readFile(file))
+        const sha256 = createHash("sha256").update(bytes).digest("hex")
+        manifest.push(Object.freeze({ path, size: bytes.length, sha256 }))
+    }
+    const sha256 = createHash("sha256")
+        .update(JSON.stringify(manifest))
+        .digest("hex")
+    return Object.freeze({
+        sha256,
+        files: Object.freeze(manifest),
+    })
 }
 
 const coreProbe = String.raw`
@@ -144,16 +218,47 @@ const tripled = familySelectors(3)
 assert.equal(familySelectors(3), tripled)
 assert.equal(target.get(tripled), 24)
 
+const sessions = core.collection()
+const firstSession = sessions("first")
+const secondSession = sessions("second")
+const firstPresence = core.presence(firstSession)
+target.txn(transaction => {
+    transaction.set(firstSession, { id: "first", revision: 1 })
+    transaction.set(secondSession, { id: "second", revision: 1 })
+})
+const initialMembership = target.get(sessions)
+assert.deepEqual(initialMembership, [firstSession, secondSession])
+assert.equal(target.get(firstPresence), true)
+target.update(firstSession, current => ({
+    ...current,
+    revision: current.revision + 1,
+}))
+assert.equal(target.get(sessions), initialMembership)
+assert.equal(target.get(firstSession).revision, 2)
+target.delete(firstSession)
+assert.deepEqual(target.get(sessions), [secondSession])
+target.set(firstSession, { id: "first", revision: 3 })
+assert.deepEqual(target.get(sessions), [secondSession, firstSession])
+
 const isRuntimeMismatch = error =>
     error?.name === "RuntimeMismatchError" &&
     error?.code === "VALDRES_RUNTIME_MISMATCH"
 
 const foreignStore = foreignCore.store()
 const foreignCount = foreignCore.atom(1)
+const foreignSessions = foreignCore.collection()
+const foreignSession = foreignSessions("foreign")
+const foreignPresence = foreignCore.presence(foreignSession)
 assert.throws(() => foreignAdapter.assertStore(target), isRuntimeMismatch)
 assert.throws(() => adapter.assertStore(foreignStore), isRuntimeMismatch)
 assert.throws(() => target.get(foreignCount), isRuntimeMismatch)
 assert.throws(() => foreignStore.get(count), isRuntimeMismatch)
+assert.throws(() => target.get(foreignSession), isRuntimeMismatch)
+assert.throws(() => foreignStore.get(firstSession), isRuntimeMismatch)
+assert.throws(() => target.get(foreignSessions), isRuntimeMismatch)
+assert.throws(() => foreignStore.get(sessions), isRuntimeMismatch)
+assert.throws(() => target.get(foreignPresence), isRuntimeMismatch)
+assert.throws(() => foreignStore.get(firstPresence), isRuntimeMismatch)
 
 foreignAdapter.assertStore(foreignStore)
 assert.equal(foreignAdapter.read(foreignStore, foreignCount), 1)
@@ -163,6 +268,7 @@ console.log(JSON.stringify({
     sharedRootAdapterDomain: true,
     crossCopyRejected: true,
     familyIdentity: true,
+    collectionLifecycle: true,
 }))
 `
 
@@ -170,7 +276,7 @@ const reactProbe = String.raw`
 import { strict as assert } from "node:assert"
 import { createRequire } from "node:module"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { atom, selector, store } from "valdres"
+import { atom, collection, presence, selector, store } from "valdres"
 import { createInspectableStore } from "valdres/inspect"
 
 // Observe useSyncExternalStore's real subscription cleanup without replacing
@@ -352,14 +458,27 @@ const serverValue = selector(get => {
     return get(serverCount)
 })
 const serverStore = store()
-const ServerProbe = () => createElement("strong", null, useValue(serverValue))
+const serverSessions = collection()
+const serverSession = serverSessions("server")
+serverStore.set(serverSession, { label: "ready" })
+const ServerProbe = () => {
+    const count = useValue(serverValue)
+    const session = useValue(serverSession)
+    const membership = useValue(serverSessions)
+    const isPresent = useValue(presence(serverSession))
+    return createElement(
+        "strong",
+        null,
+        count + ":" + session.label + ":" + membership.length + ":" + isPresent,
+    )
+}
 const serverTree = createElement(
     Provider,
     { store: serverStore },
     createElement(ServerProbe),
 )
 const html = renderToString(serverTree)
-assert.match(html, />9<\/strong>/)
+assert.match(html, />9:ready:1:true<\/strong>/)
 assert.ok(serverSelectorCalls >= 1)
 
 GlobalRegistrator.register({ url: "https://valdres.test/" })
@@ -374,15 +493,22 @@ await act(async () => {
         onRecoverableError: error => recoverableErrors.push(error),
     })
 })
-assert.equal(container.textContent, "9")
+assert.equal(container.textContent, "9:ready:1:true")
 assert.deepEqual(recoverableErrors, [])
-assert.equal(activeExternalSubscriptions, 1)
+assert.equal(activeExternalSubscriptions, 4)
 
-await act(async () => serverStore.set(serverCount, 10))
-assert.equal(container.textContent, "10")
+await act(async () =>
+    serverStore.txn(transaction => {
+        transaction.set(serverCount, 10)
+        transaction.update(serverSession, current => ({
+            label: current.label + "-updated",
+        }))
+    }),
+)
+assert.equal(container.textContent, "10:ready-updated:1:true")
 await act(async () => hydratedRoot.unmount())
 assert.equal(activeExternalSubscriptions, 0)
-assert.equal(externalSubscriptionCleanups, 3)
+assert.equal(externalSubscriptionCleanups, 6)
 await GlobalRegistrator.unregister()
 
 const inspectionCore = createInspectableStore()
@@ -458,6 +584,7 @@ console.log(JSON.stringify({
     unmountUnsubscribed: true,
     nestedScope: true,
     ssrHydration: true,
+    collectionUniversalReads: true,
     inspectCorrelation: true,
 }))
 `
@@ -538,11 +665,18 @@ console.log(JSON.stringify({
 const typeProbe = String.raw`
 import {
     atom,
+    collection,
     family,
+    presence,
     selector,
     store,
     type Atom,
     type AtomUpdater,
+    type Collection,
+    type CollectionKey,
+    type CollectionOptions,
+    type CollectionRow,
+    type CollectionValue,
     type FamilyKey,
     type Selector,
     type State,
@@ -635,6 +769,49 @@ const structuredMember: Atom<number> = structuredFamily({
     payload: 1,
 })
 
+export interface PackedSession {
+    readonly id: string
+    readonly active: boolean
+}
+export interface PackedSessionLookup {
+    readonly tenant: string
+    readonly id: string
+}
+export const packedSessions = collection<string, PackedSession>()
+export const richPackedSessions = collection<
+    string,
+    PackedSession,
+    PackedSessionLookup
+>({
+    encodeKey: input => input.tenant + ":" + input.id,
+})
+export const packedSessionRow: CollectionRow<string, PackedSession> =
+    packedSessions("session")
+export const packedMembership: Collection<string, PackedSession> =
+    packedSessions
+export const packedPresence: Selector<boolean> = presence(packedSessionRow)
+export const directCollectionOptions: CollectionOptions<
+    string,
+    PackedSession
+> = {}
+export const richCollectionOptions: CollectionOptions<
+    string,
+    PackedSession,
+    PackedSessionLookup
+> = {
+    encodeKey: input => input.tenant + ":" + input.id,
+}
+export const defineDirectCollection = <
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+>() => collection<Key, Value>()
+export const defineRichCollection = <
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+    Input,
+>(options: CollectionOptions<Key, Value, Input>) =>
+    collection<Key, Value, Input>(options)
+
 apply(update)
 void Provider
 void value
@@ -656,19 +833,26 @@ void atomMember
 void selectorMember
 void structuredMember
 
+target.set(packedSessionRow, { id: "session", active: true })
+target.delete(packedSessionRow)
+
 // @ts-expect-error Selectors are read-only and cannot be passed to Atom setters.
 useSetAtom(doubled, target)
 // @ts-expect-error Exact setters do not interpret functions as updater syntax.
 set(current => current + 1)
 // @ts-expect-error Structured family arguments require an explicit encoder.
 family((input: { readonly id: string }) => atom(input.id))
+// @ts-expect-error Collection values cannot include undefined.
+collection<string, PackedSession | undefined>()
+// @ts-expect-error Atom deletion is not part of the collection mutation lane.
+target.delete(count)
 // @ts-expect-error FamilyKey excludes structured objects.
 const structuredKey: FamilyKey = { id: "packed" }
 void structuredKey
 `
 
 const bundleEntry = String.raw`
-import { atom, family, store } from "valdres"
+import { atom, collection, family, presence, store } from "valdres"
 import * as reactApi from "valdres-react"
 
 export const bundleSmoke = () => {
@@ -681,10 +865,16 @@ export const bundleSmoke = () => {
     )
     const first = members({ id: "shared", payload: "first" })
     const collision = members({ id: "shared", payload: "ignored" })
+    const sessions = collection()
+    const session = sessions("bundle")
+    target.set(session, { id: "bundle" })
     return {
         value: target.get(count),
         familyValue: target.get(first),
         familyIdentity: first === collision,
+        collectionValue: target.get(session).id,
+        collectionMembership: target.get(sessions).length,
+        collectionPresence: target.get(presence(session)),
         reactExports: Object.keys(reactApi).sort(),
     }
 }
@@ -717,6 +907,9 @@ assert.deepEqual(bundleSmoke(), {
     value: 5,
     familyValue: "first",
     familyIdentity: true,
+    collectionValue: "bundle",
+    collectionMembership: 1,
+    collectionPresence: true,
     reactExports: [
         "Provider",
         "useAtom",
@@ -821,10 +1014,46 @@ try {
         "valdres-react must declare its valdres peer range",
     )
 
-    run(
-        "build core and React JavaScript",
-        ["bun", "run", "build:v1-beta"],
-        rootDirectory,
+    const buildEvidence: RuntimeBuildEvidence[] = []
+    for (let build = 1; build <= 3; build++) {
+        run(
+            `build core and React JavaScript (${build}/3)`,
+            ["bun", "run", "build:v1-beta"],
+            rootDirectory,
+        )
+        buildEvidence.push(await runtimeBuildEvidence())
+    }
+    for (const evidence of buildEvidence.slice(1)) {
+        assert.deepEqual(
+            evidence.files,
+            buildEvidence[0]!.files,
+            "three pinned-Bun runtime builds must emit identical paths, sizes, and bytes",
+        )
+        assert.equal(
+            evidence.sha256,
+            buildEvidence[0]!.sha256,
+            "three pinned-Bun runtime build digests must match",
+        )
+    }
+    const certifiedRuntimeBuildSha256 = buildEvidence[0]!.sha256
+    const sizeBudget = JSON.parse(
+        await readFile(
+            join(rootDirectory, "scripts", "size-baseline.json"),
+            "utf8",
+        ),
+    ) as {
+        provenance?: { certifiedRuntimeBuildSha256?: string }
+    }
+    const reviewedDigest = sizeBudget.provenance?.certifiedRuntimeBuildSha256
+    if (reviewedDigest !== "PENDING_COL008_CERTIFICATION") {
+        assert.equal(
+            certifiedRuntimeBuildSha256,
+            reviewedDigest,
+            "runtime build differs from the reviewed COL-008 certification digest",
+        )
+    }
+    console.log(
+        `\u2713 three byte-identical pinned-Bun runtime builds (${certifiedRuntimeBuildSha256})`,
     )
     run(
         "build core and React declarations",
@@ -968,6 +1197,18 @@ try {
         pkg => pkg.name === "valdres-react",
     )!.tarball
 
+    const sizeCertification = run(
+        "certify final packed core size budgets",
+        [
+            process.execPath,
+            "run",
+            join(rootDirectory, "scripts", "check-package-size.ts"),
+            coreTarball,
+        ],
+        rootDirectory,
+    )
+    console.log(sizeCertification.stdout.trim())
+
     for (const react of reactMatrix) {
         const consumerDirectory = join(workspace, `react-${react.major}`)
         await mkdir(consumerDirectory, { recursive: true })
@@ -1078,12 +1319,14 @@ try {
             ),
             writeJson(join(consumerDirectory, "tsconfig.json"), {
                 compilerOptions: {
+                    declaration: true,
+                    emitDeclarationOnly: true,
                     target: "ES2022",
                     lib: ["ES2022", "DOM", "DOM.Iterable"],
                     module: "NodeNext",
                     moduleResolution: "NodeNext",
                     strict: true,
-                    noEmit: true,
+                    outDir: "types-output",
                     skipLibCheck: false,
                     exactOptionalPropertyTypes: true,
                     types: ["react"],
@@ -1125,7 +1368,7 @@ try {
         )
 
         run(
-            `TypeScript declarations with React ${react.major}`,
+            `TypeScript declaration emit with React ${react.major}`,
             [
                 "node",
                 join(rootDirectory, "node_modules", "typescript", "bin", "tsc"),
@@ -1133,6 +1376,19 @@ try {
                 "tsconfig.json",
             ],
             consumerDirectory,
+        )
+        const emittedConsumerDeclaration = await readFile(
+            join(consumerDirectory, "types-output", "types-probe.d.ts"),
+            "utf8",
+        )
+        assert.match(emittedConsumerDeclaration, /packedSessions/)
+        assert.match(emittedConsumerDeclaration, /richPackedSessions/)
+        assert.match(emittedConsumerDeclaration, /defineDirectCollection/)
+        assert.match(emittedConsumerDeclaration, /defineRichCollection/)
+        assert.equal(
+            emittedConsumerDeclaration.includes("v1-internal"),
+            false,
+            "installed collection declarations must remain publicly nameable",
         )
         run(
             `esbuild browser bundle with React ${react.major}`,

@@ -39,6 +39,39 @@ identity, membership, persistence, hydration, deletion, transaction overlay
 reads, and derived filtering selectors, without forcing index design into the
 foundation.
 
+### ShiftX selector-performance follow-up
+
+The 2026-09 ShiftX feedback packet does not exercise `collection()`; ShiftX does
+not have the collection API yet. It does prove that the beta.28 selector fix
+left a separate release blocker. One user-visible snapback took 30.15 seconds,
+with 21.56 seconds in proactive cycle traversal. Its hottest evaluation ran
+55,885 prefix-revalidation proofs and visited 80,905,365 graph nodes without
+finding a cycle.
+
+The proactive DAG check remains architecturally required: cached selectors can
+close a cycle outside the active evaluation stack, and the first-read edge plus
+canonical error path are public diagnostics. The defect is repeated execution,
+not the proof itself. A foreign publication causes every accepted dependency to
+walk a largely shared downstream closure from scratch.
+
+The correction merged in #364 keeps the existing forward proof but adds one
+exact-observation, proposal-local learner. It retains at most two maps produced
+by fully exhausted negative searches. The first observed overlap locks the
+useful map; terminal noise cannot evict it, and three disjoint non-terminal
+proofs disable learning. A locked map tolerates two consecutive disjoint
+non-terminal proofs, resets the streak on reuse, and disables on the third miss.
+Positive or partial searches publish nothing, new-edge proofs are unchanged, and
+no proof survives a graph publication or prefix-revalidation call. This bounds
+temporary retained state, avoids a reverse-fan-in cliff, and preserves the
+existing path/blame semantics.
+
+Deterministic fast and inspected fixtures now cover a shared hub, the packet's
+heavy/heavy/terminal/heavy ordering, all-disjoint fallback, singleton behavior,
+and an actual positive prefix cycle with exact path and truncation. The supplied
+standalone ShiftX reproduction is only a semantic smoke—it does not recreate the
+real 84-million-visit path—so ShiftX must still rerun the real snapback before
+its real-app performance acceptance can close.
+
 ## Plan-approval baseline
 
 This section records the repository state before T1 implementation began; the
@@ -396,28 +429,29 @@ constructed runtime domain never imports the weak row cache or collection
 kernel. Core retains only a small optional collection-vtable slot and kind
 dispatch. The first collection definition installs a tree-shakeable
 `collection-kernel` implementation into its exact runtime domain. Its first
-slice owns draft, scratch-read, and release hooks only; row intents fail
-preflight before any Atom mutation until the following scope slice supplies real
-owner/apply/rewire/publication behavior. That kernel owns lazy per-domain
-WeakMaps keyed by TreeDraft and ScopeNode for draft lanes, scope sidecars,
-routing, and lifecycle state. Core transaction, scratch, scope, commit, and
-disposal paths call the optional vtable hooks but do not know the collection
-data structures. The draft slice reserves the existing guarded resolution and
-commit-phase slots; the scope slice activates preflight, apply, rewire, publish,
-and disposal behavior. These hooks never run a second mutation, propagation, or
-notification engine. No global mutable registry or import-time plugin
-registration is allowed. Therefore a bundle that uses Store but not `collection`
-retains only the reviewed optional-hook seam and allocates no collection
-registry, cache, draft lane, or scope sidecar.
+slice owns draft and scratch-read hooks plus TreeDraft-registered cleanup; row
+intents fail preflight before any Atom mutation until the following scope slice
+supplies real owner/apply/rewire/publication behavior. That kernel owns lazy
+per-domain WeakMaps keyed by TreeDraft and ScopeNode for draft lanes, scope
+sidecars, routing, and lifecycle state. Core transaction, scratch, scope,
+commit, and disposal paths call the optional vtable hooks but do not know the
+collection data structures. The draft slice reserves the existing guarded
+resolution and commit-phase slots; the scope slice activates preflight, apply,
+rewire, publish, and disposal behavior. These hooks never run a second mutation,
+propagation, or notification engine. No global mutable registry or import-time
+plugin registration is allowed. Therefore a bundle that uses Store but not
+`collection` retains only the reviewed optional-hook seam and allocates no
+collection registry, cache, draft lane, or scope sidecar.
 
 WeakMap ownership is not cleanup: a captured closed Transaction cursor may keep
-its TreeDraft alive. The vtable therefore has an explicit `releaseDraft` hook in
-the same existing finally path as `draft.release()`. Successful commit, callback
-abort, preflight/admission failure, and committed-error exit all delete or clear
-row intents, staged values, enabling history, and scratch membership memos.
-Scope disposal similarly invokes one kernel hook to detach weak routes, clear
-pins and snapshots, and invalidate records even when an application retains the
-disposed facade.
+its TreeDraft alive. Each collection lane therefore registers its cleanup
+directly with `TreeDraft.installRows`; `TreeDraft.release()` invokes that
+callback from its existing finally path. Successful commit, callback abort,
+preflight/admission failure, and committed-error exit all delete or clear row
+intents, staged values, enabling history, and scratch membership memos. Scope
+disposal similarly invokes one kernel hook to detach weak routes, clear pins and
+snapshots, and invalidate records even when an application retains the disposed
+facade.
 
 ### Scope ownership
 
@@ -634,7 +668,7 @@ source-changing entries predict a runtime membership publication.
 | Equal ownership/routing transition            | parent change after equal shadow | Rewire without value/membership callback             | Future inheritance stays live        |
 | Subscriber throw(s)                           | callback/error ledger matrix     | Commit stays installed; all callbacks fire           | Exact aggregate error                |
 | Post-apply mismatch plus subscriber throws    | mixed authoritative-fault case   | Mismatch leads full frozen causes ledger             | Exact aggregate error                |
-| Closed cursor retains TreeDraft               | releaseDraft exit-path matrix    | Explicitly clear kernel values/memos                 | Closed-cursor error; no leak         |
+| Closed cursor retains TreeDraft               | registered-cleanup exit matrix   | Explicitly clear kernel values/memos                 | Closed-cursor error; no leak         |
 | Store/scope disposal with retained handles    | lifecycle + two-Store cases      | Detach routes, clear pins; keep definitions valid    | Disposed facade rejects clearly      |
 | Foreign branded row/collection/presence       | runtime ownership matrix         | Reject before kind/liveness/work                     | Exact `RuntimeMismatchError`         |
 | Unbranded same-shape fake                     | target-admission matrix          | Reject before liveness/work                          | Invalid-State/target `TypeError`     |
@@ -653,12 +687,14 @@ Normal atom/selector consumers remain the control:
 - no collection map/allocation on an atom-only Store, transaction, or commit;
 - after one collection installs the domain vtable, a fresh Store/transaction
   doing Atom-only work still allocates no collection draft/scope state, records
-  zero collection counters, and stays within the ordinary <=10% timing gate;
+  zero collection counters, and passes the deterministic rebuild/placement
+  traces; a standalone warmed Bun smoke targets <=10% and fails only at a
+  catastrophic >=50% installed/control wall-time delta;
 - ordinary core-retaining fixtures keep their exact pre-collection baselines;
   the named **COL-004 native-collection core gzip seam waiver** provisionally
   permits at most 71 gzip bytes above their existing 2% ceilings, adds no raw
-  allowance, and changes none of the graph, no-call, no-allocation, counter, or
-  <=10% timing gates;
+  allowance, and changes none of the graph, no-call, no-allocation, or
+  deterministic counter/trace gates;
 - row-cache hit is O(1) and allocates nothing;
 - `Object.is`-distinct present-to-present row update performs no collection-size
   membership rebuild;
@@ -669,19 +705,28 @@ Normal atom/selector consumers remain the control:
 - no index extractor, query scan, or user callback runs during apply; and
 - high-cardinality absent row-handle creation remains weak and reclaimable.
 
-Add 1k/5k/20k-row fixtures for lookup, absent reads, value updates, inserts,
-deletes, transaction overlay reads, and scope fanout. Pair before/after ordinary
-atom/core-load and the ShiftX rewire fixture. Add an explicit collection bundle
-fixture and separately reviewed feature budgets for `dist`, `packed`,
-`all-exports`, `inspect`, and the collection fixture. Inspection is a feature
-fixture after COL-007, not an ordinary-control ratchet. Do not refresh the
-ordinary control baselines or use an aggregate ratchet to hide retained
-collection code. In COL-008, after COL-006, require three byte-identical builds
-on pinned Bun 1.4.0 and replace the provisional waiver with one fixed allowance
-equal to the exact maximum gzip overage above the immutable 2% ceilings across
-the affected ordinary fixtures. Add no cushion. Any later increase requires
-explicit architecture review; graph, no-call, no-allocation, counter, raw-byte,
-and <=10% timing gates do not move.
+Use deterministic 1k/5k/20k-row identity, counter, and trace fixtures for direct
+and encoded lookup, value updates, inserts, deletes, and transaction overlay
+reads. A dedicated absent-read case pins zero membership/owner work, while the
+separate sparse-fanout case pins zero unrelated route visits below 20k sibling
+scopes. Exact route visits, row scans, allocations, publications, and
+cardinality-independent inspection detail attempts are binding. Run the two
+remaining Atom-only constant-factor checks as one explicitly warmed standalone
+Bun process: fixed 40k direct and 20k transaction batches, eight adjacent AB/BA
+rounds, `Bun.nanoseconds` wall timing, and `process.cpuUsage` diagnostics. The
+geometric-median installed/control wall ratio has an advisory <=1.10 target and
+only >=1.50 is a hard smoke failure; no raw timing samples are persisted. The
+performance-policy commands run from `packages/valdres`. Add an explicit
+collection bundle fixture and separately reviewed feature budgets for `dist`,
+`packed`, `all-exports`, `inspect`, and the collection fixture. Inspection is a
+feature fixture after COL-007, not an ordinary-control ratchet. Do not refresh
+the ordinary control baselines or use an aggregate ratchet to hide retained
+collection code. COL-008 certified three byte-identical builds on pinned Bun
+1.4.0 and replaced the provisional waiver with a fixed 62-byte allowance: the
+exact maximum gzip overage above the immutable 2% ceilings across the affected
+ordinary fixtures, with no cushion. Any later increase requires explicit
+architecture review; both shipped runtime graphs and the no-call, no-allocation,
+deterministic counter/trace, and raw-byte gates do not move.
 
 Required counters append after existing family counters without renumbering:
 
@@ -758,30 +803,34 @@ Atom+row commit performs one propagation settlement and one callback snapshot.
 [TESTED T6] public State/root API -> Store/Transaction/selector/adapter/React
   public-candidate type/runtime/export/declaration probes + React universal reads
       |
-[GAP T7] inspect -> repaired model public-runtime differential
+[TESTED T7] inspect -> repaired model public-runtime differential
   collection-differential.test.ts + v1-inspect
       |
-[GAP T8] tarball/runtime/lifecycle/scale evidence
-  build + package-size + packed Node/Bun/TS/esbuild/React18/19
+[TESTED T8] tarball/runtime/lifecycle/scale evidence
+  triple build + package size + packed Node/Bun/TS/esbuild/React18/19
       |
-[E2E GAP T9] ShiftX sessions user flow
+[TESTED T9] ShiftX sessions user flow
   hydrate -> filtered selectors -> update -> logout -> reinsert -> restart
   shiftx-sessions.test.ts with persistence races + legacy crash injection
+      |
+[LANDED T10 / SHIFTX REPLAY PENDING] selector prefix negative-proof reuse
+  merged #364 -> exact path parity -> real ShiftX replay pending
 ```
 
 The plan-approval baseline was 9 pure-model tests / 183 assertions and no
-production collection tests. The implemented T1-through-T6 checkpoint has 15
-collection-model cases / 304 assertions plus mirrored internal runtime cases and
-the public root/type/React surface. The seeded public-runtime differential
-remains owned by T7, final package evidence remains T8, and the ShiftX
-end-to-end migration remains T9. The model repairs cover child-shadow history,
-enabling-sequence order, native notification order, and same-draft true-gap
-rebirth/memo restoration. Presence notification ordering is not compared as a
-direct model target: production `presence(row)` is an ordinary Selector, so
-dedicated runtime tests own its dependency-first ordering and exact
-subscriber-error identity. The model's root-local Atom/row/collection order is
-authoritative; cross-scope route order is normalized because the model
-intentionally has no materialization graph.
+production collection tests. The implemented T1-through-T7 plus T9 checkpoint
+has 15 collection-model cases / 304 assertions plus mirrored internal runtime
+cases, the seeded public-runtime differential, the public root/type/React
+surface, and the test-local ShiftX migration adapter. The T10 selector
+correction is merged and locally deterministic but still needs the real ShiftX
+replay. T8 package evidence is certified on the reconciled source. The model
+repairs cover child-shadow history, enabling-sequence order, native notification
+order, and same-draft true-gap rebirth/memo restoration. Presence notification
+ordering is not compared as a direct model target: production `presence(row)` is
+an ordinary Selector, so dedicated runtime tests own its dependency-first
+ordering and exact subscriber-error identity. The model's root-local
+Atom/row/collection order is authoritative; cross-scope route order is
+normalized because the model intentionally has no materialization graph.
 
 Inline ASCII comments belong in `collection-kernel.ts` for the intent-to-commit
 phase pipeline and effective membership state machine, and beside the optional
@@ -855,10 +904,10 @@ Use two fixed-clock rows, `A` and `B`:
    cursor's currently observed order and atomically write one staging manifest
    containing the complete identity-to-`1..N` mapping plus watermark before any
    per-row mutation. Resumably write and verify versioned envelopes from that
-   manifest, write the migration marker as the visibility switch, and only then
-   remove old entries and the staging manifest. Fault-inject after every write;
-   each retry and a second restart must recover the same order without exposing
-   a half-migrated Store.
+   manifest, copy that complete manifest into the migration marker as the
+   visibility switch, and only then remove old entries and the staging manifest.
+   Fault-inject after every write; each retry and a second restart must recover
+   the same order without exposing a half-migrated Store.
 9. Instrument the fixture: absent handle lookup creates no Store work; absent
    row/presence reads create no owner pin or MembershipRecord; value update does
    no collection-size work; report is complete; and no values/keys are exported.
@@ -886,19 +935,40 @@ upgrade may use the currently observed cursor order exactly once while it
 durably assigns explicit order metadata. A guaranteed ordered storage cursor
 would be a valid future alternative if ShiftX can prove it end to end.
 
+The new-adapter startup path rejects legacy or staging state before constructing
+a Store until the marker exists. While cleanup is incomplete, it validates the
+marker, staging manifest, complete envelope set, and watermark as one view. Once
+both staging and legacy entries are gone, the marker remains migration
+provenance rather than freezing the original live-session cardinality: normal
+delete/reinsert evolution may change envelopes and order, while the allocator
+watermark must never predate the marker's migration watermark.
+
 The logout deletion is a deliberate migration decision. The historical ShiftX
 code removes the reference but appears to leave the family value/storage entry.
 Current ShiftX must confirm that true deletion is desired before production
 migration. The attached audit is a sparse snapshot pinned to 2024-10-10 and does
 not provide production cardinalities.
 
+The T9 test-local checkpoint implements the adapter and a separate Map/order
+oracle in `shiftx-sessions.test.ts`. Four focused cases cover preattached
+insert/update persistence, abort reconciliation, transactional logout plus
+generation-checked reinsert cleanup, shuffled restart and safe-integer
+validation, fault injection after each of ten keyed legacy-migration writes, the
+actual marker-gated startup path at every intermediate state, an idempotent
+migration retry plus two ordered Store restarts per fault point, post-migration
+mutation/restart, and a complete privacy-safe inspection report. This is
+compatibility evidence for the historical snapshot; it does not resolve the
+current-ShiftX logout decision above or modify ShiftX production code. The final
+focused gate passes 4 cases / 222 assertions; the combined public- candidate
+TypeScript/runtime/core-load gate passes 154 cases / 15,506 assertions.
+
 ## Implementation sequence
 
 The approved delivery plan groups the sequential task lake into four review
 slices. The root export appears only at T6, after the internal vertical slice is
-complete. This section records that plan; at the current checkpoint T1-T6 are
-accepted, while T7 inspection/differential, T8 final package evidence, and T9
-ShiftX acceptance remain open.
+complete. This section records that plan; at the current checkpoint T1-T8 and
+the task-local T9 ShiftX fixture are accepted. Current real-app logout semantics
+and the real ShiftX selector replay remain external acceptance work.
 
 1. **Contract, oracle, and identity.** Repair the three initial reference-model
    defects, reconcile the materialization-priority compile contract, freeze the
@@ -910,24 +980,23 @@ ShiftX acceptance remain open.
 3. **Membership/reactivity.** Add MembershipRecords, order, collection-local
    committed snapshots, effective deltas, selectors, and notifications; reuse
    the draft memo frozen in PR 2. Repaired model cases and mirrored internal
-   runtime cases pin the semantics; the public differential remains in PR 4.
+   runtime cases pin the semantics; T7 supplies the public differential.
 4. **Public/inspection/performance.** Expose `collection`/`presence`, add
    bounded recorder counters, differential/GC/scale/package coverage, docs, and
    the ShiftX sessions acceptance fixture.
 
-Landing order is PR #362, then rebased/restaged family PR #361, then collection
-PRs 1-4. Family supplies the reviewed weak cache and definition-callback
-quarantine, but collection does not depend on the public `family` API. Index
-instances, materialization, and queries begin only after this foundation and the
-ShiftX sessions migration are accepted.
+Landing order is the accepted family foundation followed by collection PRs 1-4;
+the selector correction is already on main through #364. Family supplies the
+reviewed weak cache and definition-callback quarantine, but collection does not
+depend on the public `family` API. Index instances, materialization, and queries
+begin only after this foundation and the ShiftX sessions migration are accepted.
 
 ## Implementation tasks
 
 Synthesized from this review's findings. Each task derives from a concrete gap
-above. A checked box records acceptance of that task-local checkpoint, not the
-final production release gate: the remaining T7-T9 evidence is still required,
-and this document does not claim commands that have not been run for the final
-combined artifact.
+above. A checked box records acceptance of that task-local checkpoint. The
+remaining ShiftX questions are external real-app acceptance, not missing
+collection package evidence.
 
 - [x] **T1 (P1, human: ~2 days / CC: ~90 min)** — Authority — repair the oracle
       and freeze the complete contract/State-base coordinates.
@@ -1008,9 +1077,9 @@ combined artifact.
       rendering; mutation negatives, closed `indexes?: never`, and exact
       foreign-domain rejection remain pinned. Ordinary controls retain the fixed
       provisional 71-byte gzip seam cap with graph/no-call/no-allocation/
-      counter/timing gates unchanged; T8 still owns the final reproducible
-      allowance and packed evidence.
-- [ ] **T7 (P1, human: ~2 days / CC: ~90 min)** — Inspection/differential — add
+      deterministic counter/trace gates unchanged; T8 still owns the final
+      reproducible allowance and packed evidence.
+- [x] **T7 (P1, human: ~2 days / CC: ~90 min)** — Inspection/differential — add
       structural recorder hooks and public-runtime oracle coverage.
     - Surfaced by: Privacy/test review — the new source kinds need exact bounded
       evidence without retaining values/keys, and production must match the
@@ -1025,26 +1094,41 @@ combined artifact.
       legal public-runtime traces; materialized-coordinate delta projection;
       membership reference-equivalence checks; exact root-native notification
       order; dedicated presence-Selector delivery/error order; and ordinary
-      graph/no-call/no-allocation/counter/timing/size gates.
-- [ ] **T8 (P1, human: ~2 days / CC: ~90 min)** — Package evidence — prove
+      graph/no-call/no-allocation/counter/trace/size gates.
+- [x] **T8 (P1, human: ~2 days / CC: ~90 min)** — Package evidence — prove
       lifecycle, scale, bundle isolation, and installed compatibility.
     - Surfaced by: Lifecycle/performance review — collection implementation must
       be reclaimable, bounded, and absent from ordinary Store artifacts.
     - Files: performance/GC fixtures, immutable size-baseline schema and
       checker, package scripts/toolchain assertions, and packed-consumer
       scripts.
-    - Verify: paired 1k/5k/20k benchmarks, three byte-identical pinned-Bun-1.4.0
-      builds, immutable pre-collection ordinary baselines, an exact no-cushion
-      additive gzip seam allowance, separately reviewed
+    - Verify: binding exact 1k/5k/20k counters/traces plus a standalone
+      seconds-scale warmed Bun Atom-only advisory smoke, three byte-identical
+      pinned-Bun-1.4.0 builds, immutable pre-collection ordinary baselines, an
+      exact no-cushion 62-byte additive gzip seam allowance, separately reviewed
       collection/dist/packed/all-exports/inspect feature budgets, and
-      Node/Bun/TS/esbuild/React 18/19 packed gates.
-- [ ] **T9 (P1, human: ~2 days / CC: ~90 min)** — ShiftX acceptance — run the
+      Node/Bun/TS/esbuild/React 18/19 packed gates. The final reconciled source
+      passed this freeze with both production and development graphs retained.
+- [x] **T9 (P1, human: ~2 days / CC: ~90 min)** — ShiftX acceptance — run the
       sessions adapter migration fixture.
     - Surfaced by: ShiftX audit — the old family-wide persistence callback has
       no direct membership-only equivalent, and keyed blobs do not encode order.
     - Files: `test/v1-public-candidate/shiftx-sessions.test.ts` and this design.
     - Verify: insertion/update and delete/reinsert races, abort reconciliation,
       watermark/restart order, durable legacy upgrade, and privacy report.
+- [x] **T10 (P0, human: ~1 day / CC: ~60 min)** — Selector proof scaling —
+      eliminate repeated shared-closure traversal during foreign-publication
+      prefix revalidation without weakening proactive cycle safety.
+    - Surfaced by: the beta.28 ShiftX snapback packet — one evaluation performs
+      55,885 negative prefix proofs / 80,905,365 visits, while all 1,291
+      topology-identical evaluations perform zero searches.
+    - Landed: #364 owns the selector evaluator, inspection strategy, tests,
+      integration notes, and release note. This design/test plan/task ledger
+      retain the collection-project handoff and real-app acceptance boundary.
+    - Verify: singleton allocation-free behavior; shared-hub near-linear reads;
+      packet-shaped heavy/terminal interleave; bounded all-disjoint fallback;
+      exact fast/inspected canonical positive path, blame, and truncation; full
+      selector/inspection/runtime gates; then a real ShiftX snapback replay.
 
 ## Parallelization
 
@@ -1059,12 +1143,14 @@ combined artifact.
 | T7 inspection | kernel record sites, inspect, differential | T6         |
 | T8 package    | lifecycle, performance, packaging          | T7         |
 | T9 ShiftX     | public candidate adapter fixture           | T8         |
+| T10 selector  | evaluator, inspection, ShiftX replay       | T7         |
 
-The implementation is T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9. Every task
-consumes semantics or artifacts frozen by the previous one, and the kernel tasks
-share primary modules, so there is no safe inter-task worktree parallelism.
-Focused tests within one task may fan out after its source snapshot is frozen.
-No two open PRs claim the same prerelease tuple.
+The collection implementation is T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9. T10
+is an independent selector-runtime correction discovered by the final ShiftX
+feedback; it landed through #364 before T8's final source/package
+recertification. The kernel tasks share primary modules, so there is no safe
+inter-task worktree parallelism. Focused tests within one task may fan out after
+its source snapshot is frozen. No two open PRs claim the same prerelease tuple.
 
 ## Not in scope
 

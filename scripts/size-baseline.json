@@ -1,14 +1,46 @@
 {
-    "bun": "1.4.0",
+    "schema": "valdres-package-size-budget",
+    "schemaVersion": 2,
+    "toolchain": {
+        "bun": "1.4.0",
+        "gzipLevel": 6
+    },
+    "provenance": {
+        "ordinaryBaselineCommit": "7c55be567457218fb597f9cd9658b1c71997fb83",
+        "certificationBuildCount": 3,
+        "certifiedRuntimeBuildSha256": "18bf1036311e94b4de61050594e8fba4af44d31bdc2c20340da890da741e3578"
+    },
     "policy": {
         "ordinaryTolerancePercent": 2,
-        "coreRetainingGzipAllowance": 71,
+        "coreRetainingGzipAllowance": 62,
         "coreRetainingFixtures": [
-            "fixture atom",
-            "fixture atom-selector-store",
-            "fixture family",
-            "fixture adapter-internals"
+            "atom",
+            "atom-selector-store",
+            "family",
+            "adapter-internals"
         ]
+    },
+    "ordinaryFixtures": {
+        "atom": {
+            "raw": 64797,
+            "gzip": 16861
+        },
+        "atom-selector-store": {
+            "raw": 64984,
+            "gzip": 16930
+        },
+        "family": {
+            "raw": 70080,
+            "gzip": 18542
+        },
+        "equality": {
+            "raw": 7231,
+            "gzip": 2210
+        },
+        "adapter-internals": {
+            "raw": 64767,
+            "gzip": 16835
+        }
     },
     "featureBudgets": {
         "dist": {
@@ -32,86 +64,6 @@
                 "raw": 97552,
                 "gzip": 25985
             }
-        }
-    },
-    "dist": {
-        "raw": 212506,
-        "gzip": 59950
-    },
-    "distFiles": {
-        "adapter-internals/v1.js": {
-            "raw": 200,
-            "gzip": 151
-        },
-        "chunk-kve4rdec.js": {
-            "raw": 66216,
-            "gzip": 17349
-        },
-        "development/adapter-internals/v1.js": {
-            "raw": 200,
-            "gzip": 151
-        },
-        "development/chunk-kve4rdec.js": {
-            "raw": 66216,
-            "gzip": 17349
-        },
-        "development/equality.js": {
-            "raw": 7233,
-            "gzip": 2208
-        },
-        "development/index.js": {
-            "raw": 5019,
-            "gzip": 2077
-        },
-        "development/inspect.js": {
-            "raw": 27585,
-            "gzip": 8190
-        },
-        "equality.js": {
-            "raw": 7233,
-            "gzip": 2208
-        },
-        "index.js": {
-            "raw": 5019,
-            "gzip": 2077
-        },
-        "inspect.js": {
-            "raw": 27585,
-            "gzip": 8190
-        }
-    },
-    "packed": {
-        "raw": 296780,
-        "gzip": 76981
-    },
-    "fixtures": {
-        "atom": {
-            "raw": 64797,
-            "gzip": 16861
-        },
-        "atom-selector-store": {
-            "raw": 64984,
-            "gzip": 16930
-        },
-        "family": {
-            "raw": 70080,
-            "gzip": 18542
-        },
-        "all-exports": {
-            "raw": 70793,
-            "gzip": 18826
-        },
-        "inspect": {
-            "raw": 92359,
-            "gzip": 24536
-        },
-        "equality": {
-            "raw": 7231,
-            "gzip": 2210
-        },
-        "adapter-internals": {
-            "raw": 64767,
-            "gzip": 16835
         }
     }
 }

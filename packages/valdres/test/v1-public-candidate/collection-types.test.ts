@@ -233,6 +233,21 @@ test("emits nameable direct and rich-input collection declarations", async () =>
             .join("\n")
         expect(libraryResult.exitCode, libraryFailure).toBe(0)
 
+        const rootDeclaration = await readFile(
+            join(libraryOut, "index.d.ts"),
+            "utf8",
+        )
+        expect(rootDeclaration).toContain(
+            "export declare const collection: CollectionFactory",
+        )
+        expect(rootDeclaration).toContain(
+            "export declare const presence: PresenceFactory",
+        )
+        expect(rootDeclaration).not.toContain(
+            "collection: typeof v1.collection",
+        )
+        expect(rootDeclaration).not.toContain("presence: typeof v1.presence")
+
         const internalDeclarationPath = join(
             libraryOut,
             "v1-internal/committed-store-tree/types.d.ts",
@@ -258,6 +273,7 @@ test("emits nameable direct and rich-input collection declarations", async () =>
             join(temporaryRoot, "consumer.ts"),
             `import {
     collection,
+    presence,
     type Collection,
     type CollectionKey,
     type CollectionOptions,
@@ -278,6 +294,7 @@ export const sessions = collection<string, Session>()
 export const richSessions = collection<string, Session, SessionLookup>({
     encodeKey: input => \`${"${input.tenant}:${input.id}"}\`,
 })
+export const sessionPresence = presence(sessions("present"))
 export const directOptions: CollectionOptions<string, Session> = {}
 export const richOptions: CollectionOptions<string, Session, SessionLookup> = {
     encodeKey: input => \`${"${input.tenant}:${input.id}"}\`,
@@ -329,10 +346,16 @@ export const defineRich = <
             "utf8",
         )
         expect(consumerDeclaration).toContain(
-            'sessions: import("./library/v1.js").Collection<string, Session, string, never>',
+            'type Collection, type CollectionKey, type CollectionOptions, type CollectionValue } from "./library/index.js"',
         )
         expect(consumerDeclaration).toContain(
-            'richSessions: import("./library/v1.js").Collection<string, Session, SessionLookup, never>',
+            "sessions: Collection<string, Session, string, never>",
+        )
+        expect(consumerDeclaration).toContain(
+            "richSessions: Collection<string, Session, SessionLookup, never>",
+        )
+        expect(consumerDeclaration).toContain(
+            'sessionPresence: import("./library/index.js").Selector<boolean>',
         )
         expect(consumerDeclaration).toContain(
             "directOptions: CollectionOptions<string, Session>",
@@ -341,10 +364,10 @@ export const defineRich = <
             "richOptions: CollectionOptions<string, Session, SessionLookup>",
         )
         expect(consumerDeclaration).toContain(
-            'defineDirect: <Key extends CollectionKey, Value extends CollectionValue>() => import("./library/v1.js").Collection<Key, Value, Key, never>',
+            "defineDirect: <Key extends CollectionKey, Value extends CollectionValue>() => Collection<Key, Value, Key, never>",
         )
         expect(consumerDeclaration).toContain(
-            'defineRich: <Key extends CollectionKey, Value extends CollectionValue, Input>(options: CollectionOptions<Key, Value, Input>) => import("./library/v1.js").Collection<Key, Value, Input, never>',
+            "defineRich: <Key extends CollectionKey, Value extends CollectionValue, Input>(options: CollectionOptions<Key, Value, Input>) => Collection<Key, Value, Input, never>",
         )
         expect(consumerDeclaration).not.toContain("StateBase")
         expect(consumerDeclaration).not.toContain("ReadonlyState")

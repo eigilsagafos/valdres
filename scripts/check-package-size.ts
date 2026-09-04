@@ -5,16 +5,16 @@
  * npm-produced tarball here so dist, packed-file, and consumer-fixture sizes
  * are all measurements of the artifact that every other validator sees.
  *
- * Pre-collection baselines stay immutable. The collection stack carries a
- * reviewed feature envelope plus a temporary ordinary-fixture gzip seam until
- * COL-008 replaces it with the final certified policy.
+ * Ordinary-control baselines are immutable. Feature budgets and the one
+ * additive core gzip allowance are reviewed architecture decisions, never a
+ * command-driven ratchet.
  */
 import { mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { isAbsolute, join, relative, resolve } from "node:path"
 
-const TOLERANCE = 1.02
 const GZIP_LEVEL = 6
+const PENDING_CERTIFICATION = "PENDING_COL008_CERTIFICATION"
 
 const rootDir = join(import.meta.dir, "..")
 const baselinePath = join(import.meta.dir, "size-baseline.json")
@@ -33,8 +33,50 @@ const tarballPath = isAbsolute(tarballArgument)
 
 type Size = { raw: number; gzip: number }
 
+type CertifiedSize = Size | typeof PENDING_CERTIFICATION
+
+interface SizeBaseline {
+    readonly schema: "valdres-package-size-budget"
+    readonly schemaVersion: 2
+    readonly toolchain: {
+        readonly bun: string
+        readonly gzipLevel: number
+    }
+    readonly provenance: {
+        readonly ordinaryBaselineCommit: string
+        readonly certificationBuildCount: number
+        readonly certifiedRuntimeBuildSha256:
+            | string
+            | typeof PENDING_CERTIFICATION
+    }
+    readonly policy: {
+        readonly ordinaryTolerancePercent: number
+        readonly coreRetainingGzipAllowance:
+            | number
+            | typeof PENDING_CERTIFICATION
+        readonly coreRetainingFixtures: readonly string[]
+    }
+    readonly ordinaryFixtures: Readonly<Record<string, Size>>
+    readonly featureBudgets: {
+        readonly dist: CertifiedSize
+        readonly packed: CertifiedSize
+        readonly fixtures: Readonly<Record<string, CertifiedSize>>
+    }
+}
+
 const gzipSize = (bytes: Uint8Array) =>
     Bun.gzipSync(bytes, { level: GZIP_LEVEL }).length
+
+const isPositiveSafeSize = (value: unknown): value is Size => {
+    if (typeof value !== "object" || value === null) return false
+    const candidate = value as Partial<Size>
+    return (
+        Number.isSafeInteger(candidate.raw) &&
+        candidate.raw! > 0 &&
+        Number.isSafeInteger(candidate.gzip) &&
+        candidate.gzip! > 0
+    )
+}
 
 const run = (command: string[], cwd: string) => {
     const result = Bun.spawnSync(command, {
@@ -175,7 +217,6 @@ try {
         ),
     ]
     console.log(lines.join("\n"))
-
     await checkAgainstBaseline(dist, packed, fixtures, fixtureSources)
 } finally {
     await rm(tempDir, { recursive: true, force: true })
@@ -189,75 +230,98 @@ async function checkAgainstBaseline(
 ) {
     const baselineFile = Bun.file(baselinePath)
     if (!(await baselineFile.exists())) {
-        throw new Error(`Missing ${relative(rootDir, baselinePath)}`)
-    }
-    const baseline = await baselineFile.json()
-    const failures: string[] = []
-    const improvements: string[] = []
-    const policy = baseline.policy as
-        | {
-              ordinaryTolerancePercent?: number
-              coreRetainingGzipAllowance?: number
-              coreRetainingFixtures?: string[]
-          }
-        | undefined
-    const featureBudgets = baseline.featureBudgets as
-        | {
-              dist?: Size
-              packed?: Size
-              fixtures?: Record<string, Size>
-          }
-        | undefined
-    const allowance = policy?.coreRetainingGzipAllowance
-    const coreRetaining = new Set<string>(
-        policy?.coreRetainingFixtures ?? [],
-    )
-
-    if (baseline.bun !== Bun.version) {
-        failures.push(
-            `size policy requires Bun ${baseline.bun}; running ${Bun.version}`,
+        throw new Error(
+            `Missing immutable size budget ${relative(rootDir, baselinePath)}`,
         )
     }
-    if (policy?.ordinaryTolerancePercent !== 2) {
-        failures.push("ordinary size tolerance must remain exactly 2%")
+    const baseline = (await baselineFile.json()) as SizeBaseline
+    const failures: string[] = []
+
+    if (
+        baseline.schema !== "valdres-package-size-budget" ||
+        baseline.schemaVersion !== 2
+    ) {
+        failures.push(
+            "size budget must use valdres-package-size-budget schema version 2",
+        )
     }
-    if (!Number.isSafeInteger(allowance) || allowance !== 71) {
-        failures.push("provisional collection gzip seam must remain 71 bytes")
+    if (baseline.toolchain?.bun !== Bun.version) {
+        failures.push(
+            `size certification requires Bun ${baseline.toolchain?.bun}; running ${Bun.version}`,
+        )
+    }
+    if (baseline.toolchain?.gzipLevel !== GZIP_LEVEL) {
+        failures.push(
+            `size budget gzip level must remain ${GZIP_LEVEL}; received ${baseline.toolchain?.gzipLevel}`,
+        )
     }
 
+    const allowance = baseline.policy?.coreRetainingGzipAllowance
+    if (allowance === PENDING_CERTIFICATION) {
+        failures.push("core-retaining gzip allowance is not certified")
+    } else if (
+        typeof allowance !== "number" ||
+        !Number.isInteger(allowance) ||
+        allowance < 0
+    ) {
+        failures.push(
+            "core-retaining gzip allowance must be a nonnegative integer",
+        )
+    }
+
+    const tolerance = baseline.policy?.ordinaryTolerancePercent
+    if (tolerance !== 2) {
+        failures.push(
+            `ordinary tolerance must remain exactly 2%; received ${tolerance}`,
+        )
+    }
+    const ordinaryTolerance = tolerance === 2 ? tolerance : 2
+    const coreRetaining = new Set(baseline.policy?.coreRetainingFixtures ?? [])
+
     const compareOrdinary = (label: string, base: Size, size: Size) => {
+        if (!isPositiveSafeSize(base)) {
+            failures.push(
+                `ordinary fixture ${label}: immutable raw/gzip baseline must contain positive safe integers`,
+            )
+            return
+        }
         for (const metric of ["raw", "gzip"] as const) {
-            const expected = base[metric]
+            const toleranceCeiling = Math.ceil(
+                (base[metric] * (100 + ordinaryTolerance)) / 100,
+            )
             const additive =
-                metric === "gzip" && coreRetaining.has(label)
-                    ? (allowance ?? 0)
+                metric === "gzip" &&
+                coreRetaining.has(label) &&
+                typeof allowance === "number"
+                    ? allowance
                     : 0
-            const ceiling = Math.ceil(expected * TOLERANCE) + additive
-            const delta = size[metric] - expected
-            const percent = ((delta / expected) * 100).toFixed(2)
-            const detail =
-                `${label} ${metric}: expected ${expected} (ceiling ${ceiling}, ` +
-                `immutable baseline + 2%${additive === 0 ? "" : ` + ${additive}`}), actual ${size[metric]}, delta ${
-                    delta >= 0 ? "+" : ""
-                }${delta} bytes (${delta >= 0 ? "+" : ""}${percent}%)`
-            if (size[metric] > ceiling) failures.push(detail)
-            else if (delta < 0) improvements.push(detail)
+            const ceiling = toleranceCeiling + additive
+            const delta = size[metric] - base[metric]
+            const percent = ((delta / base[metric]) * 100).toFixed(2)
+            if (size[metric] > ceiling) {
+                failures.push(
+                    `ordinary fixture ${label} ${metric}: immutable baseline ${base[metric]}, ` +
+                        `2% ceiling ${toleranceCeiling}, additive allowance ${additive}, ` +
+                        `actual ${size[metric]}, delta ${delta >= 0 ? "+" : ""}${delta} ` +
+                        `bytes (${delta >= 0 ? "+" : ""}${percent}%)`,
+                )
+            }
         }
     }
 
     const compareFeature = (
         label: string,
-        budget: Size | undefined,
+        budget: CertifiedSize | undefined,
         size: Size,
     ) => {
-        if (
-            budget === undefined ||
-            !Number.isSafeInteger(budget.raw) ||
-            budget.raw <= 0 ||
-            !Number.isSafeInteger(budget.gzip) ||
-            budget.gzip <= 0
-        ) {
-            failures.push(`${label}: reviewed feature budget is missing`)
+        if (budget === PENDING_CERTIFICATION || budget === undefined) {
+            failures.push(`${label}: feature budget is not certified`)
+            return
+        }
+        if (!isPositiveSafeSize(budget)) {
+            failures.push(
+                `${label}: certified raw/gzip budget must contain positive safe integers`,
+            )
             return
         }
         for (const metric of ["raw", "gzip"] as const) {
@@ -270,35 +334,92 @@ async function checkAgainstBaseline(
         }
     }
 
-    compareFeature("dist total", featureBudgets?.dist, dist)
-    compareFeature("packed package", featureBudgets?.packed, packed)
-    for (const name of Object.keys(fixtureSources)) {
-        const featureBudget = featureBudgets?.fixtures?.[name]
-        if (featureBudget !== undefined) {
-            compareFeature(`feature fixture ${name}`, featureBudget, fixtures[name])
+    const ordinaryNames = Object.keys(baseline.ordinaryFixtures ?? {})
+    for (const name of ordinaryNames) {
+        if (!(name in fixtureSources)) {
+            failures.push(`ordinary fixture ${name}: source is missing`)
             continue
         }
-        const base = baseline.fixtures?.[name]
-        if (!base) {
-            failures.push(`fixture ${name}: no immutable baseline entry`)
-        } else {
-            compareOrdinary(`fixture ${name}`, base, fixtures[name])
+        compareOrdinary(name, baseline.ordinaryFixtures[name]!, fixtures[name]!)
+    }
+    if (
+        !Array.isArray(baseline.policy?.coreRetainingFixtures) ||
+        coreRetaining.size !== baseline.policy.coreRetainingFixtures.length
+    ) {
+        failures.push(
+            "core-retaining fixtures must be a duplicate-free ordinary-fixture subset",
+        )
+    }
+    for (const name of coreRetaining) {
+        if (!ordinaryNames.includes(name)) {
+            failures.push(
+                `core-retaining fixture ${name}: immutable ordinary baseline is missing`,
+            )
         }
     }
 
-    if (improvements.length > 0) {
-        console.log("\nSize improvements (ratchet the baseline to lock in):")
-        for (const line of improvements) console.log(`  ↓ ${line}`)
+    compareFeature("dist total", baseline.featureBudgets?.dist, dist)
+    compareFeature("packed package", baseline.featureBudgets?.packed, packed)
+    const featureFixtureNames = new Set(
+        Object.keys(baseline.featureBudgets?.fixtures ?? {}),
+    )
+    for (const name of featureFixtureNames) {
+        if (ordinaryNames.includes(name)) {
+            failures.push(
+                `fixture ${name}: feature and ordinary fixture names must be disjoint`,
+            )
+        }
     }
+    for (const name of Object.keys(fixtureSources)) {
+        const ordinary = ordinaryNames.includes(name)
+        const feature = featureFixtureNames.has(name)
+        if (ordinary === feature) {
+            failures.push(
+                `fixture ${name}: must belong to exactly one ordinary or feature budget class`,
+            )
+            continue
+        }
+        if (feature) {
+            compareFeature(
+                `feature fixture ${name}`,
+                baseline.featureBudgets.fixtures[name],
+                fixtures[name]!,
+            )
+        }
+    }
+    for (const name of featureFixtureNames) {
+        if (!(name in fixtureSources)) {
+            failures.push(`feature fixture ${name}: source is missing`)
+        }
+    }
+
+    if (
+        baseline.provenance?.certifiedRuntimeBuildSha256 ===
+        PENDING_CERTIFICATION
+    ) {
+        failures.push("runtime build digest is not certified")
+    } else if (
+        !/^[0-9a-f]{64}$/.test(
+            baseline.provenance?.certifiedRuntimeBuildSha256 ?? "",
+        )
+    ) {
+        failures.push("runtime build digest must be a lowercase SHA-256")
+    }
+    if (baseline.provenance?.certificationBuildCount !== 3) {
+        failures.push("size certification must record exactly three builds")
+    }
+
     if (failures.length > 0) {
-        console.error(`\n${failures.length} size gate(s) exceeded:`)
+        console.error(`\n${failures.length} size gate(s) failed:`)
         for (const line of failures) console.error(`  ✗ ${line}`)
         console.error(
             "\nOrdinary baselines cannot be regenerated. Intentional growth requires " +
-                "an explicit architecture review and a reviewed policy edit.",
+                "an explicit architecture review and a reviewed budget-policy edit.",
         )
         process.exitCode = 1
     } else {
-        console.log("\nAll size gates passed")
+        console.log(
+            "\nAll immutable ordinary and reviewed feature size gates passed",
+        )
     }
 }
