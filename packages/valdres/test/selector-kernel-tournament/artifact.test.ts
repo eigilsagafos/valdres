@@ -54,10 +54,25 @@ describe("F1 artifact admission", () => {
             "import(target)",
             "require(target)",
             "export { model } from 'reference-model'",
+            'Function("s", "return import(s)")("node:fs")',
+            'globalThis.require("node:fs")',
+            'const loader = require; loader("node:fs")',
         ]) {
             expect(() =>
                 assertPackedImports(source, "/synthetic/dist/index.js"),
             ).toThrow("ARTIFACT-SOURCE-IMPORT")
+        }
+    })
+    test("inherited conditions and loaders fail before starting a process", () => {
+        const previous = process.env.NODE_OPTIONS
+        try {
+            process.env.NODE_OPTIONS = "--conditions=development"
+            expect(() =>
+                command(["node", "-e", "process.exit(0)"], process.cwd()),
+            ).toThrow("ARTIFACT-ENVIRONMENT")
+        } finally {
+            if (previous === undefined) delete process.env.NODE_OPTIONS
+            else process.env.NODE_OPTIONS = previous
         }
     })
     test("admits an intact uninstrumented fixture", () => {

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import * as api from "valdres"
 import * as adapter from "valdres/adapter-internals/v1"
 const { atom, selector, store, family } = api
@@ -88,5 +91,9 @@ console.log(
         ],
         exports: Object.keys(api).sort(),
         adapterExports: Object.keys(adapter).sort(),
+        rootEntry: fileURLToPath(import.meta.resolve("valdres")),
+        rootEntrySha256: createHash("sha256")
+            .update(readFileSync(fileURLToPath(import.meta.resolve("valdres"))))
+            .digest("hex"),
     }),
 )

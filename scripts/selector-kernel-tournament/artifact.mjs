@@ -70,6 +70,19 @@ export function assertPackedImports(
         )
     }
     function visit(node) {
+        // A packed kernel must have a statically inspectable module graph.
+        // Reject executable-code factories and require references, including
+        // aliases, rather than pretending a regex sees through generated code.
+        if (
+            ts.isIdentifier(node) &&
+            ["require", "eval", "Function"].includes(node.text)
+        ) {
+            requireGate(
+                false,
+                "ARTIFACT-SOURCE-IMPORT",
+                `${filename}: dynamic code or module loader ${node.text}`,
+            )
+        }
         if (
             (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
             node.moduleSpecifier
@@ -86,13 +99,43 @@ export function assertPackedImports(
     visit(ast)
 }
 export function command(argv, cwd, options = {}) {
+    for (const key of ["NODE_OPTIONS", "NODE_PATH", "BUN_OPTIONS"]) {
+        requireGate(
+            !process.env[key] && !options.env?.[key],
+            "ARTIFACT-ENVIRONMENT",
+            `${key} can change production resolution or preload code`,
+        )
+    }
+    const allowed = [
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "LANG",
+        "LC_ALL",
+        "TZ",
+        "SystemRoot",
+    ]
+    const environment = Object.fromEntries(
+        allowed
+            .filter(key => process.env[key] !== undefined)
+            .map(key => [key, process.env[key]]),
+    )
+    requireGate(
+        options.env === undefined,
+        "ARTIFACT-ENVIRONMENT",
+        "subprocess environment overrides are not allowed",
+    )
     const result = spawnSync(argv[0], argv.slice(1), {
         cwd,
         encoding: "utf8",
         timeout: 120000,
         maxBuffer: 64 * 1024 * 1024,
-        env: { ...process.env, NODE_ENV: "production" },
         ...options,
+        env: { ...environment, NODE_ENV: "production", FORCE_COLOR: "0" },
     })
     requireGate(
         !result.error && result.status === 0,
@@ -325,7 +368,15 @@ export function smokeArtifact(artifactDirectory, runtime) {
     )
     const output = command([runtime, "smoke.mjs", metadata.mode], target)
     writeFileSync(join(artifactDirectory, `smoke-${runtime}.json`), output)
-    return JSON.parse(output)
+    const result = JSON.parse(output)
+    requireGate(
+        realpathSync(result.rootEntry) ===
+            realpathSync(join(target, "node_modules/valdres/dist/index.js")) &&
+            result.rootEntrySha256 === metadata.productionEntrySha256,
+        "ARTIFACT-RESOLVED-ENTRY",
+        "installed runtime did not resolve the recorded production entry",
+    )
+    return result
 }
 if (import.meta.main) {
     const [action, arg, output, mode] = process.argv.slice(2)
