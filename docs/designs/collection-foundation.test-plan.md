@@ -2,7 +2,7 @@
 
 ## Semantic oracle
 
-- Before using the oracle, repair and pin three defects:
+- Before using the oracle, repair and pin four defects:
     - unmaterialized equal/non-equal child Present shadows retain membership and
       original position after a parent delete; and
     - `set(A) -> set(B) -> update(A)` plus child reset/local-shadow variants
@@ -11,7 +11,10 @@
     - native row/membership notifications follow target first-reaching order,
       not global subscription-registration order, with the exact first thrown
       error as `cause` and every thrown error, including the first, in ordered
-      `causes`.
+      `causes`; and
+    - a committed-present row that crosses a true same-draft absence gap is a
+      fresh birth, while child shadows keep their baseline slot and a draft memo
+      returning to the committed order reuses the committed array.
 - Do not compare presence notification order as a direct model target.
   `presence(row)` is an ordinary Selector; dedicated runtime tests own its
   dependency-first callback/error order.
@@ -40,7 +43,10 @@
 | Packaging      | exact root exports/types, split graph, atom-only reachability, installed tarball, React 18/19, SSR/hydration                              |
 
 Every transaction exit path—success, callback abort, preflight failure, and
-committed-error exit—must run the optional kernel `releaseDraft` hook. Retain a
+committed-error exit—must run the optional kernel `releaseDraft` hook. In the
+draft-only slice, read-only lanes cover success/committed errors while staged
+row lanes cover callback abort and fail-before-mutation preflight. The scope
+slice adds successful and post-apply-error exits with staged rows. Retain a
 closed cursor deliberately and prove no staged row value, intent, enabling
 history, or membership memo remains reachable.
 
@@ -68,16 +74,25 @@ Exact delivery-order matrix:
 - Assert `Object.is`-distinct present-to-present update counters are independent
   of membership cardinality; same-value/NaN writes are full effective no-ops.
 - Assert every affected MembershipRecord is rebuilt at most once per commit.
+- At 1,024 materialized membership levels, a root insert/delete creates one
+  draft coordinate plus one lightweight placement state per level and stays
+  linear; a one-leaf change below 20k materialized siblings visits no unrelated
+  sibling routes.
 - Assert lookup/read of absent rows creates no Store membership or owner pin.
 - Assert atom-only imports/domains/Stores allocate no collection registry,
   cache, scope sidecar, or workset.
 - After a collection installs the domain vtable, run Atom-only work in a fresh
   Store/transaction and assert zero collection draft/scope allocations, zero
   collection counters, and <=10% ordinary timing delta.
-- Preserve pre-collection `atom` and `atom-selector-store` baselines under the
-  existing <=2% gate and ordinary timing under <=10%; add a distinct reviewed
-  feature budget for collection/dist/packed/all-exports rather than ratcheting
-  away the controls.
+- Keep every pre-collection baseline immutable. Name the provisional COL-004
+  native-collection core gzip seam waiver: exactly 71 gzip bytes beyond the
+  existing 2% ceilings on affected ordinary fixtures, with no raw allowance;
+  graph/no-call/no-allocation/counter and <=10% timing gates remain unchanged.
+- In COL-008 after COL-006, require three byte-identical pinned Bun 1.4.0 builds
+  and replace the provisional value with the exact maximum additive gzip
+  allowance, with no cushion or baseline ratchet. Any later increase requires
+  explicit architecture review. Keep distinct reviewed feature budgets for
+  collection/dist/packed/all-exports.
 
 ## ShiftX acceptance
 

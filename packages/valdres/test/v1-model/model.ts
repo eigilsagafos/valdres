@@ -62,6 +62,11 @@ interface MembershipSnapshot {
     readonly rows: readonly RowId[]
 }
 
+type MembershipPlacement =
+    | Readonly<{ kind: "baseline" }>
+    | Readonly<{ kind: "absent" }>
+    | Readonly<{ kind: "birth"; sequence: number }>
+
 interface TreeRecord {
     readonly id: TreeId
     readonly root: ScopeId
@@ -800,14 +805,15 @@ export class ReferenceModel {
             }
         }
 
-        const collectionDeltas = this.recomputeCollections(
-            candidateTree,
-            touchedRows,
-            baseline,
-            draft,
-        )
+        const { deltas: collectionDeltas, membershipChanged } =
+            this.recomputeCollections(
+                candidateTree,
+                touchedRows,
+                baseline,
+                draft,
+            )
 
-        if (ownershipChanges.length === 0) {
+        if (ownershipChanges.length === 0 && !membershipChanged) {
             if (fallbackPublicationChanged) {
                 this.trees.set(candidateTree.id, candidateTree)
             }
@@ -869,43 +875,46 @@ export class ReferenceModel {
         touchedRows: ReadonlySet<RowId>,
         baseline: CommitBaseline,
         draft: Draft,
-    ): readonly EffectiveRowDelta[] {
+    ): Readonly<{
+        deltas: readonly EffectiveRowDelta[]
+        membershipChanged: boolean
+    }> {
         const collections = new Set<CollectionId>()
         for (const rowId of touchedRows)
             collections.add(this.row(rowId).collection)
         const deltas: EffectiveRowDelta[] = []
+        let membershipChanged = false
         for (const scope of liveScopes(tree)) {
             for (const collectionId of collections) {
                 const collection = this.collection(collectionId)
                 const beforeMembership = baseline.memberships.get(
                     membershipKey(scope.id, collectionId),
                 )!
-                const survivors = beforeMembership.rows.filter(
-                    rowId =>
-                        this.readRowCommitted(tree, scope, rowId).kind ===
-                        "present",
-                )
-                const births = collection.rows
-                    .filter(rowId => {
-                        const before = baseline.rowOutcomes.get(
-                            effectiveKey(scope.id, rowId),
-                        )
-                        const after = this.readRowCommitted(tree, scope, rowId)
-                        return (
-                            before?.kind === "absent" &&
-                            after.kind === "present"
-                        )
-                    })
-                    .map(rowId => ({
+                const placements = new Map<RowId, MembershipPlacement>()
+                const births: Array<{
+                    rowId: RowId
+                    sequence: number
+                }> = []
+                for (const rowId of collection.rows) {
+                    const placement = this.continuousMembershipPlacement(
+                        draft,
+                        scope,
                         rowId,
-                        sequence: this.birthSequence(draft, scope, rowId),
-                    }))
-                    .sort((left, right) =>
-                        left.sequence === right.sequence
-                            ? this.row(left.rowId).order -
-                              this.row(right.rowId).order
-                            : left.sequence - right.sequence,
                     )
+                    placements.set(rowId, placement)
+                    if (placement.kind === "birth") {
+                        births.push({ rowId, sequence: placement.sequence })
+                    }
+                }
+                const survivors = beforeMembership.rows.filter(
+                    rowId => placements.get(rowId)?.kind === "baseline",
+                )
+                births.sort((left, right) =>
+                    left.sequence === right.sequence
+                        ? this.row(left.rowId).order -
+                          this.row(right.rowId).order
+                        : left.sequence - right.sequence,
+                )
                 const nextRows = [
                     ...survivors,
                     ...births.map(birth => birth.rowId),
@@ -923,6 +932,7 @@ export class ReferenceModel {
                     (scope.memberships.get(collectionId) === undefined &&
                         !sameStrings(inheritedRows, nextRows))
                 ) {
+                    membershipChanged = true
                     scope.memberships.set(
                         collectionId,
                         this.newMembership(nextRows),
@@ -962,20 +972,7 @@ export class ReferenceModel {
                 }
             }
         }
-        return deltas
-    }
-
-    private birthSequence(
-        draft: Draft,
-        targetScope: ScopeRecord,
-        rowId: RowId,
-    ): number {
-        return this.continuousBirthSequence(
-            draft,
-            targetScope,
-            rowId,
-            "MISSING_BIRTH_SEQUENCE",
-        )
+        return { deltas, membershipChanged }
     }
 
     private notificationTargets(
@@ -1394,24 +1391,27 @@ export class ReferenceModel {
     ): ReadOutcome {
         const collection = this.collection(collectionId)
         const baseline = this.peekMembership(draft.tree, scope, collectionId)
-        const survivors = baseline.rows.filter(
-            rowId => this.readRowDraft(draft, scope, rowId).kind === "present",
-        )
-        const births = collection.rows
-            .filter(rowId => {
-                const before = this.readRowCommitted(draft.tree, scope, rowId)
-                const after = this.readRowDraft(draft, scope, rowId)
-                return before.kind === "absent" && after.kind === "present"
-            })
-            .map(rowId => ({
+        const placements = new Map<RowId, MembershipPlacement>()
+        const births: Array<{ rowId: RowId; sequence: number }> = []
+        for (const rowId of collection.rows) {
+            const placement = this.continuousMembershipPlacement(
+                draft,
+                scope,
                 rowId,
-                sequence: this.draftBirthSequence(draft, scope, rowId),
-            }))
-            .sort((left, right) =>
-                left.sequence === right.sequence
-                    ? this.row(left.rowId).order - this.row(right.rowId).order
-                    : left.sequence - right.sequence,
             )
+            placements.set(rowId, placement)
+            if (placement.kind === "birth") {
+                births.push({ rowId, sequence: placement.sequence })
+            }
+        }
+        const survivors = baseline.rows.filter(
+            rowId => placements.get(rowId)?.kind === "baseline",
+        )
+        births.sort((left, right) =>
+            left.sequence === right.sequence
+                ? this.row(left.rowId).order - this.row(right.rowId).order
+                : left.sequence - right.sequence,
+        )
         const nextRows = [...survivors, ...births.map(birth => birth.rowId)]
         const key = membershipKey(scope.id, collectionId)
         const previous = draft.collectionOutcomes.get(key)
@@ -1436,28 +1436,17 @@ export class ReferenceModel {
         return changed
     }
 
-    private draftBirthSequence(
+    private continuousMembershipPlacement(
         draft: Draft,
         targetScope: ScopeRecord,
         rowId: RowId,
-    ): number {
-        return this.continuousBirthSequence(
-            draft,
-            targetScope,
-            rowId,
-            "MISSING_DRAFT_BIRTH_SEQUENCE",
-        )
-    }
-
-    private continuousBirthSequence(
-        draft: Draft,
-        targetScope: ScopeRecord,
-        rowId: RowId,
-        missingCode: string,
-    ): number {
+    ): MembershipPlacement {
         const baselineScope = this.liveScope(draft.tree, targetScope.id)
         let previous = this.readRowCommitted(draft.tree, baselineScope, rowId)
-        let sequence: number | undefined
+        let placement: MembershipPlacement =
+            previous.kind === "present"
+                ? BASELINE_MEMBERSHIP_PLACEMENT
+                : ABSENT_MEMBERSHIP_PLACEMENT
         const prefix: Intent[] = []
 
         for (const intent of draft.intents) {
@@ -1470,17 +1459,14 @@ export class ReferenceModel {
             }
             const next = this.readRowDraft(draft, baselineScope, rowId, prefix)
             if (previous.kind === "absent" && next.kind === "present") {
-                sequence = intent.sequence
+                placement = { kind: "birth", sequence: intent.sequence }
             } else if (previous.kind === "present" && next.kind === "absent") {
-                sequence = undefined
+                placement = ABSENT_MEMBERSHIP_PLACEMENT
             }
             previous = next
         }
 
-        if (previous.kind === "absent" || sequence === undefined) {
-            throw new ModelFault(missingCode)
-        }
-        return sequence
+        return placement
     }
 
     private membership(
@@ -1854,5 +1840,11 @@ function unreachable(value: never, code: string): never {
 const ABSENT_LOCAL: RowLocal = Object.freeze({ kind: "absent" })
 const ABSENT_ROW: EffectiveRowOutcome = Object.freeze({ kind: "absent" })
 const ABSENT_OUTCOME: ReadOutcome = Object.freeze({ kind: "absent" })
+const BASELINE_MEMBERSHIP_PLACEMENT: MembershipPlacement = Object.freeze({
+    kind: "baseline",
+})
+const ABSENT_MEMBERSHIP_PLACEMENT: MembershipPlacement = Object.freeze({
+    kind: "absent",
+})
 const EMPTY_ROWS: readonly RowId[] = Object.freeze([])
 const DEFAULT_EQUALITY: EqualitySpec = Object.freeze({ kind: "object-is" })

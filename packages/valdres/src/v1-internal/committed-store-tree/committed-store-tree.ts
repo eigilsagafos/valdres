@@ -7,6 +7,7 @@ import { evaluateSelector } from "../selector-evaluator/evaluate"
 import { SelectorEvaluationSession } from "../selector-evaluator/types"
 import {
     CallbackCapabilityError,
+    COLLECTION_KERNEL,
     InvalidAtomComparatorResultError,
     InvalidSynchronousAtomValueError,
     InvalidTransactionCallbackResultError,
@@ -45,13 +46,17 @@ import {
     type AnyAtom,
     type AnyState,
     type AtomDefinition,
+    type CollectionCommitPlan,
+    type CollectionMutationKind,
     type DefinitionState,
+    type OptionalCollectionVTable,
     type RuntimeDomainRecords,
     type SynchronousResult,
 } from "./runtime-domain"
 import {
     ScratchSelectorHost,
     type ResolvedScratchState,
+    type ScratchSourceKind,
 } from "./scratch-selector-host"
 import {
     StoreScopeNode,
@@ -78,6 +83,7 @@ import type {
     CommittedStoreTree,
     CommittedStoreTreeAdapter,
     CommittedStoreTreeDomain,
+    CollectionRow,
     RootTransaction,
     Selector,
     SelectorOptions,
@@ -165,6 +171,190 @@ export interface InternalCommittedStoreTreeDomain
         instrumentation?: InternalStoreTreeInstrumentation,
         trace?: InternalStoreTreeTrace,
     ): CommittedStoreTree
+}
+
+/** @internal Stable identity shared by every facade over one runtime record. */
+export const getDefinitionDomainIdentity = (
+    domain: InternalCommittedStoreTreeDomain,
+): object => domain[definitionDomainRecords].ownerToken
+
+/** @internal Installs one optional collection implementation after its
+ * tree-shakeable factory has completed successfully. */
+export const ensureCollectionKernel = <Kernel extends OptionalCollectionVTable>(
+    domain: InternalCommittedStoreTreeDomain,
+    create: (records: RuntimeDomainRecords) => Kernel,
+): Kernel => {
+    const records = domain[definitionDomainRecords]
+    const current = records[COLLECTION_KERNEL]
+    if (current !== undefined) return current as Kernel
+    const created = create(records)
+    records[COLLECTION_KERNEL] = created
+    return created
+}
+
+/** @internal Read-only probe used by optional integration and focused tests. */
+export const getCollectionKernel = (
+    domain: InternalCommittedStoreTreeDomain,
+): OptionalCollectionVTable | undefined =>
+    domain[definitionDomainRecords][COLLECTION_KERNEL]
+
+/** Deep-internal bridge retained only until COL-006 exposes the reviewed
+ * public mutation overloads. It deliberately remains outside the root graph. */
+export interface InternalRowWriter {
+    set(row: CollectionRow<any, any>, value: unknown): void
+    update(
+        row: CollectionRow<any, any>,
+        update: (current: unknown) => unknown,
+    ): void
+    reset(row: CollectionRow<any, any>): void
+    delete(row: CollectionRow<any, any>): void
+    scope(target: string | CommittedStoreTree): InternalRowWriter
+}
+
+const resolveInternalRowWriterScope = (
+    records: RuntimeDomainRecords,
+    current: StoreScopeNode,
+    target: string | CommittedStoreTree,
+): StoreScopeNode => {
+    if (typeof target === "string") {
+        const child = current.namedChildren.get(target)
+        if (child === undefined) throw new ScopeNotFoundError()
+        if (child.status !== "live") throw new StoreDisposedError()
+        return child
+    }
+    const targetObject = target as unknown as object
+    const registeredStore = records.stores.get(targetObject)
+    if (registeredStore !== undefined) {
+        const scope = registeredStore as StoreScopeNode
+        if (scope.status !== "live") throw new StoreDisposedError()
+        if (!Object.is(scope.coordinator, current.coordinator)) {
+            throw new StoreTreeMismatchError()
+        }
+        return scope
+    }
+    const registeredCursor = records.transactionCursors.get(targetObject)
+    if (registeredCursor !== undefined) {
+        if (!(registeredCursor as TreeDraft).active) {
+            throw new TransactionClosedError()
+        }
+        throw new InvalidTransactionTargetError()
+    }
+    throw new InvalidTransactionTargetError()
+}
+
+const stageInternalCollectionRow = (
+    records: RuntimeDomainRecords,
+    draft: TreeDraft,
+    scope: StoreScopeNode,
+    operation: CollectionMutationKind,
+    row: CollectionRow<any, any>,
+    input?: unknown,
+): void => {
+    const node = row as unknown as AnyState
+    const session = new SelectorEvaluationSession<AnyState>()
+    const owner = classifyEntryOwner(records, node, session)
+    assertCursorOperationAllowed(records, draft.transaction, draft.active)
+    if (scope.status !== "live") throw new StoreDisposedError()
+    const kernel = owner === "local" ? collectionSource(records, node) : false
+    if (!kernel) {
+        throw new TypeError(
+            "Internal collection mutation requires a valid CollectionRow",
+        )
+    }
+    kernel.stage(draft, scope, operation, node, input, session)
+}
+
+const createInternalRowWriter = (
+    records: RuntimeDomainRecords,
+    draft: TreeDraft,
+    scope: StoreScopeNode,
+): InternalRowWriter =>
+    Object.freeze({
+        set: (row: CollectionRow<any, any>, value: unknown): void =>
+            stageInternalCollectionRow(
+                records,
+                draft,
+                scope,
+                "set",
+                row,
+                value,
+            ),
+        update: (
+            row: CollectionRow<any, any>,
+            update: (current: unknown) => unknown,
+        ): void =>
+            stageInternalCollectionRow(
+                records,
+                draft,
+                scope,
+                "update",
+                row,
+                update,
+            ),
+        reset: (row: CollectionRow<any, any>): void =>
+            stageInternalCollectionRow(records, draft, scope, "reset", row),
+        delete: (row: CollectionRow<any, any>): void =>
+            stageInternalCollectionRow(records, draft, scope, "delete", row),
+        scope: (target: string | CommittedStoreTree): InternalRowWriter => {
+            if (typeof target !== "string") {
+                classifyEntryOwner(
+                    records,
+                    target,
+                    new SelectorEvaluationSession<AnyState>(),
+                )
+            }
+            assertCursorOperationAllowed(
+                records,
+                draft.transaction,
+                draft.active,
+            )
+            return createInternalRowWriter(
+                records,
+                draft,
+                resolveInternalRowWriterScope(records, scope, target),
+            )
+        },
+    })
+
+export const runInternalCollectionTransaction = <Result>(
+    domain: InternalCommittedStoreTreeDomain,
+    store: CommittedStoreTree,
+    callback: (transaction: RootTransaction, rows: InternalRowWriter) => Result,
+): Result => {
+    const records = domain[definitionDomainRecords]
+    const session = new SelectorEvaluationSession<AnyState>()
+    const owner = classifyEntryOwner(records, store, session)
+    const scope =
+        owner === "local"
+            ? (records.stores.get(store as unknown as object) as
+                  | StoreScopeNode
+                  | undefined)
+            : undefined
+    if (scope === undefined) {
+        throw new TypeError(
+            "Internal collection transaction requires a valid Store",
+        )
+    }
+    return (scope.coordinator as CommittedStoreTreeHost).txn(
+        scope,
+        (transaction => {
+            if (typeof callback !== "function") {
+                throw new TypeError(
+                    "Internal collection transaction requires a callback",
+                )
+            }
+            const draft = records.transactionCursors.get(
+                transaction as unknown as object,
+            ) as TreeDraft | undefined
+            if (draft === undefined) {
+                throw new Error("Internal collection draft is missing")
+            }
+            return callback(
+                transaction,
+                createInternalRowWriter(records, draft, scope),
+            )
+        }) as TransactionCallback<Result>,
+    )
 }
 
 export type DefinitionCallbackPhase =
@@ -406,6 +596,25 @@ const fromSynchronousResult = (result: SynchronousResult): DraftAtomOutcome =>
     result.kind === "value"
         ? valueOutcome(result.value)
         : errorOutcome(result.error)
+
+const collectionSource = (
+    domain: RuntimeDomainRecords,
+    node: AnyState,
+): OptionalCollectionVTable | undefined =>
+    domain[COLLECTION_KERNEL]?.has(node)
+        ? domain[COLLECTION_KERNEL]
+        : undefined
+
+const readCollectionValue = (
+    kernel: OptionalCollectionVTable,
+    draft: TreeDraft,
+    scope: StoreScopeNode,
+    node: AnyState,
+): unknown => {
+    const outcome = kernel.read(draft, scope, node)
+    if (outcome.kind !== "value") throw outcome.error
+    return outcome.value
+}
 
 const sameAtomOutcome = (
     previous: DraftAtomOutcome,
@@ -701,7 +910,9 @@ class CommittedStoreTreeHost
         this.#assertScopeLive(scope)
         if (
             ownerStatus === "invalid" ||
-            (!this.#domain.atoms.has(node) && !this.#domain.selectors.has(node))
+            (!this.#domain.atoms.has(node) &&
+                !this.#domain.selectors.has(node) &&
+                !collectionSource(this.#domain, node))
         ) {
             throw new TypeError("StoreTree.sub requires a valid State")
         }
@@ -981,17 +1192,25 @@ class CommittedStoreTreeHost
             "adapter readHydrationSnapshot",
         )
         this.#assertScopeLive(scope)
-        if (
-            ownerStatus === "invalid" ||
-            (!this.#domain.atoms.has(node) && !this.#domain.selectors.has(node))
-        ) {
+        let coreKind: 0 | 1 | undefined
+        let collectionKernel: OptionalCollectionVTable | false | undefined
+        if (ownerStatus !== "invalid") {
+            if (this.#domain.atoms.has(node)) {
+                coreKind = 0
+            } else if (this.#domain.selectors.has(node)) {
+                coreKind = 1
+            } else {
+                collectionKernel = collectionSource(this.#domain, node)
+            }
+        }
+        if (coreKind === undefined && !collectionKernel) {
             throw new TypeError("readHydrationSnapshot requires a valid State")
         }
 
         const draft = this.#createDraft()
         let scratchHost: ScratchSelectorHost<AnyState> | undefined
         try {
-            if (this.#domain.atoms.has(node)) {
+            if (coreKind === 0) {
                 const outcome = this.#readDraftAtomOutcome(
                     draft,
                     scope,
@@ -1001,8 +1220,16 @@ class CommittedStoreTreeHost
                 if (outcome.kind !== "value") throw outcome.error
                 return outcome.value as Value
             }
+            if (coreKind === undefined) {
+                return readCollectionValue(
+                    collectionKernel as OptionalCollectionVTable,
+                    draft,
+                    scope,
+                    node,
+                ) as Value
+            }
 
-            scratchHost = this.#createHydrationSelectorHost(draft, scope)
+            scratchHost = this.#createScratchSelectorHost(draft, scope, true)
             return scratchHost.readSelector<Value>(node)
         } finally {
             scratchHost?.revoke()
@@ -1044,7 +1271,16 @@ class CommittedStoreTreeHost
             return outcome.value as Value
         }
         if (!this.#domain.selectors.has(node)) {
-            throw new TypeError("Transaction.get requires a readable State")
+            const collectionKernel = collectionSource(this.#domain, node)
+            if (!collectionKernel) {
+                throw new TypeError("Transaction.get requires a readable State")
+            }
+            return readCollectionValue(
+                collectionKernel,
+                draft,
+                scope,
+                node,
+            ) as Value
         }
         let scratchHost = draft.getScratchHost(scope)
         if (scratchHost === undefined) {
@@ -1173,62 +1409,34 @@ class CommittedStoreTreeHost
     #createScratchSelectorHost(
         draft: TreeDraft,
         scope: StoreScopeNode,
+        hydration = false,
     ): ScratchSelectorHost<AnyState> {
         this.recordCounter("scratchHostAllocations")
         return new ScratchSelectorHost<AnyState>(
             Object.freeze({
-                resolveState: (
+                resolve: (
                     node: AnyState,
                     session: SelectorEvaluationSession<AnyState>,
                 ) => this.#resolveScratchState(node, session),
-                readDraftAtomOutcome: (
-                    atom: AnyState,
+                read: (
+                    source: AnyState,
+                    kind: ScratchSourceKind,
                     session: SelectorEvaluationSession<AnyState>,
                 ) =>
-                    this.#readDraftAtomOutcome(
+                    this.#readDraftSourceOutcome(
                         draft,
                         scope,
-                        atom as AnyAtom,
+                        source,
+                        kind,
                         session,
                     ),
-                captureCommittedSelectorSuccess: (selector: AnyState) =>
-                    scope.captureCommittedSelectorSuccess(
-                        selector as AnySelector,
-                    ),
-                runSelectorActivity: <Result>(
-                    session: SelectorEvaluationSession<AnyState>,
-                    operation: () => Result,
-                ): Result =>
-                    runSelectorActivity(this.#domain, session, operation),
-            }),
-            draft.generation,
-            this.evaluate,
-        )
-    }
-
-    #createHydrationSelectorHost(
-        draft: TreeDraft,
-        scope: StoreScopeNode,
-    ): ScratchSelectorHost<AnyState> {
-        this.recordCounter("scratchHostAllocations")
-        return new ScratchSelectorHost<AnyState>(
-            Object.freeze({
-                resolveState: (
-                    node: AnyState,
-                    session: SelectorEvaluationSession<AnyState>,
-                ) => this.#resolveScratchState(node, session),
-                readDraftAtomOutcome: (
-                    atom: AnyState,
-                    session: SelectorEvaluationSession<AnyState>,
-                ) =>
-                    this.#readDraftAtomOutcome(
-                        draft,
-                        scope,
-                        atom as AnyAtom,
-                        session,
-                    ),
-                captureCommittedSelectorSuccess: () => undefined,
-                runSelectorActivity: <Result>(
+                baseline: hydration
+                    ? () => undefined
+                    : (selector: AnyState) =>
+                          scope.captureCommittedSelectorSuccess(
+                              selector as AnySelector,
+                          ),
+                run: <Result>(
                     session: SelectorEvaluationSession<AnyState>,
                     operation: () => Result,
                 ): Result =>
@@ -1250,10 +1458,13 @@ class CommittedStoreTreeHost
             return Object.freeze({ kind: "atom" })
         }
         const definition = this.#domain.selectors.get(node)
-        if (definition === undefined) {
-            throw new TypeError("Unknown scratch StoreTree State")
+        if (definition !== undefined) {
+            return Object.freeze({ kind: "selector", definition })
         }
-        return Object.freeze({ kind: "selector", definition })
+        if (collectionSource(this.#domain, node)) {
+            return Object.freeze({ kind: "ext" })
+        }
+        throw new TypeError("Unknown scratch StoreTree State")
     }
 
     #createChildScope(
@@ -1540,6 +1751,24 @@ class CommittedStoreTreeHost
             .outcome
     }
 
+    #readDraftSourceOutcome(
+        draft: TreeDraft,
+        scope: StoreScopeNode,
+        source: AnyState,
+        kind: ScratchSourceKind,
+        session: SelectorEvaluationSession<AnyState>,
+    ): DraftAtomOutcome {
+        if (kind === "atom") {
+            return this.#readDraftAtomOutcome(
+                draft,
+                scope,
+                source as AnyAtom,
+                session,
+            )
+        }
+        return this.#domain[COLLECTION_KERNEL]!.read(draft, scope, source)
+    }
+
     #readDraftAtomResolution(
         draft: TreeDraft,
         scope: StoreScopeNode,
@@ -1664,11 +1893,17 @@ class CommittedStoreTreeHost
     }
 
     #commitDraft(draft: TreeDraft): void {
-        if (!draft.hasIntents) return
+        let collectionPlan: CollectionCommitPlan | undefined
+        if (draft.hasRows) {
+            collectionPlan = this.#domain[COLLECTION_KERNEL]?.plan(this, draft)
+            if (collectionPlan === undefined) throw new Error()
+        }
+        if (!draft.hasIntents && collectionPlan === undefined) return
 
         const singleIntent = draft.singleIntent
         const singleScope = draft.singleIntentScope
         if (
+            collectionPlan === undefined &&
             singleIntent?.kind === "reset" &&
             singleScope !== undefined &&
             !singleIntent.publishDraftFallback &&
@@ -1682,7 +1917,7 @@ class CommittedStoreTreeHost
          * Commit is one ordered, user-code-free source settlement:
          *
          *     draft intents -> inert preflight -> publish fallbacks
-         *                   -> apply every owner -> rewire AtomViews
+         *                   -> apply every owner -> rewire every source route
          *                   -> memoized final outcomes -> one propagation
          *
          * The first two workset entries stay inline. Later entries lazily
@@ -1719,31 +1954,39 @@ class CommittedStoreTreeHost
                 remainingPlan.push(entry)
             })
         }
-        if (firstPlan === undefined) return
-
         this.#trace?.(1, draft, this.#domain.atoms)
 
         // Apply every fallback publication and owned source before propagation.
-        this.#publishPlanFallback(draft, firstPlan)
+        if (firstPlan !== undefined) {
+            this.#publishPlanFallback(draft, firstPlan)
+        }
         if (remainingPlan !== undefined) {
             for (const entry of remainingPlan) {
                 this.#publishPlanFallback(draft, entry)
             }
         }
 
-        let ownershipChanged = this.#applyPlanOwner(firstPlan)
+        let ownershipChanged =
+            firstPlan === undefined ? false : this.#applyPlanOwner(firstPlan)
         if (remainingPlan !== undefined) {
             for (const entry of remainingPlan) {
                 const entryOwnershipChanged = this.#applyPlanOwner(entry)
                 ownershipChanged ||= entryOwnershipChanged
             }
         }
+        if (collectionPlan !== undefined) {
+            const collectionOwnershipChanged = collectionPlan.commit(this, 0)
+            ownershipChanged ||= collectionOwnershipChanged
+        }
         // Rewire every materialized target only after every local source applies.
-        this.#rewirePlanAtomView(firstPlan)
+        if (firstPlan !== undefined) this.#rewirePlanAtomView(firstPlan)
         if (remainingPlan !== undefined) {
             for (const entry of remainingPlan) {
                 this.#rewirePlanAtomView(entry)
             }
+        }
+        if (collectionPlan !== undefined) {
+            collectionPlan.commit(this, 1)
         }
 
         this.#beginNotificationSettlement()
@@ -1796,6 +2039,22 @@ class CommittedStoreTreeHost
                             remainingChangedSources = []
                         }
                         remainingChangedSources.push(source)
+                    }
+                }
+            }
+            if (collectionPlan !== undefined) {
+                const sources = collectionPlan.commit(this, 2)
+                if (sources !== undefined) {
+                    for (const source of sources) {
+                        const current = source as AtomViewRecord
+                        if (firstChangedSource === undefined) {
+                            firstChangedSource = current
+                        } else {
+                            if (remainingChangedSources === undefined) {
+                                remainingChangedSources = []
+                            }
+                            remainingChangedSources.push(current)
+                        }
                     }
                 }
             }

@@ -14,24 +14,26 @@ type ScratchToken = Readonly<{ id: number }>
 
 export type ResolvedScratchState<Node> =
     | Readonly<{ kind: "atom" }>
+    | Readonly<{ kind: "ext" }>
     | Readonly<{
           kind: "selector"
           definition: SelectorDefinition<Node>
       }>
 
+export type ScratchSourceKind = "atom" | "ext"
+
 export interface ScratchSelectorBindings<Node> {
-    resolveState(
+    resolve(
         node: Node,
         session: SelectorEvaluationSession<Node>,
     ): ResolvedScratchState<Node>
-    readDraftAtomOutcome(
-        atom: Node,
+    read(
+        source: Node,
+        kind: ScratchSourceKind,
         session: SelectorEvaluationSession<Node>,
     ): DraftAtomOutcome
-    captureCommittedSelectorSuccess(
-        selector: Node,
-    ): Readonly<{ value: unknown }> | undefined
-    runSelectorActivity<Result>(
+    baseline(selector: Node): Readonly<{ value: unknown }> | undefined
+    run<Result>(
         session: SelectorEvaluationSession<Node>,
         operation: () => Result,
     ): Result
@@ -59,7 +61,10 @@ export class ScratchSelectorHost<Node extends object>
 {
     #bindings: ScratchSelectorBindings<Node> | undefined
     readonly #selectorRecords = new Map<Node, ScratchSelectorRecord<Node>>()
-    readonly #atomRecords = new Map<Node, ServedSelectorOutcome<ScratchToken>>()
+    readonly #sourceRecords = new Map<
+        Node,
+        ServedSelectorOutcome<ScratchToken>
+    >()
     readonly #committedBaselines = new Map<
         Node,
         typeof NO_COMMITTED_BASELINE | Readonly<{ value: unknown }>
@@ -92,12 +97,12 @@ export class ScratchSelectorHost<Node extends object>
         }
         this.#generation = generation
         this.#selectorRecords.clear()
-        this.#atomRecords.clear()
+        this.#sourceRecords.clear()
     }
 
     revoke(): void {
         this.#selectorRecords.clear()
-        this.#atomRecords.clear()
+        this.#sourceRecords.clear()
         this.#committedBaselines.clear()
         this.#bindings = undefined
     }
@@ -107,21 +112,21 @@ export class ScratchSelectorHost<Node extends object>
         session: SelectorEvaluationSession<Node>,
     ): ServedSelectorOutcome<ScratchToken> {
         const bindings = this.#activeBindings()
-        const resolved = bindings.resolveState(node, session)
-        if (resolved.kind === "atom") {
-            const current = this.#atomRecords.get(node)
+        const resolved = bindings.resolve(node, session)
+        if (resolved.kind !== "selector") {
+            const current = this.#sourceRecords.get(node)
             if (current !== undefined) return current
             const served = Object.freeze({
                 token: this.createOutcomeToken(),
-                outcome: bindings.readDraftAtomOutcome(node, session),
+                outcome: bindings.read(node, resolved.kind, session),
             })
-            this.#atomRecords.set(node, served)
+            this.#sourceRecords.set(node, served)
             return served
         }
 
         const current = this.#selectorRecords.get(node)
         if (current !== undefined) return current.served
-        const proposal = bindings.runSelectorActivity(session, () =>
+        const proposal = bindings.run(session, () =>
             this.#evaluate(resolved.definition, this, session),
         )
         if (proposal.outcome.kind === "control-error") {
@@ -162,8 +167,7 @@ export class ScratchSelectorHost<Node extends object>
         let baseline = this.#committedBaselines.get(node)
         if (baseline === undefined) {
             baseline =
-                this.#activeBindings().captureCommittedSelectorSuccess(node) ??
-                NO_COMMITTED_BASELINE
+                this.#activeBindings().baseline(node) ?? NO_COMMITTED_BASELINE
             this.#committedBaselines.set(node, baseline)
         }
         return baseline === NO_COMMITTED_BASELINE

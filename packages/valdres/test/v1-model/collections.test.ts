@@ -952,4 +952,207 @@ describe("v1 reference model collections", () => {
         })
         expect(rows(model, "root").rows).toEqual(["a", "b"])
     })
+
+    test("V1M-COLLECTION-013 reorders a committed row after a same-draft presence gap", () => {
+        const model = collectionModel()
+        for (const [row, label] of [
+            ["a", "A"],
+            ["b", "B"],
+        ] as const) {
+            ok(model, {
+                kind: "mutate",
+                tree: "tree",
+                scope: "root",
+                mutation: { kind: "set-row", row, value: value.string(label) },
+            })
+        }
+        const before = rows(model, "root")
+
+        model.clearEvents()
+        ok(model, {
+            kind: "transact",
+            tree: "tree",
+            entryScope: "root",
+            steps: [
+                {
+                    kind: "mutate",
+                    cursor: "entry",
+                    mutation: { kind: "delete-row", row: "a" },
+                },
+                {
+                    kind: "mutate",
+                    cursor: "entry",
+                    mutation: {
+                        kind: "set-row",
+                        row: "a",
+                        value: value.string("A"),
+                    },
+                },
+                {
+                    kind: "read",
+                    cursor: "entry",
+                    target: { kind: "collection", collection: "movies" },
+                    as: "reborn-order",
+                },
+            ],
+        })
+
+        expect(model.trace).toContainEqual({
+            kind: "read",
+            as: "reborn-order",
+            outcome: {
+                kind: "rows",
+                rows: ["b", "a"],
+                snapshot: "draft:3:1",
+            },
+        })
+        const after = rows(model, "root")
+        expect(after.rows).toEqual(["b", "a"])
+        expect(after.snapshot).not.toBe(before.snapshot)
+        expect(lastCommit(model).ownershipChanges).toEqual([])
+    })
+
+    test("V1M-COLLECTION-014 keeps a child shadow in its baseline slot", () => {
+        const model = collectionModel()
+        for (const [row, label] of [
+            ["a", "A"],
+            ["b", "B"],
+        ] as const) {
+            ok(model, {
+                kind: "mutate",
+                tree: "tree",
+                scope: "root",
+                mutation: { kind: "set-row", row, value: value.string(label) },
+            })
+        }
+        ok(model, {
+            kind: "create-scope",
+            tree: "tree",
+            parent: "root",
+            scope: "child",
+        })
+        ok(model, {
+            kind: "mutate",
+            tree: "tree",
+            scope: "child",
+            mutation: {
+                kind: "set-row",
+                row: "a",
+                value: value.string("child-A"),
+            },
+        })
+        const baseline = rows(model, "child")
+
+        model.clearEvents()
+        ok(model, {
+            kind: "transact",
+            tree: "tree",
+            entryScope: "root",
+            steps: [
+                {
+                    kind: "resolve-cursor",
+                    cursor: "child",
+                    target: { kind: "scope", tree: "tree", scope: "child" },
+                },
+                {
+                    kind: "mutate",
+                    cursor: "entry",
+                    mutation: { kind: "delete-row", row: "a" },
+                },
+                {
+                    kind: "read",
+                    cursor: "child",
+                    target: { kind: "collection", collection: "movies" },
+                    as: "shadowed-order",
+                },
+            ],
+        })
+
+        expect(model.trace).toContainEqual({
+            kind: "read",
+            as: "shadowed-order",
+            outcome: baseline,
+        })
+        expect(rows(model, "root").rows).toEqual(["b"])
+        expect(rows(model, "child")).toEqual(baseline)
+    })
+
+    test("V1M-COLLECTION-015 invalidates a draft memo and reuses the committed baseline on return", () => {
+        const model = collectionModel()
+        ok(model, {
+            kind: "mutate",
+            tree: "tree",
+            scope: "root",
+            mutation: { kind: "set-row", row: "a", value: value.string("A") },
+        })
+        const baseline = rows(model, "root")
+
+        model.clearEvents()
+        ok(model, {
+            kind: "transact",
+            tree: "tree",
+            entryScope: "root",
+            steps: [
+                {
+                    kind: "read",
+                    cursor: "entry",
+                    target: { kind: "collection", collection: "movies" },
+                    as: "baseline",
+                },
+                {
+                    kind: "mutate",
+                    cursor: "entry",
+                    mutation: { kind: "delete-row", row: "a" },
+                },
+                {
+                    kind: "read",
+                    cursor: "entry",
+                    target: { kind: "collection", collection: "movies" },
+                    as: "absent",
+                },
+                {
+                    kind: "mutate",
+                    cursor: "entry",
+                    mutation: {
+                        kind: "set-row",
+                        row: "a",
+                        value: value.string("A"),
+                    },
+                },
+                {
+                    kind: "read",
+                    cursor: "entry",
+                    target: { kind: "collection", collection: "movies" },
+                    as: "returned",
+                },
+            ],
+        })
+
+        expect(model.trace).toContainEqual({
+            kind: "read",
+            as: "baseline",
+            outcome: baseline,
+        })
+        const absent = model.trace.find(
+            event => event.kind === "read" && event.as === "absent",
+        )
+        expect(absent).toMatchObject({
+            kind: "read",
+            outcome: { kind: "rows", rows: [] },
+        })
+        expect(
+            absent?.kind === "read" && absent.outcome.kind === "rows"
+                ? absent.outcome.snapshot
+                : undefined,
+        ).not.toBe(baseline.snapshot)
+        expect(model.trace).toContainEqual({
+            kind: "read",
+            as: "returned",
+            outcome: baseline,
+        })
+        expect(rows(model, "root")).toEqual(baseline)
+        expect(
+            model.audit.filter(event => event.kind === "commit"),
+        ).toHaveLength(0)
+    })
 })

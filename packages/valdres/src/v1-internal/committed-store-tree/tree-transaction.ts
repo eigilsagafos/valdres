@@ -80,6 +80,8 @@ export class TreeDraft {
     #singleFallback: DraftAtomOutcome | undefined
     #fallbackMemo: Map<AnyAtom, DraftAtomOutcome> | undefined
     #scratchHosts: Map<StoreScopeNode, DraftScratchHost> | undefined
+    #rowRelease: ((draft: TreeDraft) => void) | undefined
+    #hasRowIntents = false
     generation = 0
     active = true
 
@@ -94,6 +96,33 @@ export class TreeDraft {
             this.#intentBucket !== undefined ||
             this.#intentScopes !== undefined
         )
+    }
+
+    get hasRows(): boolean {
+        return this.#hasRowIntents
+    }
+
+    /** Installs collection cleanup on the first optional lane allocation.
+     * Reinstalling the exact same kernel hook is idempotent. */
+    installRows(release: (draft: TreeDraft) => void): void {
+        const current = this.#rowRelease
+        if (current !== undefined && current !== release) {
+            throw new Error()
+        }
+        this.#rowRelease = release
+    }
+
+    /** Admits one row event at its pre-increment sequence and invalidates every
+     * scratch source through the ordinary contiguous generation path. */
+    markRow(expectedGeneration: number): void {
+        if (this.#rowRelease === undefined) {
+            throw new Error()
+        }
+        if (expectedGeneration !== this.generation) {
+            throw new Error()
+        }
+        this.#hasRowIntents = true
+        this.#advanceGeneration()
     }
 
     get singleIntentScope(): StoreScopeNode | undefined {
@@ -459,36 +488,45 @@ export class TreeDraft {
     }
 
     release(): void {
-        this.#intentBucket?.clear()
-        if (this.#intentScopes !== undefined) {
-            for (const intents of this.#intentScopes.values()) intents.clear()
-            this.#intentScopes.clear()
-        }
-        this.#baselineBucket?.clear()
-        if (this.#baselineScopes !== undefined) {
-            for (const baselines of this.#baselineScopes.values()) {
-                baselines.clear()
+        const releaseRows = this.#rowRelease
+        this.#rowRelease = undefined
+        this.#hasRowIntents = false
+        try {
+            this.#intentBucket?.clear()
+            if (this.#intentScopes !== undefined) {
+                for (const intents of this.#intentScopes.values()) {
+                    intents.clear()
+                }
+                this.#intentScopes.clear()
             }
-            this.#baselineScopes.clear()
+            this.#baselineBucket?.clear()
+            if (this.#baselineScopes !== undefined) {
+                for (const baselines of this.#baselineScopes.values()) {
+                    baselines.clear()
+                }
+                this.#baselineScopes.clear()
+            }
+            this.#fallbackMemo?.clear()
+            this.#singleIntentScope = undefined
+            this.#singleIntent = undefined
+            this.#secondIntent = undefined
+            this.#intentBucket = undefined
+            this.#intentScopes = undefined
+            this.#singleBaselineScope = undefined
+            this.#singleBaselineAtom = undefined
+            this.#singleBaseline = undefined
+            this.#secondBaselineAtom = undefined
+            this.#secondBaseline = undefined
+            this.#baselineBucket = undefined
+            this.#baselineScopes = undefined
+            this.#singleFallbackAtom = undefined
+            this.#singleFallback = undefined
+            this.#fallbackMemo = undefined
+            this.#scratchHosts?.clear()
+            this.#scratchHosts = undefined
+        } finally {
+            releaseRows?.(this)
         }
-        this.#fallbackMemo?.clear()
-        this.#singleIntentScope = undefined
-        this.#singleIntent = undefined
-        this.#secondIntent = undefined
-        this.#intentBucket = undefined
-        this.#intentScopes = undefined
-        this.#singleBaselineScope = undefined
-        this.#singleBaselineAtom = undefined
-        this.#singleBaseline = undefined
-        this.#secondBaselineAtom = undefined
-        this.#secondBaseline = undefined
-        this.#baselineBucket = undefined
-        this.#baselineScopes = undefined
-        this.#singleFallbackAtom = undefined
-        this.#singleFallback = undefined
-        this.#fallbackMemo = undefined
-        this.#scratchHosts?.clear()
-        this.#scratchHosts = undefined
     }
 
     #allocateMap<Key, Value>(): Map<Key, Value> {
