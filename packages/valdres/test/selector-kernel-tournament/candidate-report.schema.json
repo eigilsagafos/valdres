@@ -1,0 +1,1458 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://valdres.dev/schemas/selector-kernel-candidate-report.v1.json",
+    "title": "Valdres selector-kernel candidate report v1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "schemaVersion",
+        "tournamentId",
+        "runId",
+        "candidate",
+        "foundation",
+        "control",
+        "comparisonBaselines",
+        "provenance",
+        "gates",
+        "semanticCases",
+        "workloads",
+        "counters",
+        "resources",
+        "complexity",
+        "hostHooks",
+        "reviews",
+        "artifacts",
+        "selection"
+    ],
+    "$defs": {
+        "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "gitSha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+        },
+        "nonEmptyString": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+        },
+        "status": {
+            "enum": ["pass", "fail", "inconclusive", "not-run"]
+        },
+        "probabilityOrNull": {
+            "oneOf": [
+                {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "protectedNonRegressionDecision": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "nullRatio",
+                "alternative",
+                "pValue",
+                "qValue",
+                "status"
+            ],
+            "properties": {
+                "nullRatio": {
+                    "const": 1.1
+                },
+                "alternative": {
+                    "const": "less"
+                },
+                "pValue": {
+                    "$ref": "#/$defs/probabilityOrNull"
+                },
+                "qValue": {
+                    "$ref": "#/$defs/probabilityOrNull"
+                },
+                "status": {
+                    "$ref": "#/$defs/status"
+                }
+            }
+        },
+        "intendedWinDecision": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "nullRatio",
+                "alternative",
+                "pValue",
+                "qValue",
+                "status"
+            ],
+            "properties": {
+                "nullRatio": {
+                    "const": 1
+                },
+                "alternative": {
+                    "const": "less"
+                },
+                "pValue": {
+                    "$ref": "#/$defs/probabilityOrNull"
+                },
+                "qValue": {
+                    "$ref": "#/$defs/probabilityOrNull"
+                },
+                "status": {
+                    "$ref": "#/$defs/status"
+                }
+            }
+        },
+        "pre28ClaimDecision": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["estimateMaximum", "intervalUpperExclusive", "status"],
+            "properties": {
+                "estimateMaximum": {
+                    "const": 1
+                },
+                "intervalUpperExclusive": {
+                    "const": 1
+                },
+                "status": {
+                    "$ref": "#/$defs/status"
+                }
+            }
+        },
+        "gate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "evidence", "firstFailure"],
+            "properties": {
+                "status": {
+                    "$ref": "#/$defs/status"
+                },
+                "evidence": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    },
+                    "uniqueItems": true
+                },
+                "firstFailure": {
+                    "oneOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["id", "message"],
+                            "properties": {
+                                "id": {
+                                    "$ref": "#/$defs/nonEmptyString"
+                                },
+                                "message": {
+                                    "$ref": "#/$defs/nonEmptyString"
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "artifact": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "bytes"],
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+                },
+                "sha256": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "bytes": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "identity": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "gitSha",
+                "runtimeTree",
+                "tarballSha256",
+                "productionEntrySha256",
+                "distTreeSha256"
+            ],
+            "properties": {
+                "gitSha": {
+                    "$ref": "#/$defs/gitSha"
+                },
+                "runtimeTree": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                },
+                "tarballSha256": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "productionEntrySha256": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "distTreeSha256": {
+                    "$ref": "#/$defs/sha256"
+                }
+            }
+        },
+        "timingSummary": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "runtime",
+                "baselineId",
+                "protected",
+                "intended",
+                "status",
+                "pairs",
+                "baselineP50",
+                "candidateP50",
+                "baselineP95",
+                "candidateP95",
+                "p95Ratio",
+                "estimateRatio",
+                "interval90",
+                "decisions",
+                "flags",
+                "rawEvidence"
+            ],
+            "properties": {
+                "id": {
+                    "$ref": "#/$defs/nonEmptyString"
+                },
+                "runtime": {
+                    "enum": ["bun", "node", "chrome"]
+                },
+                "baselineId": {
+                    "enum": ["beta36-control", "pre28-claim"]
+                },
+                "protected": {
+                    "type": "boolean"
+                },
+                "intended": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "$ref": "#/$defs/status"
+                },
+                "pairs": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "baselineP50": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                },
+                "candidateP50": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                },
+                "baselineP95": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                },
+                "candidateP95": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                },
+                "p95Ratio": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                },
+                "estimateRatio": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                },
+                "interval90": {
+                    "type": "array",
+                    "prefixItems": [
+                        {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                        },
+                        {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                        }
+                    ],
+                    "items": false,
+                    "minItems": 2,
+                    "maxItems": 2
+                },
+                "decisions": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "protectedNonRegression",
+                        "intendedWin",
+                        "pre28Claim"
+                    ],
+                    "properties": {
+                        "protectedNonRegression": {
+                            "oneOf": [
+                                {
+                                    "$ref": "#/$defs/protectedNonRegressionDecision"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        },
+                        "intendedWin": {
+                            "oneOf": [
+                                {
+                                    "$ref": "#/$defs/intendedWinDecision"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        },
+                        "pre28Claim": {
+                            "oneOf": [
+                                {
+                                    "$ref": "#/$defs/pre28ClaimDecision"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "flags": {
+                    "type": "array",
+                    "items": {
+                        "enum": [
+                            "bimodal",
+                            "insufficient-pairs",
+                            "unpaired-observations",
+                            "batch-size-shift",
+                            "sub-microsecond",
+                            "tier-unsettled",
+                            "failed-process",
+                            "checksum-mismatch",
+                            "environment-invalidated"
+                        ]
+                    },
+                    "uniqueItems": true
+                },
+                "rawEvidence": {
+                    "$ref": "#/$defs/nonEmptyString"
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "type": "object",
+                        "required": ["baselineId"],
+                        "properties": {
+                            "baselineId": {
+                                "const": "pre28-claim"
+                            }
+                        }
+                    },
+                    "then": {
+                        "type": "object",
+                        "properties": {
+                            "runtime": {
+                                "const": "chrome"
+                            },
+                            "protected": {
+                                "const": false
+                            },
+                            "intended": {
+                                "const": false
+                            },
+                            "decisions": {
+                                "type": "object",
+                                "properties": {
+                                    "protectedNonRegression": {
+                                        "type": "null"
+                                    },
+                                    "intendedWin": {
+                                        "type": "null"
+                                    },
+                                    "pre28Claim": {
+                                        "not": {
+                                            "type": "null"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "else": {
+                        "type": "object",
+                        "properties": {
+                            "decisions": {
+                                "type": "object",
+                                "properties": {
+                                    "pre28Claim": {
+                                        "type": "null"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "type": "object",
+                        "required": ["protected"],
+                        "properties": {
+                            "protected": {
+                                "const": false
+                            }
+                        }
+                    },
+                    "then": {
+                        "type": "object",
+                        "properties": {
+                            "decisions": {
+                                "type": "object",
+                                "properties": {
+                                    "protectedNonRegression": {
+                                        "type": "null"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "type": "object",
+                        "required": ["intended"],
+                        "properties": {
+                            "intended": {
+                                "const": false
+                            }
+                        }
+                    },
+                    "then": {
+                        "type": "object",
+                        "properties": {
+                            "decisions": {
+                                "type": "object",
+                                "properties": {
+                                    "intendedWin": {
+                                        "type": "null"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "commonCounterSet": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "selectorBodyEntries",
+                "suppliedGets",
+                "serveCalls",
+                "proposalsReturned",
+                "proposalsInstalled",
+                "dependencyEdgesAdded",
+                "dependencyEdgesRemoved",
+                "notifications",
+                "subscriberCallbacks",
+                "publicOperations",
+                "checksum",
+                "retainedHeapBytes"
+            ],
+            "properties": {
+                "selectorBodyEntries": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "suppliedGets": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "serveCalls": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "proposalsReturned": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "proposalsInstalled": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "dependencyEdgesAdded": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "dependencyEdgesRemoved": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "notifications": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "subscriberCallbacks": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "publicOperations": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "checksum": {
+                    "$ref": "#/$defs/nonEmptyString"
+                },
+                "retainedHeapBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "counterSummary": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "runtime",
+                "common",
+                "candidateNamespace",
+                "candidateSpecific",
+                "evidence"
+            ],
+            "properties": {
+                "id": {
+                    "$ref": "#/$defs/nonEmptyString"
+                },
+                "runtime": {
+                    "enum": ["bun", "node", "chrome"]
+                },
+                "common": {
+                    "$ref": "#/$defs/commonCounterSet"
+                },
+                "candidateNamespace": {
+                    "enum": ["incumbent", "reactive", "dynamicTopo"]
+                },
+                "candidateSpecific": {
+                    "type": "object",
+                    "propertyNames": {
+                        "not": {
+                            "const": "visits"
+                        }
+                    },
+                    "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "evidence": {
+                    "$ref": "#/$defs/nonEmptyString"
+                }
+            }
+        },
+        "memorySummary": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "runtime",
+                "status",
+                "pairs",
+                "unitCount",
+                "controlMedianRetainedBytesPerUnit",
+                "candidateMedianRetainedBytesPerUnit",
+                "retainedRatio",
+                "controlMedianReleasedResidualBytes",
+                "candidateMedianReleasedResidualBytes",
+                "retainedBytesPerUnitCeiling",
+                "releasedResidualBytesCeiling",
+                "rawEvidence"
+            ],
+            "properties": {
+                "id": {
+                    "$ref": "#/$defs/nonEmptyString"
+                },
+                "runtime": {
+                    "enum": ["bun", "node"]
+                },
+                "status": {
+                    "$ref": "#/$defs/status"
+                },
+                "pairs": {
+                    "const": 5
+                },
+                "unitCount": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "controlMedianRetainedBytesPerUnit": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "candidateMedianRetainedBytesPerUnit": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "retainedRatio": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "controlMedianReleasedResidualBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "candidateMedianReleasedResidualBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "retainedBytesPerUnitCeiling": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "releasedResidualBytesCeiling": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "rawEvidence": {
+                    "$ref": "#/$defs/nonEmptyString"
+                }
+            }
+        },
+        "sizeSummary": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "unit",
+                "status",
+                "controlBytes",
+                "candidateBytes",
+                "ratio",
+                "budgetRatio",
+                "rawEvidence"
+            ],
+            "properties": {
+                "id": {
+                    "$ref": "#/$defs/nonEmptyString"
+                },
+                "unit": {
+                    "enum": ["raw", "gzip"]
+                },
+                "status": {
+                    "$ref": "#/$defs/status"
+                },
+                "controlBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "candidateBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "ratio": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "budgetRatio": {
+                    "const": 1.02
+                },
+                "rawEvidence": {
+                    "$ref": "#/$defs/nonEmptyString"
+                }
+            }
+        }
+    },
+    "properties": {
+        "schemaVersion": {
+            "const": 1
+        },
+        "tournamentId": {
+            "const": "valdres-selector-kernel-tournament-v1"
+        },
+        "runId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+        },
+        "candidate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "revision",
+                "stage",
+                "branch",
+                "intendedWorkloads",
+                "candidatePlanSha256",
+                "frozenDiffSha256"
+            ],
+            "properties": {
+                "id": {
+                    "enum": [
+                        "incumbent-lite",
+                        "reactive-currentness",
+                        "dynamic-topological"
+                    ]
+                },
+                "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "stage": {
+                    "enum": ["C", "A", "shiftx", "integration"]
+                },
+                "branch": {
+                    "$ref": "#/$defs/nonEmptyString"
+                },
+                "intendedWorkloads": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "items": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    },
+                    "uniqueItems": true
+                },
+                "candidatePlanSha256": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "frozenDiffSha256": {
+                    "$ref": "#/$defs/sha256"
+                }
+            }
+        },
+        "foundation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "gitSha",
+                "specGitSha",
+                "specSha256",
+                "manifestSha256",
+                "reportSchemaSha256",
+                "protectedPathsSha256"
+            ],
+            "properties": {
+                "gitSha": {
+                    "$ref": "#/$defs/gitSha"
+                },
+                "specGitSha": {
+                    "$ref": "#/$defs/gitSha"
+                },
+                "specSha256": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "manifestSha256": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "reportSchemaSha256": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "protectedPathsSha256": {
+                    "$ref": "#/$defs/sha256"
+                }
+            }
+        },
+        "control": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "gitSha",
+                "runtimeTree",
+                "tarballSha256",
+                "productionEntrySha256",
+                "distTreeSha256",
+                "packageVersion",
+                "tag"
+            ],
+            "properties": {
+                "gitSha": {
+                    "const": "1c03f126ba714d0765c3386e613f4c892b89829b"
+                },
+                "runtimeTree": {
+                    "const": "35a20a12ff1087140b08622f9057c857900d17e5"
+                },
+                "tarballSha256": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "productionEntrySha256": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "distTreeSha256": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "packageVersion": {
+                    "const": "1.0.0-beta.36"
+                },
+                "tag": {
+                    "const": "valdres@1.0.0-beta.36"
+                }
+            }
+        },
+        "comparisonBaselines": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["pre28Claim"],
+            "properties": {
+                "pre28Claim": {
+                    "oneOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "package",
+                                "packageVersion",
+                                "packageSpec",
+                                "registryIntegrity",
+                                "registryShasum",
+                                "registryTarballSha256",
+                                "registryGitHead",
+                                "tarballSha256",
+                                "productionEntrySha256",
+                                "distTreeSha256"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "const": "pre28-claim"
+                                },
+                                "package": {
+                                    "const": "valdres"
+                                },
+                                "packageVersion": {
+                                    "const": "0.2.0-pre.28"
+                                },
+                                "packageSpec": {
+                                    "const": "valdres@0.2.0-pre.28"
+                                },
+                                "registryIntegrity": {
+                                    "const": "sha512-hk8T44kL51xalj54HlizywZP4KnZa+u1mtkv8b5kHf4dh9sKBhyawxfHBac1o0S+MNBWuyEHDO+41CFeXQfyKw=="
+                                },
+                                "registryShasum": {
+                                    "const": "accd3f97eafab11ebb939547cbefd3f6c70c7fdf"
+                                },
+                                "registryTarballSha256": {
+                                    "const": "f57a69596dc0c6d767b289c1f50cf1743f224caf52cf0fd5c5b7d7d6e5faf469"
+                                },
+                                "registryGitHead": {
+                                    "const": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+                                },
+                                "tarballSha256": {
+                                    "const": "f57a69596dc0c6d767b289c1f50cf1743f224caf52cf0fd5c5b7d7d6e5faf469"
+                                },
+                                "productionEntrySha256": {
+                                    "$ref": "#/$defs/sha256"
+                                },
+                                "distTreeSha256": {
+                                    "$ref": "#/$defs/sha256"
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "status",
+                "candidateIdentity",
+                "cleanWorktree",
+                "build",
+                "runner",
+                "inputs",
+                "startedAt",
+                "endedAt",
+                "evidence"
+            ],
+            "properties": {
+                "status": {
+                    "$ref": "#/$defs/status"
+                },
+                "candidateIdentity": {
+                    "$ref": "#/$defs/identity"
+                },
+                "cleanWorktree": {
+                    "const": true
+                },
+                "build": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "command",
+                        "bundler",
+                        "minifier",
+                        "flags",
+                        "exportConditions",
+                        "packageManifestSha256",
+                        "lockfileSha256"
+                    ],
+                    "properties": {
+                        "command": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "bundler": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "minifier": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "flags": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/nonEmptyString"
+                            },
+                            "uniqueItems": true
+                        },
+                        "exportConditions": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/nonEmptyString"
+                            },
+                            "uniqueItems": true
+                        },
+                        "packageManifestSha256": {
+                            "$ref": "#/$defs/sha256"
+                        },
+                        "lockfileSha256": {
+                            "$ref": "#/$defs/sha256"
+                        }
+                    }
+                },
+                "runner": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "platform",
+                        "architecture",
+                        "hardwareModel",
+                        "cpuModel",
+                        "logicalCores",
+                        "memoryBytes",
+                        "osVersion",
+                        "node",
+                        "v8",
+                        "bun",
+                        "javascriptCore",
+                        "browser",
+                        "powerSource",
+                        "thermalState"
+                    ],
+                    "properties": {
+                        "platform": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "architecture": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "hardwareModel": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "cpuModel": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "logicalCores": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "memoryBytes": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "osVersion": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "node": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "v8": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "bun": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "javascriptCore": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "browser": {
+                            "oneOf": [
+                                {
+                                    "$ref": "#/$defs/nonEmptyString"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        },
+                        "powerSource": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        },
+                        "thermalState": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        }
+                    }
+                },
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "runnerSha256",
+                        "statisticsSha256",
+                        "fixtureSetSha256",
+                        "workloadSetSha256",
+                        "expectedTraceSetSha256",
+                        "adapterSha256",
+                        "timedArtifactSha256",
+                        "counterArtifactSha256",
+                        "counterArtifactWasTimed"
+                    ],
+                    "properties": {
+                        "runnerSha256": {
+                            "$ref": "#/$defs/sha256"
+                        },
+                        "statisticsSha256": {
+                            "$ref": "#/$defs/sha256"
+                        },
+                        "fixtureSetSha256": {
+                            "$ref": "#/$defs/sha256"
+                        },
+                        "workloadSetSha256": {
+                            "$ref": "#/$defs/sha256"
+                        },
+                        "expectedTraceSetSha256": {
+                            "$ref": "#/$defs/sha256"
+                        },
+                        "adapterSha256": {
+                            "$ref": "#/$defs/sha256"
+                        },
+                        "timedArtifactSha256": {
+                            "$ref": "#/$defs/sha256"
+                        },
+                        "counterArtifactSha256": {
+                            "$ref": "#/$defs/sha256"
+                        },
+                        "counterArtifactWasTimed": {
+                            "const": false
+                        }
+                    }
+                },
+                "startedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "endedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "evidence": {
+                    "$ref": "#/$defs/nonEmptyString"
+                }
+            }
+        },
+        "gates": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "provenance",
+                "contractC",
+                "contractA",
+                "familyCompatibility",
+                "performance",
+                "p95",
+                "memory",
+                "size",
+                "shiftx"
+            ],
+            "properties": {
+                "provenance": {
+                    "$ref": "#/$defs/gate"
+                },
+                "contractC": {
+                    "$ref": "#/$defs/gate"
+                },
+                "contractA": {
+                    "$ref": "#/$defs/gate"
+                },
+                "familyCompatibility": {
+                    "$ref": "#/$defs/gate"
+                },
+                "performance": {
+                    "$ref": "#/$defs/gate"
+                },
+                "p95": {
+                    "$ref": "#/$defs/gate"
+                },
+                "memory": {
+                    "$ref": "#/$defs/gate"
+                },
+                "size": {
+                    "$ref": "#/$defs/gate"
+                },
+                "shiftx": {
+                    "$ref": "#/$defs/gate"
+                }
+            }
+        },
+        "semanticCases": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "runtime", "status", "evidence"],
+                "properties": {
+                    "id": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    },
+                    "runtime": {
+                        "enum": ["bun", "node"]
+                    },
+                    "status": {
+                        "$ref": "#/$defs/status"
+                    },
+                    "evidence": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    }
+                }
+            }
+        },
+        "workloads": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/timingSummary"
+            }
+        },
+        "counters": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["evidence", "rows"],
+            "properties": {
+                "evidence": {
+                    "$ref": "#/$defs/nonEmptyString"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/counterSummary"
+                    }
+                }
+            }
+        },
+        "resources": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["memoryEvidence", "sizeEvidence", "memory", "size"],
+            "properties": {
+                "memoryEvidence": {
+                    "$ref": "#/$defs/nonEmptyString"
+                },
+                "sizeEvidence": {
+                    "$ref": "#/$defs/nonEmptyString"
+                },
+                "memory": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/memorySummary"
+                    }
+                },
+                "size": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/sizeSummary"
+                    }
+                }
+            }
+        },
+        "complexity": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "productionLinesAdded",
+                "productionLinesRemoved",
+                "persistentStateFields",
+                "algorithmicConstants",
+                "candidateTests",
+                "evidence"
+            ],
+            "properties": {
+                "productionLinesAdded": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "productionLinesRemoved": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "persistentStateFields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    }
+                },
+                "algorithmicConstants": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["name", "value", "rationale"],
+                        "properties": {
+                            "name": {
+                                "$ref": "#/$defs/nonEmptyString"
+                            },
+                            "value": {},
+                            "rationale": {
+                                "$ref": "#/$defs/nonEmptyString"
+                            }
+                        }
+                    }
+                },
+                "candidateTests": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "evidence": {
+                    "$ref": "#/$defs/nonEmptyString"
+                }
+            }
+        },
+        "hostHooks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "name",
+                    "owner",
+                    "phase",
+                    "lifetime",
+                    "effects",
+                    "timedPathFrequency",
+                    "whyRequired"
+                ],
+                "properties": {
+                    "name": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    },
+                    "owner": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    },
+                    "phase": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    },
+                    "lifetime": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    },
+                    "effects": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "$ref": "#/$defs/nonEmptyString"
+                        }
+                    },
+                    "timedPathFrequency": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    },
+                    "whyRequired": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    }
+                }
+            }
+        },
+        "reviews": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["codex", "otherVendor", "dispositions"],
+            "properties": {
+                "codex": {
+                    "$ref": "#/$defs/artifact"
+                },
+                "otherVendor": {
+                    "$ref": "#/$defs/artifact"
+                },
+                "dispositions": {
+                    "$ref": "#/$defs/artifact"
+                }
+            }
+        },
+        "artifacts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "$ref": "#/$defs/artifact"
+            }
+        },
+        "selection": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "machineEligible",
+                "machineVerdict",
+                "reasons",
+                "humanDecision"
+            ],
+            "properties": {
+                "machineEligible": {
+                    "type": "boolean"
+                },
+                "machineVerdict": {
+                    "enum": [
+                        "eligible",
+                        "ineligible",
+                        "inconclusive",
+                        "not-complete"
+                    ]
+                },
+                "reasons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/nonEmptyString"
+                    }
+                },
+                "humanDecision": {
+                    "oneOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "decision",
+                                "decidedBy",
+                                "decidedAt",
+                                "evidence"
+                            ],
+                            "properties": {
+                                "decision": {
+                                    "enum": [
+                                        "promote",
+                                        "reject",
+                                        "hold",
+                                        "no-winner"
+                                    ]
+                                },
+                                "decidedBy": {
+                                    "$ref": "#/$defs/nonEmptyString"
+                                },
+                                "decidedAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "evidence": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "$ref": "#/$defs/nonEmptyString"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    },
+    "allOf": [
+        {
+            "if": {
+                "type": "object",
+                "required": ["candidate"],
+                "properties": {
+                    "candidate": {
+                        "type": "object",
+                        "required": ["stage"],
+                        "properties": {
+                            "stage": {
+                                "enum": ["A", "shiftx", "integration"]
+                            }
+                        }
+                    }
+                }
+            },
+            "then": {
+                "type": "object",
+                "properties": {
+                    "resources": {
+                        "type": "object",
+                        "properties": {
+                            "memory": {
+                                "type": "array",
+                                "minItems": 16,
+                                "maxItems": 16
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "type": "object",
+                "required": ["workloads"],
+                "properties": {
+                    "workloads": {
+                        "type": "array",
+                        "contains": {
+                            "type": "object",
+                            "required": ["baselineId"],
+                            "properties": {
+                                "baselineId": {
+                                    "const": "pre28-claim"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "then": {
+                "type": "object",
+                "properties": {
+                    "candidate": {
+                        "type": "object",
+                        "properties": {
+                            "stage": {
+                                "enum": ["shiftx", "integration"]
+                            }
+                        }
+                    },
+                    "comparisonBaselines": {
+                        "type": "object",
+                        "properties": {
+                            "pre28Claim": {
+                                "not": {
+                                    "type": "null"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

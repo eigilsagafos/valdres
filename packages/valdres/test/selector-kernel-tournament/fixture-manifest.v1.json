@@ -1,0 +1,814 @@
+{
+    "schemaVersion": 1,
+    "id": "valdres-selector-kernel-tournament-v1",
+    "spec": {
+        "path": "docs/designs/selector-kernel-tournament.md",
+        "sha256": "436707cbef26e35f58f32f203b2c3b5151bec3e39a2a1d7141e27d88a69d5b5d"
+    },
+    "control": {
+        "package": "valdres",
+        "packageVersion": "1.0.0-beta.36",
+        "tag": "valdres@1.0.0-beta.36",
+        "gitSha": "1c03f126ba714d0765c3386e613f4c892b89829b",
+        "runtimeTree": "35a20a12ff1087140b08622f9057c857900d17e5"
+    },
+    "historicalReferences": [
+        {
+            "id": "beta35-historical",
+            "role": "diagnostic-only",
+            "packageVersion": "1.0.0-beta.35",
+            "tag": "valdres@1.0.0-beta.35",
+            "gitSha": "1d565045859e0787a164ac491e97d1069ad687ec",
+            "runtimeTree": "5426824b987a3ef9ee5b6f3069dae4d156e9e1e9"
+        },
+        {
+            "id": "pre28-claim",
+            "role": "external-claim-only",
+            "packageVersion": "0.2.0-pre.28",
+            "packageSpec": "valdres@0.2.0-pre.28",
+            "registryIntegrity": "sha512-hk8T44kL51xalj54HlizywZP4KnZa+u1mtkv8b5kHf4dh9sKBhyawxfHBac1o0S+MNBWuyEHDO+41CFeXQfyKw==",
+            "registryShasum": "accd3f97eafab11ebb939547cbefd3f6c70c7fdf",
+            "registryTarballSha256": "f57a69596dc0c6d767b289c1f50cf1743f224caf52cf0fd5c5b7d7d6e5faf469",
+            "registryGitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+        }
+    ],
+    "productLanes": {
+        "family": {
+            "status": "merged",
+            "mergeCommit": "f61e6199f0199c192b3b3701e81c8a11d63ef38b",
+            "shippingRelease": "valdres@1.0.0-beta.36",
+            "tournamentRole": "frozen-compatibility-only",
+            "canSatisfyIntendedWin": false,
+            "candidateMayEdit": false,
+            "protectedPaths": [
+                "packages/valdres/src/v1-internal/family.ts",
+                "packages/valdres/src/family.mdx",
+                "packages/valdres/test/v1-public-candidate/family.test.ts",
+                "packages/valdres/test/v1-public-candidate/family-cache.test.ts",
+                "packages/valdres/test/v1-public-candidate/family-lifecycle.test.ts",
+                "packages/valdres/test/v1-public-candidate/family-work.test.ts"
+            ]
+        }
+    },
+    "frozenInputs": [
+        {
+            "path": "packages/valdres/test/performance/core-load/fixture.v1.json",
+            "sha256": "bc0e260b35d3deef4dbda8324d35e8eb409b7dd8625f2520ccda2c81aafb7c7a"
+        },
+        {
+            "path": "packages/valdres/test/performance/core-load/initial-view-core.v1.json",
+            "sha256": "7b6a1033baa3aa8bd54b586b71cb201506d167c4d34fc393f39c552c9b3c4cff"
+        },
+        {
+            "path": "packages/valdres/test/v1-model/selector-oracle.ts",
+            "sha256": "3dc1b50104acdfc7af3f915ad625f2e1ff101a3d9e5c37d01f9f8f2fac549412"
+        },
+        {
+            "path": "packages/valdres/test/v1-model/selector-oracle.test.ts",
+            "sha256": "f53e8da293a70ce2b132ff3d0eb5bc6e25871c22cce165ffb4ce365d9d39fd14"
+        },
+        {
+            "path": "scripts/lib/paired-decision.ts",
+            "sha256": "f0b85c7ef324c3c6e7a07c26567832ec547e429c44b0e6ee55afea741024eaa8"
+        },
+        {
+            "path": "scripts/PAIRED_DECISION_MODEL.md",
+            "sha256": "1b3de4455d458e1887c9950eee238f10c54bb22c37d74305ea8c035265ec5994"
+        },
+        {
+            "path": "packages/valdres/test/performance/architecture.memory.ts",
+            "sha256": "5c366ac5bd9f5d1b5bf89714f08f2036b0e2262436599daf4a931c0712889faf"
+        },
+        {
+            "path": "scripts/size-baseline.json",
+            "sha256": "c825cb6841a2e42da65161eb4356850447d773fda8613891e2898b3c972f4d9e"
+        },
+        {
+            "path": "scripts/check-package-size.ts",
+            "sha256": "15fa4a0757b0fc46323aeb062590dd0b14a55cda67e8e3b268d7b952cb51bf82"
+        },
+        {
+            "path": "packages/valdres/src/v1-internal/family.ts",
+            "sha256": "88a8157c675458235c295008455ba737cb6eaf9473b31264d58fab3696e68926"
+        },
+        {
+            "path": "packages/valdres/test/v1-public-candidate/family.test.ts",
+            "sha256": "5ec718db354c96ee12b24026d7dc2a1885629772ddd26c649a753460724acca0"
+        },
+        {
+            "path": "packages/valdres/test/v1-public-candidate/family-cache.test.ts",
+            "sha256": "21dfdad81950c163b4b5e4d43fb12748cebf2e5f5c68789d13a12b19beb1c421"
+        },
+        {
+            "path": "packages/valdres/test/v1-public-candidate/family-lifecycle.test.ts",
+            "sha256": "f42538c2b081ad3d6dcb97282be7877648a108361313ca42e1d00dd0bedd02d4"
+        },
+        {
+            "path": "packages/valdres/test/v1-public-candidate/family-work.test.ts",
+            "sha256": "fd95dd98b78dd2dcc3066f88adb2766eb45f28a947bd270e61ba05115e5d03e3"
+        }
+    ],
+    "implementations": [
+        {
+            "id": "beta36-control",
+            "kind": "control",
+            "branch": null
+        },
+        {
+            "id": "incumbent-lite",
+            "kind": "candidate",
+            "branch": "spike-selector-kernel-incumbent-lite"
+        },
+        {
+            "id": "reactive-currentness",
+            "kind": "candidate",
+            "branch": "spike-selector-kernel-reactive-currentness"
+        },
+        {
+            "id": "dynamic-topological",
+            "kind": "candidate",
+            "branch": "spike-selector-kernel-dynamic-topological"
+        }
+    ],
+    "stages": {
+        "C": {
+            "purpose": "exploratory-admission",
+            "semanticRuntimes": ["bun", "node"],
+            "timingPairs": 8,
+            "timingOrder": [
+                ["control", "candidate"],
+                ["candidate", "control"]
+            ],
+            "intendedLaneMinimum": 1,
+            "intendedLaneMaximum": 3,
+            "intendedEstimateMaximum": 0.85,
+            "intendedIntervalLevel": 0.9,
+            "intendedIntervalUpperExclusive": 1,
+            "ordinaryEstimateMaximum": 1.2,
+            "inconclusiveAdvances": false
+        },
+        "A": {
+            "purpose": "observable-qualification",
+            "semanticRuntimes": ["bun", "node"],
+            "syntheticTimingPairs": 24,
+            "coreLoadTimingPairs": 50,
+            "timingOrder": [
+                ["control", "candidate"],
+                ["candidate", "control"]
+            ],
+            "locationEstimator": "hodges-lehmann-log-ratio",
+            "standardError": "winsorized-yuen-with-resolution-floor",
+            "readableIntervalLevel": 0.9,
+            "multipleComparisonAdjustment": "benjamini-hochberg",
+            "falseDiscoveryRate": 0.05,
+            "protectedRatioBudget": 1.1,
+            "intendedEstimateMaximum": 0.85,
+            "intendedNullRatio": 1,
+            "p95RatioMaximum": 1.2,
+            "requiredCompatibilityGates": ["family"],
+            "inconclusiveAdvances": false
+        },
+        "memory": {
+            "pairs": 5,
+            "retainedRatioMaximum": 1.1,
+            "requireExistingAbsoluteCeilings": true,
+            "requireThreeFullCollections": true
+        },
+        "size": {
+            "baselineFile": "scripts/size-baseline.json",
+            "measurementScript": "scripts/check-package-size.ts",
+            "ratioMaximum": 1.02,
+            "requireEveryExistingMetric": true,
+            "controlRootSharedGzipBytes": 17349,
+            "controlPackedGzipBytes": 76981
+        },
+        "shiftx": {
+            "qualificationBaselineId": "beta36-control",
+            "claimBaselineId": "pre28-claim",
+            "initialPairs": 8,
+            "additionalPairs": 4,
+            "maximumPairs": 20,
+            "protectedRatioBudget": 1.1,
+            "p95RatioMaximum": 1.2,
+            "claimEstimateMaximum": 1,
+            "claimIntervalUpperExclusive": 1
+        }
+    },
+    "semanticCases": [
+        {
+            "id": "C-GRAPH-001",
+            "name": "exhaustive labeled DAG edge insertion",
+            "requiredAt": ["C", "A"],
+            "oracle": "independent-reachability",
+            "parameters": {
+                "minimumNodes": 1,
+                "maximumNodes": 5,
+                "includeSelfEdges": true,
+                "tryEveryNextEdge": true
+            }
+        },
+        {
+            "id": "C-CYCLE-001",
+            "name": "direct active recursion",
+            "requiredAt": ["C", "A"],
+            "oracle": "selector-oracle"
+        },
+        {
+            "id": "C-CYCLE-002",
+            "name": "indirect active recursion",
+            "requiredAt": ["C", "A"],
+            "oracle": "selector-oracle"
+        },
+        {
+            "id": "C-CYCLE-003",
+            "name": "cached dynamic reversal",
+            "requiredAt": ["C", "A"],
+            "oracle": "selector-oracle"
+        },
+        {
+            "id": "C-CYCLE-004",
+            "name": "cached multi-hop dynamic cycle",
+            "requiredAt": ["C", "A"],
+            "oracle": "selector-oracle"
+        },
+        {
+            "id": "C-CYCLE-005",
+            "name": "caught cycle remains sticky and blocks later get",
+            "requiredAt": ["C", "A"],
+            "oracle": "explicit-trace"
+        },
+        {
+            "id": "C-STORE-001",
+            "name": "source commit remains final after derived failure",
+            "requiredAt": ["C", "A"],
+            "oracle": "explicit-trace"
+        },
+        {
+            "id": "C-TXN-001",
+            "name": "scratch transaction abort publishes nothing",
+            "requiredAt": ["C", "A"],
+            "oracle": "explicit-trace"
+        },
+        {
+            "id": "C-SUB-001",
+            "name": "synchronous single final notification",
+            "requiredAt": ["C", "A"],
+            "oracle": "explicit-trace"
+        },
+        {
+            "id": "C-SCOPE-001",
+            "name": "same selector identity remains host-local",
+            "requiredAt": ["C", "A"],
+            "oracle": "explicit-trace"
+        },
+        {
+            "id": "A-GRAPH-001",
+            "name": "causally closing edge owns blame and is excluded",
+            "requiredAt": ["A"],
+            "oracle": "invariant-validator"
+        },
+        {
+            "id": "A-GRAPH-002",
+            "name": "maximal earlier acyclic prefix is retained in read order",
+            "requiredAt": ["A"],
+            "oracle": "invariant-validator"
+        },
+        {
+            "id": "A-GRAPH-003",
+            "name": "fresh-session publication revalidates earlier prefix",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-GRAPH-004",
+            "name": "same-session publication sees transient ancestor prefix",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-GRAPH-005",
+            "name": "finalization publication revalidates after last get",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-GRAPH-006",
+            "name": "valid completed child survives failed parent",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-CURRENT-001",
+            "name": "current outcome avoids body entry and stale outcome recomputes",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-ERROR-001",
+            "name": "cycle error identity is sticky within evaluation",
+            "requiredAt": ["A"],
+            "oracle": "identity-relation"
+        },
+        {
+            "id": "A-ERROR-002",
+            "name": "unchanged current ordinary error preserves identity",
+            "requiredAt": ["A"],
+            "oracle": "identity-relation"
+        },
+        {
+            "id": "A-EQUAL-001",
+            "name": "last-success comparator baseline and equality pruning",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-FAULT-001",
+            "name": "thenable and comparator control-fault precedence",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-TXN-001",
+            "name": "scratch generation currentness commit and abort",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-SCOPE-001",
+            "name": "scope-qualified records inheritance disposal and recreation",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-SUB-001",
+            "name": "first-reaching and insertion notification order",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-SUB-002",
+            "name": "subscriber callback fault isolation and quarantine",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-HYDRATE-001",
+            "name": "disposable hydration isolation and missing-reader stickiness",
+            "requiredAt": ["A"],
+            "oracle": "adapter-trace"
+        },
+        {
+            "id": "A-ASYNC-001",
+            "name": "async settle supersede dispose and cancel",
+            "requiredAt": ["A"],
+            "oracle": "fake-clock-trace"
+        },
+        {
+            "id": "A-DOMAIN-001",
+            "name": "runtime mismatch before work across every host",
+            "requiredAt": ["A"],
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-FAMILY-001",
+            "name": "family-created atoms and selectors remain ordinary same-domain states",
+            "requiredAt": ["A"],
+            "gate": "family-compatibility",
+            "oracle": "frozen-family-public-tests"
+        },
+        {
+            "id": "A-FAMILY-002",
+            "name": "family definition callback quarantine rejects borrowed supplied reads",
+            "requiredAt": ["A"],
+            "gate": "family-compatibility",
+            "oracle": "explicit-store-trace"
+        },
+        {
+            "id": "A-FUZZ-001",
+            "name": "deterministic dynamic differential traces",
+            "requiredAt": ["A"],
+            "oracle": "selector-oracle",
+            "parameters": {
+                "seeds": [12648430, 195936478, 3735928559, 4207849484],
+                "operationsPerSeed": 2048,
+                "repeatForDeterminism": 2
+            }
+        }
+    ],
+    "memoryScenarios": [
+        {
+            "id": "M-ATOM-ONLY-STORES",
+            "name": "atom-only stores",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": ["bun", "node"],
+            "unit": "atom-state",
+            "units": 4000,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 160,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 120,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "M-LIVE-SELECTOR-GRAPHS",
+            "name": "live selector graphs",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": ["bun", "node"],
+            "unit": "selector",
+            "units": 1500,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 2400,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 1500,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "M-DYNAMIC-DEPENDENCY-CHURN",
+            "name": "dynamic dependency churn",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": ["bun", "node"],
+            "unit": "selector",
+            "units": 1000,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 2100,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 1400,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "M-SCOPE-CREATION-DISPOSAL",
+            "name": "scope creation and disposal",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": ["bun", "node"],
+            "unit": "scope",
+            "units": 1500,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 3200,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 3400,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "M-SINGLE-STORE-TRANSACTIONS",
+            "name": "single-store transactions",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": ["bun", "node"],
+            "unit": "staged-state",
+            "units": 2500,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 360,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 120,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "M-DEEP-CROSS-SCOPE-TRANSACTIONS",
+            "name": "deep cross-scope transactions",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": ["bun", "node"],
+            "unit": "scope-depth-level",
+            "units": 64,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 30000,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 14000,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "M-GLOBAL-FANOUT",
+            "name": "global fan-out",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": ["bun", "node"],
+            "unit": "store",
+            "units": 1000,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 3700,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 3400,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "M-STORE-DISPOSAL-ASYNC-CANCELLATION",
+            "name": "store disposal and async cancellation",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": ["bun", "node"],
+            "unit": "store",
+            "units": 500,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 7500,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 7500,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        }
+    ],
+    "performanceWorkloads": [
+        {
+            "id": "P-NEG-ATOM-2048",
+            "group": "negative-control",
+            "requiredAt": ["C", "A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "atoms": 2048,
+                "commits": 20,
+                "writesPerCommit": 128
+            },
+            "timer": "all twenty commits only"
+        },
+        {
+            "id": "P-FANOUT-128",
+            "group": "stable-fanout",
+            "requiredAt": ["C", "A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "selectors": 128,
+                "sourceCommits": 20,
+                "subscriptionsPerSelector": 1
+            },
+            "timer": "source commits after graph warmup"
+        },
+        {
+            "id": "P-FANOUT-512",
+            "group": "stable-fanout",
+            "requiredAt": ["A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "selectors": 512,
+                "sourceCommits": 20,
+                "subscriptionsPerSelector": 1
+            },
+            "timer": "source commits after graph warmup"
+        },
+        {
+            "id": "P-FANOUT-2048",
+            "group": "stable-fanout",
+            "requiredAt": ["C", "A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "selectors": 2048,
+                "sourceCommits": 20,
+                "subscriptionsPerSelector": 1
+            },
+            "timer": "source commits after graph warmup"
+        },
+        {
+            "id": "P-REWIRE-SEPARATE-181-18",
+            "group": "rewire-separate-commits",
+            "requiredAt": ["C", "A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "items": 181,
+                "sequences": 18,
+                "subscribersPerItem": 6,
+                "moves": 20,
+                "moveRule": "next-sequence",
+                "sequenceEquality": "object-is-per-index"
+            },
+            "timer": "twenty genuine move commits"
+        },
+        {
+            "id": "P-REWIRE-SEPARATE-800-2",
+            "group": "rewire-separate-commits",
+            "requiredAt": ["C", "A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "items": 800,
+                "sequences": 2,
+                "subscribersPerItem": 6,
+                "moves": 20,
+                "moveRule": "next-sequence",
+                "sequenceEquality": "object-is-per-index"
+            },
+            "timer": "twenty genuine move commits"
+        },
+        {
+            "id": "P-REWIRE-TXN-181-90",
+            "group": "rewire-single-transaction",
+            "requiredAt": ["A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "items": 181,
+                "sequences": 18,
+                "subscribersPerItem": 6,
+                "changes": 90,
+                "sequenceEquality": "object-is-per-index"
+            },
+            "timer": "one transaction only"
+        },
+        {
+            "id": "P-REWIRE-TXN-800-400",
+            "group": "rewire-single-transaction",
+            "requiredAt": ["C", "A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "items": 800,
+                "sequences": 18,
+                "subscribersPerItem": 6,
+                "changes": 400,
+                "sequenceEquality": "object-is-per-index"
+            },
+            "timer": "one transaction only"
+        },
+        {
+            "id": "P-GRAPH-FWD-WIDE-2048",
+            "group": "dual-graph-shape",
+            "requiredAt": ["C", "A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "forwardSelectorLeaves": 2048,
+                "reverseAncestors": 1,
+                "newEdgeToggles": 20
+            },
+            "timer": "twenty on/off new-edge toggles"
+        },
+        {
+            "id": "P-GRAPH-REV-WIDE-2048",
+            "group": "dual-graph-shape",
+            "requiredAt": ["C", "A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "incomingWatchers": 2048,
+                "forwardDepth": 16,
+                "newEdgeToggles": 20
+            },
+            "timer": "twenty on/off new-edge toggles"
+        },
+        {
+            "id": "P-CORE-INITIAL-VIEW",
+            "group": "packed-core-load",
+            "requiredAt": ["A"],
+            "runtimes": ["node"],
+            "protected": true,
+            "fixture": "packages/valdres/test/performance/core-load/initial-view-core.v1.json",
+            "timer": "existing fixture timer"
+        },
+        {
+            "id": "P-CORE-WRITES",
+            "group": "packed-core-load",
+            "requiredAt": ["A"],
+            "runtimes": ["node"],
+            "protected": true,
+            "fixture": "packages/valdres/test/performance/core-load/fixture.v1.json#writes",
+            "timer": "existing fixture timer"
+        },
+        {
+            "id": "P-CORE-NO-WRITES",
+            "group": "packed-core-load",
+            "requiredAt": ["A"],
+            "runtimes": ["node"],
+            "protected": true,
+            "fixture": "packages/valdres/test/performance/core-load/fixture.v1.json#no-writes",
+            "timer": "existing fixture timer"
+        },
+        {
+            "id": "P-SCOPE-1000",
+            "group": "scope-routing",
+            "requiredAt": ["A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "existingBenchmark": "scope: set atom, 1000 scopes (no shadow)",
+            "timer": "one aggregated benchmark operation"
+        },
+        {
+            "id": "P-SUB-CHURN-100",
+            "group": "subscription-lifecycle",
+            "requiredAt": ["A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "existingBenchmark": "subscribe + unsubscribe 100 shared selector pairs",
+            "timer": "one aggregated benchmark operation"
+        },
+        {
+            "id": "P-SCRATCH-SET-READ",
+            "group": "transaction-scratch",
+            "requiredAt": ["A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "existingBenchmark": "txn: staged set + selector read",
+            "minimumAggregatedDurationNs": 1000,
+            "timer": "aggregated transaction operations"
+        },
+        {
+            "id": "P-HYDRATE-2048",
+            "group": "hydration",
+            "requiredAt": ["A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "parameters": {
+                "selectors": 2048,
+                "leaves": 512,
+                "snapshots": 20,
+                "liveGraphWarm": true
+            },
+            "timer": "twenty disposable hydration campaigns"
+        },
+        {
+            "id": "P-ASYNC-SETTLE-OBSERVED",
+            "group": "async-settlement",
+            "requiredAt": ["A"],
+            "runtimes": ["bun", "node"],
+            "protected": true,
+            "existingBenchmark": "async settle: selector resolve observed",
+            "timer": "existing tier-settled benchmark operation"
+        }
+    ],
+    "shiftxWorkloads": [
+        {
+            "id": "X-SINGLE-DECISION-DROP",
+            "name": "single decision drop",
+            "timer": "pointer-up through RunTask end",
+            "build": "production"
+        },
+        {
+            "id": "X-FIFTEEN-STEP-GESTURE",
+            "name": "fifteen-step gesture",
+            "timer": "fixed interaction script through final settled task",
+            "build": "production",
+            "requiresBatchingFix": true
+        }
+    ],
+    "commonCounters": {
+        "selectorBodyEntries": "entries into a user selector body across committed, scratch, and hydration hosts",
+        "suppliedGets": "all invocations of the selector-supplied get, including rejected repeats",
+        "serveCalls": "supplied gets that reach host currentness or serve work",
+        "proposalsReturned": "complete logical selector outcomes offered for host acceptance",
+        "proposalsInstalled": "logical authoritative selector-record acceptances, including equal or topology-identical publication",
+        "dependencyEdgesAdded": "set additions from the prior authoritative selector dependency set",
+        "dependencyEdgesRemoved": "set removals from the prior authoritative selector dependency set",
+        "notifications": "final changed targets selected for notification",
+        "subscriberCallbacks": "actual callback invocations",
+        "publicOperations": "manifest-named public operations inside the workload",
+        "checksum": "deterministic workload-defined public outcome digest",
+        "retainedHeapBytes": "bytes retained after the prescribed drain and full-GC sequence"
+    },
+    "candidateCounterNamespaces": ["incumbent", "reactive", "dynamicTopo"],
+    "forbiddenGenericCounterNames": ["visits"],
+    "requiredEvidenceFiles": [
+        "candidate-plan.json",
+        "provenance.json",
+        "conformance-c.json",
+        "conformance-a.json",
+        "timings.ndjson",
+        "timing-decisions.json",
+        "counters.json",
+        "memory.ndjson",
+        "sizes.json",
+        "host-hooks.json",
+        "complexity.json",
+        "reviews/codex.md",
+        "reviews/other-vendor.md",
+        "reviews/dispositions.json",
+        "report.json",
+        "report.md",
+        "SHA256SUMS"
+    ]
+}
