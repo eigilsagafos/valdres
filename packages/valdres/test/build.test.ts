@@ -248,6 +248,8 @@ describe("v1 build output", () => {
                 "npm",
                 "install",
                 "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
                 "--no-package-lock",
                 join(workspace, basename(filename)),
             ],

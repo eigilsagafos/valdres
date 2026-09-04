@@ -6,6 +6,7 @@ import type {
     SelectorEvaluationProposal,
     SelectorGraphEdgeAddition,
     SelectorGraphObservation,
+    SelectorGraphTraversalBudget,
     SelectorRecordView,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
@@ -144,6 +145,28 @@ export class WeakHandleSet<Value extends object> {
             }
             visitor(value)
         }
+    }
+
+    /**
+     * Visit live handles while charging every underlying weak-reference probe.
+     * Returns true only when the set was exhausted.
+     */
+    visitWithin(
+        budget: SelectorGraphTraversalBudget,
+        visitor: (value: Value) => boolean,
+    ): boolean {
+        for (const reference of this.#references) {
+            if (budget.remaining === 0) return false
+            budget.remaining--
+            const value = reference.deref()
+            if (value === undefined) {
+                this.#references.delete(reference)
+                this.onDeadReference?.()
+                continue
+            }
+            if (!visitor(value)) return false
+        }
+        return true
     }
 
     isEmpty(): boolean {
@@ -441,6 +464,15 @@ export class StoreScopeNode
             cache.set(selector, selectorDependencyNodes)
         }
         return selectorDependencyNodes
+    }
+
+    visitSelectorDependents(
+        node: AnyState,
+        budget: SelectorGraphTraversalBudget,
+        visitor: (dependent: AnyState) => boolean,
+    ): boolean {
+        const dependents = this.#reverseEdges.get(node)
+        return dependents?.visitWithin(budget, visitor) ?? true
     }
 
     getSelectorGraphVersion(): number {

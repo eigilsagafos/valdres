@@ -51,6 +51,11 @@ export interface SelectorGraphObservation<Node> {
     close(): void
 }
 
+/** @internal Mutable budget shared with one bounded selector-graph traversal. */
+export interface SelectorGraphTraversalBudget {
+    remaining: number
+}
+
 export type SelectorProposalOutcome<Value = unknown> = SelectorOutcome<Value>
 
 export interface SelectorEvaluationProposal<
@@ -136,6 +141,14 @@ export interface SelectorNewEdgeProofMemo<Node> {
     completePositive(): void
 }
 
+/** @internal Evaluation-local site-1 acceleration state. */
+export interface SelectorNewEdgeProofMemoProvider<Node> {
+    /** Lazily acquired only when a site-1 proof falls back to forward DFS. */
+    (): SelectorNewEdgeProofMemo<Node> | undefined
+    /** A bounded reverse traversal disables itself after its first budget miss. */
+    reverseProofEnabled: boolean
+}
+
 /**
  * Optional inspectable-Store strategy. Live nodes are valid only for the
  * duration of the call; a recorder must translate them immediately.
@@ -143,10 +156,11 @@ export interface SelectorNewEdgeProofMemo<Node> {
  * Site 0 is the canonical accepted-prefix proof, site 1 is a newly proposed
  * edge proof, and site 2 is a negative-only replay of an exact committed edge
  * addition. A positive site-2 result must fall back to site 0 so first-read
- * blame and the canonical cycle path remain unchanged. `newEdgeProofMemo` is
- * supplied only at site 1. Its evidence remains evaluation-local and may cross
- * a graph version only when one exact addition interval preserves a fully
- * exhausted, successor-closed negative proof.
+ * blame and the canonical cycle path remain unchanged. The memo provider is
+ * supplied only at site 1 and is invoked only when a bounded host acceleration
+ * cannot prove the negative first. Its evidence remains evaluation-local and
+ * may cross a graph version only when one exact addition interval preserves a
+ * fully exhausted, successor-closed negative proof.
  */
 export type SelectorCycleSearch<Node, Token extends object> = (
     start: Node,
@@ -156,7 +170,7 @@ export type SelectorCycleSearch<Node, Token extends object> = (
     site: SelectorCycleSearchSite,
     /** Length of the active selector prefix whose acyclicity this proves. */
     acceptedPrefixLength: number,
-    newEdgeProofMemo?: SelectorNewEdgeProofMemo<Node>,
+    getNewEdgeProofMemo?: SelectorNewEdgeProofMemoProvider<Node>,
 ) => readonly Node[] | undefined
 
 export interface SelectorEvaluationStrategy {
@@ -191,6 +205,20 @@ export interface SelectorEvaluationHost<Node, Token extends object> {
      * than requesting fallback to `getSelectorRecord`.
      */
     getSelectorDependencyNodes?(node: Node): readonly Node[] | undefined
+
+    /**
+     * Optional committed-host reverse adjacency. It must synchronously expose
+     * every authoritative committed selector that directly depends on `node`.
+     * The host must decrement `budget.remaining` once for every underlying
+     * route reference it probes, including dead weak references, and stop when
+     * either the budget or the visitor asks it to. Returns true only after
+     * exhausting the adjacency.
+     */
+    visitSelectorDependents?(
+        node: Node,
+        budget: SelectorGraphTraversalBudget,
+        visitor: (dependent: Node) => boolean,
+    ): boolean
 
     /**
      * Monotonic version advanced for every selector-graph publication or
@@ -307,6 +335,17 @@ export class SelectorEvaluationSession<Node> {
             frame =>
                 Object.is(frame.host, host) && Object.is(frame.selector, node),
         )
+    }
+
+    /** @internal True when this selector is the host's only active frame. */
+    isSoleActiveSelector(host: object, selector: Node): boolean {
+        let found = false
+        for (const frame of this.#frames) {
+            if (!Object.is(frame.host, host)) continue
+            if (found || !Object.is(frame.selector, selector)) return false
+            found = true
+        }
+        return found
     }
 
     /** @internal */

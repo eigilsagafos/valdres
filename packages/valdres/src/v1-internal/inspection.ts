@@ -26,9 +26,14 @@ import type {
     SelectorNewEdgeProofMemoDisableReason,
     SelectorNewEdgeProofMemoSeedReason,
     SelectorNewEdgeProofMemoSearchClassification,
-    SelectorNewEdgeProofMemo,
+    SelectorNewEdgeProofMemoProvider,
 } from "./selector-evaluator/types"
-import { evaluateSelector } from "./selector-evaluator/evaluate"
+import {
+    evaluateSelector,
+    tryProveNoDependencyPathReverse,
+    type SelectorReverseProofMeasurement,
+    type SelectorReverseProofOutcome,
+} from "./selector-evaluator/evaluate"
 
 type StoreRecorderEvent =
     | readonly [
@@ -116,6 +121,34 @@ export type InspectionNewEdgeProofMemoTotals = Readonly<{
 }> &
     InspectionJsonObject
 
+export type InspectionReverseProofOutcome =
+    | "terminal"
+    | "proven"
+    | "path-possible"
+    | "budget-exhausted"
+    | "disabled"
+    | "active-frames"
+    | "unsupported"
+
+/** Bounded reverse-first work and outcomes for logical site-1 proofs. */
+export type InspectionReverseProofTotals = Readonly<{
+    /** These seven outcomes partition all new-edge proofs. */
+    readonly terminal: number
+    readonly proven: number
+    readonly pathPossible: number
+    readonly budgetExhausted: number
+    readonly disabled: number
+    readonly activeFrames: number
+    readonly unsupported: number
+    /** Reverse-only structural work; ordinary `cycle.visits` stays forward-only. */
+    readonly nodeVisits: number
+    readonly dependentProbes: number
+    readonly liveDependents: number
+    readonly maxWork: number
+    readonly maxFrontier: number
+}> &
+    InspectionJsonObject
+
 export interface InspectionCycleTotals {
     readonly searches: number
     readonly visits: number
@@ -133,6 +166,8 @@ export interface InspectionCycleTotals {
     }>
     /** Aggregate site-1 proof-sharing decisions; no per-node events. */
     readonly newEdgeProofMemo: InspectionNewEdgeProofMemoTotals
+    /** Aggregate bounded reverse-first decisions; no per-node events. */
+    readonly reverseProof: InspectionReverseProofTotals
     readonly byLane: Readonly<{
         committed: Readonly<{
             prefixRevalidation: InspectionCycleBucket
@@ -286,6 +321,13 @@ export interface CycleSearchInspectionDetail extends InspectionDetailLinks {
     readonly transientExpansions: number
     readonly recordExpansions: number
     readonly terminalPrunes: number
+    readonly reverseProof?: Readonly<{
+        outcome: InspectionReverseProofOutcome
+        nodeVisits: number
+        dependentProbes: number
+        liveDependents: number
+        maxFrontier: number
+    }>
     readonly found: boolean
     readonly path?: readonly InspectionJsonValue[]
 }
@@ -314,7 +356,7 @@ export interface InspectionRecorderFault {
 
 export interface InspectionExport {
     readonly schema: "valdres.inspect"
-    readonly schemaVersion: 3
+    readonly schemaVersion: 4
     readonly recordingId: string
     readonly summaries: readonly InspectionSummary[]
     readonly details: readonly InspectionDetail[]
@@ -429,6 +471,14 @@ type NewEdgeProofMemoWorkDelta = Readonly<{
     maxRetainedEntries?: number
 }>
 
+type ReverseProofWorkDelta = Readonly<{
+    outcome: InspectionReverseProofOutcome
+    nodeVisits: number
+    dependentProbes: number
+    liveDependents: number
+    maxFrontier: number
+}>
+
 export interface InspectionWorkDelta {
     readonly selectorEvaluations?: number
     readonly proposedTopologyChanges?: number
@@ -445,6 +495,7 @@ export interface InspectionWorkDelta {
         site?: "prefix-revalidation" | "new-edge-proof" | "topology-delta-proof"
         host?: "committed" | "scratch" | "hydration"
         newEdgeProofMemo?: NewEdgeProofMemoWorkDelta
+        reverseProof?: ReverseProofWorkDelta
     }>
 }
 
@@ -463,7 +514,7 @@ export interface InternalInspectionRecorder {
         evaluationGraphVersionStart: number,
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
-        newEdgeProofMemo?: SelectorNewEdgeProofMemo<Node>,
+        getNewEdgeProofMemo?: SelectorNewEdgeProofMemoProvider<Node>,
     ): readonly Node[] | undefined
     reference(
         target: object,
@@ -519,6 +570,20 @@ interface MutableCycleTotals {
     scratch: number
     hydration: number
     newEdgeProofMemo: MutableNewEdgeProofMemoTotals
+    reverseProof: {
+        terminal: number
+        proven: number
+        pathPossible: number
+        budgetExhausted: number
+        disabled: number
+        activeFrames: number
+        unsupported: number
+        nodeVisits: number
+        dependentProbes: number
+        liveDependents: number
+        maxWork: number
+        maxFrontier: number
+    }
     lanes: Record<
         "committed" | "scratch" | "hydration",
         Record<
@@ -611,6 +676,17 @@ const RAW_FIELD_KEYS = new Set([
 ])
 const NOOP = (): void => {}
 const DEPENDENCY_PATH_ROOT = Symbol("inspection dependency path root")
+
+const inspectReverseProofOutcome = (
+    outcome: SelectorReverseProofOutcome,
+): InspectionReverseProofOutcome =>
+    outcome === "proven-terminal"
+        ? "terminal"
+        : outcome === "proven-reverse"
+          ? "proven"
+          : outcome === "ineligible-active-frames"
+            ? "active-frames"
+            : outcome
 
 let nextRecordingId = 1
 
@@ -853,6 +929,20 @@ const createMutableTotals = (): MutableWorkTotals => ({
         scratch: 0,
         hydration: 0,
         newEdgeProofMemo: createMutableNewEdgeProofMemoTotals(),
+        reverseProof: {
+            terminal: 0,
+            proven: 0,
+            pathPossible: 0,
+            budgetExhausted: 0,
+            disabled: 0,
+            activeFrames: 0,
+            unsupported: 0,
+            nodeVisits: 0,
+            dependentProbes: 0,
+            liveDependents: 0,
+            maxWork: 0,
+            maxFrontier: 0,
+        },
         lanes: {
             committed: {
                 prefixRevalidation: createMutableCycleBucket(),
@@ -900,6 +990,7 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
             newEdgeProofMemo: freezeNewEdgeProofMemoTotals(
                 totals.cycle.newEdgeProofMemo,
             ),
+            reverseProof: Object.freeze({ ...totals.cycle.reverseProof }),
             byLane: Object.freeze({
                 committed: Object.freeze({
                     prefixRevalidation: Object.freeze({
@@ -1414,6 +1505,43 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                         memo.maxRetainedEntries ?? 0,
                     )
                 }
+                const reverse = cycle.reverseProof
+                if (reverse !== undefined) {
+                    const aggregate = totals.cycle.reverseProof
+                    if (reverse.outcome === "terminal") aggregate.terminal++
+                    else if (reverse.outcome === "proven") aggregate.proven++
+                    else if (reverse.outcome === "path-possible") {
+                        aggregate.pathPossible++
+                    } else if (reverse.outcome === "budget-exhausted") {
+                        aggregate.budgetExhausted++
+                    } else if (reverse.outcome === "disabled") {
+                        aggregate.disabled++
+                    } else if (reverse.outcome === "active-frames") {
+                        aggregate.activeFrames++
+                    } else {
+                        aggregate.unsupported++
+                    }
+                    aggregate.nodeVisits = addFinite(
+                        aggregate.nodeVisits,
+                        reverse.nodeVisits,
+                    )
+                    aggregate.dependentProbes = addFinite(
+                        aggregate.dependentProbes,
+                        reverse.dependentProbes,
+                    )
+                    aggregate.liveDependents = addFinite(
+                        aggregate.liveDependents,
+                        reverse.liveDependents,
+                    )
+                    aggregate.maxWork = Math.max(
+                        aggregate.maxWork,
+                        reverse.nodeVisits + reverse.dependentProbes,
+                    )
+                    aggregate.maxFrontier = Math.max(
+                        aggregate.maxFrontier,
+                        reverse.maxFrontier,
+                    )
+                }
                 if (cycle.site === "prefix-revalidation") {
                     totals.cycle.prefixRevalidation += cycle.searches ?? 1
                 } else if (cycle.site === "new-edge-proof") {
@@ -1643,7 +1771,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         evaluationGraphVersionStart: number,
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
-        newEdgeProofMemo?: SelectorNewEdgeProofMemo<Node>,
+        getNewEdgeProofMemo?: SelectorNewEdgeProofMemoProvider<Node>,
     ): readonly Node[] | undefined {
         const siteName =
             site === 0
@@ -1672,104 +1800,138 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 parentWasCold,
             },
         })
-        let consultMemo = newEdgeProofMemo?.beginSearch() ?? false
-        const pending = [start]
-        const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
-            [start, DEPENDENCY_PATH_ROOT],
-        ])
+        const reverseMeasurement: SelectorReverseProofMeasurement = {
+            nodeVisits: 0,
+            dependentProbes: 0,
+            liveDependents: 0,
+            maxFrontier: 0,
+        }
+        const reverseProof: SelectorReverseProofOutcome | undefined =
+            site === 1
+                ? tryProveNoDependencyPathReverse(
+                      start,
+                      target,
+                      host,
+                      session,
+                      reverseMeasurement,
+                      getNewEdgeProofMemo?.reverseProofEnabled ?? true,
+                  )
+                : undefined
+        if (
+            reverseProof === "budget-exhausted" &&
+            getNewEdgeProofMemo !== undefined
+        ) {
+            getNewEdgeProofMemo.reverseProofEnabled = false
+        }
+        const reverseProvedNegative =
+            reverseProof === "proven-terminal" ||
+            reverseProof === "proven-reverse"
         let visits = 0
         let edges = 0
-        let maxFrontier = 1
+        let maxFrontier = 0
         let transientExpansions = 0
         let recordExpansions = 0
         let terminalPrunes = 0
         let path: readonly Node[] | undefined
 
-        while (pending.length > 0) {
-            const node = pending.pop() as Node
-            visits++
-            if (Object.is(node, target)) {
-                const reversed: Node[] = []
-                let cursor: Node | typeof DEPENDENCY_PATH_ROOT = node
-                while (cursor !== DEPENDENCY_PATH_ROOT) {
-                    reversed.push(cursor)
-                    cursor = parent.get(cursor) as
-                        | Node
-                        | typeof DEPENDENCY_PATH_ROOT
+        if (!reverseProvedNegative) {
+            const newEdgeProofMemo = getNewEdgeProofMemo?.()
+            let consultMemo = newEdgeProofMemo?.beginSearch() ?? false
+            const pending = [start]
+            const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
+                [start, DEPENDENCY_PATH_ROOT],
+            ])
+            maxFrontier = 1
+
+            while (pending.length > 0) {
+                const node = pending.pop() as Node
+                visits++
+                if (Object.is(node, target)) {
+                    const reversed: Node[] = []
+                    let cursor: Node | typeof DEPENDENCY_PATH_ROOT = node
+                    while (cursor !== DEPENDENCY_PATH_ROOT) {
+                        reversed.push(cursor)
+                        cursor = parent.get(cursor) as
+                            | Node
+                            | typeof DEPENDENCY_PATH_ROOT
+                    }
+                    reversed.reverse()
+                    path = Object.freeze(reversed)
+                    break
                 }
-                reversed.reverse()
-                path = Object.freeze(reversed)
-                break
-            }
-            const transient = session.getTransientDependencies(host, node)
-            if (transient) {
-                transientExpansions++
-                if (transient.length === 0) continue
+                const transient = session.getTransientDependencies(host, node)
+                if (transient) {
+                    transientExpansions++
+                    if (transient.length === 0) continue
+                    if (consultMemo) {
+                        const proven =
+                            newEdgeProofMemo!.hasProvenNoPathMeasured(node)
+                        if (!newEdgeProofMemo!.enabled) consultMemo = false
+                        if (proven) continue
+                    }
+                    edges += transient.length
+                    for (const dependency of transient) {
+                        if (parent.has(dependency.node)) continue
+                        parent.set(dependency.node, node)
+                        pending.push(dependency.node)
+                    }
+                    if (pending.length > maxFrontier)
+                        maxFrontier = pending.length
+                    continue
+                }
+
+                if (host.getSelectorDependencyNodes !== undefined) {
+                    const dependencies = host.getSelectorDependencyNodes(node)
+                    if (dependencies === undefined) {
+                        terminalPrunes++
+                        continue
+                    }
+                    recordExpansions++
+                    if (dependencies.length === 0) continue
+                    if (consultMemo) {
+                        const proven =
+                            newEdgeProofMemo!.hasProvenNoPathMeasured(node)
+                        if (!newEdgeProofMemo!.enabled) consultMemo = false
+                        if (proven) continue
+                    }
+                    edges += dependencies.length
+                    for (const dependency of dependencies) {
+                        if (parent.has(dependency)) continue
+                        parent.set(dependency, node)
+                        pending.push(dependency)
+                    }
+                    if (pending.length > maxFrontier)
+                        maxFrontier = pending.length
+                    continue
+                }
+
+                const record = host.getSelectorRecord(node)
+                if (!record) {
+                    terminalPrunes++
+                    continue
+                }
+                recordExpansions++
+                if (record.dependencies.length === 0) continue
                 if (consultMemo) {
                     const proven =
                         newEdgeProofMemo!.hasProvenNoPathMeasured(node)
                     if (!newEdgeProofMemo!.enabled) consultMemo = false
                     if (proven) continue
                 }
-                edges += transient.length
-                for (const dependency of transient) {
+                edges += record.dependencies.length
+                for (const dependency of record.dependencies) {
                     if (parent.has(dependency.node)) continue
                     parent.set(dependency.node, node)
                     pending.push(dependency.node)
                 }
                 if (pending.length > maxFrontier) maxFrontier = pending.length
-                continue
             }
 
-            if (host.getSelectorDependencyNodes !== undefined) {
-                const dependencies = host.getSelectorDependencyNodes(node)
-                if (dependencies === undefined) {
-                    terminalPrunes++
-                    continue
-                }
-                recordExpansions++
-                if (dependencies.length === 0) continue
-                if (consultMemo) {
-                    const proven =
-                        newEdgeProofMemo!.hasProvenNoPathMeasured(node)
-                    if (!newEdgeProofMemo!.enabled) consultMemo = false
-                    if (proven) continue
-                }
-                edges += dependencies.length
-                for (const dependency of dependencies) {
-                    if (parent.has(dependency)) continue
-                    parent.set(dependency, node)
-                    pending.push(dependency)
-                }
-                if (pending.length > maxFrontier) maxFrontier = pending.length
-                continue
+            if (path === undefined) {
+                newEdgeProofMemo?.completeNegative(parent)
+            } else {
+                newEdgeProofMemo?.completePositive()
             }
-
-            const record = host.getSelectorRecord(node)
-            if (!record) {
-                terminalPrunes++
-                continue
-            }
-            recordExpansions++
-            if (record.dependencies.length === 0) continue
-            if (consultMemo) {
-                const proven = newEdgeProofMemo!.hasProvenNoPathMeasured(node)
-                if (!newEdgeProofMemo!.enabled) consultMemo = false
-                if (proven) continue
-            }
-            edges += record.dependencies.length
-            for (const dependency of record.dependencies) {
-                if (parent.has(dependency.node)) continue
-                parent.set(dependency.node, node)
-                pending.push(dependency.node)
-            }
-            if (pending.length > maxFrontier) maxFrontier = pending.length
-        }
-
-        if (path === undefined) {
-            newEdgeProofMemo?.completeNegative(parent)
-        } else {
-            newEdgeProofMemo?.completePositive()
         }
 
         this.addWork({
@@ -1780,6 +1942,14 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 found: path === undefined ? 0 : 1,
                 site: siteName,
                 host: hostKind,
+                ...(reverseProof === undefined
+                    ? {}
+                    : {
+                          reverseProof: {
+                              outcome: inspectReverseProofOutcome(reverseProof),
+                              ...reverseMeasurement,
+                          },
+                      }),
             },
         })
         this.finishInterval(interval, {
@@ -1791,6 +1961,14 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 transientExpansions,
                 recordExpansions,
                 terminalPrunes,
+                ...(reverseProof === undefined
+                    ? {}
+                    : {
+                          reverseProof: {
+                              outcome: inspectReverseProofOutcome(reverseProof),
+                              ...reverseMeasurement,
+                          },
+                      }),
                 found: path !== undefined,
                 ...(path === undefined
                     ? {}
@@ -1853,7 +2031,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const detailBounds = retainedBounds(details)
         return Object.freeze({
             schema: "valdres.inspect" as const,
-            schemaVersion: 3 as const,
+            schemaVersion: 4 as const,
             recordingId: this.#recordingId,
             summaries: Object.freeze(summaries),
             details: Object.freeze(details),
