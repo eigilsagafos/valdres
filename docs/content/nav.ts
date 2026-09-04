@@ -49,6 +49,7 @@ const coreApiNames = [
     "atom",
     "globalAtom",
     "selector",
+    "family",
     "atomFamily",
     "globalAtomFamily",
     "selectorFamily",

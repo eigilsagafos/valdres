@@ -43,6 +43,7 @@ describe("v1 public root", () => {
                 "TransactionClosedError",
                 "TransactionPhaseError",
                 "atom",
+                "family",
                 "selector",
                 "store",
             ].sort(),

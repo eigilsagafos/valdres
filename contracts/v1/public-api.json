@@ -854,7 +854,7 @@
                 "replacementIds": [],
                 "semver": "breaking",
                 "codemod": "Rewrite atomFamily/selectorFamily constructors as family((...keys) => atom(...)) or family((...keys) => selector(...)); add encodeKey for structured arguments.",
-                "typeError": "Structured default keys, zero arguments, and family-as-State operations reject.",
+                "typeError": "Structured default keys, zero arguments, pre-existing non-family State results, and family-as-State operations reject.",
                 "firstPartyOwner": "core",
                 "evidenceStatus": "external-handoff-required"
             },
@@ -865,7 +865,7 @@
                 "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "FamilyOptions contains only encodeKey. The current ShiftX family migration must be validated externally."
+            "notes": "FamilyOptions contains only encodeKey. A factory constructs its member during the active construction frame or returns any already-published family member; accepting an arbitrary pre-existing State would require reverse-indexing every ordinary Store override to preserve weak reacquisition. The current ShiftX family migration must be validated externally."
         },
         {
             "id": "core.family-options.encode-key",

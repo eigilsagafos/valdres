@@ -13,6 +13,7 @@ import type {
 import { SelectorEvaluationSession } from "../selector-evaluator/types"
 import {
     classifyOwner,
+    REACQUIRABLE_ATOMS,
     runSelectorActivity,
     type AnyAtom,
     type AnyState,
@@ -56,6 +57,9 @@ export type StoreTreeCounter =
     | "notificationSnapshots"
     | "subscriberCallbacksAttempted"
     | "subscriberErrors"
+    | "familyOwnerRetentionSetsCreated"
+    | "familyOwnerRetains"
+    | "familyOwnerReleases"
 
 interface SelectorRecord {
     readonly served: ServedSelectorOutcome<OutcomeToken>
@@ -192,9 +196,12 @@ export class WeakHandleSet<Value extends object> {
  *     any parent   --weak route---> anonymous/named child
  *     AtomView     --weak route---> inheriting AtomView
  *     scope        --weak key-----> Atom/Selector records
+ *     scope        --strong pin---> owned family Atom override
  *
  * Only the named identity table owns children. Weak route indexes are routing
  * accelerators, so abandoned anonymous scopes and State records remain GC-able.
+ * The private family pin mirrors only an owned Atom override; it is never
+ * family membership or an enumerable State index.
  */
 export class StoreScopeNode
     implements SelectorEvaluationHost<AnyState, OutcomeToken>
@@ -204,7 +211,8 @@ export class StoreScopeNode
     readonly name: string | undefined
     readonly children: WeakHandleSet<StoreScopeNode>
     readonly namedChildren = new Map<string, StoreScopeNode>()
-    atomOverrides = new WeakMap<AnyAtom, unknown>()
+    atomOverrides = new WeakMap<AnyAtom, unknown>();
+    [REACQUIRABLE_ATOMS] = undefined as Set<AnyAtom> | undefined
 
     #atomViews = new WeakMap<AnyAtom, AtomViewRecord>()
     readonly #liveAtomViews: WeakHandleSet<AtomViewRecord>
@@ -366,6 +374,14 @@ export class StoreScopeNode
         })
         this.#liveAtomViews.clear()
         this.atomOverrides = new WeakMap()
+        const retainedFamilyAtoms = this[REACQUIRABLE_ATOMS]?.size ?? 0
+        if (retainedFamilyAtoms > 0) {
+            this.coordinator.recordCounter(
+                "familyOwnerReleases",
+                retainedFamilyAtoms,
+            )
+        }
+        this[REACQUIRABLE_ATOMS] = undefined
         this.#atomViews = new WeakMap()
         this.#selectorRecords = new WeakMap()
         this.#selectorDependencyNodes = undefined

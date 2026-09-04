@@ -44,13 +44,16 @@ let builtDistPromise: Promise<string> | undefined
 const builtDist = (): Promise<string> =>
     (builtDistPromise ??= (async () => {
         const outdir = await temporaryDirectory("valdres-v1-dist-")
-        const results = await Promise.all([
-            Bun.build({ ...buildOptions, outdir }),
-            Bun.build({
+        // Match the production build's sequencing. Bun 1.4 can share resolver
+        // state between simultaneous split builds and intermittently report
+        // existing relative modules as missing.
+        const results = [
+            await Bun.build({ ...buildOptions, outdir }),
+            await Bun.build({
                 ...developmentBuildOptions,
                 outdir: join(outdir, "development"),
             }),
-        ])
+        ]
         for (const result of results) {
             expect(result.success, result.logs.join("\n")).toBe(true)
         }
@@ -163,6 +166,7 @@ describe("v1 build output", () => {
                 "TransactionClosedError",
                 "TransactionPhaseError",
                 "atom",
+                "family",
                 "selector",
                 "store",
             ],
@@ -263,7 +267,7 @@ describe("v1 build output", () => {
                 "--input-type=module",
                 "--eval",
                 `
-                    import { atom, selector, store } from "valdres-packed-probe"
+                    import { atom, family, selector, store } from "valdres-packed-probe"
                     import { createInspectableStore } from "valdres-packed-probe/inspect"
                     import { deepEqual } from "valdres-packed-probe/equality"
                     import {
@@ -273,6 +277,7 @@ describe("v1 build output", () => {
                         subscribe,
                     } from "valdres-packed-probe/adapter-internals/v1"
                     const count = atom(2)
+                    const counts = family((id) => atom(id.length))
                     const doubled = selector(get => get(count) * 2)
                     const target = store()
                     const inspected = createInspectableStore()
@@ -287,6 +292,7 @@ describe("v1 build output", () => {
                             { id: 1, nested: [2, 3] },
                         ),
                         live: read(target, doubled),
+                        family: read(target, counts("packed")),
                         hydration: readHydrationSnapshot(target, doubled),
                         inspected: read(inspected.store, doubled),
                     }))
@@ -298,6 +304,7 @@ describe("v1 build output", () => {
         expect(JSON.parse(probe.stdout)).toEqual({
             equal: true,
             live: 4,
+            family: 6,
             hydration: 4,
             inspected: 6,
         })

@@ -1192,7 +1192,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
     ): DependencyValue => {
         if (!suppliedReadActive) throw new SelectorReadRevokedError()
 
-        const priorControlFault = session.getControlFault()
+        const priorControlFault = session.getControlFaultForSuppliedRead()
         if (priorControlFault.kind === "fault") {
             throw priorControlFault.error
         }

@@ -3,6 +3,9 @@ import type { Atom, State } from "./types"
 
 export type AnyState = State<any>
 export type AnyAtom = Atom<any>
+export const REACQUIRABLE_ATOMS = Symbol()
+export const FAMILY_DEFINITION_FRAME = Symbol()
+export const FAMILY_DEFINITIONS = Symbol()
 
 export type AtomFallback =
     | Readonly<{ kind: "eager"; value: unknown }>
@@ -21,11 +24,20 @@ export interface ControlFaultSession {
         | Readonly<{ kind: "fault"; error: unknown }>
 }
 
+export interface FamilyDefinitionFrame {
+    readonly session: ControlFaultSession
+    readonly definitions: WeakSet<object>
+    readonly allowDefinitions: boolean
+}
+
+export interface SelectorRuntimeActivity {
+    readonly kind: "selector"
+    readonly session: ControlFaultSession
+    readonly parentSelectorActivity?: SelectorRuntimeActivity
+}
+
 export type RuntimeActivity =
-    | Readonly<{
-          kind: "selector"
-          session: ControlFaultSession
-      }>
+    | Readonly<SelectorRuntimeActivity>
     | Readonly<{
           kind: "transaction"
           transaction: object
@@ -37,6 +49,7 @@ export type RuntimeActivity =
     | Readonly<{
           kind: "guarded-callback"
           session: ControlFaultSession
+          selectorActivity?: SelectorRuntimeActivity
       }>
     | Readonly<{
           kind: "subscriber"
@@ -45,6 +58,12 @@ export type RuntimeActivity =
 
 export interface RuntimeDomainRecords {
     readonly states: WeakSet<object>
+    /** Successfully published family members, weakly recognized for aliases. */
+    [FAMILY_DEFINITIONS]?: WeakSet<object>
+    /** Synchronous construction frame; restored before public work resumes. */
+    [FAMILY_DEFINITION_FRAME]?: FamilyDefinitionFrame
+    /** Keyed definition helpers may opt exact Atoms into override retention. */
+    [REACQUIRABLE_ATOMS]?: WeakSet<object>
     readonly atoms: WeakMap<object, AtomDefinition>
     readonly selectors: WeakMap<object, SelectorDefinition<AnyState, any>>
     /** Exact same-domain Store facade recognition; values stay opaque here. */
@@ -313,12 +332,23 @@ export const runGuardedCallback = <Result>(
     session: ControlFaultSession,
     operation: () => Result,
 ): Result => {
+    const previous = domain.activity
+    const selectorActivity =
+        previous?.kind === "selector"
+            ? previous
+            : previous?.kind === "guarded-callback"
+              ? previous.selectorActivity
+              : undefined
+    const activity: RuntimeActivity =
+        selectorActivity === undefined
+            ? Object.freeze({ kind: "guarded-callback", session })
+            : Object.freeze({
+                  kind: "guarded-callback",
+                  session,
+                  selectorActivity,
+              })
     try {
-        const result = runInRuntimeActivity(
-            domain,
-            Object.freeze({ kind: "guarded-callback", session }),
-            operation,
-        )
+        const result = runInRuntimeActivity(domain, activity, operation)
         const controlFault = session.getControlFault()
         if (controlFault.kind === "fault") throw controlFault.error
         return result
@@ -354,12 +384,32 @@ export const runSelectorActivity = <Result>(
     domain: RuntimeDomainRecords,
     session: ControlFaultSession,
     operation: () => Result,
-): Result =>
-    runInRuntimeActivity(
-        domain,
-        Object.freeze({ kind: "selector", session }),
-        operation,
+): Result => {
+    const previous = domain.activity
+    const currentSelectorActivity =
+        previous?.kind === "selector"
+            ? previous
+            : previous?.kind === "guarded-callback"
+              ? previous.selectorActivity
+              : undefined
+    // Recursive selectors ordinarily share one session. Skip that duplicate
+    // link while retaining any distinct administrative session underneath it.
+    const parentSelectorActivity = Object.is(
+        currentSelectorActivity?.session,
+        session,
     )
+        ? currentSelectorActivity?.parentSelectorActivity
+        : currentSelectorActivity
+    const activity: SelectorRuntimeActivity =
+        parentSelectorActivity === undefined
+            ? Object.freeze({ kind: "selector", session })
+            : Object.freeze({
+                  kind: "selector",
+                  session,
+                  parentSelectorActivity,
+              })
+    return runInRuntimeActivity(domain, activity, operation)
+}
 
 export const runTransactionActivity = <Result>(
     domain: RuntimeDomainRecords,
@@ -428,6 +478,24 @@ export const assertStoreReadAllowed = (
         throw new TransactionPhaseError()
     }
     throw new CallbackCapabilityError()
+}
+
+/** Reject a selector-supplied read borrowed by a nested guarded callback. */
+export const rejectGuardedSelectorRead = (
+    callbackSession: ControlFaultSession,
+    selectorSession: ControlFaultSession,
+): never => {
+    const selectorFault = selectorSession.getControlFault()
+    const callbackFault = callbackSession.getControlFault()
+    const error =
+        selectorFault.kind === "fault"
+            ? selectorFault.error
+            : callbackFault.kind === "fault"
+              ? callbackFault.error
+              : new CallbackCapabilityError()
+    callbackSession.latchControlFault(error)
+    selectorSession.latchControlFault(error)
+    throw error
 }
 
 export const assertUnsubscribeAllowed = (
