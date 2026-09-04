@@ -84,6 +84,11 @@ export const observer = {
         next = 1
         tracing = trace
     },
+    resetCounters({ trace = false } = {}) {
+        counts = Object.fromEntries(keys.map(key => [key, 0]))
+        events = []
+        tracing = trace
+    },
     label(value, label) {
         if (typeof label !== "string" || !label)
             throw Error("Invalid evidence label")

@@ -67,3 +67,26 @@ test("within-run identity normalization never traverses application objects", ()
     expect(observer.valueToken(NaN)).toEqual({ kind: "number", value: "NaN" })
     expect(observer.valueToken(-0)).not.toEqual(observer.valueToken(0))
 })
+
+test("counter-window reset preserves the installed graph for edge deltas", () => {
+    observer.reset()
+    const h = {},
+        s = {},
+        a = {},
+        token = {}
+    observer.coordinate(h, "root")
+    const record = {
+        served: { token, outcome: { kind: "value", value: 1 } },
+        dependencies: [{ node: a }],
+    }
+    observer.install(h, s, record)
+    observer.resetCounters()
+    observer.install(h, s, record)
+    expect(observer.snapshot().common).toMatchObject({
+        proposalsInstalled: 1,
+        dependencyEdgesAdded: 0,
+        dependencyEdgesRemoved: 0,
+    })
+    observer.clear(h)
+    expect(observer.snapshot().common.dependencyEdgesRemoved).toBe(1)
+})
