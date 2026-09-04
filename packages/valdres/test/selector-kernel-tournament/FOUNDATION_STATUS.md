@@ -8,53 +8,50 @@ candidate implementation, public kernel interface, candidate workspace, winner,
 or promotion decision exists. The beta.36 runtime tree remains
 `35a20a12ff1087140b08622f9057c857900d17e5`.
 
-| Work order | Status                                                                                                                                                                                      |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F0         | Implemented and verified against the current v1 inventory. Includes the specifically authorized empty Changeset and specification hash update.                                              |
-| F1         | Shipping build/pack driver, separate counter-marker build, installed Node/Bun probes, and admission self-tests implemented. Actual common-counter instrumentation belongs to unfinished F2. |
-| F2         | Independent exhaustive graph oracle implemented; complete semantic runner blocked by the normative defects below.                                                                           |
-| F3–F6      | Not started; sequential dependencies remain unsatisfied.                                                                                                                                    |
-| F7         | No green control bundle exists. Packed probes are diagnostic evidence only.                                                                                                                 |
-| F8         | Not complete. Current unit mutations do not constitute the required full red proof bundle.                                                                                                  |
-| F9         | Not complete. Independent defect/artifact reviews are not the final neutrality/statistics review. No merge or candidate launch is permitted.                                                |
+| Work order | Status                                                                                                                                                                            |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F0         | v2 authority implemented: 30 semantic cases, 17 workloads, six memory scenarios, 12 memory rows. Empty non-release Changeset retained.                                            |
+| F1         | Shipping pack driver, separate counter-marker build, installed Node/Bun probes, and reviewed admission restrictions implemented. Actual evidence instrumentation remains F2 work. |
+| F2         | Independent exhaustive graph oracle implemented. Complete packed admission audit recorded; semantic runner and observation adapter remain in progress.                            |
+| F3–F6      | Not completed; sequential dependencies remain.                                                                                                                                    |
+| F7         | No green control bundle yet. Admission probes are not conformance or eligibility evidence.                                                                                        |
+| F8         | No complete red proof bundle yet.                                                                                                                                                 |
+| F9         | Final neutrality/statistics review and foundation PR remain outstanding.                                                                                                          |
 
-## Recorded normative defects
+## Resolved normative defects
 
-Independent read-only review reproduced these facts against the installed
-production beta.36 tarball under Node and Bun. Existing tests and ceilings have
-not been changed to accommodate them.
+The user authorized the v2 correction in the 2026-09-04 continuation:
 
-1. **Global atoms are outside the public rewrite.** `M-GLOBAL-FANOUT` imports
-   legacy `src/lib/globalAtom` through `architecture.memory.ts`. The packed root
-   exports no `globalAtom`. The user confirmed that global atoms are outside
-   this rewrite; the normative inventory still requires a recorded correction.
-2. **Native async settlement is unsupported by the frozen root.** Returning a
-   Promise from a selector throws `InvalidSynchronousSelectorResultError`.
-   Selector callback context, `Store.onChange`, and `Store.onCommitEnd` are
-   absent. The required `A-ASYNC-001`, `P-ASYNC-SETTLE-OBSERVED`, and
-   `M-STORE-DISPOSAL-ASYNC-CANCELLATION` instead target legacy behavior.
-   Clarifying whether native async settlement is also outside scope remains
-   pending.
-3. **Missing hydration readers are a synthetic TestHost feature.**
-   `test/v1-selector-evaluator/evaluator.test.ts` constructs
-   `MISSING_SERVER_READER` inside its TestHost. The public adapter accepts only
-   `(store, state)` and reads committed leaves in a disposable selector host.
-   Catching an invalid-state TypeError permits the selector to return a
-   fallback; that is not a sticky missing-reader fault. `A-HYDRATE-001`
-   conflates these distinct contracts. Disposable hydration isolation must
-   remain covered.
-4. **A1's path rotation contradicts the frozen independent oracle.** For
-   `a -> b -> a`, the circular cause blames `b` but records `[a, b, a]`. The
-   public read wraps that cause in `SelectorDependencyError` and
-   `SelectorGetterError`. The frozen `V1M-SEL-ORACLE-004` test explicitly pins
-   this blame and path; A1 instead requires `[b, a, b]`. The new invariant
-   validator deliberately retains A1 as written and rejects the rotated path,
-   exposing the contradiction instead of silently relaxing it.
+1. Native async settlement, supersession, cancellation, `Store.onChange`, and
+   `Store.onCommitEnd` are outside shipped v1. The three async lanes are
+   removed. `A-FAULT-001` requires synchronous returned/thrown thenable failure,
+   rejection containment, and no settlement into State.
+2. Global atoms are outside shipped v1; `M-GLOBAL-FANOUT` is removed. The frozen
+   legacy memory source and its global/async regression tests remain unchanged.
+3. Hydration reads valid same-domain State in a disposable selector host.
+   Synthetic missing-server-reader behavior is removed from tournament
+   authority.
+4. Active-cycle blame belongs to `P`, with raw path starting/ending at `D`.
+   Indirect public reads preserve the getter/dependency/circular cause chain.
 
-Importing legacy runtime source would not measure the shipping control. Adding
-these capabilities would violate the foundation source/public-surface boundary.
-Removing required assertions without a recorded normative correction would
-violate the work order. These facts must be resolved before calling F2/F7 green.
+The complete admission audit also reproduced two unambiguous factual details:
+
+- Cached cycle and prefix rejection uses the other closed-path rotation,
+  starting at `P`. Explicit traces preserve the raw error. The invariant
+  validator rotates that path to `D`, preserving every edge and blame, before
+  causal validation.
+- Public callbacks cannot redefine nodes or inject nested Store publications as
+  the evaluator TestHost can. The fresh-session lane uses the reachable Store
+  settlement trace; the finalization lane checks the shipped callback
+  quarantine. Synthetic evaluator tests remain unchanged repository regressions.
+
+All 53 remaining lanes have public root/adapter operation mappings. The
+admission probe exercises all 30 semantic mappings, 14 synthetic workload
+cardinalities, and six memory construction/release topologies under Node and
+Bun. The remaining three core-load lanes run the unchanged existing packed
+runner in oracle mode under Node, including all 900 no-writes steps. This proves
+executability and scope, not completion of the full semantic, timing, or memory
+gates. See [ADMISSION_AUDIT.md](ADMISSION_AUDIT.md).
 
 ## Reproduction
 
@@ -94,5 +91,4 @@ Development artifacts and the diagnostic bundle live under:
 
 This path is explicitly outside the authoritative candidate-run layout. No
 candidate workspace is permitted next; this foundation workspace must first
-resolve the specification defects, finish F0–F9, record green/red proofs, and
-have its PR merged.
+finish F0–F9, record green/red proofs, and have its PR merged.

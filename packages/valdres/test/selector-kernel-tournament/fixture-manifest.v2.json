@@ -1,9 +1,9 @@
 {
-    "schemaVersion": 1,
-    "id": "valdres-selector-kernel-tournament-v1",
+    "schemaVersion": 2,
+    "id": "valdres-selector-kernel-tournament-v2",
     "spec": {
         "path": "docs/designs/selector-kernel-tournament.md",
-        "sha256": "5afa53aa2132050e54a9da138ad03eacf83f4204a946b0561297523ea05de59c"
+        "sha256": "4e4f026fafcf1ed4e8e91e32f0029542a63e9c1e07489a6eafedd459fc95f91c"
     },
     "control": {
         "package": "valdres",
@@ -137,11 +137,20 @@
     "stages": {
         "C": {
             "purpose": "exploratory-admission",
-            "semanticRuntimes": ["bun", "node"],
+            "semanticRuntimes": [
+                "bun",
+                "node"
+            ],
             "timingPairs": 8,
             "timingOrder": [
-                ["control", "candidate"],
-                ["candidate", "control"]
+                [
+                    "control",
+                    "candidate"
+                ],
+                [
+                    "candidate",
+                    "control"
+                ]
             ],
             "intendedLaneMinimum": 1,
             "intendedLaneMaximum": 3,
@@ -153,12 +162,21 @@
         },
         "A": {
             "purpose": "observable-qualification",
-            "semanticRuntimes": ["bun", "node"],
+            "semanticRuntimes": [
+                "bun",
+                "node"
+            ],
             "syntheticTimingPairs": 24,
             "coreLoadTimingPairs": 50,
             "timingOrder": [
-                ["control", "candidate"],
-                ["candidate", "control"]
+                [
+                    "control",
+                    "candidate"
+                ],
+                [
+                    "candidate",
+                    "control"
+                ]
             ],
             "locationEstimator": "hodges-lehmann-log-ratio",
             "standardError": "winsorized-yuen-with-resolution-floor",
@@ -169,7 +187,9 @@
             "intendedEstimateMaximum": 0.85,
             "intendedNullRatio": 1,
             "p95RatioMaximum": 1.2,
-            "requiredCompatibilityGates": ["family"],
+            "requiredCompatibilityGates": [
+                "family"
+            ],
             "inconclusiveAdvances": false
         },
         "memory": {
@@ -202,7 +222,10 @@
         {
             "id": "C-GRAPH-001",
             "name": "exhaustive labeled DAG edge insertion",
-            "requiredAt": ["C", "A"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
             "oracle": "independent-reachability",
             "parameters": {
                 "minimumNodes": 1,
@@ -214,186 +237,272 @@
         {
             "id": "C-CYCLE-001",
             "name": "direct active recursion",
-            "requiredAt": ["C", "A"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
             "oracle": "selector-oracle"
         },
         {
             "id": "C-CYCLE-002",
             "name": "indirect active recursion",
-            "requiredAt": ["C", "A"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
             "oracle": "selector-oracle"
         },
         {
             "id": "C-CYCLE-003",
             "name": "cached dynamic reversal",
-            "requiredAt": ["C", "A"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
             "oracle": "selector-oracle"
         },
         {
             "id": "C-CYCLE-004",
             "name": "cached multi-hop dynamic cycle",
-            "requiredAt": ["C", "A"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
             "oracle": "selector-oracle"
         },
         {
             "id": "C-CYCLE-005",
             "name": "caught cycle remains sticky and blocks later get",
-            "requiredAt": ["C", "A"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
             "oracle": "explicit-trace"
         },
         {
             "id": "C-STORE-001",
             "name": "source commit remains final after derived failure",
-            "requiredAt": ["C", "A"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
             "oracle": "explicit-trace"
         },
         {
             "id": "C-TXN-001",
             "name": "scratch transaction abort publishes nothing",
-            "requiredAt": ["C", "A"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
             "oracle": "explicit-trace"
         },
         {
             "id": "C-SUB-001",
             "name": "synchronous single final notification",
-            "requiredAt": ["C", "A"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
             "oracle": "explicit-trace"
         },
         {
             "id": "C-SCOPE-001",
             "name": "same selector identity remains host-local",
-            "requiredAt": ["C", "A"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
             "oracle": "explicit-trace"
         },
         {
             "id": "A-GRAPH-001",
             "name": "causally closing edge owns blame and is excluded",
-            "requiredAt": ["A"],
-            "oracle": "invariant-validator"
+            "requiredAt": [
+                "A"
+            ],
+            "oracle": "invariant-validator",
+            "parameters": {
+                "activeRawPathOrigin": "dependency",
+                "cachedRawPathOrigin": "parent",
+                "normalizedPathOrigin": "dependency"
+            }
         },
         {
             "id": "A-GRAPH-002",
             "name": "maximal earlier acyclic prefix is retained in read order",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "invariant-validator"
         },
         {
             "id": "A-GRAPH-003",
-            "name": "fresh-session publication revalidates earlier prefix",
-            "requiredAt": ["A"],
+            "name": "fresh-session settlement and later rewrites preserve the accepted graph",
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-GRAPH-004",
             "name": "same-session publication sees transient ancestor prefix",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-GRAPH-005",
-            "name": "finalization publication revalidates after last get",
-            "requiredAt": ["A"],
+            "name": "finalization quarantine protects the accepted prefix after the last get",
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-GRAPH-006",
             "name": "valid completed child survives failed parent",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-CURRENT-001",
             "name": "current outcome avoids body entry and stale outcome recomputes",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-ERROR-001",
             "name": "cycle error identity is sticky within evaluation",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "identity-relation"
         },
         {
             "id": "A-ERROR-002",
             "name": "unchanged current ordinary error preserves identity",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "identity-relation"
         },
         {
             "id": "A-EQUAL-001",
             "name": "last-success comparator baseline and equality pruning",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-FAULT-001",
-            "name": "thenable and comparator control-fault precedence",
-            "requiredAt": ["A"],
-            "oracle": "explicit-store-trace"
+            "name": "thenable rejection containment and comparator control-fault precedence",
+            "requiredAt": [
+                "A"
+            ],
+            "oracle": "explicit-store-trace",
+            "parameters": {
+                "thenablePhases": [
+                    "getter-return",
+                    "getter-throw",
+                    "comparator-return",
+                    "comparator-throw"
+                ],
+                "maySettleIntoState": false
+            }
         },
         {
             "id": "A-TXN-001",
             "name": "scratch generation currentness commit and abort",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-SCOPE-001",
             "name": "scope-qualified records inheritance disposal and recreation",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-SUB-001",
             "name": "first-reaching and insertion notification order",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-SUB-002",
             "name": "subscriber callback fault isolation and quarantine",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-HYDRATE-001",
-            "name": "disposable hydration isolation and missing-reader stickiness",
-            "requiredAt": ["A"],
-            "oracle": "adapter-trace"
-        },
-        {
-            "id": "A-ASYNC-001",
-            "name": "async settle supersede dispose and cancel",
-            "requiredAt": ["A"],
-            "oracle": "fake-clock-trace"
+            "name": "same-domain synchronous hydration parity and disposable-host isolation",
+            "requiredAt": [
+                "A"
+            ],
+            "oracle": "adapter-trace",
+            "parameters": {
+                "api": "readHydrationSnapshot(store,state)",
+                "externalProjection": false,
+                "missingServerReader": false,
+                "liveSelectorPublication": false
+            }
         },
         {
             "id": "A-DOMAIN-001",
             "name": "runtime mismatch before work across every host",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-FAMILY-001",
             "name": "family-created atoms and selectors remain ordinary same-domain states",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "gate": "family-compatibility",
             "oracle": "frozen-family-public-tests"
         },
         {
             "id": "A-FAMILY-002",
             "name": "family definition callback quarantine rejects borrowed supplied reads",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "gate": "family-compatibility",
             "oracle": "explicit-store-trace"
         },
         {
             "id": "A-FUZZ-001",
             "name": "deterministic dynamic differential traces",
-            "requiredAt": ["A"],
+            "requiredAt": [
+                "A"
+            ],
             "oracle": "selector-oracle",
             "parameters": {
-                "seeds": [12648430, 195936478, 3735928559, 4207849484],
+                "seeds": [
+                    12648430,
+                    195936478,
+                    3735928559,
+                    4207849484
+                ],
                 "operationsPerSeed": 2048,
                 "repeatForDeterminism": 2
             }
@@ -404,7 +513,10 @@
             "id": "M-ATOM-ONLY-STORES",
             "name": "atom-only stores",
             "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-            "runtimes": ["bun", "node"],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "unit": "atom-state",
             "units": 4000,
             "absoluteCeilings": {
@@ -422,7 +534,10 @@
             "id": "M-LIVE-SELECTOR-GRAPHS",
             "name": "live selector graphs",
             "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-            "runtimes": ["bun", "node"],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "unit": "selector",
             "units": 1500,
             "absoluteCeilings": {
@@ -440,7 +555,10 @@
             "id": "M-DYNAMIC-DEPENDENCY-CHURN",
             "name": "dynamic dependency churn",
             "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-            "runtimes": ["bun", "node"],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "unit": "selector",
             "units": 1000,
             "absoluteCeilings": {
@@ -458,7 +576,10 @@
             "id": "M-SCOPE-CREATION-DISPOSAL",
             "name": "scope creation and disposal",
             "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-            "runtimes": ["bun", "node"],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "unit": "scope",
             "units": 1500,
             "absoluteCeilings": {
@@ -476,7 +597,10 @@
             "id": "M-SINGLE-STORE-TRANSACTIONS",
             "name": "single-store transactions",
             "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-            "runtimes": ["bun", "node"],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "unit": "staged-state",
             "units": 2500,
             "absoluteCeilings": {
@@ -494,7 +618,10 @@
             "id": "M-DEEP-CROSS-SCOPE-TRANSACTIONS",
             "name": "deep cross-scope transactions",
             "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-            "runtimes": ["bun", "node"],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "unit": "scope-depth-level",
             "units": 64,
             "absoluteCeilings": {
@@ -507,50 +634,20 @@
                     "releasedResidualBytes": 262144
                 }
             }
-        },
-        {
-            "id": "M-GLOBAL-FANOUT",
-            "name": "global fan-out",
-            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-            "runtimes": ["bun", "node"],
-            "unit": "store",
-            "units": 1000,
-            "absoluteCeilings": {
-                "bun": {
-                    "retainedBytesPerUnit": 3700,
-                    "releasedResidualBytes": 524288
-                },
-                "node": {
-                    "retainedBytesPerUnit": 3400,
-                    "releasedResidualBytes": 262144
-                }
-            }
-        },
-        {
-            "id": "M-STORE-DISPOSAL-ASYNC-CANCELLATION",
-            "name": "store disposal and async cancellation",
-            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-            "runtimes": ["bun", "node"],
-            "unit": "store",
-            "units": 500,
-            "absoluteCeilings": {
-                "bun": {
-                    "retainedBytesPerUnit": 7500,
-                    "releasedResidualBytes": 524288
-                },
-                "node": {
-                    "retainedBytesPerUnit": 7500,
-                    "releasedResidualBytes": 262144
-                }
-            }
         }
     ],
     "performanceWorkloads": [
         {
             "id": "P-NEG-ATOM-2048",
             "group": "negative-control",
-            "requiredAt": ["C", "A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "atoms": 2048,
@@ -562,8 +659,14 @@
         {
             "id": "P-FANOUT-128",
             "group": "stable-fanout",
-            "requiredAt": ["C", "A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "selectors": 128,
@@ -575,8 +678,13 @@
         {
             "id": "P-FANOUT-512",
             "group": "stable-fanout",
-            "requiredAt": ["A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "selectors": 512,
@@ -588,8 +696,14 @@
         {
             "id": "P-FANOUT-2048",
             "group": "stable-fanout",
-            "requiredAt": ["C", "A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "selectors": 2048,
@@ -601,8 +715,14 @@
         {
             "id": "P-REWIRE-SEPARATE-181-18",
             "group": "rewire-separate-commits",
-            "requiredAt": ["C", "A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "items": 181,
@@ -617,8 +737,14 @@
         {
             "id": "P-REWIRE-SEPARATE-800-2",
             "group": "rewire-separate-commits",
-            "requiredAt": ["C", "A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "items": 800,
@@ -633,8 +759,13 @@
         {
             "id": "P-REWIRE-TXN-181-90",
             "group": "rewire-single-transaction",
-            "requiredAt": ["A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "items": 181,
@@ -648,8 +779,14 @@
         {
             "id": "P-REWIRE-TXN-800-400",
             "group": "rewire-single-transaction",
-            "requiredAt": ["C", "A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "items": 800,
@@ -663,8 +800,14 @@
         {
             "id": "P-GRAPH-FWD-WIDE-2048",
             "group": "dual-graph-shape",
-            "requiredAt": ["C", "A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "forwardSelectorLeaves": 2048,
@@ -676,8 +819,14 @@
         {
             "id": "P-GRAPH-REV-WIDE-2048",
             "group": "dual-graph-shape",
-            "requiredAt": ["C", "A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "C",
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "incomingWatchers": 2048,
@@ -689,8 +838,12 @@
         {
             "id": "P-CORE-INITIAL-VIEW",
             "group": "packed-core-load",
-            "requiredAt": ["A"],
-            "runtimes": ["node"],
+            "requiredAt": [
+                "A"
+            ],
+            "runtimes": [
+                "node"
+            ],
             "protected": true,
             "fixture": "packages/valdres/test/performance/core-load/initial-view-core.v1.json",
             "timer": "existing fixture timer"
@@ -698,8 +851,12 @@
         {
             "id": "P-CORE-WRITES",
             "group": "packed-core-load",
-            "requiredAt": ["A"],
-            "runtimes": ["node"],
+            "requiredAt": [
+                "A"
+            ],
+            "runtimes": [
+                "node"
+            ],
             "protected": true,
             "fixture": "packages/valdres/test/performance/core-load/fixture.v1.json#writes",
             "timer": "existing fixture timer"
@@ -707,8 +864,12 @@
         {
             "id": "P-CORE-NO-WRITES",
             "group": "packed-core-load",
-            "requiredAt": ["A"],
-            "runtimes": ["node"],
+            "requiredAt": [
+                "A"
+            ],
+            "runtimes": [
+                "node"
+            ],
             "protected": true,
             "fixture": "packages/valdres/test/performance/core-load/fixture.v1.json#no-writes",
             "timer": "existing fixture timer"
@@ -716,8 +877,13 @@
         {
             "id": "P-SCOPE-1000",
             "group": "scope-routing",
-            "requiredAt": ["A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "existingBenchmark": "scope: set atom, 1000 scopes (no shadow)",
             "timer": "one aggregated benchmark operation"
@@ -725,8 +891,13 @@
         {
             "id": "P-SUB-CHURN-100",
             "group": "subscription-lifecycle",
-            "requiredAt": ["A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "existingBenchmark": "subscribe + unsubscribe 100 shared selector pairs",
             "timer": "one aggregated benchmark operation"
@@ -734,8 +905,13 @@
         {
             "id": "P-SCRATCH-SET-READ",
             "group": "transaction-scratch",
-            "requiredAt": ["A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "existingBenchmark": "txn: staged set + selector read",
             "minimumAggregatedDurationNs": 1000,
@@ -744,8 +920,13 @@
         {
             "id": "P-HYDRATE-2048",
             "group": "hydration",
-            "requiredAt": ["A"],
-            "runtimes": ["bun", "node"],
+            "requiredAt": [
+                "A"
+            ],
+            "runtimes": [
+                "bun",
+                "node"
+            ],
             "protected": true,
             "parameters": {
                 "selectors": 2048,
@@ -754,15 +935,6 @@
                 "liveGraphWarm": true
             },
             "timer": "twenty disposable hydration campaigns"
-        },
-        {
-            "id": "P-ASYNC-SETTLE-OBSERVED",
-            "group": "async-settlement",
-            "requiredAt": ["A"],
-            "runtimes": ["bun", "node"],
-            "protected": true,
-            "existingBenchmark": "async settle: selector resolve observed",
-            "timer": "existing tier-settled benchmark operation"
         }
     ],
     "shiftxWorkloads": [
@@ -794,8 +966,14 @@
         "checksum": "deterministic workload-defined public outcome digest",
         "retainedHeapBytes": "bytes retained after the prescribed drain and full-GC sequence"
     },
-    "candidateCounterNamespaces": ["incumbent", "reactive", "dynamicTopo"],
-    "forbiddenGenericCounterNames": ["visits"],
+    "candidateCounterNamespaces": [
+        "incumbent",
+        "reactive",
+        "dynamicTopo"
+    ],
+    "forbiddenGenericCounterNames": [
+        "visits"
+    ],
     "requiredEvidenceFiles": [
         "candidate-plan.json",
         "provenance.json",

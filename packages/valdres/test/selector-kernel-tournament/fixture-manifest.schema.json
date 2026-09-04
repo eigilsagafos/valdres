@@ -1,6 +1,7 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "Frozen selector tournament inventory v1",
+    "$id": "https://valdres.dev/schemas/selector-kernel-tournament/fixture-manifest.v2.json",
+    "title": "Frozen selector-kernel tournament manifest v2",
     "type": "object",
     "additionalProperties": false,
     "required": [
@@ -24,10 +25,10 @@
     ],
     "properties": {
         "schemaVersion": {
-            "const": 1
+            "const": 2
         },
         "id": {
-            "const": "valdres-selector-kernel-tournament-v1"
+            "const": "valdres-selector-kernel-tournament-v2"
         },
         "spec": {
             "type": "object",
@@ -44,53 +45,176 @@
             }
         },
         "control": {
-            "const": {
-                "package": "valdres",
-                "packageVersion": "1.0.0-beta.36",
-                "tag": "valdres@1.0.0-beta.36",
-                "gitSha": "1c03f126ba714d0765c3386e613f4c892b89829b",
-                "runtimeTree": "35a20a12ff1087140b08622f9057c857900d17e5"
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "package",
+                "packageVersion",
+                "tag",
+                "gitSha",
+                "runtimeTree"
+            ],
+            "properties": {
+                "package": {
+                    "const": "valdres"
+                },
+                "packageVersion": {
+                    "const": "1.0.0-beta.36"
+                },
+                "tag": {
+                    "const": "valdres@1.0.0-beta.36"
+                },
+                "gitSha": {
+                    "const": "1c03f126ba714d0765c3386e613f4c892b89829b"
+                },
+                "runtimeTree": {
+                    "const": "35a20a12ff1087140b08622f9057c857900d17e5"
+                }
             }
         },
         "historicalReferences": {
-            "const": [
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
                 {
-                    "id": "beta35-historical",
-                    "role": "diagnostic-only",
-                    "packageVersion": "1.0.0-beta.35",
-                    "tag": "valdres@1.0.0-beta.35",
-                    "gitSha": "1d565045859e0787a164ac491e97d1069ad687ec",
-                    "runtimeTree": "5426824b987a3ef9ee5b6f3069dae4d156e9e1e9"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "role",
+                        "packageVersion",
+                        "tag",
+                        "gitSha",
+                        "runtimeTree"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "beta35-historical"
+                        },
+                        "role": {
+                            "const": "diagnostic-only"
+                        },
+                        "packageVersion": {
+                            "const": "1.0.0-beta.35"
+                        },
+                        "tag": {
+                            "const": "valdres@1.0.0-beta.35"
+                        },
+                        "gitSha": {
+                            "const": "1d565045859e0787a164ac491e97d1069ad687ec"
+                        },
+                        "runtimeTree": {
+                            "const": "5426824b987a3ef9ee5b6f3069dae4d156e9e1e9"
+                        }
+                    }
                 },
                 {
-                    "id": "pre28-claim",
-                    "role": "external-claim-only",
-                    "packageVersion": "0.2.0-pre.28",
-                    "packageSpec": "valdres@0.2.0-pre.28",
-                    "registryIntegrity": "sha512-hk8T44kL51xalj54HlizywZP4KnZa+u1mtkv8b5kHf4dh9sKBhyawxfHBac1o0S+MNBWuyEHDO+41CFeXQfyKw==",
-                    "registryShasum": "accd3f97eafab11ebb939547cbefd3f6c70c7fdf",
-                    "registryTarballSha256": "f57a69596dc0c6d767b289c1f50cf1743f224caf52cf0fd5c5b7d7d6e5faf469",
-                    "registryGitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "role",
+                        "packageVersion",
+                        "packageSpec",
+                        "registryIntegrity",
+                        "registryShasum",
+                        "registryTarballSha256",
+                        "registryGitHead"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "pre28-claim"
+                        },
+                        "role": {
+                            "const": "external-claim-only"
+                        },
+                        "packageVersion": {
+                            "const": "0.2.0-pre.28"
+                        },
+                        "packageSpec": {
+                            "const": "valdres@0.2.0-pre.28"
+                        },
+                        "registryIntegrity": {
+                            "const": "sha512-hk8T44kL51xalj54HlizywZP4KnZa+u1mtkv8b5kHf4dh9sKBhyawxfHBac1o0S+MNBWuyEHDO+41CFeXQfyKw=="
+                        },
+                        "registryShasum": {
+                            "const": "accd3f97eafab11ebb939547cbefd3f6c70c7fdf"
+                        },
+                        "registryTarballSha256": {
+                            "const": "f57a69596dc0c6d767b289c1f50cf1743f224caf52cf0fd5c5b7d7d6e5faf469"
+                        },
+                        "registryGitHead": {
+                            "const": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+                        }
+                    }
                 }
-            ]
+            ],
+            "items": false
         },
         "productLanes": {
-            "const": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["family"],
+            "properties": {
                 "family": {
-                    "status": "merged",
-                    "mergeCommit": "f61e6199f0199c192b3b3701e81c8a11d63ef38b",
-                    "shippingRelease": "valdres@1.0.0-beta.36",
-                    "tournamentRole": "frozen-compatibility-only",
-                    "canSatisfyIntendedWin": false,
-                    "candidateMayEdit": false,
-                    "protectedPaths": [
-                        "packages/valdres/src/v1-internal/family.ts",
-                        "packages/valdres/src/family.mdx",
-                        "packages/valdres/test/v1-public-candidate/family.test.ts",
-                        "packages/valdres/test/v1-public-candidate/family-cache.test.ts",
-                        "packages/valdres/test/v1-public-candidate/family-lifecycle.test.ts",
-                        "packages/valdres/test/v1-public-candidate/family-work.test.ts"
-                    ]
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "status",
+                        "mergeCommit",
+                        "shippingRelease",
+                        "tournamentRole",
+                        "canSatisfyIntendedWin",
+                        "candidateMayEdit",
+                        "protectedPaths"
+                    ],
+                    "properties": {
+                        "status": {
+                            "const": "merged"
+                        },
+                        "mergeCommit": {
+                            "const": "f61e6199f0199c192b3b3701e81c8a11d63ef38b"
+                        },
+                        "shippingRelease": {
+                            "const": "valdres@1.0.0-beta.36"
+                        },
+                        "tournamentRole": {
+                            "const": "frozen-compatibility-only"
+                        },
+                        "canSatisfyIntendedWin": {
+                            "const": false
+                        },
+                        "candidateMayEdit": {
+                            "const": false
+                        },
+                        "protectedPaths": {
+                            "type": "array",
+                            "minItems": 6,
+                            "maxItems": 6,
+                            "prefixItems": [
+                                {
+                                    "const": "packages/valdres/src/v1-internal/family.ts"
+                                },
+                                {
+                                    "const": "packages/valdres/src/family.mdx"
+                                },
+                                {
+                                    "const": "packages/valdres/test/v1-public-candidate/family.test.ts"
+                                },
+                                {
+                                    "const": "packages/valdres/test/v1-public-candidate/family-cache.test.ts"
+                                },
+                                {
+                                    "const": "packages/valdres/test/v1-public-candidate/family-lifecycle.test.ts"
+                                },
+                                {
+                                    "const": "packages/valdres/test/v1-public-candidate/family-work.test.ts"
+                                }
+                            ],
+                            "items": false
+                        }
+                    }
                 }
             }
         },
@@ -313,727 +437,3318 @@
             "items": false
         },
         "implementations": {
-            "const": [
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "prefixItems": [
                 {
-                    "id": "beta36-control",
-                    "kind": "control",
-                    "branch": null
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "kind", "branch"],
+                    "properties": {
+                        "id": {
+                            "const": "beta36-control"
+                        },
+                        "kind": {
+                            "const": "control"
+                        },
+                        "branch": {
+                            "const": null
+                        }
+                    }
                 },
                 {
-                    "id": "incumbent-lite",
-                    "kind": "candidate",
-                    "branch": "spike-selector-kernel-incumbent-lite"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "kind", "branch"],
+                    "properties": {
+                        "id": {
+                            "const": "incumbent-lite"
+                        },
+                        "kind": {
+                            "const": "candidate"
+                        },
+                        "branch": {
+                            "const": "spike-selector-kernel-incumbent-lite"
+                        }
+                    }
                 },
                 {
-                    "id": "reactive-currentness",
-                    "kind": "candidate",
-                    "branch": "spike-selector-kernel-reactive-currentness"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "kind", "branch"],
+                    "properties": {
+                        "id": {
+                            "const": "reactive-currentness"
+                        },
+                        "kind": {
+                            "const": "candidate"
+                        },
+                        "branch": {
+                            "const": "spike-selector-kernel-reactive-currentness"
+                        }
+                    }
                 },
                 {
-                    "id": "dynamic-topological",
-                    "kind": "candidate",
-                    "branch": "spike-selector-kernel-dynamic-topological"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "kind", "branch"],
+                    "properties": {
+                        "id": {
+                            "const": "dynamic-topological"
+                        },
+                        "kind": {
+                            "const": "candidate"
+                        },
+                        "branch": {
+                            "const": "spike-selector-kernel-dynamic-topological"
+                        }
+                    }
                 }
-            ]
+            ],
+            "items": false
         },
         "stages": {
-            "const": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["C", "A", "memory", "size", "shiftx"],
+            "properties": {
                 "C": {
-                    "purpose": "exploratory-admission",
-                    "semanticRuntimes": ["bun", "node"],
-                    "timingPairs": 8,
-                    "timingOrder": [
-                        ["control", "candidate"],
-                        ["candidate", "control"]
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "purpose",
+                        "semanticRuntimes",
+                        "timingPairs",
+                        "timingOrder",
+                        "intendedLaneMinimum",
+                        "intendedLaneMaximum",
+                        "intendedEstimateMaximum",
+                        "intendedIntervalLevel",
+                        "intendedIntervalUpperExclusive",
+                        "ordinaryEstimateMaximum",
+                        "inconclusiveAdvances"
                     ],
-                    "intendedLaneMinimum": 1,
-                    "intendedLaneMaximum": 3,
-                    "intendedEstimateMaximum": 0.85,
-                    "intendedIntervalLevel": 0.9,
-                    "intendedIntervalUpperExclusive": 1,
-                    "ordinaryEstimateMaximum": 1.2,
-                    "inconclusiveAdvances": false
+                    "properties": {
+                        "purpose": {
+                            "const": "exploratory-admission"
+                        },
+                        "semanticRuntimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "timingPairs": {
+                            "const": 8
+                        },
+                        "timingOrder": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "type": "array",
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "prefixItems": [
+                                        {
+                                            "const": "control"
+                                        },
+                                        {
+                                            "const": "candidate"
+                                        }
+                                    ],
+                                    "items": false
+                                },
+                                {
+                                    "type": "array",
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "prefixItems": [
+                                        {
+                                            "const": "candidate"
+                                        },
+                                        {
+                                            "const": "control"
+                                        }
+                                    ],
+                                    "items": false
+                                }
+                            ],
+                            "items": false
+                        },
+                        "intendedLaneMinimum": {
+                            "const": 1
+                        },
+                        "intendedLaneMaximum": {
+                            "const": 3
+                        },
+                        "intendedEstimateMaximum": {
+                            "const": 0.85
+                        },
+                        "intendedIntervalLevel": {
+                            "const": 0.9
+                        },
+                        "intendedIntervalUpperExclusive": {
+                            "const": 1
+                        },
+                        "ordinaryEstimateMaximum": {
+                            "const": 1.2
+                        },
+                        "inconclusiveAdvances": {
+                            "const": false
+                        }
+                    }
                 },
                 "A": {
-                    "purpose": "observable-qualification",
-                    "semanticRuntimes": ["bun", "node"],
-                    "syntheticTimingPairs": 24,
-                    "coreLoadTimingPairs": 50,
-                    "timingOrder": [
-                        ["control", "candidate"],
-                        ["candidate", "control"]
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "purpose",
+                        "semanticRuntimes",
+                        "syntheticTimingPairs",
+                        "coreLoadTimingPairs",
+                        "timingOrder",
+                        "locationEstimator",
+                        "standardError",
+                        "readableIntervalLevel",
+                        "multipleComparisonAdjustment",
+                        "falseDiscoveryRate",
+                        "protectedRatioBudget",
+                        "intendedEstimateMaximum",
+                        "intendedNullRatio",
+                        "p95RatioMaximum",
+                        "requiredCompatibilityGates",
+                        "inconclusiveAdvances"
                     ],
-                    "locationEstimator": "hodges-lehmann-log-ratio",
-                    "standardError": "winsorized-yuen-with-resolution-floor",
-                    "readableIntervalLevel": 0.9,
-                    "multipleComparisonAdjustment": "benjamini-hochberg",
-                    "falseDiscoveryRate": 0.05,
-                    "protectedRatioBudget": 1.1,
-                    "intendedEstimateMaximum": 0.85,
-                    "intendedNullRatio": 1,
-                    "p95RatioMaximum": 1.2,
-                    "requiredCompatibilityGates": ["family"],
-                    "inconclusiveAdvances": false
+                    "properties": {
+                        "purpose": {
+                            "const": "observable-qualification"
+                        },
+                        "semanticRuntimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "syntheticTimingPairs": {
+                            "const": 24
+                        },
+                        "coreLoadTimingPairs": {
+                            "const": 50
+                        },
+                        "timingOrder": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "type": "array",
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "prefixItems": [
+                                        {
+                                            "const": "control"
+                                        },
+                                        {
+                                            "const": "candidate"
+                                        }
+                                    ],
+                                    "items": false
+                                },
+                                {
+                                    "type": "array",
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "prefixItems": [
+                                        {
+                                            "const": "candidate"
+                                        },
+                                        {
+                                            "const": "control"
+                                        }
+                                    ],
+                                    "items": false
+                                }
+                            ],
+                            "items": false
+                        },
+                        "locationEstimator": {
+                            "const": "hodges-lehmann-log-ratio"
+                        },
+                        "standardError": {
+                            "const": "winsorized-yuen-with-resolution-floor"
+                        },
+                        "readableIntervalLevel": {
+                            "const": 0.9
+                        },
+                        "multipleComparisonAdjustment": {
+                            "const": "benjamini-hochberg"
+                        },
+                        "falseDiscoveryRate": {
+                            "const": 0.05
+                        },
+                        "protectedRatioBudget": {
+                            "const": 1.1
+                        },
+                        "intendedEstimateMaximum": {
+                            "const": 0.85
+                        },
+                        "intendedNullRatio": {
+                            "const": 1
+                        },
+                        "p95RatioMaximum": {
+                            "const": 1.2
+                        },
+                        "requiredCompatibilityGates": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "family"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "inconclusiveAdvances": {
+                            "const": false
+                        }
+                    }
                 },
                 "memory": {
-                    "pairs": 5,
-                    "retainedRatioMaximum": 1.1,
-                    "requireExistingAbsoluteCeilings": true,
-                    "requireThreeFullCollections": true
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "pairs",
+                        "retainedRatioMaximum",
+                        "requireExistingAbsoluteCeilings",
+                        "requireThreeFullCollections"
+                    ],
+                    "properties": {
+                        "pairs": {
+                            "const": 5
+                        },
+                        "retainedRatioMaximum": {
+                            "const": 1.1
+                        },
+                        "requireExistingAbsoluteCeilings": {
+                            "const": true
+                        },
+                        "requireThreeFullCollections": {
+                            "const": true
+                        }
+                    }
                 },
                 "size": {
-                    "baselineFile": "scripts/size-baseline.json",
-                    "measurementScript": "scripts/check-package-size.ts",
-                    "ratioMaximum": 1.02,
-                    "requireEveryExistingMetric": true,
-                    "controlRootSharedGzipBytes": 17349,
-                    "controlPackedGzipBytes": 76981
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "baselineFile",
+                        "measurementScript",
+                        "ratioMaximum",
+                        "requireEveryExistingMetric",
+                        "controlRootSharedGzipBytes",
+                        "controlPackedGzipBytes"
+                    ],
+                    "properties": {
+                        "baselineFile": {
+                            "const": "scripts/size-baseline.json"
+                        },
+                        "measurementScript": {
+                            "const": "scripts/check-package-size.ts"
+                        },
+                        "ratioMaximum": {
+                            "const": 1.02
+                        },
+                        "requireEveryExistingMetric": {
+                            "const": true
+                        },
+                        "controlRootSharedGzipBytes": {
+                            "const": 17349
+                        },
+                        "controlPackedGzipBytes": {
+                            "const": 76981
+                        }
+                    }
                 },
                 "shiftx": {
-                    "qualificationBaselineId": "beta36-control",
-                    "claimBaselineId": "pre28-claim",
-                    "initialPairs": 8,
-                    "additionalPairs": 4,
-                    "maximumPairs": 20,
-                    "protectedRatioBudget": 1.1,
-                    "p95RatioMaximum": 1.2,
-                    "claimEstimateMaximum": 1,
-                    "claimIntervalUpperExclusive": 1
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "qualificationBaselineId",
+                        "claimBaselineId",
+                        "initialPairs",
+                        "additionalPairs",
+                        "maximumPairs",
+                        "protectedRatioBudget",
+                        "p95RatioMaximum",
+                        "claimEstimateMaximum",
+                        "claimIntervalUpperExclusive"
+                    ],
+                    "properties": {
+                        "qualificationBaselineId": {
+                            "const": "beta36-control"
+                        },
+                        "claimBaselineId": {
+                            "const": "pre28-claim"
+                        },
+                        "initialPairs": {
+                            "const": 8
+                        },
+                        "additionalPairs": {
+                            "const": 4
+                        },
+                        "maximumPairs": {
+                            "const": 20
+                        },
+                        "protectedRatioBudget": {
+                            "const": 1.1
+                        },
+                        "p95RatioMaximum": {
+                            "const": 1.2
+                        },
+                        "claimEstimateMaximum": {
+                            "const": 1
+                        },
+                        "claimIntervalUpperExclusive": {
+                            "const": 1
+                        }
+                    }
                 }
             }
         },
         "semanticCases": {
-            "const": [
+            "type": "array",
+            "minItems": 30,
+            "maxItems": 30,
+            "prefixItems": [
                 {
-                    "id": "C-GRAPH-001",
-                    "name": "exhaustive labeled DAG edge insertion",
-                    "requiredAt": ["C", "A"],
-                    "oracle": "independent-reachability",
-                    "parameters": {
-                        "minimumNodes": 1,
-                        "maximumNodes": 5,
-                        "includeSelfEdges": true,
-                        "tryEveryNextEdge": true
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "requiredAt",
+                        "oracle",
+                        "parameters"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "C-GRAPH-001"
+                        },
+                        "name": {
+                            "const": "exhaustive labeled DAG edge insertion"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "independent-reachability"
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "minimumNodes",
+                                "maximumNodes",
+                                "includeSelfEdges",
+                                "tryEveryNextEdge"
+                            ],
+                            "properties": {
+                                "minimumNodes": {
+                                    "const": 1
+                                },
+                                "maximumNodes": {
+                                    "const": 5
+                                },
+                                "includeSelfEdges": {
+                                    "const": true
+                                },
+                                "tryEveryNextEdge": {
+                                    "const": true
+                                }
+                            }
+                        }
                     }
                 },
                 {
-                    "id": "C-CYCLE-001",
-                    "name": "direct active recursion",
-                    "requiredAt": ["C", "A"],
-                    "oracle": "selector-oracle"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "C-CYCLE-001"
+                        },
+                        "name": {
+                            "const": "direct active recursion"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "selector-oracle"
+                        }
+                    }
                 },
                 {
-                    "id": "C-CYCLE-002",
-                    "name": "indirect active recursion",
-                    "requiredAt": ["C", "A"],
-                    "oracle": "selector-oracle"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "C-CYCLE-002"
+                        },
+                        "name": {
+                            "const": "indirect active recursion"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "selector-oracle"
+                        }
+                    }
                 },
                 {
-                    "id": "C-CYCLE-003",
-                    "name": "cached dynamic reversal",
-                    "requiredAt": ["C", "A"],
-                    "oracle": "selector-oracle"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "C-CYCLE-003"
+                        },
+                        "name": {
+                            "const": "cached dynamic reversal"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "selector-oracle"
+                        }
+                    }
                 },
                 {
-                    "id": "C-CYCLE-004",
-                    "name": "cached multi-hop dynamic cycle",
-                    "requiredAt": ["C", "A"],
-                    "oracle": "selector-oracle"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "C-CYCLE-004"
+                        },
+                        "name": {
+                            "const": "cached multi-hop dynamic cycle"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "selector-oracle"
+                        }
+                    }
                 },
                 {
-                    "id": "C-CYCLE-005",
-                    "name": "caught cycle remains sticky and blocks later get",
-                    "requiredAt": ["C", "A"],
-                    "oracle": "explicit-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "C-CYCLE-005"
+                        },
+                        "name": {
+                            "const": "caught cycle remains sticky and blocks later get"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "C-STORE-001",
-                    "name": "source commit remains final after derived failure",
-                    "requiredAt": ["C", "A"],
-                    "oracle": "explicit-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "C-STORE-001"
+                        },
+                        "name": {
+                            "const": "source commit remains final after derived failure"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "C-TXN-001",
-                    "name": "scratch transaction abort publishes nothing",
-                    "requiredAt": ["C", "A"],
-                    "oracle": "explicit-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "C-TXN-001"
+                        },
+                        "name": {
+                            "const": "scratch transaction abort publishes nothing"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "C-SUB-001",
-                    "name": "synchronous single final notification",
-                    "requiredAt": ["C", "A"],
-                    "oracle": "explicit-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "C-SUB-001"
+                        },
+                        "name": {
+                            "const": "synchronous single final notification"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "C-SCOPE-001",
-                    "name": "same selector identity remains host-local",
-                    "requiredAt": ["C", "A"],
-                    "oracle": "explicit-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "C-SCOPE-001"
+                        },
+                        "name": {
+                            "const": "same selector identity remains host-local"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-GRAPH-001",
-                    "name": "causally closing edge owns blame and is excluded",
-                    "requiredAt": ["A"],
-                    "oracle": "invariant-validator"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "requiredAt",
+                        "oracle",
+                        "parameters"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "A-GRAPH-001"
+                        },
+                        "name": {
+                            "const": "causally closing edge owns blame and is excluded"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "invariant-validator"
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "activeRawPathOrigin",
+                                "cachedRawPathOrigin",
+                                "normalizedPathOrigin"
+                            ],
+                            "properties": {
+                                "activeRawPathOrigin": {
+                                    "const": "dependency"
+                                },
+                                "cachedRawPathOrigin": {
+                                    "const": "parent"
+                                },
+                                "normalizedPathOrigin": {
+                                    "const": "dependency"
+                                }
+                            }
+                        }
+                    }
                 },
                 {
-                    "id": "A-GRAPH-002",
-                    "name": "maximal earlier acyclic prefix is retained in read order",
-                    "requiredAt": ["A"],
-                    "oracle": "invariant-validator"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-GRAPH-002"
+                        },
+                        "name": {
+                            "const": "maximal earlier acyclic prefix is retained in read order"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "invariant-validator"
+                        }
+                    }
                 },
                 {
-                    "id": "A-GRAPH-003",
-                    "name": "fresh-session publication revalidates earlier prefix",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-GRAPH-003"
+                        },
+                        "name": {
+                            "const": "fresh-session settlement and later rewrites preserve the accepted graph"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-GRAPH-004",
-                    "name": "same-session publication sees transient ancestor prefix",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-GRAPH-004"
+                        },
+                        "name": {
+                            "const": "same-session publication sees transient ancestor prefix"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-GRAPH-005",
-                    "name": "finalization publication revalidates after last get",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-GRAPH-005"
+                        },
+                        "name": {
+                            "const": "finalization quarantine protects the accepted prefix after the last get"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-GRAPH-006",
-                    "name": "valid completed child survives failed parent",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-GRAPH-006"
+                        },
+                        "name": {
+                            "const": "valid completed child survives failed parent"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-CURRENT-001",
-                    "name": "current outcome avoids body entry and stale outcome recomputes",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-CURRENT-001"
+                        },
+                        "name": {
+                            "const": "current outcome avoids body entry and stale outcome recomputes"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-ERROR-001",
-                    "name": "cycle error identity is sticky within evaluation",
-                    "requiredAt": ["A"],
-                    "oracle": "identity-relation"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-ERROR-001"
+                        },
+                        "name": {
+                            "const": "cycle error identity is sticky within evaluation"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "identity-relation"
+                        }
+                    }
                 },
                 {
-                    "id": "A-ERROR-002",
-                    "name": "unchanged current ordinary error preserves identity",
-                    "requiredAt": ["A"],
-                    "oracle": "identity-relation"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-ERROR-002"
+                        },
+                        "name": {
+                            "const": "unchanged current ordinary error preserves identity"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "identity-relation"
+                        }
+                    }
                 },
                 {
-                    "id": "A-EQUAL-001",
-                    "name": "last-success comparator baseline and equality pruning",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-EQUAL-001"
+                        },
+                        "name": {
+                            "const": "last-success comparator baseline and equality pruning"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-FAULT-001",
-                    "name": "thenable and comparator control-fault precedence",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "requiredAt",
+                        "oracle",
+                        "parameters"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "A-FAULT-001"
+                        },
+                        "name": {
+                            "const": "thenable rejection containment and comparator control-fault precedence"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "thenablePhases",
+                                "maySettleIntoState"
+                            ],
+                            "properties": {
+                                "thenablePhases": {
+                                    "type": "array",
+                                    "minItems": 4,
+                                    "maxItems": 4,
+                                    "prefixItems": [
+                                        {
+                                            "const": "getter-return"
+                                        },
+                                        {
+                                            "const": "getter-throw"
+                                        },
+                                        {
+                                            "const": "comparator-return"
+                                        },
+                                        {
+                                            "const": "comparator-throw"
+                                        }
+                                    ],
+                                    "items": false
+                                },
+                                "maySettleIntoState": {
+                                    "const": false
+                                }
+                            }
+                        }
+                    }
                 },
                 {
-                    "id": "A-TXN-001",
-                    "name": "scratch generation currentness commit and abort",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-TXN-001"
+                        },
+                        "name": {
+                            "const": "scratch generation currentness commit and abort"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-SCOPE-001",
-                    "name": "scope-qualified records inheritance disposal and recreation",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-SCOPE-001"
+                        },
+                        "name": {
+                            "const": "scope-qualified records inheritance disposal and recreation"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-SUB-001",
-                    "name": "first-reaching and insertion notification order",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-SUB-001"
+                        },
+                        "name": {
+                            "const": "first-reaching and insertion notification order"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-SUB-002",
-                    "name": "subscriber callback fault isolation and quarantine",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-SUB-002"
+                        },
+                        "name": {
+                            "const": "subscriber callback fault isolation and quarantine"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-HYDRATE-001",
-                    "name": "disposable hydration isolation and missing-reader stickiness",
-                    "requiredAt": ["A"],
-                    "oracle": "adapter-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "requiredAt",
+                        "oracle",
+                        "parameters"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "A-HYDRATE-001"
+                        },
+                        "name": {
+                            "const": "same-domain synchronous hydration parity and disposable-host isolation"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "adapter-trace"
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "api",
+                                "externalProjection",
+                                "missingServerReader",
+                                "liveSelectorPublication"
+                            ],
+                            "properties": {
+                                "api": {
+                                    "const": "readHydrationSnapshot(store,state)"
+                                },
+                                "externalProjection": {
+                                    "const": false
+                                },
+                                "missingServerReader": {
+                                    "const": false
+                                },
+                                "liveSelectorPublication": {
+                                    "const": false
+                                }
+                            }
+                        }
+                    }
                 },
                 {
-                    "id": "A-ASYNC-001",
-                    "name": "async settle supersede dispose and cancel",
-                    "requiredAt": ["A"],
-                    "oracle": "fake-clock-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-DOMAIN-001"
+                        },
+                        "name": {
+                            "const": "runtime mismatch before work across every host"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-DOMAIN-001",
-                    "name": "runtime mismatch before work across every host",
-                    "requiredAt": ["A"],
-                    "oracle": "explicit-store-trace"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "gate", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-FAMILY-001"
+                        },
+                        "name": {
+                            "const": "family-created atoms and selectors remain ordinary same-domain states"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "gate": {
+                            "const": "family-compatibility"
+                        },
+                        "oracle": {
+                            "const": "frozen-family-public-tests"
+                        }
+                    }
                 },
                 {
-                    "id": "A-FAMILY-001",
-                    "name": "family-created atoms and selectors remain ordinary same-domain states",
-                    "requiredAt": ["A"],
-                    "gate": "family-compatibility",
-                    "oracle": "frozen-family-public-tests"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "requiredAt", "gate", "oracle"],
+                    "properties": {
+                        "id": {
+                            "const": "A-FAMILY-002"
+                        },
+                        "name": {
+                            "const": "family definition callback quarantine rejects borrowed supplied reads"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "gate": {
+                            "const": "family-compatibility"
+                        },
+                        "oracle": {
+                            "const": "explicit-store-trace"
+                        }
+                    }
                 },
                 {
-                    "id": "A-FAMILY-002",
-                    "name": "family definition callback quarantine rejects borrowed supplied reads",
-                    "requiredAt": ["A"],
-                    "gate": "family-compatibility",
-                    "oracle": "explicit-store-trace"
-                },
-                {
-                    "id": "A-FUZZ-001",
-                    "name": "deterministic dynamic differential traces",
-                    "requiredAt": ["A"],
-                    "oracle": "selector-oracle",
-                    "parameters": {
-                        "seeds": [12648430, 195936478, 3735928559, 4207849484],
-                        "operationsPerSeed": 2048,
-                        "repeatForDeterminism": 2
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "requiredAt",
+                        "oracle",
+                        "parameters"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "A-FUZZ-001"
+                        },
+                        "name": {
+                            "const": "deterministic dynamic differential traces"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "oracle": {
+                            "const": "selector-oracle"
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "seeds",
+                                "operationsPerSeed",
+                                "repeatForDeterminism"
+                            ],
+                            "properties": {
+                                "seeds": {
+                                    "type": "array",
+                                    "minItems": 4,
+                                    "maxItems": 4,
+                                    "prefixItems": [
+                                        {
+                                            "const": 12648430
+                                        },
+                                        {
+                                            "const": 195936478
+                                        },
+                                        {
+                                            "const": 3735928559
+                                        },
+                                        {
+                                            "const": 4207849484
+                                        }
+                                    ],
+                                    "items": false
+                                },
+                                "operationsPerSeed": {
+                                    "const": 2048
+                                },
+                                "repeatForDeterminism": {
+                                    "const": 2
+                                }
+                            }
+                        }
                     }
                 }
-            ]
+            ],
+            "items": false
         },
         "memoryScenarios": {
-            "const": [
+            "type": "array",
+            "minItems": 6,
+            "maxItems": 6,
+            "prefixItems": [
                 {
-                    "id": "M-ATOM-ONLY-STORES",
-                    "name": "atom-only stores",
-                    "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-                    "runtimes": ["bun", "node"],
-                    "unit": "atom-state",
-                    "units": 4000,
-                    "absoluteCeilings": {
-                        "bun": {
-                            "retainedBytesPerUnit": 160,
-                            "releasedResidualBytes": 524288
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "sourceTest",
+                        "runtimes",
+                        "unit",
+                        "units",
+                        "absoluteCeilings"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "M-ATOM-ONLY-STORES"
                         },
-                        "node": {
-                            "retainedBytesPerUnit": 120,
-                            "releasedResidualBytes": 262144
+                        "name": {
+                            "const": "atom-only stores"
+                        },
+                        "sourceTest": {
+                            "const": "packages/valdres/test/performance/architecture.memory.ts"
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "unit": {
+                            "const": "atom-state"
+                        },
+                        "units": {
+                            "const": 4000
+                        },
+                        "absoluteCeilings": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["bun", "node"],
+                            "properties": {
+                                "bun": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 160
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 524288
+                                        }
+                                    }
+                                },
+                                "node": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 120
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 262144
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 },
                 {
-                    "id": "M-LIVE-SELECTOR-GRAPHS",
-                    "name": "live selector graphs",
-                    "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-                    "runtimes": ["bun", "node"],
-                    "unit": "selector",
-                    "units": 1500,
-                    "absoluteCeilings": {
-                        "bun": {
-                            "retainedBytesPerUnit": 2400,
-                            "releasedResidualBytes": 524288
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "sourceTest",
+                        "runtimes",
+                        "unit",
+                        "units",
+                        "absoluteCeilings"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "M-LIVE-SELECTOR-GRAPHS"
                         },
-                        "node": {
-                            "retainedBytesPerUnit": 1500,
-                            "releasedResidualBytes": 262144
+                        "name": {
+                            "const": "live selector graphs"
+                        },
+                        "sourceTest": {
+                            "const": "packages/valdres/test/performance/architecture.memory.ts"
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "unit": {
+                            "const": "selector"
+                        },
+                        "units": {
+                            "const": 1500
+                        },
+                        "absoluteCeilings": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["bun", "node"],
+                            "properties": {
+                                "bun": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 2400
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 524288
+                                        }
+                                    }
+                                },
+                                "node": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 1500
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 262144
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 },
                 {
-                    "id": "M-DYNAMIC-DEPENDENCY-CHURN",
-                    "name": "dynamic dependency churn",
-                    "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-                    "runtimes": ["bun", "node"],
-                    "unit": "selector",
-                    "units": 1000,
-                    "absoluteCeilings": {
-                        "bun": {
-                            "retainedBytesPerUnit": 2100,
-                            "releasedResidualBytes": 524288
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "sourceTest",
+                        "runtimes",
+                        "unit",
+                        "units",
+                        "absoluteCeilings"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "M-DYNAMIC-DEPENDENCY-CHURN"
                         },
-                        "node": {
-                            "retainedBytesPerUnit": 1400,
-                            "releasedResidualBytes": 262144
+                        "name": {
+                            "const": "dynamic dependency churn"
+                        },
+                        "sourceTest": {
+                            "const": "packages/valdres/test/performance/architecture.memory.ts"
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "unit": {
+                            "const": "selector"
+                        },
+                        "units": {
+                            "const": 1000
+                        },
+                        "absoluteCeilings": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["bun", "node"],
+                            "properties": {
+                                "bun": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 2100
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 524288
+                                        }
+                                    }
+                                },
+                                "node": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 1400
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 262144
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 },
                 {
-                    "id": "M-SCOPE-CREATION-DISPOSAL",
-                    "name": "scope creation and disposal",
-                    "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-                    "runtimes": ["bun", "node"],
-                    "unit": "scope",
-                    "units": 1500,
-                    "absoluteCeilings": {
-                        "bun": {
-                            "retainedBytesPerUnit": 3200,
-                            "releasedResidualBytes": 524288
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "sourceTest",
+                        "runtimes",
+                        "unit",
+                        "units",
+                        "absoluteCeilings"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "M-SCOPE-CREATION-DISPOSAL"
                         },
-                        "node": {
-                            "retainedBytesPerUnit": 3400,
-                            "releasedResidualBytes": 262144
+                        "name": {
+                            "const": "scope creation and disposal"
+                        },
+                        "sourceTest": {
+                            "const": "packages/valdres/test/performance/architecture.memory.ts"
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "unit": {
+                            "const": "scope"
+                        },
+                        "units": {
+                            "const": 1500
+                        },
+                        "absoluteCeilings": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["bun", "node"],
+                            "properties": {
+                                "bun": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 3200
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 524288
+                                        }
+                                    }
+                                },
+                                "node": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 3400
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 262144
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 },
                 {
-                    "id": "M-SINGLE-STORE-TRANSACTIONS",
-                    "name": "single-store transactions",
-                    "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-                    "runtimes": ["bun", "node"],
-                    "unit": "staged-state",
-                    "units": 2500,
-                    "absoluteCeilings": {
-                        "bun": {
-                            "retainedBytesPerUnit": 360,
-                            "releasedResidualBytes": 524288
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "sourceTest",
+                        "runtimes",
+                        "unit",
+                        "units",
+                        "absoluteCeilings"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "M-SINGLE-STORE-TRANSACTIONS"
                         },
-                        "node": {
-                            "retainedBytesPerUnit": 120,
-                            "releasedResidualBytes": 262144
+                        "name": {
+                            "const": "single-store transactions"
+                        },
+                        "sourceTest": {
+                            "const": "packages/valdres/test/performance/architecture.memory.ts"
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "unit": {
+                            "const": "staged-state"
+                        },
+                        "units": {
+                            "const": 2500
+                        },
+                        "absoluteCeilings": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["bun", "node"],
+                            "properties": {
+                                "bun": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 360
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 524288
+                                        }
+                                    }
+                                },
+                                "node": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 120
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 262144
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 },
                 {
-                    "id": "M-DEEP-CROSS-SCOPE-TRANSACTIONS",
-                    "name": "deep cross-scope transactions",
-                    "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-                    "runtimes": ["bun", "node"],
-                    "unit": "scope-depth-level",
-                    "units": 64,
-                    "absoluteCeilings": {
-                        "bun": {
-                            "retainedBytesPerUnit": 30000,
-                            "releasedResidualBytes": 524288
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "sourceTest",
+                        "runtimes",
+                        "unit",
+                        "units",
+                        "absoluteCeilings"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "M-DEEP-CROSS-SCOPE-TRANSACTIONS"
                         },
-                        "node": {
-                            "retainedBytesPerUnit": 14000,
-                            "releasedResidualBytes": 262144
-                        }
-                    }
-                },
-                {
-                    "id": "M-GLOBAL-FANOUT",
-                    "name": "global fan-out",
-                    "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-                    "runtimes": ["bun", "node"],
-                    "unit": "store",
-                    "units": 1000,
-                    "absoluteCeilings": {
-                        "bun": {
-                            "retainedBytesPerUnit": 3700,
-                            "releasedResidualBytes": 524288
+                        "name": {
+                            "const": "deep cross-scope transactions"
                         },
-                        "node": {
-                            "retainedBytesPerUnit": 3400,
-                            "releasedResidualBytes": 262144
-                        }
-                    }
-                },
-                {
-                    "id": "M-STORE-DISPOSAL-ASYNC-CANCELLATION",
-                    "name": "store disposal and async cancellation",
-                    "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
-                    "runtimes": ["bun", "node"],
-                    "unit": "store",
-                    "units": 500,
-                    "absoluteCeilings": {
-                        "bun": {
-                            "retainedBytesPerUnit": 7500,
-                            "releasedResidualBytes": 524288
+                        "sourceTest": {
+                            "const": "packages/valdres/test/performance/architecture.memory.ts"
                         },
-                        "node": {
-                            "retainedBytesPerUnit": 7500,
-                            "releasedResidualBytes": 262144
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "unit": {
+                            "const": "scope-depth-level"
+                        },
+                        "units": {
+                            "const": 64
+                        },
+                        "absoluteCeilings": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["bun", "node"],
+                            "properties": {
+                                "bun": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 30000
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 524288
+                                        }
+                                    }
+                                },
+                                "node": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "retainedBytesPerUnit",
+                                        "releasedResidualBytes"
+                                    ],
+                                    "properties": {
+                                        "retainedBytesPerUnit": {
+                                            "const": 14000
+                                        },
+                                        "releasedResidualBytes": {
+                                            "const": 262144
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            ]
+            ],
+            "items": false
         },
         "performanceWorkloads": {
-            "const": [
+            "type": "array",
+            "minItems": 17,
+            "maxItems": 17,
+            "prefixItems": [
                 {
-                    "id": "P-NEG-ATOM-2048",
-                    "group": "negative-control",
-                    "requiredAt": ["C", "A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "atoms": 2048,
-                        "commits": 20,
-                        "writesPerCommit": 128
-                    },
-                    "timer": "all twenty commits only"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-NEG-ATOM-2048"
+                        },
+                        "group": {
+                            "const": "negative-control"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["atoms", "commits", "writesPerCommit"],
+                            "properties": {
+                                "atoms": {
+                                    "const": 2048
+                                },
+                                "commits": {
+                                    "const": 20
+                                },
+                                "writesPerCommit": {
+                                    "const": 128
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "all twenty commits only"
+                        }
+                    }
                 },
                 {
-                    "id": "P-FANOUT-128",
-                    "group": "stable-fanout",
-                    "requiredAt": ["C", "A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "selectors": 128,
-                        "sourceCommits": 20,
-                        "subscriptionsPerSelector": 1
-                    },
-                    "timer": "source commits after graph warmup"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-FANOUT-128"
+                        },
+                        "group": {
+                            "const": "stable-fanout"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "selectors",
+                                "sourceCommits",
+                                "subscriptionsPerSelector"
+                            ],
+                            "properties": {
+                                "selectors": {
+                                    "const": 128
+                                },
+                                "sourceCommits": {
+                                    "const": 20
+                                },
+                                "subscriptionsPerSelector": {
+                                    "const": 1
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "source commits after graph warmup"
+                        }
+                    }
                 },
                 {
-                    "id": "P-FANOUT-512",
-                    "group": "stable-fanout",
-                    "requiredAt": ["A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "selectors": 512,
-                        "sourceCommits": 20,
-                        "subscriptionsPerSelector": 1
-                    },
-                    "timer": "source commits after graph warmup"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-FANOUT-512"
+                        },
+                        "group": {
+                            "const": "stable-fanout"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "selectors",
+                                "sourceCommits",
+                                "subscriptionsPerSelector"
+                            ],
+                            "properties": {
+                                "selectors": {
+                                    "const": 512
+                                },
+                                "sourceCommits": {
+                                    "const": 20
+                                },
+                                "subscriptionsPerSelector": {
+                                    "const": 1
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "source commits after graph warmup"
+                        }
+                    }
                 },
                 {
-                    "id": "P-FANOUT-2048",
-                    "group": "stable-fanout",
-                    "requiredAt": ["C", "A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "selectors": 2048,
-                        "sourceCommits": 20,
-                        "subscriptionsPerSelector": 1
-                    },
-                    "timer": "source commits after graph warmup"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-FANOUT-2048"
+                        },
+                        "group": {
+                            "const": "stable-fanout"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "selectors",
+                                "sourceCommits",
+                                "subscriptionsPerSelector"
+                            ],
+                            "properties": {
+                                "selectors": {
+                                    "const": 2048
+                                },
+                                "sourceCommits": {
+                                    "const": 20
+                                },
+                                "subscriptionsPerSelector": {
+                                    "const": 1
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "source commits after graph warmup"
+                        }
+                    }
                 },
                 {
-                    "id": "P-REWIRE-SEPARATE-181-18",
-                    "group": "rewire-separate-commits",
-                    "requiredAt": ["C", "A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "items": 181,
-                        "sequences": 18,
-                        "subscribersPerItem": 6,
-                        "moves": 20,
-                        "moveRule": "next-sequence",
-                        "sequenceEquality": "object-is-per-index"
-                    },
-                    "timer": "twenty genuine move commits"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-REWIRE-SEPARATE-181-18"
+                        },
+                        "group": {
+                            "const": "rewire-separate-commits"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "items",
+                                "sequences",
+                                "subscribersPerItem",
+                                "moves",
+                                "moveRule",
+                                "sequenceEquality"
+                            ],
+                            "properties": {
+                                "items": {
+                                    "const": 181
+                                },
+                                "sequences": {
+                                    "const": 18
+                                },
+                                "subscribersPerItem": {
+                                    "const": 6
+                                },
+                                "moves": {
+                                    "const": 20
+                                },
+                                "moveRule": {
+                                    "const": "next-sequence"
+                                },
+                                "sequenceEquality": {
+                                    "const": "object-is-per-index"
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "twenty genuine move commits"
+                        }
+                    }
                 },
                 {
-                    "id": "P-REWIRE-SEPARATE-800-2",
-                    "group": "rewire-separate-commits",
-                    "requiredAt": ["C", "A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "items": 800,
-                        "sequences": 2,
-                        "subscribersPerItem": 6,
-                        "moves": 20,
-                        "moveRule": "next-sequence",
-                        "sequenceEquality": "object-is-per-index"
-                    },
-                    "timer": "twenty genuine move commits"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-REWIRE-SEPARATE-800-2"
+                        },
+                        "group": {
+                            "const": "rewire-separate-commits"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "items",
+                                "sequences",
+                                "subscribersPerItem",
+                                "moves",
+                                "moveRule",
+                                "sequenceEquality"
+                            ],
+                            "properties": {
+                                "items": {
+                                    "const": 800
+                                },
+                                "sequences": {
+                                    "const": 2
+                                },
+                                "subscribersPerItem": {
+                                    "const": 6
+                                },
+                                "moves": {
+                                    "const": 20
+                                },
+                                "moveRule": {
+                                    "const": "next-sequence"
+                                },
+                                "sequenceEquality": {
+                                    "const": "object-is-per-index"
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "twenty genuine move commits"
+                        }
+                    }
                 },
                 {
-                    "id": "P-REWIRE-TXN-181-90",
-                    "group": "rewire-single-transaction",
-                    "requiredAt": ["A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "items": 181,
-                        "sequences": 18,
-                        "subscribersPerItem": 6,
-                        "changes": 90,
-                        "sequenceEquality": "object-is-per-index"
-                    },
-                    "timer": "one transaction only"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-REWIRE-TXN-181-90"
+                        },
+                        "group": {
+                            "const": "rewire-single-transaction"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "items",
+                                "sequences",
+                                "subscribersPerItem",
+                                "changes",
+                                "sequenceEquality"
+                            ],
+                            "properties": {
+                                "items": {
+                                    "const": 181
+                                },
+                                "sequences": {
+                                    "const": 18
+                                },
+                                "subscribersPerItem": {
+                                    "const": 6
+                                },
+                                "changes": {
+                                    "const": 90
+                                },
+                                "sequenceEquality": {
+                                    "const": "object-is-per-index"
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "one transaction only"
+                        }
+                    }
                 },
                 {
-                    "id": "P-REWIRE-TXN-800-400",
-                    "group": "rewire-single-transaction",
-                    "requiredAt": ["C", "A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "items": 800,
-                        "sequences": 18,
-                        "subscribersPerItem": 6,
-                        "changes": 400,
-                        "sequenceEquality": "object-is-per-index"
-                    },
-                    "timer": "one transaction only"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-REWIRE-TXN-800-400"
+                        },
+                        "group": {
+                            "const": "rewire-single-transaction"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "items",
+                                "sequences",
+                                "subscribersPerItem",
+                                "changes",
+                                "sequenceEquality"
+                            ],
+                            "properties": {
+                                "items": {
+                                    "const": 800
+                                },
+                                "sequences": {
+                                    "const": 18
+                                },
+                                "subscribersPerItem": {
+                                    "const": 6
+                                },
+                                "changes": {
+                                    "const": 400
+                                },
+                                "sequenceEquality": {
+                                    "const": "object-is-per-index"
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "one transaction only"
+                        }
+                    }
                 },
                 {
-                    "id": "P-GRAPH-FWD-WIDE-2048",
-                    "group": "dual-graph-shape",
-                    "requiredAt": ["C", "A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "forwardSelectorLeaves": 2048,
-                        "reverseAncestors": 1,
-                        "newEdgeToggles": 20
-                    },
-                    "timer": "twenty on/off new-edge toggles"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-GRAPH-FWD-WIDE-2048"
+                        },
+                        "group": {
+                            "const": "dual-graph-shape"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "forwardSelectorLeaves",
+                                "reverseAncestors",
+                                "newEdgeToggles"
+                            ],
+                            "properties": {
+                                "forwardSelectorLeaves": {
+                                    "const": 2048
+                                },
+                                "reverseAncestors": {
+                                    "const": 1
+                                },
+                                "newEdgeToggles": {
+                                    "const": 20
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "twenty on/off new-edge toggles"
+                        }
+                    }
                 },
                 {
-                    "id": "P-GRAPH-REV-WIDE-2048",
-                    "group": "dual-graph-shape",
-                    "requiredAt": ["C", "A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "incomingWatchers": 2048,
-                        "forwardDepth": 16,
-                        "newEdgeToggles": 20
-                    },
-                    "timer": "twenty on/off new-edge toggles"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-GRAPH-REV-WIDE-2048"
+                        },
+                        "group": {
+                            "const": "dual-graph-shape"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "C"
+                                },
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "incomingWatchers",
+                                "forwardDepth",
+                                "newEdgeToggles"
+                            ],
+                            "properties": {
+                                "incomingWatchers": {
+                                    "const": 2048
+                                },
+                                "forwardDepth": {
+                                    "const": 16
+                                },
+                                "newEdgeToggles": {
+                                    "const": 20
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "twenty on/off new-edge toggles"
+                        }
+                    }
                 },
                 {
-                    "id": "P-CORE-INITIAL-VIEW",
-                    "group": "packed-core-load",
-                    "requiredAt": ["A"],
-                    "runtimes": ["node"],
-                    "protected": true,
-                    "fixture": "packages/valdres/test/performance/core-load/initial-view-core.v1.json",
-                    "timer": "existing fixture timer"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "fixture",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-CORE-INITIAL-VIEW"
+                        },
+                        "group": {
+                            "const": "packed-core-load"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "fixture": {
+                            "const": "packages/valdres/test/performance/core-load/initial-view-core.v1.json"
+                        },
+                        "timer": {
+                            "const": "existing fixture timer"
+                        }
+                    }
                 },
                 {
-                    "id": "P-CORE-WRITES",
-                    "group": "packed-core-load",
-                    "requiredAt": ["A"],
-                    "runtimes": ["node"],
-                    "protected": true,
-                    "fixture": "packages/valdres/test/performance/core-load/fixture.v1.json#writes",
-                    "timer": "existing fixture timer"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "fixture",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-CORE-WRITES"
+                        },
+                        "group": {
+                            "const": "packed-core-load"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "fixture": {
+                            "const": "packages/valdres/test/performance/core-load/fixture.v1.json#writes"
+                        },
+                        "timer": {
+                            "const": "existing fixture timer"
+                        }
+                    }
                 },
                 {
-                    "id": "P-CORE-NO-WRITES",
-                    "group": "packed-core-load",
-                    "requiredAt": ["A"],
-                    "runtimes": ["node"],
-                    "protected": true,
-                    "fixture": "packages/valdres/test/performance/core-load/fixture.v1.json#no-writes",
-                    "timer": "existing fixture timer"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "fixture",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-CORE-NO-WRITES"
+                        },
+                        "group": {
+                            "const": "packed-core-load"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "fixture": {
+                            "const": "packages/valdres/test/performance/core-load/fixture.v1.json#no-writes"
+                        },
+                        "timer": {
+                            "const": "existing fixture timer"
+                        }
+                    }
                 },
                 {
-                    "id": "P-SCOPE-1000",
-                    "group": "scope-routing",
-                    "requiredAt": ["A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "existingBenchmark": "scope: set atom, 1000 scopes (no shadow)",
-                    "timer": "one aggregated benchmark operation"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "existingBenchmark",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-SCOPE-1000"
+                        },
+                        "group": {
+                            "const": "scope-routing"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "existingBenchmark": {
+                            "const": "scope: set atom, 1000 scopes (no shadow)"
+                        },
+                        "timer": {
+                            "const": "one aggregated benchmark operation"
+                        }
+                    }
                 },
                 {
-                    "id": "P-SUB-CHURN-100",
-                    "group": "subscription-lifecycle",
-                    "requiredAt": ["A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "existingBenchmark": "subscribe + unsubscribe 100 shared selector pairs",
-                    "timer": "one aggregated benchmark operation"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "existingBenchmark",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-SUB-CHURN-100"
+                        },
+                        "group": {
+                            "const": "subscription-lifecycle"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "existingBenchmark": {
+                            "const": "subscribe + unsubscribe 100 shared selector pairs"
+                        },
+                        "timer": {
+                            "const": "one aggregated benchmark operation"
+                        }
+                    }
                 },
                 {
-                    "id": "P-SCRATCH-SET-READ",
-                    "group": "transaction-scratch",
-                    "requiredAt": ["A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "existingBenchmark": "txn: staged set + selector read",
-                    "minimumAggregatedDurationNs": 1000,
-                    "timer": "aggregated transaction operations"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "existingBenchmark",
+                        "minimumAggregatedDurationNs",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-SCRATCH-SET-READ"
+                        },
+                        "group": {
+                            "const": "transaction-scratch"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "existingBenchmark": {
+                            "const": "txn: staged set + selector read"
+                        },
+                        "minimumAggregatedDurationNs": {
+                            "const": 1000
+                        },
+                        "timer": {
+                            "const": "aggregated transaction operations"
+                        }
+                    }
                 },
                 {
-                    "id": "P-HYDRATE-2048",
-                    "group": "hydration",
-                    "requiredAt": ["A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "parameters": {
-                        "selectors": 2048,
-                        "leaves": 512,
-                        "snapshots": 20,
-                        "liveGraphWarm": true
-                    },
-                    "timer": "twenty disposable hydration campaigns"
-                },
-                {
-                    "id": "P-ASYNC-SETTLE-OBSERVED",
-                    "group": "async-settlement",
-                    "requiredAt": ["A"],
-                    "runtimes": ["bun", "node"],
-                    "protected": true,
-                    "existingBenchmark": "async settle: selector resolve observed",
-                    "timer": "existing tier-settled benchmark operation"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "group",
+                        "requiredAt",
+                        "runtimes",
+                        "protected",
+                        "parameters",
+                        "timer"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "P-HYDRATE-2048"
+                        },
+                        "group": {
+                            "const": "hydration"
+                        },
+                        "requiredAt": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 1,
+                            "prefixItems": [
+                                {
+                                    "const": "A"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "runtimes": {
+                            "type": "array",
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "prefixItems": [
+                                {
+                                    "const": "bun"
+                                },
+                                {
+                                    "const": "node"
+                                }
+                            ],
+                            "items": false
+                        },
+                        "protected": {
+                            "const": true
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "selectors",
+                                "leaves",
+                                "snapshots",
+                                "liveGraphWarm"
+                            ],
+                            "properties": {
+                                "selectors": {
+                                    "const": 2048
+                                },
+                                "leaves": {
+                                    "const": 512
+                                },
+                                "snapshots": {
+                                    "const": 20
+                                },
+                                "liveGraphWarm": {
+                                    "const": true
+                                }
+                            }
+                        },
+                        "timer": {
+                            "const": "twenty disposable hydration campaigns"
+                        }
+                    }
                 }
-            ]
+            ],
+            "items": false
         },
         "shiftxWorkloads": {
-            "const": [
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
                 {
-                    "id": "X-SINGLE-DECISION-DROP",
-                    "name": "single decision drop",
-                    "timer": "pointer-up through RunTask end",
-                    "build": "production"
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "name", "timer", "build"],
+                    "properties": {
+                        "id": {
+                            "const": "X-SINGLE-DECISION-DROP"
+                        },
+                        "name": {
+                            "const": "single decision drop"
+                        },
+                        "timer": {
+                            "const": "pointer-up through RunTask end"
+                        },
+                        "build": {
+                            "const": "production"
+                        }
+                    }
                 },
                 {
-                    "id": "X-FIFTEEN-STEP-GESTURE",
-                    "name": "fifteen-step gesture",
-                    "timer": "fixed interaction script through final settled task",
-                    "build": "production",
-                    "requiresBatchingFix": true
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "timer",
+                        "build",
+                        "requiresBatchingFix"
+                    ],
+                    "properties": {
+                        "id": {
+                            "const": "X-FIFTEEN-STEP-GESTURE"
+                        },
+                        "name": {
+                            "const": "fifteen-step gesture"
+                        },
+                        "timer": {
+                            "const": "fixed interaction script through final settled task"
+                        },
+                        "build": {
+                            "const": "production"
+                        },
+                        "requiresBatchingFix": {
+                            "const": true
+                        }
+                    }
                 }
-            ]
+            ],
+            "items": false
         },
         "commonCounters": {
-            "const": {
-                "selectorBodyEntries": "entries into a user selector body across committed, scratch, and hydration hosts",
-                "suppliedGets": "all invocations of the selector-supplied get, including rejected repeats",
-                "serveCalls": "supplied gets that reach host currentness or serve work",
-                "proposalsReturned": "complete logical selector outcomes offered for host acceptance",
-                "proposalsInstalled": "logical authoritative selector-record acceptances, including equal or topology-identical publication",
-                "dependencyEdgesAdded": "set additions from the prior authoritative selector dependency set",
-                "dependencyEdgesRemoved": "set removals from the prior authoritative selector dependency set",
-                "notifications": "final changed targets selected for notification",
-                "subscriberCallbacks": "actual callback invocations",
-                "publicOperations": "manifest-named public operations inside the workload",
-                "checksum": "deterministic workload-defined public outcome digest",
-                "retainedHeapBytes": "bytes retained after the prescribed drain and full-GC sequence"
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "selectorBodyEntries",
+                "suppliedGets",
+                "serveCalls",
+                "proposalsReturned",
+                "proposalsInstalled",
+                "dependencyEdgesAdded",
+                "dependencyEdgesRemoved",
+                "notifications",
+                "subscriberCallbacks",
+                "publicOperations",
+                "checksum",
+                "retainedHeapBytes"
+            ],
+            "properties": {
+                "selectorBodyEntries": {
+                    "const": "entries into a user selector body across committed, scratch, and hydration hosts"
+                },
+                "suppliedGets": {
+                    "const": "all invocations of the selector-supplied get, including rejected repeats"
+                },
+                "serveCalls": {
+                    "const": "supplied gets that reach host currentness or serve work"
+                },
+                "proposalsReturned": {
+                    "const": "complete logical selector outcomes offered for host acceptance"
+                },
+                "proposalsInstalled": {
+                    "const": "logical authoritative selector-record acceptances, including equal or topology-identical publication"
+                },
+                "dependencyEdgesAdded": {
+                    "const": "set additions from the prior authoritative selector dependency set"
+                },
+                "dependencyEdgesRemoved": {
+                    "const": "set removals from the prior authoritative selector dependency set"
+                },
+                "notifications": {
+                    "const": "final changed targets selected for notification"
+                },
+                "subscriberCallbacks": {
+                    "const": "actual callback invocations"
+                },
+                "publicOperations": {
+                    "const": "manifest-named public operations inside the workload"
+                },
+                "checksum": {
+                    "const": "deterministic workload-defined public outcome digest"
+                },
+                "retainedHeapBytes": {
+                    "const": "bytes retained after the prescribed drain and full-GC sequence"
+                }
             }
         },
         "candidateCounterNamespaces": {
-            "const": ["incumbent", "reactive", "dynamicTopo"]
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "prefixItems": [
+                {
+                    "const": "incumbent"
+                },
+                {
+                    "const": "reactive"
+                },
+                {
+                    "const": "dynamicTopo"
+                }
+            ],
+            "items": false
         },
         "forbiddenGenericCounterNames": {
-            "const": ["visits"]
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "prefixItems": [
+                {
+                    "const": "visits"
+                }
+            ],
+            "items": false
         },
         "requiredEvidenceFiles": {
-            "const": [
-                "candidate-plan.json",
-                "provenance.json",
-                "conformance-c.json",
-                "conformance-a.json",
-                "timings.ndjson",
-                "timing-decisions.json",
-                "counters.json",
-                "memory.ndjson",
-                "sizes.json",
-                "host-hooks.json",
-                "complexity.json",
-                "reviews/codex.md",
-                "reviews/other-vendor.md",
-                "reviews/dispositions.json",
-                "report.json",
-                "report.md",
-                "SHA256SUMS"
-            ]
+            "type": "array",
+            "minItems": 17,
+            "maxItems": 17,
+            "prefixItems": [
+                {
+                    "const": "candidate-plan.json"
+                },
+                {
+                    "const": "provenance.json"
+                },
+                {
+                    "const": "conformance-c.json"
+                },
+                {
+                    "const": "conformance-a.json"
+                },
+                {
+                    "const": "timings.ndjson"
+                },
+                {
+                    "const": "timing-decisions.json"
+                },
+                {
+                    "const": "counters.json"
+                },
+                {
+                    "const": "memory.ndjson"
+                },
+                {
+                    "const": "sizes.json"
+                },
+                {
+                    "const": "host-hooks.json"
+                },
+                {
+                    "const": "complexity.json"
+                },
+                {
+                    "const": "reviews/codex.md"
+                },
+                {
+                    "const": "reviews/other-vendor.md"
+                },
+                {
+                    "const": "reviews/dispositions.json"
+                },
+                {
+                    "const": "report.json"
+                },
+                {
+                    "const": "report.md"
+                },
+                {
+                    "const": "SHA256SUMS"
+                }
+            ],
+            "items": false
         }
     }
 }

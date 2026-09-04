@@ -18,7 +18,7 @@ export function requireGate(condition, id, message) {
     if (!condition) throw new Error(`${id}: ${message}`)
 }
 export const manifest = json(
-    resolve(ROOT, DIRECTORY, "fixture-manifest.v1.json"),
+    resolve(ROOT, DIRECTORY, "fixture-manifest.v2.json"),
 )
 export const reportSchema = json(
     resolve(ROOT, DIRECTORY, "candidate-report.schema.json"),
@@ -136,7 +136,7 @@ export function checkInputs(root = ROOT, input = manifest) {
         specGitSha: SPEC_COMMIT,
         specSha256: input.spec.sha256,
         manifestSha256: fileHash(
-            resolve(root, DIRECTORY, "fixture-manifest.v1.json"),
+            resolve(root, DIRECTORY, "fixture-manifest.v2.json"),
         ),
         reportSchemaSha256: fileHash(
             resolve(root, DIRECTORY, "candidate-report.schema.json"),
@@ -193,7 +193,11 @@ export function verifyMemorySource(source, input = manifest) {
     visit(ast)
     exactRows(
         Object.keys(limits ?? {}),
-        input.memoryScenarios.map(row => row.name),
+        [
+            ...input.memoryScenarios.map(row => row.name),
+            "global fan-out",
+            "store disposal and async cancellation",
+        ],
         "INPUT-MEMORY-SOURCE",
     )
     for (const scenario of input.memoryScenarios) {

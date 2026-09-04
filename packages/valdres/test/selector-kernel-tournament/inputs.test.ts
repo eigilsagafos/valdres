@@ -68,6 +68,57 @@ function rows(stage = "A") {
     }
 }
 describe("F0 frozen authority", () => {
+    test("v2 scope cannot regress to legacy async/global or synthetic hydration", () => {
+        expect(manifest.schemaVersion).toBe(2)
+        expect(manifest.id).toBe("valdres-selector-kernel-tournament-v2")
+        expect(manifest.semanticCases).toHaveLength(30)
+        expect(manifest.performanceWorkloads).toHaveLength(17)
+        expect(manifest.memoryScenarios).toHaveLength(6)
+        expect(rows().resources.memory).toHaveLength(12)
+        const fault = manifest.semanticCases.find(
+            row => row.id === "A-FAULT-001",
+        )!
+        expect(fault.parameters.thenablePhases).toEqual([
+            "getter-return",
+            "getter-throw",
+            "comparator-return",
+            "comparator-throw",
+        ])
+        expect(fault.parameters.maySettleIntoState).toBe(false)
+        const hydration = manifest.semanticCases.find(
+            row => row.id === "A-HYDRATE-001",
+        )!
+        expect(hydration.parameters).toEqual({
+            api: "readHydrationSnapshot(store,state)",
+            externalProjection: false,
+            missingServerReader: false,
+            liveSelectorPublication: false,
+        })
+        for (const [collection, id] of [
+            ["semanticCases", "A-ASYNC-001"],
+            ["performanceWorkloads", "P-ASYNC-SETTLE-OBSERVED"],
+            ["memoryScenarios", "M-GLOBAL-FANOUT"],
+            ["memoryScenarios", "M-STORE-DISPOSAL-ASYNC-CANCELLATION"],
+        ] as const) {
+            const changed = copy()
+            changed[collection][0].id = id
+            expect(() => schemaCheck(changed, "manifest")).toThrow(
+                "INPUT-SCHEMA",
+            )
+            const report = rows()
+            const target =
+                collection === "semanticCases"
+                    ? report.semanticCases
+                    : collection === "performanceWorkloads"
+                      ? report.workloads
+                      : report.resources.memory
+            target[0].id = id
+            expect(() => validateInventoryRows(report)).toThrow("unknown row")
+        }
+        const changed = copy()
+        changed.schemaVersion = 1
+        expect(() => schemaCheck(changed, "manifest")).toThrow("INPUT-SCHEMA")
+    })
     test("all hashes, schema, control lineage, memory and size match", () =>
         expect(checkInputs().specGitSha).toBe(
             "20dddc5c307a1213f3888ab0dabc60a59a165b36",

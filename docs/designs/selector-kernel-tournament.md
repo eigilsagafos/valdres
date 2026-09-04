@@ -8,7 +8,7 @@
 - Historical diagnostic: `valdres@1.0.0-beta.35` at
   `1d565045859e0787a164ac491e97d1069ad687ec`
 - Normative fixture inventory:
-  [`fixture-manifest.v1.json`](../../packages/valdres/test/selector-kernel-tournament/fixture-manifest.v1.json)
+  [`fixture-manifest.v2.json`](../../packages/valdres/test/selector-kernel-tournament/fixture-manifest.v2.json)
 - Normative report schema:
   [`candidate-report.schema.json`](../../packages/valdres/test/selector-kernel-tournament/candidate-report.schema.json)
 
@@ -58,6 +58,18 @@ human decision. Agreement between models is not evidence of correctness.
   is admitted.
 - No family or collection behavior is made contingent on the tournament.
 - No beta number is reserved in a branch name, PR title, or source manifest.
+
+## Normative v2 correction
+
+The authoritative behavior is the packed beta.36 root and approved v1 contracts.
+Version 2 contains 30 semantic cases, 17 performance workloads, and six memory
+scenarios (12 Bun/Node rows). It removes the legacy native-async and global-atom
+lanes, narrows hydration to the shipped adapter, and corrects the active-cycle
+path/cause convention. No authoritative v1 candidate evidence exists; the
+earlier foundation-development bundle remains diagnostic only. Global atoms are
+absent from the packed v1 root. Legacy async/global tests and their absolute
+ceilings remain unchanged repository regressions, outside tournament
+eligibility/scoring.
 
 ## Governing rules
 
@@ -274,11 +286,26 @@ For an attempted dependency edge `P -> D`:
   read order, deduplicated;
 - the graph after the failed evaluation is still a DAG;
 - the thrown error is `SelectorCircularDependencyError` blamed on `P`;
-- its path starts and ends at `P`, uses `P -> D`, follows valid effective graph
-  edges back to `P`, and contains no repeated interior vertex;
+- its normalized causal path starts and ends at `D`, follows valid effective
+  graph edges from `D` to `P`, ends with the rejected `P -> D` edge, and
+  contains no repeated interior vertex; the raw public path is retained as well;
 - when several return paths are valid, any one may be chosen, but the same
   artifact, fixture, runtime, and seed MUST choose the same path on repeated
   runs.
+
+For indirect public reads, preserve the existing
+`SelectorGetterError -> SelectorDependencyError -> SelectorCircularDependencyError`
+cause chain. The circular cause carries blame and path; it need not be the
+outermost error. For `P=b` and `D=a`, the active-cycle path is `[a, b, a]`.
+
+The complete packed admission audit found a further factual distinction: beta.36
+cached-edge and prefix-revalidation rejection constructs the raw closed path
+starting at `P`, with `P -> D` first. Active recursion constructs it starting at
+`D`, with `P -> D` last. Both raw conventions are preserved in their explicit
+traces. The invariant validator rotates the cached path once to `D` before
+checking causal edges; it never changes blame, edge membership, interior order,
+or the raw error. This corrects an overgeneralization of the active-cycle
+example, not a runtime change.
 
 The reported path contains the rejected edge as evidence. The authoritative
 dependency record excludes it.
@@ -290,8 +317,12 @@ dependency record excludes it.
   something else, or returns a value.
 - Every later supplied `get` in that evaluation fails without evaluating or
   accepting the requested dependency.
-- A later foreign publication may shorten an already accepted prefix at the
-  first newly invalid edge. It cannot replace the first latched error.
+- Fresh-session settlement and later public rewrites preserve the accepted
+  prefix and DAG. Same-domain Store operations attempted during a selector body,
+  comparator, or finalization accessor are quarantined. A synthetic TestHost's
+  ability to redefine or publish nodes inside these callbacks is not a packed v1
+  operation and cannot be required as a tournament stimulus. Existing synthetic
+  evaluator tests remain ordinary repository regressions.
 - A successfully completed child may remain authoritative when its active parent
   fails. A partial active-parent result may not.
 - A later public read retries through the retained accepted prefix. It may
@@ -318,9 +349,10 @@ dependency record excludes it.
 - Repeated reads of an unchanged current error preserve object identity where
   the beta.36 contract does. Identity is compared as an equivalence relation
   within an artifact, never by cross-process object address.
-- Returned or thrown thenables, invalid comparator results, hostile accessors,
-  and revoked supplied getters keep their existing named errors and fault
-  precedence.
+- Returned or thrown thenables produce the existing named synchronous selector
+  failure and receive the existing rejection-containment treatment. They never
+  settle into State. Invalid comparator results, hostile accessors, and revoked
+  supplied getters keep their existing named errors and fault precedence.
 
 ### A5. Source commits, transactions, and hydration
 
@@ -329,9 +361,13 @@ dependency record excludes it.
 - A transaction exposes staged values through its scratch selector host, commits
   one final state on success, and publishes nothing on abort.
 - Scratch errors and dependencies die with the draft generation.
-- Hydration evaluation is disposable, uses server/fallback leaves as specified,
-  does not publish into the live selector graph, and does not invoke live
-  comparator baselines.
+- `readHydrationSnapshot(store, state)` accepts valid same-domain State handles
+  and preserves synchronous value/error parity using committed leaves and
+  ordinary fallback initialization. Its selector host is disposable: it does not
+  warm or publish into the live selector graph, invoke live comparator
+  baselines, expose an external projection, or retain a hydration graph.
+  Synthetic missing server-reader behavior is outside the shipped adapter
+  contract.
 
 ### A6. Notifications and callback order
 
@@ -343,11 +379,13 @@ dependency record excludes it.
   precedence. A callback cannot mutate a quarantined same-domain Store.
 - No notification appears after the fixture's microtask/macrotask drain.
 
-### A7. Async settlement and lifecycle
+### A7. Lifecycle
 
-- Promise value/error settlement, supersession, stale settlement rejection,
-  disposal, and cancellation preserve the final observable outcome and
-  notification trace.
+- Native async selector settlement, supersession, cancellation,
+  `Store.onChange`, and `Store.onCommitEnd` are outside this synchronous v1
+  tournament. Legacy async tests remain ordinary repository regressions, not
+  eligibility or scoring gates. Synchronous thenable rejection and containment
+  are required under A4.
 - Scope disposal removes the complete owned subtree and its routing. Recreating
   a named scope cannot reuse a dead selector record, subscription, rank, or
   candidate-specific queue node.
@@ -394,22 +432,21 @@ a schema-version change and invalidates prior evidence.
 
 ### Semantic fixture groups
 
-| Group                                                | Required at C | Required at A | Authority                                       |
-| ---------------------------------------------------- | :-----------: | :-----------: | ----------------------------------------------- |
-| active direct/indirect cycles                        |      yes      |      yes      | independent selector oracle plus explicit trace |
-| cached reversal and multi-hop cycles                 |      yes      |      yes      | independent selector oracle                     |
-| exhaustive DAG edge insertion, 1-5 nodes             |      yes      |      yes      | independent reachability enumeration            |
-| causal blame, prefix retention, sticky caught fault  |    subset     |      yes      | explicit invariant validator                    |
-| same-session/fresh-session/finalization publication  |      no       |      yes      | explicit Store trace                            |
-| value, ordinary error, equality, error identity      |    subset     |      yes      | explicit Store trace                            |
-| source finality and completed-child retention        |      yes      |      yes      | explicit Store trace                            |
-| transaction scratch commit/abort                     |      yes      |      yes      | explicit Store trace                            |
-| scope isolation, inheritance, disposal/recreation    |      yes      |      yes      | explicit Store trace                            |
-| notification membership/order and callback isolation |      yes      |      yes      | explicit Store trace                            |
-| hydration isolation and missing-reader fault         |      no       |      yes      | explicit adapter trace                          |
-| async settle/supersede/dispose                       |      no       |      yes      | fake-clock trace                                |
-| shipped family compatibility                         |      no       |      yes      | frozen public tests plus capability trace       |
-| deterministic generated differential traces          |      no       |      yes      | fixed seeds and independent oracle              |
+| Group                                                       | Required at C | Required at A | Authority                                       |
+| ----------------------------------------------------------- | :-----------: | :-----------: | ----------------------------------------------- |
+| active direct/indirect cycles                               |      yes      |      yes      | independent selector oracle plus explicit trace |
+| cached reversal and multi-hop cycles                        |      yes      |      yes      | independent selector oracle                     |
+| exhaustive DAG edge insertion, 1-5 nodes                    |      yes      |      yes      | independent reachability enumeration            |
+| causal blame, prefix retention, sticky caught fault         |    subset     |      yes      | explicit invariant validator                    |
+| nested/fresh-session settlement and finalization quarantine |      no       |      yes      | explicit Store trace                            |
+| value, ordinary error, equality, error identity             |    subset     |      yes      | explicit Store trace                            |
+| source finality and completed-child retention               |      yes      |      yes      | explicit Store trace                            |
+| transaction scratch commit/abort                            |      yes      |      yes      | explicit Store trace                            |
+| scope isolation, inheritance, disposal/recreation           |      yes      |      yes      | explicit Store trace                            |
+| notification membership/order and callback isolation        |      yes      |      yes      | explicit Store trace                            |
+| synchronous hydration parity and isolation                  |      no       |      yes      | explicit adapter trace                          |
+| shipped family compatibility                                |      no       |      yes      | frozen public tests plus capability trace       |
+| deterministic generated differential traces                 |      no       |      yes      | fixed seeds and independent oracle              |
 
 The normalized trace compares exact public outcomes and order. Cycle paths are
 validated structurally under A1 instead of byte-compared to beta.36. Candidate
@@ -436,7 +473,6 @@ specific counter namespaces are never part of semantic equality.
 | `P-SUB-CHURN-100`          | subscription churn          | existing 100 shared selector pairs                             | mount/unmount ownership cost                       |
 | `P-SCRATCH-SET-READ`       | transaction scratch         | existing staged set plus selector read, aggregated to >=1 us   | scratch currentness/evaluation cost                |
 | `P-HYDRATE-2048`           | disposable hydration        | 2,048 selectors over 512 leaves, 20 snapshots                  | hydration host cost and isolation                  |
-| `P-ASYNC-SETTLE-OBSERVED`  | async settlement            | existing observed native selector settlement                   | settlement queue and callback cost                 |
 
 Every lane asserts a deterministic public-work count and checksum before its
 sample is admitted. The foundation commit freezes the new checksums. Existing
@@ -578,20 +614,18 @@ new run ID and the invalid run remains in the evidence bundle.
 - Released residual MUST pass the existing absolute ceiling. A monotonic
   retained increase across three post-release drains is an immediate failure.
 
-The manifest freezes these eight scenarios from
+The manifest freezes these six scenarios from
 `test/performance/architecture.memory.ts`; its hash and the duplicated values
 below must agree before a run starts:
 
-| Scenario ID                           | Unit (count)         | Bun retained / released | Node retained / released |
-| ------------------------------------- | -------------------- | ----------------------- | ------------------------ |
-| `M-ATOM-ONLY-STORES`                  | atom state (4,000)   | 160 B / 524,288 B       | 120 B / 262,144 B        |
-| `M-LIVE-SELECTOR-GRAPHS`              | selector (1,500)     | 2,400 B / 524,288 B     | 1,500 B / 262,144 B      |
-| `M-DYNAMIC-DEPENDENCY-CHURN`          | selector (1,000)     | 2,100 B / 524,288 B     | 1,400 B / 262,144 B      |
-| `M-SCOPE-CREATION-DISPOSAL`           | scope (1,500)        | 3,200 B / 524,288 B     | 3,400 B / 262,144 B      |
-| `M-SINGLE-STORE-TRANSACTIONS`         | staged state (2,500) | 360 B / 524,288 B       | 120 B / 262,144 B        |
-| `M-DEEP-CROSS-SCOPE-TRANSACTIONS`     | depth level (64)     | 30,000 B / 524,288 B    | 14,000 B / 262,144 B     |
-| `M-GLOBAL-FANOUT`                     | store (1,000)        | 3,700 B / 524,288 B     | 3,400 B / 262,144 B      |
-| `M-STORE-DISPOSAL-ASYNC-CANCELLATION` | store (500)          | 7,500 B / 524,288 B     | 7,500 B / 262,144 B      |
+| Scenario ID                       | Unit (count)         | Bun retained / released | Node retained / released |
+| --------------------------------- | -------------------- | ----------------------- | ------------------------ |
+| `M-ATOM-ONLY-STORES`              | atom state (4,000)   | 160 B / 524,288 B       | 120 B / 262,144 B        |
+| `M-LIVE-SELECTOR-GRAPHS`          | selector (1,500)     | 2,400 B / 524,288 B     | 1,500 B / 262,144 B      |
+| `M-DYNAMIC-DEPENDENCY-CHURN`      | selector (1,000)     | 2,100 B / 524,288 B     | 1,400 B / 262,144 B      |
+| `M-SCOPE-CREATION-DISPOSAL`       | scope (1,500)        | 3,200 B / 524,288 B     | 3,400 B / 262,144 B      |
+| `M-SINGLE-STORE-TRANSACTIONS`     | staged state (2,500) | 360 B / 524,288 B       | 120 B / 262,144 B        |
+| `M-DEEP-CROSS-SCOPE-TRANSACTIONS` | depth level (64)     | 30,000 B / 524,288 B    | 14,000 B / 262,144 B     |
 
 Retained ceilings are bytes per unit; released ceilings are residual bytes per
 process. At the memory-gated stages, the report has one row for every frozen
@@ -802,7 +836,7 @@ Base: `origin/main` at `1c03f126ba714d0765c3386e613f4c892b89829b`
 Owns only:
 
 - this specification;
-- `fixture-manifest.v1.json`;
+- `fixture-manifest.v2.json`;
 - `candidate-report.schema.json`;
 - `.changeset/selector-kernel-tournament-spec.md`, containing only empty YAML
   frontmatter as the repository's required non-release CI marker.
@@ -828,8 +862,9 @@ Allowed paths:
 - one manual/dispatch-only tournament workflow and its tests, if needed;
 - this document when implementation reveals a factual spec defect;
 - exactly one empty, non-release `.changeset/selector-kernel-foundation.md`,
-  containing only `---` / `---` YAML frontmatter, naming no package and requesting
-  no version bump (required by the ordinary package-change PR CI gate).
+  containing only `---` / `---` YAML frontmatter, naming no package and
+  requesting no version bump (required by the ordinary package-change PR CI
+  gate).
 
 Forbidden paths:
 
@@ -964,7 +999,7 @@ contains no candidate kernel.
 - Assert the beta.36 commit and runtime tree hashes.
 - Assert existing core-load fixture hashes.
 - Assert the pre.28 registry identity and tarball SHA-256 before any claim run.
-- Assert all eight memory scenario names, units, runtimes, and absolute ceilings
+- Assert all six memory scenario names, units, runtimes, and absolute ceilings
   against the frozen architecture-memory source.
 - Assert the complete size baseline and its measurement script hashes before
   comparing every existing raw/gzip metric.
@@ -994,7 +1029,7 @@ and Bun.
 - Add exhaustive 1-5-node DAG edge-insertion enumeration with an independent
   reachability implementation.
 - Add hand-authored Store traces for currentness, publication, scope,
-  transaction, hydration, notification, async, lifecycle, and error identity.
+  transaction, hydration, notification, lifecycle, and error identity.
 - Run the frozen public family suite and add the two manifest-named
   family-compatibility traces without changing family expectations.
 - Accept candidate-owned evidence adapters without sharing their production
@@ -1013,8 +1048,8 @@ each produces the expected fixture ID.
   and structural sequence equality.
 - Port the 181/90 and 800/400 single-transaction lanes.
 - Add stable fanout, dual graph-shape, hydration, and atom-only cases.
-- Wrap the existing scope, subscription, scratch, async, and packed core-load
-  cases rather than duplicating them.
+- Wrap the existing scope, subscription, scratch, and packed core-load cases
+  rather than duplicating them.
 - Freeze exact work counts, semantic checksums, and timer boundaries.
 
 Verify: a checksum or work-count mutation rejects the sample before statistics
@@ -1156,7 +1191,6 @@ Store host
   +-- scope isolation/dispose/recreate ----------------- [existing, neutralize]
   +-- hydration disposable host ------------------------ [existing, neutralize]
   +-- notification order/fault quarantine -------------- [existing, neutralize]
-  +-- async settle/supersede/cancel -------------------- [existing, neutralize]
 ```
 
 | Failure mode                                         | Required detection                                 | User-visible result                                          |

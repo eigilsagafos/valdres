@@ -1,7 +1,7 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://valdres.dev/schemas/selector-kernel-candidate-report.v1.json",
-    "title": "Valdres selector-kernel candidate report v1",
+    "$id": "https://valdres.dev/schemas/selector-kernel-candidate-report.v2.json",
+    "title": "Valdres selector-kernel candidate report v2",
     "type": "object",
     "additionalProperties": false,
     "required": [
@@ -686,10 +686,10 @@
     },
     "properties": {
         "schemaVersion": {
-            "const": 1
+            "const": 2
         },
         "tournamentId": {
-            "const": "valdres-selector-kernel-tournament-v1"
+            "const": "valdres-selector-kernel-tournament-v2"
         },
         "runId": {
             "type": "string",
@@ -1403,8 +1403,8 @@
                         "properties": {
                             "memory": {
                                 "type": "array",
-                                "minItems": 16,
-                                "maxItems": 16
+                                "minItems": 12,
+                                "maxItems": 12
                             }
                         }
                     }

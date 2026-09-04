@@ -30,7 +30,7 @@ import {
     sha256,
 } from "./inputs.mjs"
 
-export const EVIDENCE_MARKER = "VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V1"
+export const EVIDENCE_MARKER = "VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V2"
 export function assertPackedImports(
     source,
     filename,

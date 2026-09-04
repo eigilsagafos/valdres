@@ -47,9 +47,32 @@ export function* labeledDAGs(n) {
     }
 }
 export function validateCyclePath(
-    { path, parent, dependency, effective, installed, causal = true },
+    {
+        path: rawPath,
+        parent,
+        dependency,
+        effective,
+        installed,
+        causal = true,
+        origin = "dependency",
+    },
     caseId = "A-GRAPH-001",
 ) {
+    requireGate(
+        ["dependency", "parent"].includes(origin),
+        caseId,
+        "unknown raw path origin",
+    )
+    const path =
+        origin === "parent" && Array.isArray(rawPath)
+            ? [...rawPath.slice(1), rawPath[1]]
+            : rawPath
+    if (origin === "parent")
+        requireGate(
+            rawPath[0] === parent && rawPath.at(-1) === parent,
+            caseId,
+            "cached path must start at parent",
+        )
     requireGate(
         Array.isArray(path) && path.length >= 2 && path[0] === path.at(-1),
         caseId,
@@ -62,9 +85,9 @@ export function validateCyclePath(
     )
     if (causal)
         requireGate(
-            path[0] === parent && path[1] === dependency,
+            path[0] === dependency && path.at(-2) === parent,
             caseId,
-            "path does not start with the causally closing edge",
+            "path does not end with the causally closing edge",
         )
     requireGate(
         !installed[parent].includes(dependency),

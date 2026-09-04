@@ -28,7 +28,7 @@ test("independent closure rejects cycles and accepts acyclic insertions", () => 
 
 test("normative causal path checks reject concrete structural mutations", () => {
     const good = {
-        path: [2, 0, 1, 2],
+        path: [0, 1, 2, 0],
         parent: 2,
         dependency: 0,
         effective: [[1], [2], []],
@@ -38,10 +38,10 @@ test("normative causal path checks reject concrete structural mutations", () => 
     expect(() =>
         validateCyclePath({ ...good, installed: [[1], [2], [0]] }),
     ).toThrow("offending edge was installed")
-    expect(() => validateCyclePath({ ...good, path: [0, 1, 2, 0] })).toThrow(
+    expect(() => validateCyclePath({ ...good, path: [2, 0, 1, 2] })).toThrow(
         "causally closing edge",
     )
-    expect(() => validateCyclePath({ ...good, path: [2, 0, 2] })).toThrow(
+    expect(() => validateCyclePath({ ...good, path: [0, 2, 0] })).toThrow(
         "absent effective edge",
     )
 })
