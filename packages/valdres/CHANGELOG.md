@@ -1,5 +1,18 @@
 # valdres
 
+## 1.0.0-beta.34
+
+### Patch Changes
+
+- [#376](https://github.com/eigilsagafos/valdres/pull/376)
+  [`ca55add`](https://github.com/eigilsagafos/valdres/commit/ca55add44973a043ee296c839f4b5680da4feb89)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Reduce selector
+  cycle-proof work by checking bounded committed reverse adjacency before
+  walking a proposed dependency's forward closure. Positive, nested-transient,
+  unsupported, and budget-limited cases retain the canonical forward proof and
+  exact cycle path. Inspection schema v4 reports reverse outcomes and work
+  separately from forward visits.
+
 ## 1.0.0-beta.33
 
 ### Patch Changes
