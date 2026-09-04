@@ -43,12 +43,13 @@
 | Packaging      | exact root exports/types, split graph, atom-only reachability, installed tarball, React 18/19, SSR/hydration                              |
 
 Every transaction exit path—success, callback abort, preflight failure, and
-committed-error exit—must run the optional kernel `releaseDraft` hook. In the
-draft-only slice, read-only lanes cover success/committed errors while staged
-row lanes cover callback abort and fail-before-mutation preflight. The scope
-slice adds successful and post-apply-error exits with staged rows. Retain a
-closed cursor deliberately and prove no staged row value, intent, enabling
-history, or membership memo remains reachable.
+committed-error exit—must run the collection cleanup registered through
+`TreeDraft.installRows`. In the draft-only slice, read-only lanes cover
+success/committed errors while staged row lanes cover callback abort and
+fail-before-mutation preflight. The scope slice adds successful and
+post-apply-error exits with staged rows. Retain a closed cursor deliberately and
+prove no staged row value, intent, enabling history, or membership memo remains
+reachable.
 
 Within one target, callbacks follow subscription-registration order and
 duplicate target subscriptions fire independently. Freeze both error ledgers:
@@ -102,15 +103,17 @@ T7 inspection/differential matrix:
 
 ## Performance gates
 
-- Pair ordinary atom/core-load/rewire controls against the exact base artifact.
-- Measure collection lookup hit/miss and encoded hit in fresh processes.
-- Measure absent read, value update, insert, delete, and transaction membership
-  reads at 1k/5k/20k rows.
-- Compare inspected/uninspected membership insert/delete at small and large
-  cardinality. The incremental slope must stay within 10%, and inspection detail
-  classification must reuse the existing placement pass. Phase-0 detail emission
-  may iterate the aliased touched-placement map, but must add no second
-  membership snapshot diff, Set, or collection-sized buffer.
+- Keep ordinary atom/core-load counters and immutable package-size controls.
+- Assert direct and encoded lookup identity at 1k/5k/20k rows.
+- For value updates, inserts, deletes, and transaction membership reads at
+  1k/5k/20k rows, pin exact route visits, scans, allocations, source
+  publications, and effective-delta work rather than host timing slopes. Keep
+  absent-read zero work and 20k sparse-sibling routing as dedicated cases.
+- Inspection detail classification must reuse the existing placement pass.
+  Phase-0 detail emission may iterate the aliased touched-placement map, but
+  must add no second membership snapshot diff, Set, or collection-sized buffer;
+  one insert or delete must attempt exactly three details regardless of tested
+  cardinality.
 - Assert `Object.is`-distinct present-to-present update counters are independent
   of membership cardinality; same-value/NaN writes are full effective no-ops.
 - Assert every affected MembershipRecord is rebuilt at most once per commit.
@@ -123,17 +126,26 @@ T7 inspection/differential matrix:
   cache, scope sidecar, or workset.
 - After a collection installs the domain vtable, run Atom-only work in a fresh
   Store/transaction and assert zero collection draft/scope allocations, zero
-  collection counters, and <=10% ordinary timing delta.
+  collection counters, and empty rebuild/placement traces.
+- Run the residual constant-factor check as an explicit standalone Bun smoke,
+  outside `bun:test`: one process, separate control/installed domains, fixed 40k
+  direct and 20k transaction batches, four warmups, and eight adjacent AB/BA
+  rounds. Record `Bun.nanoseconds` wall timing plus `process.cpuUsage`
+  diagnostics. The geometric-median wall ratio targets <=1.10 as advisory and
+  fails only at >=1.50; persist policy and commands, not machine samples. Run
+  those manifest commands from `packages/valdres`.
 - Keep every pre-collection baseline immutable. Name the provisional COL-004
   native-collection core gzip seam waiver: exactly 71 gzip bytes beyond the
   existing 2% ceilings on affected ordinary fixtures, with no raw allowance;
-  graph/no-call/no-allocation/counter and <=10% timing gates remain unchanged.
-- In COL-008 after COL-006, require three byte-identical pinned Bun 1.4.0 builds
-  and replace the provisional value with the exact maximum additive gzip
-  allowance, with no cushion or baseline ratchet. Any later increase requires
-  explicit architecture review. Keep distinct reviewed feature budgets for
+  graph/no-call/no-allocation and deterministic counter/trace gates remain
+  unchanged.
+- COL-008 certifies three byte-identical pinned Bun 1.4.0 builds and replaces
+  the provisional value with the exact 62-byte maximum additive gzip allowance,
+  with no cushion or baseline ratchet. Any later increase requires explicit
+  architecture review. Keep distinct reviewed feature budgets for
   collection/dist/packed/all-exports/inspect; after COL-007, `inspect` is a
-  feature fixture rather than an ordinary control.
+  feature fixture rather than an ordinary control. Both production and
+  development runtime graphs remain part of the certified artifact.
 
 ## ShiftX acceptance
 
@@ -159,9 +171,43 @@ T7 inspection/differential matrix:
 - An aborted third row handle may exist inertly, but the row stays effectively
   absent and membership/storage/notifications remain unchanged; post-transaction
   reconciliation disposes its provisional row subscription.
-- Logout deletion removes membership and storage; reinsertion appends.
+- In the test-local historical adapter, logout deletion removes membership and
+  storage and reinsertion appends. Current ShiftX must still confirm that true
+  deletion is the intended real-app behavior.
 - Fresh-store hydration needs no parallel refs array.
 - Structural report is complete and contains no row values or keys.
+
+## ShiftX selector prefix-proof follow-up
+
+- The selector correction landed independently through #364; these bullets
+  preserve its acceptance boundary and the remaining real-app replay.
+- Treat the 2026-09 packet as selector-evaluator evidence, not collection
+  acceptance. ShiftX has not received `collection()` yet.
+- Preserve proactive cycle checks, transient-prefix visibility, first-read
+  blame, and canonical positive paths. Do not substitute active-stack-only or
+  topology-version-only proof skipping.
+- Keep negative proof reuse inside one prefix revalidation and one exact graph
+  observation. Retain only maps from fully exhausted negative searches; never
+  retain a positive or partial traversal.
+- Use at most two learned closures. Lock the first closure with demonstrated
+  overlap, ignore terminal-only eviction, disable after the third disjoint
+  non-terminal proof, and reset a locked closure's miss streak whenever it is
+  reused within that synchronous batch.
+- Pin empty/singleton behavior, a wide shared hub, two initially disjoint heavy
+  closures followed by terminal noise and later reuse, and all-disjoint
+  fallback. Run packet-shaped cases through both the default and inspected
+  cycle-search strategies.
+- Force a real site-0 positive cycle after one negative closure is learned.
+  Require the unchanged error identity, canonical path, first offending edge,
+  installed attempted-prefix truncation, and fast/inspection parity.
+- Keep new-edge proofs unchanged and rerun the existing scratch, hydration,
+  same-session transient, cross-host, seeded-DAG, and selector-oracle cases.
+- Use exact adjacency reads plus inspection `cycle.searches`, `cycle.visits`,
+  and `found` as the deterministic performance gate. Wall timing is diagnostic.
+- The supplied ShiftX standalone script must remain a semantic smoke because it
+  does not reproduce the packet's hot prefix wave. Final acceptance requires a
+  real ShiftX snapback capture with unchanged outputs/notifications and a
+  material reduction from 55,885 prefix searches / 80,905,365 visits.
 
 ## Contract and packaging gates
 
@@ -195,6 +241,7 @@ T7 inspection/differential matrix:
   descriptor or ignored option in this beta.
 - Through T6, keep immutable ordinary raw ceilings and the fixed provisional
   71-byte gzip seam cap unchanged, alongside graph/no-call/no-allocation/
-  counter/<=10% timing gates. T8 still owns three byte-identical pinned-Bun
-  builds, the exact no-cushion replacement allowance, packed consumers, and
-  separately reviewed collection feature budgets.
+  deterministic counter/trace gates. T8 replaces that provisional cap with the
+  exact no-cushion 62-byte allowance and certifies three byte-identical
+  pinned-Bun builds, packed consumers, separately reviewed collection feature
+  budgets, and the final seconds-scale advisory timing smoke.

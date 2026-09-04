@@ -108,13 +108,9 @@ export type SynchronousResult =
 
 /** Opaque commit plan produced by the optional collection extension. */
 export interface CollectionCommitPlan {
-    readonly kind: "collection-commit-plan"
-    commit(host: object, phase: 0): boolean
-    commit(host: object, phase: 1): void
-    commit(
-        host: object,
-        phase: 2,
-    ): readonly CollectionCommitSource[] | undefined
+    commit(phase: 0): boolean
+    commit(phase: 1): void
+    commit(phase: 2): readonly CollectionCommitSource[] | undefined
 }
 
 /** Opaque-to-core source coordinate returned after collection settlement. */
@@ -143,8 +139,7 @@ export interface OptionalCollectionVTable {
         scope: object,
         node?: AnyState,
     ): ServedSelectorOutcome<object> | undefined
-    plan(host: object, draft: object): CollectionCommitPlan | undefined
-    release(draft: object): void
+    plan(draft: object): CollectionCommitPlan | undefined
 }
 
 const NOT_THENABLE = Object.freeze({ kind: "not-thenable" as const })

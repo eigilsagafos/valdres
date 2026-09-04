@@ -1652,7 +1652,7 @@ class CommittedStoreTreeHost
     #commitDraft(draft: TreeDraft): void {
         let collectionPlan: CollectionCommitPlan | undefined
         if (draft.hasRows) {
-            collectionPlan = this.#domain[COLLECTION_KERNEL]?.plan(this, draft)
+            collectionPlan = this.#domain[COLLECTION_KERNEL]?.plan(draft)
             if (collectionPlan === undefined) throw new Error()
         }
         if (!draft.hasIntents && collectionPlan === undefined) return
@@ -1732,7 +1732,7 @@ class CommittedStoreTreeHost
             }
         }
         if (collectionPlan !== undefined) {
-            const collectionOwnershipChanged = collectionPlan.commit(this, 0)
+            const collectionOwnershipChanged = collectionPlan.commit(0)
             ownershipChanged ||= collectionOwnershipChanged
         }
         // Rewire every materialized target only after every local source applies.
@@ -1743,7 +1743,7 @@ class CommittedStoreTreeHost
             }
         }
         if (collectionPlan !== undefined) {
-            collectionPlan.commit(this, 1)
+            collectionPlan.commit(1)
         }
 
         this.#beginNotificationSettlement()
@@ -1800,7 +1800,7 @@ class CommittedStoreTreeHost
                 }
             }
             if (collectionPlan !== undefined) {
-                const sources = collectionPlan.commit(this, 2)
+                const sources = collectionPlan.commit(2)
                 if (sources !== undefined) {
                     for (const source of sources) {
                         const current = source as AtomViewRecord

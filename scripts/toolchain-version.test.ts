@@ -25,13 +25,37 @@ import { join } from "path"
 //
 // So the version lives in one file and everything that depends on it is
 // asserted against that file here. Bumping Bun is then a deliberate act with a
-// visible checklist: update `.bun-version`, update the workflow pins, and
-// regenerate the size baseline on the new version.
+// visible checklist: update `.bun-version`, update the workflow pins, and run a
+// new architecture review. Immutable ordinary size baselines are never
+// regenerated as part of that process.
 
 const rootDir = join(import.meta.dir, "..")
 const read = (path: string) => readFileSync(join(rootDir, path), "utf8")
 
 const pinnedVersion = read(".bun-version").trim()
+const ordinaryBaselineCommit = "7c55be567457218fb597f9cd9658b1c71997fb83"
+const immutableOrdinaryFixtures = {
+    atom: { raw: 64797, gzip: 16861 },
+    "atom-selector-store": { raw: 64984, gzip: 16930 },
+    family: { raw: 70080, gzip: 18542 },
+    equality: { raw: 7231, gzip: 2210 },
+    "adapter-internals": { raw: 64767, gzip: 16835 },
+}
+
+const expectExactKeys = (value: unknown, expected: readonly string[]): void => {
+    expect(value).not.toBeNull()
+    expect(typeof value).toBe("object")
+    expect(Object.keys(value as object).sort()).toEqual([...expected].sort())
+}
+
+const pendingPaths = (value: unknown, path = "$."): string[] => {
+    if (typeof value === "string")
+        return value.includes("PENDING") ? [path] : []
+    if (value === null || typeof value !== "object") return []
+    return Object.entries(value).flatMap(([key, child]) =>
+        pendingPaths(child, `${path}${key}.`),
+    )
+}
 
 /** YAML scalars may be quoted; `bun-version: "1.4.0"` and `bun-version: 1.4.0`
  *  are the same value to the action, so they must be the same value here.
@@ -139,13 +163,233 @@ describe("pinned Bun toolchain", () => {
         ).toEqual([])
     })
 
-    test("the size baseline was recorded on the pinned Bun", () => {
-        // The assertion that would have caught the original incident. Bumping
-        // `.bun-version` without regenerating the baseline fails here, with the
-        // fix being `VALDRES_UPDATE_SIZE_BASELINE=1 bun run check-size` on the
-        // new version.
+    test("the immutable size policy is pinned to the certified toolchain", () => {
         const baseline = JSON.parse(read("scripts/size-baseline.json"))
-        expect(baseline.bun).toBe(pinnedVersion)
+        expect(pendingPaths(baseline)).toEqual([])
+        expectExactKeys(baseline, [
+            "schema",
+            "schemaVersion",
+            "toolchain",
+            "provenance",
+            "policy",
+            "ordinaryFixtures",
+            "featureBudgets",
+        ])
+        expectExactKeys(baseline.toolchain, ["bun", "gzipLevel"])
+        expectExactKeys(baseline.provenance, [
+            "ordinaryBaselineCommit",
+            "certificationBuildCount",
+            "certifiedRuntimeBuildSha256",
+        ])
+        expectExactKeys(baseline.policy, [
+            "ordinaryTolerancePercent",
+            "coreRetainingGzipAllowance",
+            "coreRetainingFixtures",
+        ])
+        expectExactKeys(baseline.featureBudgets, ["dist", "packed", "fixtures"])
+        expect(baseline.schema).toBe("valdres-package-size-budget")
+        expect(baseline.schemaVersion).toBe(2)
+        expect(baseline.toolchain).toEqual({ bun: pinnedVersion, gzipLevel: 6 })
+        expect(baseline.provenance.ordinaryBaselineCommit).toBe(
+            ordinaryBaselineCommit,
+        )
+        expect(baseline.provenance.certificationBuildCount).toBe(3)
+        expect(baseline.policy.ordinaryTolerancePercent).toBe(2)
+        expect(baseline.ordinaryFixtures).toEqual(immutableOrdinaryFixtures)
+        expect(baseline.policy.coreRetainingFixtures).toEqual([
+            "atom",
+            "atom-selector-store",
+            "family",
+            "adapter-internals",
+        ])
+        const ordinaryFixtureNames = Object.keys(
+            baseline.ordinaryFixtures,
+        ).sort()
+        const featureFixtureNames = Object.keys(
+            baseline.featureBudgets.fixtures,
+        ).sort()
+        expect(featureFixtureNames).toEqual([
+            "all-exports",
+            "collection",
+            "inspect",
+        ])
+        expect(
+            baseline.policy.coreRetainingFixtures.every((name: string) =>
+                ordinaryFixtureNames.includes(name),
+            ),
+        ).toBe(true)
+        expect(
+            featureFixtureNames.filter(name =>
+                ordinaryFixtureNames.includes(name),
+            ),
+        ).toEqual([])
+
+        const digest = baseline.provenance.certifiedRuntimeBuildSha256
+        expect(digest).toMatch(/^[0-9a-f]{64}$/)
+        const allowance = baseline.policy.coreRetainingGzipAllowance
+        expect(allowance).toBe(62)
+        for (const budget of [
+            baseline.featureBudgets.dist,
+            baseline.featureBudgets.packed,
+            ...Object.values(baseline.featureBudgets.fixtures),
+        ]) {
+            expect(
+                Number.isSafeInteger((budget as { raw?: number }).raw) &&
+                    (budget as { raw: number }).raw > 0 &&
+                    Number.isSafeInteger((budget as { gzip?: number }).gzip) &&
+                    (budget as { gzip: number }).gzip > 0,
+            ).toBe(true)
+        }
+    })
+
+    test("the collection performance certificate is deterministic-first and complete", () => {
+        const certification = JSON.parse(
+            read(
+                "packages/valdres/test/performance/collection-performance-certification.json",
+            ),
+        )
+        const packageManifest = JSON.parse(
+            read("packages/valdres/package.json"),
+        )
+        const scripts = packageManifest.scripts as Record<string, string>
+        expect(pendingPaths(certification)).toEqual([])
+        expectExactKeys(certification, [
+            "schemaVersion",
+            "kind",
+            "cwd",
+            "toolchain",
+            "policy",
+            "cardinalities",
+            "deterministic",
+            "timingSmoke",
+            "lifecycle",
+        ])
+        expect(certification.schemaVersion).toBe(2)
+        expect(certification.kind).toBe("valdres-collection-performance-policy")
+        expect(certification.cwd).toBe("packages/valdres")
+        expect(certification.toolchain).toEqual({
+            runtime: "bun",
+            version: pinnedVersion,
+        })
+        expectExactKeys(certification.policy, [
+            "primaryGate",
+            "timingRole",
+            "processCount",
+            "rounds",
+            "warmupBatches",
+            "directIterationsPerBatch",
+            "transactionIterationsPerBatch",
+            "advisoryTargetRatio",
+            "catastrophicRatio",
+            "decisionMetric",
+        ])
+        expect(certification.policy).toEqual({
+            primaryGate: "deterministic-structural",
+            timingRole: "advisory-smoke",
+            processCount: 1,
+            rounds: 8,
+            warmupBatches: 4,
+            directIterationsPerBatch: 40_000,
+            transactionIterationsPerBatch: 20_000,
+            advisoryTargetRatio: 1.1,
+            catastrophicRatio: 1.5,
+            decisionMetric: "geometric-median-wall-ratio",
+        })
+        expect(certification.policy.processCount).toBeGreaterThan(0)
+        expect(certification.policy.rounds).toBeGreaterThan(0)
+        expect(certification.policy.warmupBatches).toBeGreaterThan(0)
+        expect(certification.policy.directIterationsPerBatch).toBeGreaterThan(0)
+        expect(
+            certification.policy.transactionIterationsPerBatch,
+        ).toBeGreaterThan(0)
+        expect(certification.policy.advisoryTargetRatio).toBeGreaterThan(1)
+        expect(certification.policy.catastrophicRatio).toBeGreaterThan(
+            certification.policy.advisoryTargetRatio,
+        )
+        expectExactKeys(certification.cardinalities, [
+            "membership",
+            "siblingFanout",
+            "inheritanceDepth",
+        ])
+        expect(certification.cardinalities).toEqual({
+            membership: [1_000, 5_000, 20_000],
+            siblingFanout: 20_000,
+            inheritanceDepth: 1_024,
+        })
+        expectExactKeys(certification.deterministic, [
+            "command",
+            "normalCiCommand",
+            "testPath",
+            "claims",
+        ])
+        expect(certification.deterministic).toMatchObject({
+            command: "bun run test:collection:performance",
+            normalCiCommand: "bun run test:runtime",
+            testPath: "test/performance/collection.performance.test.ts",
+        })
+        expectExactKeys(certification.deterministic.claims, [
+            "collectionCountersZero",
+            "atomVtableRebuildTraceEmpty",
+            "atomVtablePlacementZero",
+            "exactMembershipWorkAtScale",
+            "presentUpdateMembershipWorkZero",
+            "absentReadMembershipWorkZero",
+            "inspectionDetailAttemptsConstant",
+            "siblingRouteVisitsZero",
+            "depthPlacementLinear",
+        ])
+        expect(
+            Object.values(certification.deterministic.claims).every(
+                value => value === true,
+            ),
+        ).toBe(true)
+        expectExactKeys(certification.timingSmoke, [
+            "command",
+            "testPath",
+            "scenarios",
+            "pairing",
+            "wallClock",
+            "cpuDiagnostic",
+            "persistsResults",
+        ])
+        expect(certification.timingSmoke).toEqual({
+            command: "bun run test:collection:timing",
+            testPath: "test/performance/collection.timing.ts",
+            scenarios: ["atom-direct", "atom-transaction"],
+            pairing: "adjacent-ab-ba",
+            wallClock: "Bun.nanoseconds",
+            cpuDiagnostic: "process.cpuUsage",
+            persistsResults: false,
+        })
+        expectExactKeys(certification.lifecycle, ["command", "testPath"])
+        expect(certification.lifecycle).toEqual({
+            command: "bun run test:collection:memory:bun",
+            testPath: "test/performance/collection.memory.ts",
+        })
+
+        expect(scripts["test:runtime"]).toContain(
+            certification.deterministic.testPath,
+        )
+        expect(scripts["test:runtime"]).not.toContain(
+            certification.timingSmoke.testPath,
+        )
+        expect(scripts["test:ci"]).toContain("bun run test:runtime")
+        expect(scripts["test:collection:performance"]).toBe(
+            `NODE_ENV=production bun test --timeout 120000 --concurrency 1 ./${certification.deterministic.testPath}`,
+        )
+        expect(scripts["test:collection:timing"]).toBe(
+            `NODE_ENV=production bun ./${certification.timingSmoke.testPath}`,
+        )
+        expect(scripts["test:collection:memory:bun"]).toBe(
+            `NODE_ENV=production bun test --timeout 120000 --concurrency 1 ./${certification.lifecycle.testPath}`,
+        )
+    })
+
+    test("the package-size checker exposes no baseline-update escape hatch", () => {
+        const checker = read("scripts/check-package-size.ts")
+        expect(checker).not.toContain("VALDRES_UPDATE_SIZE_BASELINE")
+        expect(checker).not.toContain("updateBaseline")
+        expect(checker).not.toContain("regenerate the baseline")
     })
 
     test("the pinned Bun satisfies the engines floor in package.json", () => {
