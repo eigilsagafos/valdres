@@ -2,10 +2,17 @@ import {
     assertDefinitionAccessorCallAllowed,
     assertDefinitionConstructionAllowed,
     classifyDefinitionHandleOwner,
+    ensureCollectionKernel,
+    getDefinitionDomainIdentity,
     registerDefinitionHandle,
     runDefinitionCallback,
     type InternalCommittedStoreTreeDomain,
 } from "./committed-store-tree/committed-store-tree"
+import {
+    containThenable as containRuntimeThenable,
+    inspectThenable as inspectRuntimeThenable,
+    runGuardedCallback as runRuntimeGuardedCallback,
+} from "./committed-store-tree/runtime-domain"
 import type {
     Collection,
     CollectionKey,
@@ -19,6 +26,7 @@ import {
     WeakTupleMemberCache,
     type WeakMemberRuntime,
 } from "./weak-member-cache"
+import { createCollectionKernel } from "./collection-kernel"
 
 interface WeakCollectionReference<Value extends object> {
     deref(): Value | undefined
@@ -60,32 +68,34 @@ const referencePresenceNatively = (
 // The optional definition module owns this table. Merely constructing the
 // eager public domain therefore allocates no collection-specific registry.
 let definitionRegistries:
-    | WeakMap<InternalCommittedStoreTreeDomain, CollectionDefinitionRegistry>
+    | WeakMap<object, CollectionDefinitionRegistry>
     | undefined
 
 const registryFor = (
     domain: InternalCommittedStoreTreeDomain,
 ): CollectionDefinitionRegistry => {
+    const identity = getDefinitionDomainIdentity(domain)
     const registries =
         definitionRegistries ??
         (definitionRegistries = new WeakMap<
-            InternalCommittedStoreTreeDomain,
+            object,
             CollectionDefinitionRegistry
         >())
-    let registry = registries.get(domain)
+    let registry = registries.get(identity)
     if (registry !== undefined) return registry
     registry = {
         collections: new WeakMap(),
         rows: new WeakMap(),
     }
-    registries.set(domain, registry)
+    registries.set(identity, registry)
     return registry
 }
 
 /** @internal Deterministic assertion for the atom-only allocation gate. */
 export const hasCollectionDefinitionRegistry = (
     domain: InternalCommittedStoreTreeDomain,
-): boolean => definitionRegistries?.has(domain) ?? false
+): boolean =>
+    definitionRegistries?.has(getDefinitionDomainIdentity(domain)) ?? false
 
 /** Stable diagnostic for a rejected direct or encoded collection key. */
 export class InvalidCollectionKeyError extends Error {
@@ -223,7 +233,9 @@ const rowRecordFor = (
     domain: InternalCommittedStoreTreeDomain,
     value: unknown,
 ): CollectionRowRecord => {
-    const registry = definitionRegistries?.get(domain)
+    const registry = definitionRegistries?.get(
+        getDefinitionDomainIdentity(domain),
+    )
     if (
         (typeof value === "object" && value !== null) ||
         typeof value === "function"
@@ -288,7 +300,7 @@ export function createCollectionDefinition(
         domain,
         mutableCollection,
     ) as Collection<CollectionKey, CollectionValue, unknown>
-    const registry = registryFor(domain)
+    let registry: CollectionDefinitionRegistry | undefined
     const rows = new WeakTupleMemberCache<object>(
         args => {
             const key = args[0] as CollectionKey
@@ -300,6 +312,9 @@ export function createCollectionDefinition(
         collectionRowRecursionError,
         weakRuntime,
         row => {
+            if (registry === undefined) {
+                throw new Error("Collection definition registry is not ready")
+            }
             registry.rows.set(row, {
                 definition,
                 presence: undefined,
@@ -314,7 +329,20 @@ export function createCollectionDefinition(
                 ? referencePresenceNatively
                 : (target: Selector<boolean>) => weakRuntime.ref(target),
     })
+    registry = registryFor(domain)
     registry.collections.set(collection, definition)
+    ensureCollectionKernel(domain, records =>
+        createCollectionKernel({
+            lookupRow: row =>
+                registry.rows.get(row as object)?.definition.collection,
+            lookupCollection: candidate =>
+                registry.collections.has(candidate as object),
+            runGuarded: (session, operation) =>
+                runRuntimeGuardedCallback(records, session, operation),
+            inspectThenable: inspectRuntimeThenable,
+            containThenable: containRuntimeThenable,
+        }),
+    )
     return collection
 }
 

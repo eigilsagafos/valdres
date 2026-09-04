@@ -39,7 +39,10 @@ identity, membership, persistence, hydration, deletion, transaction overlay
 reads, and derived filtering selectors, without forcing index design into the
 foundation.
 
-## What already exists
+## Plan-approval baseline
+
+This section records the repository state before T1 implementation began; the
+later coverage and task sections report the live implementation checkpoint.
 
 - The test-only reference model owns nine approved collection cases covering
   identity, absence, presence, scoped tombstones, reset, update-existing-only,
@@ -70,8 +73,9 @@ foundation.
 - The structural inspector already records bounded operation/commit work without
   retaining application values.
 
-The production runtime has no collection definitions, row sources, tombstones,
-membership sources, row intents, or collection scratch overlay today.
+At plan approval, the production runtime had no collection definitions, row
+sources, tombstones, membership sources, row intents, or collection scratch
+overlay.
 
 ## Public API decision
 
@@ -94,7 +98,13 @@ Recommended final PR 4 shape:
 ```ts
 export type CollectionKey = string | number | bigint | boolean | null
 export type CollectionValue =
-    null | boolean | number | bigint | string | symbol | object
+    | null
+    | boolean
+    | number
+    | bigint
+    | string
+    | symbol
+    | object
 
 /** @internal Not a root export. */
 declare const privateStateValue: unique symbol
@@ -105,10 +115,8 @@ interface StateBase<Value> {
     readonly [privateStateValue]: (value: Value) => Value
 }
 
-interface ReadonlyState<
-    Value,
-    Kind extends "collection-row" | "collection",
-> extends StateBase<Value> {
+interface ReadonlyState<Value, Kind extends "collection-row" | "collection">
+    extends StateBase<Value> {
     readonly kind: Kind
 }
 
@@ -373,8 +381,8 @@ family accessors both reject recursive/captured use from key encoders before
 cache descent. Family factory result typing/admission remains Atom-or-Selector
 even though public readable State becomes wider.
 
-The definition slice also widens only the internal `AnyState` dispatch union
-and adds narrow helpers in `committed-store-tree.ts` for lazy registry creation,
+The definition slice also widens only the internal `AnyState` dispatch union and
+adds narrow helpers in `committed-store-tree.ts` for lazy registry creation,
 same-domain handle branding/registration, and owner lookup. This core seam is
 required because the domain records are deliberately private; `collection.ts`
 must not reach through that boundary or construct an unowned lookalike. The
@@ -386,16 +394,20 @@ module imports narrow core registration and guard functions; the eagerly
 constructed runtime domain never imports the weak row cache or collection
 kernel. Core retains only a small optional collection-vtable slot and kind
 dispatch. The first collection definition installs a tree-shakeable
-`collection-kernel` implementation into its exact runtime domain. That kernel
-owns lazy per-domain WeakMaps keyed by TreeDraft and ScopeNode for draft lanes,
-scope sidecars, routing, and lifecycle state. Core transaction, scratch, scope,
-commit, and disposal paths call the optional vtable hooks but do not know the
-collection data structures. These hooks contribute to the existing guarded
-resolution, preflight, apply, rewire, publish, and disposal phases; they never
-run a second mutation, propagation, or notification engine. No global mutable
-registry or import-time plugin registration is allowed. Therefore a bundle that
-uses Store but not `collection` retains only the reviewed optional-hook seam and
-allocates no collection registry, cache, draft lane, or scope sidecar.
+`collection-kernel` implementation into its exact runtime domain. Its first
+slice owns draft, scratch-read, and release hooks only; row intents fail
+preflight before any Atom mutation until the following scope slice supplies real
+owner/apply/rewire/publication behavior. That kernel owns lazy per-domain
+WeakMaps keyed by TreeDraft and ScopeNode for draft lanes, scope sidecars,
+routing, and lifecycle state. Core transaction, scratch, scope, commit, and
+disposal paths call the optional vtable hooks but do not know the collection
+data structures. The draft slice reserves the existing guarded resolution and
+commit-phase slots; the scope slice activates preflight, apply, rewire, publish,
+and disposal behavior. These hooks never run a second mutation, propagation, or
+notification engine. No global mutable registry or import-time plugin
+registration is allowed. Therefore a bundle that uses Store but not `collection`
+retains only the reviewed optional-hook seam and allocates no collection
+registry, cache, draft lane, or scope sidecar.
 
 WeakMap ownership is not cleanup: a captured closed Transaction cursor may keep
 its TreeDraft alive. The vtable therefore has an explicit `releaseDraft` hook in
@@ -434,8 +446,9 @@ and the required ancestor route path, even when nobody has read the collection
 yet; this preserves historical insertion order. A row read or presence read
 creates only a RowView and never membership state. A collection read may
 materialize the membership path lazily. Weak routes then update only scopes with
-collection history. A never-touched child inherits the parent's logical order
-through an internal history pointer and pays no ongoing collection cost. Every
+collection history. A never-touched child has no MembershipRecord and pays no
+ongoing collection cost; its first collection read materializes the exact-parent
+path and freezes a coordinate-local copy of the inherited order. Every
 `(StoreTree, scope, collection)` exposes its own stable public array identity;
 the first child collection read freezes a coordinate-local array rather than
 returning the parent's reference. Commit never enumerates all live scopes or the
@@ -602,8 +615,11 @@ Normal atom/selector consumers remain the control:
 - after one collection installs the domain vtable, a fresh Store/transaction
   doing Atom-only work still allocates no collection draft/scope state, records
   zero collection counters, and stays within the ordinary <=10% timing gate;
-- ordinary `atom` and `atom-selector-store` fixtures retain their exact
-  pre-collection baselines and stay below the existing 2% gates;
+- ordinary core-retaining fixtures keep their exact pre-collection baselines;
+  the named **COL-004 native-collection core gzip seam waiver** provisionally
+  permits at most 71 gzip bytes above their existing 2% ceilings, adds no raw
+  allowance, and changes none of the graph, no-call, no-allocation, counter, or
+  <=10% timing gates;
 - row-cache hit is O(1) and allocates nothing;
 - `Object.is`-distinct present-to-present row update performs no collection-size
   membership rebuild;
@@ -617,12 +633,15 @@ Normal atom/selector consumers remain the control:
 Add 1k/5k/20k-row fixtures for lookup, absent reads, value updates, inserts,
 deletes, transaction overlay reads, and scope fanout. Pair before/after ordinary
 atom/core-load and the ShiftX rewire fixture. Add an explicit collection bundle
-fixture and a reviewed feature budget for `dist`, `packed`, `all-exports`, and
-the collection fixture. Do not refresh the ordinary control baselines before the
-comparison or use an aggregate ratchet to hide retained collection code. The
-collection-specific runtime budget is directional until real ShiftX session
-cardinalities arrive; ordinary paths retain the current <=10% timing and <=2%
-bundle criteria.
+fixture and separately reviewed feature budgets for `dist`, `packed`,
+`all-exports`, and the collection fixture. Do not refresh the ordinary control
+baselines or use an aggregate ratchet to hide retained collection code. In
+COL-008, after COL-006, require three byte-identical builds on pinned Bun 1.4.0
+and replace the provisional waiver with one fixed allowance equal to the exact
+maximum gzip overage above the immutable 2% ceilings across the affected
+ordinary fixtures. Add no cushion. Any later increase requires explicit
+architecture review; graph, no-call, no-allocation, counter, raw-byte, and <=10%
+timing gates do not move.
 
 Required counters append after existing family counters without renumbering:
 
@@ -647,21 +666,25 @@ Atom+row commit performs one propagation settlement and one callback snapshot.
 ## Coverage map
 
 ```text
-[TESTED] pure model baseline
+[TESTED] pure model plan-approval baseline
   collections.test.ts V1M-COLLECTION-001..009 (9 tests / 183 assertions)
       |
-      +-- [GAP T1] child history + enabling sequence + target delivery order
+      +-- [TESTED T1] V1M-COLLECTION-010..012
+      |       child history + enabling sequence + target delivery order
       |
-[GAP T2] collection() -> weak row cache -> presence Selector
+      +-- [TESTED T5] V1M-COLLECTION-013..015
+      |       true-gap rebirth + child shadow + draft memo restoration
+      |
+[TESTED T2] collection() -> weak row cache -> presence Selector
   collection-definition.test.ts + declaration-emit consumer
       |
-[GAP T3] Store/txn call -> row intent history -> scratch membership memo
+[TESTED T3] Store/txn call -> row intent history -> scratch membership memo
   collection-draft.test.ts (success/abort/preflight/error release paths)
       |
-[GAP T4] scope local Present/Absent -> RowView route -> disposal mirror
+[TESTED T4] scope local Present/Absent -> RowView route -> disposal mirror
   collection-rows.test.ts + collection-lifecycle.test.ts
       |
-[GAP T5] one commit preflight/apply/publish
+[TESTED T5] one commit preflight/apply/publish
   Atom -> RowView -> MembershipRecord -> dependent Selector -> callbacks
   collection-membership.test.ts + collection-subscriptions.test.ts
       |
@@ -676,17 +699,18 @@ Atom+row commit performs one propagation settlement and one callback snapshot.
   shiftx-sessions.test.ts with persistence races + legacy crash injection
 ```
 
-Current quality: 9 pure-model tests and 183 assertions are green; 0 production
-collection tests and 0 end-to-end migrations exist because the API is not yet
-implemented. Planned coverage has nine task gates, one end-to-end flow, and no
-silent unowned path. The existing model is not an authority for child-shadow
-history, enabling-sequence order, or notifications until T1 repairs all three.
-Presence notification ordering is not compared as a direct model target:
-production `presence(row)` is an ordinary Selector, so dedicated runtime tests
-own its dependency-first ordering and exact subscriber-error identity. The
-model's root-local Atom/row/collection order is authoritative; cross-scope route
-order is normalized because the model intentionally has no materialization
-graph.
+The plan-approval baseline was 9 pure-model tests / 183 assertions and no
+production collection tests. The implemented T1-through-T5 checkpoint has 15
+collection-model cases / 304 assertions plus mirrored internal runtime cases;
+the public-runtime differential remains owned by T7 and the ShiftX end-to-end
+migration remains T9. The model repairs cover child-shadow history,
+enabling-sequence order, native notification order, and same-draft true-gap
+rebirth/memo restoration. Presence notification ordering is not compared as a
+direct model target: production `presence(row)` is an ordinary Selector, so
+dedicated runtime tests own its dependency-first ordering and exact
+subscriber-error identity. The model's root-local Atom/row/collection order is
+authoritative; cross-scope route order is normalized because the model
+intentionally has no materialization graph.
 
 Inline ASCII comments belong in `collection-kernel.ts` for the intent-to-commit
 phase pipeline and effective membership state machine, and beside the optional
@@ -703,9 +727,10 @@ the full design into call sites.
 2. **Pure definition identity.** Key domain, type tags, `-0`, weak repair, stale
    finalizers, encoder quarantine, same/foreign domain, no Store work.
 3. **Differential semantics.** First repair the child-shadow, enabling-sequence,
-   and notification-order oracle defects and add their deterministic cases. Then
-   translate every v1-model collection command to public runtime operations and
-   compare the expanded deterministic suite plus seeded command sequences.
+   notification-order, and same-draft true-gap oracle defects and mirror their
+   deterministic cases in the internal runtime. In T7, translate every v1-model
+   collection command to public runtime operations and compare the expanded
+   deterministic suite plus seeded command sequences.
 4. **Scope/transaction edge cases.** Tombstones, resets, root/child/sibling
    final overlay order, latest enabling birth sequence, caught errors, mixed
    atom/row atomicity, scratch selector reads, and stable draft snapshots.
@@ -802,8 +827,8 @@ This is four stacked, green PRs. The root export appears only in PR 4 when the
 vertical slice is complete. Splitting an architecture this broad is safer than a
 single review, while withholding partial public behavior avoids an unusable API.
 
-1. **Contract, oracle, and identity.** Repair all three reference-model defects,
-   reconcile the materialization-priority compile contract, freeze the
+1. **Contract, oracle, and identity.** Repair the three initial reference-model
+   defects, reconcile the materialization-priority compile contract, freeze the
    State/type/error coordinates, extract the neutral weak-member cache without
    changing family behavior, and add lazy same-domain collection registrations.
    Nothing is root-exported yet.
@@ -811,8 +836,8 @@ single review, while withholding partial public behavior avoids an unusable API.
    ownership, tombstones, RowViews, and mixed atomic Atom/row apply.
 3. **Membership/reactivity.** Add MembershipRecords, order, collection-local
    committed snapshots, effective deltas, selectors, and notifications; reuse
-   the draft memo frozen in PR 2. The repaired deterministic model suite runs
-   through the internal candidate.
+   the draft memo frozen in PR 2. Repaired model cases and mirrored internal
+   runtime cases pin the semantics; the public differential remains in PR 4.
 4. **Public/inspection/performance.** Expose `collection`/`presence`, add
    bounded recorder counters, differential/GC/scale/package coverage, docs, and
    the ShiftX sessions acceptance fixture.
@@ -830,9 +855,9 @@ above; checkbox it only after its verification command is green.
 
 - [ ] **T1 (P1, human: ~2 days / CC: ~90 min)** — Authority — repair the oracle
       and freeze the complete contract/State-base coordinates.
-    - Surfaced by: Test/API/DX review — all three model defects reproduce, exact
-      handle/error types are absent, and a private empty-index default fails
-      consumer declaration emit.
+    - Surfaced by: Test/API/DX review — all three initial model defects
+      reproduce, exact handle/error types are absent, and a private empty-index
+      default fails consumer declaration emit.
     - Files: `test/v1-model/**`, `contracts/v1/**`, internal State types, and
       `test/v1-public-candidate/collection-types.test.ts`.
     - Verify: focused model tests, `bun run check:contracts-v1`,
@@ -852,28 +877,43 @@ above; checkbox it only after its verification command is green.
       optional domain-local vtable and sequenced row-intent overlay.
     - Surfaced by: Architecture/performance review — direct kernel imports
       retain the feature in every Store bundle, while a second engine breaks
-      atomicity.
-    - Files: `src/v1-internal/collection-kernel.ts`, TreeDraft, scratch host,
-      and `test/v1-committed-store-tree/collection-draft.test.ts`.
-    - Verify: focused draft/scratch/closed-cursor release tests and unchanged
-      Atom transaction counters.
+      atomicity. A draft-only slice must not silently accept a row commit before
+      the scope slice owns real committed storage.
+    - Files: `src/v1-internal/collection-kernel.ts`, `collection.ts`,
+      runtime-domain and committed-domain optional-vtable seams, TreeDraft,
+      scratch host, and `test/v1-committed-store-tree/collection-draft.test.ts`.
+    - Verify: focused draft/scratch/closed-cursor release tests, row-intent
+      preflight rejection before any Atom mutation, within-draft continuous
+      enabling over absent/injected baselines, and unchanged Atom transaction
+      counters. Read-only lanes cover successful/committed-error release; staged
+      lanes cover callback-abort/preflight release.
 - [ ] **T4 (P1, human: ~4 days / CC: ~3 hours)** — Scope kernel — implement
       Present/Absent ownership, RowViews, lifecycle mirrors, and mixed apply.
     - Surfaced by: Failure/lifecycle review — tombstones need strong owner pins,
       while weak maps alone cannot synchronously detach retained disposed
-      routes.
+      routes. This slice adds real inherited baselines and cross-scope
+      continuous enabling, then activates the installed prepare/apply/rewire/
+      publication phases so successful row commits become reachable here.
     - Files: collection kernel, narrow scope/commit hooks, row and lifecycle
       tests.
-    - Verify: root/child/sibling semantic matrix, mixed preflight atomicity, and
-      deterministic disposal/GC tests.
+    - Verify: root/child/sibling semantic matrix, mixed preflight atomicity,
+      successful and post-apply-error draft release, and deterministic
+      disposal/GC tests. One-row sibling-scope staging at 1k/5k/20k rejects
+      quadratic fanout; a 1,024-deep inheritance/disposal chain stays iterative.
+      Record the named provisional 71-gzip-byte COL-004 seam waiver without
+      changing any other control gate.
 - [ ] **T5 (P1, human: ~4 days / CC: ~3 hours)** — Membership — implement
       history, continuous birth order, stable snapshots, and exact delivery.
     - Surfaced by: Semantics review — final intents lose Map order and public
       callback/error identity requires deterministic first-reaching tie-breaks.
-    - Files: collection kernel, narrow commit hooks, membership/subscription
-      tests.
-    - Verify: repaired model differential plus exact subscriber-only and mixed
-      authoritative-fault `cause/causes` ledgers.
+    - Files: collection kernel, narrow commit/subscription hooks, scope
+      ownership diagram, repaired collection model cases, row/lifecycle
+      adjustments, and membership/subscription tests.
+    - Verify: repaired model cases plus mirrored internal runtime cases; exact
+      subscriber-only and mixed authoritative-fault `cause/causes` ledgers;
+      routing-only silence; one rebuild per affected record; sparse 20k sibling
+      traversal; linear 1,024-depth placement; and no increase to the fixed
+      71-byte ordinary gzip seam cap. The public differential remains T7-owned.
 - [ ] **T6 (P1, human: ~2 days / CC: ~90 min)** — Public API — expose the
       complete root surface and widen public State atomically.
     - Surfaced by: Scope/API review — a partial root export would be unusable
@@ -895,8 +935,10 @@ above; checkbox it only after its verification command is green.
     - Surfaced by: Lifecycle/performance review — collection implementation must
       be reclaimable, bounded, and absent from ordinary Store artifacts.
     - Files: performance/GC fixtures, size baselines, and packed scripts.
-    - Verify: paired 1k/5k/20k benchmarks, frozen ordinary baselines, collection
-      feature budget, and Node/Bun/TS/esbuild/React 18/19 packed gates.
+    - Verify: paired 1k/5k/20k benchmarks, three byte-identical pinned-Bun-1.4.0
+      builds, immutable pre-collection ordinary baselines, an exact no-cushion
+      additive gzip seam allowance, separately reviewed collection feature
+      budgets, and Node/Bun/TS/esbuild/React 18/19 packed gates.
 - [ ] **T9 (P1, human: ~2 days / CC: ~90 min)** — ShiftX acceptance — run the
       sessions adapter migration fixture.
     - Surfaced by: ShiftX audit — the old family-wide persistence callback has

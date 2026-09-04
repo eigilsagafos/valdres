@@ -1,4 +1,7 @@
-import type { SelectorDefinition } from "../selector-evaluator/types"
+import type {
+    SelectorDefinition,
+    ServedSelectorOutcome,
+} from "../selector-evaluator/types"
 import type { Atom, Collection, CollectionRow, Selector } from "./types"
 
 /** Definition kinds a family factory may construct or return. */
@@ -13,6 +16,9 @@ export type AnyAtom = Atom<any>
 export const REACQUIRABLE_ATOMS = Symbol()
 export const DEFINITION_CALLBACK_FRAME = Symbol()
 export const FAMILY_DEFINITIONS = Symbol()
+/** Optional, domain-local collection extension. Core owns only this live slot;
+ * the tree-shakeable collection module installs the implementation lazily. */
+export const COLLECTION_KERNEL = Symbol()
 
 export type AtomFallback =
     | Readonly<{ kind: "eager"; value: unknown }>
@@ -81,6 +87,8 @@ export interface RuntimeDomainRecords {
     readonly stores: WeakMap<object, object>
     /** Exact same-domain Transaction cursor recognition; values stay opaque. */
     readonly transactionCursors: WeakMap<object, object>
+    /** Absent until the first successfully recorded collection definition. */
+    [COLLECTION_KERNEL]?: OptionalCollectionVTable
     readonly ownerToken: object
     activity: RuntimeActivity | undefined
 }
@@ -97,6 +105,47 @@ type InspectedThenable =
 export type SynchronousResult =
     | Readonly<{ kind: "value"; value: unknown }>
     | Readonly<{ kind: "error"; error: unknown }>
+
+/** Opaque commit plan produced by the optional collection extension. */
+export interface CollectionCommitPlan {
+    readonly kind: "collection-commit-plan"
+    commit(host: object, phase: 0): boolean
+    commit(host: object, phase: 1): void
+    commit(
+        host: object,
+        phase: 2,
+    ): readonly CollectionCommitSource[] | undefined
+}
+
+/** Opaque-to-core source coordinate returned after collection settlement. */
+export interface CollectionCommitSource {
+    readonly scope: object
+    readonly atom: AnyState
+}
+
+export type CollectionMutationKind = "set" | "update" | "reset" | "delete"
+
+/** One-way optional extension seam. The eager runtime never imports the
+ * collection implementation and always reads this slot live, so a collection
+ * defined after Store construction is visible to every same-domain Store. */
+export interface OptionalCollectionVTable {
+    has(node: AnyState): boolean
+    read(draft: object, scope: object, node: AnyState): SynchronousResult
+    stage(
+        draft: object,
+        scope: object,
+        operation: CollectionMutationKind,
+        row: AnyState,
+        input: unknown,
+        session: ControlFaultSession,
+    ): void
+    scope(
+        scope: object,
+        node?: AnyState,
+    ): ServedSelectorOutcome<object> | undefined
+    plan(host: object, draft: object): CollectionCommitPlan | undefined
+    release(draft: object): void
+}
 
 const NOT_THENABLE = Object.freeze({ kind: "not-thenable" as const })
 const NOOP = (): void => {}

@@ -13,6 +13,7 @@ import type {
 import { SelectorEvaluationSession } from "../selector-evaluator/types"
 import {
     classifyOwner,
+    COLLECTION_KERNEL,
     REACQUIRABLE_ATOMS,
     runSelectorActivity,
     type AnyAtom,
@@ -195,13 +196,19 @@ export class WeakHandleSet<Value extends object> {
  *     named parent --strong name--> child generation
  *     any parent   --weak route---> anonymous/named child
  *     AtomView     --weak route---> inheriting AtomView
+ *     RowView      --weak route---> inheriting RowView
+ *     MembershipRecord --weak route---> inheriting MembershipRecord
  *     scope        --weak key-----> Atom/Selector records
+ *     sidecar      --strong pin---> locally Present/Absent row
  *     scope        --strong pin---> owned family Atom override
  *
  * Only the named identity table owns children. Weak route indexes are routing
  * accelerators, so abandoned anonymous scopes and State records remain GC-able.
- * The private family pin mirrors only an owned Atom override; it is never
- * family membership or an enumerable State index.
+ * Collection sidecars live behind an optional weak scope key. Their strong
+ * row set mirrors only local Present/Absent ownership; RowView and Membership
+ * inheritance remain weak routing indexes. The private family pin similarly
+ * mirrors only an owned Atom override, never family membership or an
+ * enumerable State index.
  */
 export class StoreScopeNode
     implements SelectorEvaluationHost<AnyState, OutcomeToken>
@@ -368,6 +375,7 @@ export class StoreScopeNode
     }
 
     dropRecords(): void {
+        this.coordinator.runtimeDomain[COLLECTION_KERNEL]?.scope(this)
         this.#liveAtomViews.forEach(record => {
             this.detachAtomView(record)
             record.inheritingChildren.clear()
@@ -419,6 +427,10 @@ export class StoreScopeNode
 
         const definition = domain.selectors.get(node)
         if (definition === undefined) {
+            const served = domain[COLLECTION_KERNEL]?.scope(this, node)
+            if (served !== undefined) {
+                return served as ServedSelectorOutcome<OutcomeToken>
+            }
             throw new TypeError("Unknown committed StoreTree state")
         }
         const selector = node as AnySelector
