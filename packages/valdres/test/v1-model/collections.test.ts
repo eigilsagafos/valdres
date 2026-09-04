@@ -646,4 +646,310 @@ describe("v1 reference model collections", () => {
         }
         expect(encodedSnapshots[0]).not.toBe(encodedSnapshots[1])
     })
+
+    test("V1M-COLLECTION-010 preserves unmaterialized local-present membership history", () => {
+        for (const [label, childValue] of [
+            ["equal", value.string("A")],
+            ["non-equal", value.string("child-A")],
+        ] as const) {
+            const model = collectionModel()
+            for (const [row, rowValue] of [
+                ["a", value.string("A")],
+                ["b", value.string("B")],
+            ] as const) {
+                ok(model, {
+                    kind: "mutate",
+                    tree: "tree",
+                    scope: "root",
+                    mutation: { kind: "set-row", row, value: rowValue },
+                })
+            }
+            ok(model, {
+                kind: "create-scope",
+                tree: "tree",
+                parent: "root",
+                scope: "child",
+            })
+            ok(model, {
+                kind: "mutate",
+                tree: "tree",
+                scope: "child",
+                mutation: {
+                    kind: "set-row",
+                    row: "a",
+                    value: childValue,
+                },
+            })
+
+            // Do not read the child collection before deleting the inherited
+            // row. This keeps the coordinate's membership unmaterialized.
+            ok(model, {
+                kind: "mutate",
+                tree: "tree",
+                scope: "root",
+                mutation: { kind: "delete-row", row: "a" },
+            })
+
+            expect(rows(model, "child").rows, label).toEqual(["a", "b"])
+            expect(rowValue(model, "child", "a"), label).toEqual(childValue)
+        }
+    })
+
+    test("V1M-COLLECTION-011 keeps the first continuously enabling birth sequence", () => {
+        const updated = collectionModel()
+        ok(updated, {
+            kind: "transact",
+            tree: "tree",
+            entryScope: "root",
+            steps: [
+                {
+                    kind: "mutate",
+                    cursor: "entry",
+                    mutation: {
+                        kind: "set-row",
+                        row: "a",
+                        value: value.string("A"),
+                    },
+                },
+                {
+                    kind: "mutate",
+                    cursor: "entry",
+                    mutation: {
+                        kind: "set-row",
+                        row: "b",
+                        value: value.string("B"),
+                    },
+                },
+                {
+                    kind: "mutate",
+                    cursor: "entry",
+                    mutation: {
+                        kind: "update-row",
+                        row: "a",
+                        updater: {
+                            kind: "replace",
+                            value: value.string("A2"),
+                        },
+                    },
+                },
+                {
+                    kind: "read",
+                    cursor: "entry",
+                    target: { kind: "collection", collection: "movies" },
+                    as: "updated-birth-order",
+                },
+            ],
+        })
+        expect(updated.trace).toContainEqual({
+            kind: "read",
+            as: "updated-birth-order",
+            outcome: {
+                kind: "rows",
+                rows: ["a", "b"],
+                snapshot: "draft:1:1",
+            },
+        })
+        expect(rows(updated, "root").rows).toEqual(["a", "b"])
+
+        const reowned = collectionModel()
+        ok(reowned, {
+            kind: "create-scope",
+            tree: "tree",
+            parent: "root",
+            scope: "child",
+        })
+        ok(reowned, {
+            kind: "mutate",
+            tree: "tree",
+            scope: "child",
+            mutation: { kind: "delete-row", row: "a" },
+        })
+        ok(reowned, {
+            kind: "transact",
+            tree: "tree",
+            entryScope: "root",
+            steps: [
+                {
+                    kind: "resolve-cursor",
+                    cursor: "child",
+                    target: { kind: "scope", tree: "tree", scope: "child" },
+                },
+                {
+                    kind: "mutate",
+                    cursor: "entry",
+                    mutation: {
+                        kind: "set-row",
+                        row: "a",
+                        value: value.string("A"),
+                    },
+                },
+                {
+                    kind: "mutate",
+                    cursor: "child",
+                    mutation: { kind: "reset-row", row: "a" },
+                },
+                {
+                    kind: "mutate",
+                    cursor: "entry",
+                    mutation: {
+                        kind: "set-row",
+                        row: "b",
+                        value: value.string("B"),
+                    },
+                },
+                {
+                    kind: "mutate",
+                    cursor: "child",
+                    mutation: {
+                        kind: "set-row",
+                        row: "a",
+                        value: value.string("child-A"),
+                    },
+                },
+                {
+                    kind: "read",
+                    cursor: "child",
+                    target: { kind: "collection", collection: "movies" },
+                    as: "reowned-birth-order",
+                },
+            ],
+        })
+        expect(reowned.trace).toContainEqual({
+            kind: "read",
+            as: "reowned-birth-order",
+            outcome: {
+                kind: "rows",
+                rows: ["a", "b"],
+                snapshot: "draft:2:1",
+            },
+        })
+        expect(rows(reowned, "child").rows).toEqual(["a", "b"])
+    })
+
+    test("V1M-COLLECTION-012 notifies root-native targets by first reach, not subscription order", () => {
+        const model = collectionModel()
+        ok(model, {
+            kind: "define-atom",
+            atom: {
+                id: "count",
+                fallback: { kind: "eager", value: value.number(0) },
+            },
+        })
+        ok(model, {
+            kind: "subscribe",
+            tree: "tree",
+            scope: "root",
+            target: { kind: "collection", collection: "movies" },
+            subscription: "root-membership",
+        })
+        ok(model, {
+            kind: "subscribe",
+            tree: "tree",
+            scope: "root",
+            target: { kind: "row", row: "b" },
+            subscription: "root-row-b",
+            observe: [
+                {
+                    scope: "root",
+                    target: { kind: "row", row: "c" },
+                    as: "continued-after-first-fault",
+                },
+            ],
+        })
+        ok(model, {
+            kind: "subscribe",
+            tree: "tree",
+            scope: "root",
+            target: { kind: "row", row: "a" },
+            subscription: "root-row-a",
+            observe: [
+                {
+                    scope: "root",
+                    target: { kind: "atom", atom: "missing-atom" },
+                    as: "first-fault",
+                },
+            ],
+        })
+        ok(model, {
+            kind: "subscribe",
+            tree: "tree",
+            scope: "root",
+            target: { kind: "atom", atom: "count" },
+            subscription: "root-count",
+        })
+        model.clearEvents()
+
+        expect(
+            model.execute({
+                kind: "transact",
+                tree: "tree",
+                entryScope: "root",
+                steps: [
+                    {
+                        kind: "mutate",
+                        cursor: "entry",
+                        mutation: {
+                            kind: "set-row",
+                            row: "a",
+                            value: value.string("A"),
+                        },
+                    },
+                    {
+                        kind: "mutate",
+                        cursor: "entry",
+                        mutation: {
+                            kind: "set-row",
+                            row: "b",
+                            value: value.string("B"),
+                        },
+                    },
+                    {
+                        kind: "mutate",
+                        cursor: "entry",
+                        mutation: {
+                            kind: "update-row",
+                            row: "a",
+                            updater: {
+                                kind: "replace",
+                                value: value.string("A2"),
+                            },
+                        },
+                    },
+                    {
+                        kind: "mutate",
+                        cursor: "entry",
+                        mutation: {
+                            kind: "set-atom",
+                            atom: "count",
+                            value: value.number(1),
+                        },
+                    },
+                ],
+            }),
+        ).toEqual({
+            ok: false,
+            error: "ATOM_NOT_FOUND",
+            committed: true,
+        })
+        expect(model.trace).toContainEqual({
+            kind: "notifications",
+            subscriptions: [
+                "root-count",
+                "root-row-a",
+                "root-row-b",
+                "root-membership",
+            ],
+        })
+        expect(model.trace).toContainEqual({
+            kind: "notification-observation",
+            subscription: "root-row-b",
+            reads: [
+                {
+                    as: "continued-after-first-fault",
+                    outcome: { kind: "absent" },
+                },
+            ],
+        })
+        expect(rows(model, "root").rows).toEqual(["a", "b"])
+    })
 })

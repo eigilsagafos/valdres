@@ -11,7 +11,7 @@ import {
     InvalidSynchronousAtomValueError,
     InvalidTransactionCallbackResultError,
     InvalidTransactionTargetError,
-    FAMILY_DEFINITION_FRAME,
+    DEFINITION_CALLBACK_FRAME,
     FAMILY_DEFINITIONS,
     RuntimeMismatchError,
     REACQUIRABLE_ATOMS,
@@ -22,6 +22,7 @@ import {
     TransactionClosedError,
     TransactionPhaseError,
     SubscriberNotificationError,
+    assertRuntimeDefinitionConstructionAllowed,
     assertCursorOperationAllowed,
     assertStoreReadAllowed,
     assertStoreOperationAllowed,
@@ -33,6 +34,7 @@ import {
     inspectSynchronousAtomValue,
     inspectThenable,
     makeStateHandle,
+    registerRuntimeStateHandle,
     rejectGuardedSelectorRead,
     runGuardedCallback,
     runLazyInitializer,
@@ -43,6 +45,7 @@ import {
     type AnyAtom,
     type AnyState,
     type AtomDefinition,
+    type DefinitionState,
     type RuntimeDomainRecords,
     type SynchronousResult,
 } from "./runtime-domain"
@@ -164,13 +167,20 @@ export interface InternalCommittedStoreTreeDomain
     ): CommittedStoreTree
 }
 
+export type DefinitionCallbackPhase =
+    | "factory"
+    | "encoder"
+    | "family-encoder"
+    | "collection-encoder"
+
 /** @internal Definition-only callback quarantine for identity helpers. */
 export const runDefinitionCallback = <Result, Validated = Result>(
     domain: InternalCommittedStoreTreeDomain,
-    phase: "factory" | "encoder",
+    phase: DefinitionCallbackPhase,
     callback: (...args: any[]) => Result,
     args: ArrayLike<unknown>,
     validate?: (result: Result) => Validated,
+    createAccessorFault?: () => TypeError,
 ): Validated => {
     const records = domain[definitionDomainRecords]
     const session = new SelectorEvaluationSession<AnyState>()
@@ -190,11 +200,12 @@ export const runDefinitionCallback = <Result, Validated = Result>(
         }
         selectorActivity = selectorActivity.parentSelectorActivity
     }
-    const previous = records[FAMILY_DEFINITION_FRAME]
-    records[FAMILY_DEFINITION_FRAME] = {
+    const previous = records[DEFINITION_CALLBACK_FRAME]
+    records[DEFINITION_CALLBACK_FRAME] = {
         session,
         definitions: new WeakSet(),
         allowDefinitions: phase === "factory",
+        ...(createAccessorFault === undefined ? {} : { createAccessorFault }),
     }
     const previousReadGuards = selectorSessions.map(selectorSession =>
         Object.freeze({
@@ -223,41 +234,80 @@ export const runDefinitionCallback = <Result, Validated = Result>(
             guard.selectorSession.setSuppliedReadGuard(guard.previous)
         }
         if (previous === undefined) {
-            delete records[FAMILY_DEFINITION_FRAME]
+            delete records[DEFINITION_CALLBACK_FRAME]
         } else {
-            records[FAMILY_DEFINITION_FRAME] = previous
+            records[DEFINITION_CALLBACK_FRAME] = previous
         }
     }
 }
 
-/** @internal Rejects definition work reached from a pure family encoder. */
-export const assertDefinitionFamilyCallAllowed = (
+/** @internal Rejects accessor work reached from a pure definition encoder.
+ * Collection injects one lazy TypeError factory per frame; the existing family
+ * path omits it and therefore preserves CallbackCapabilityError semantics. */
+export const assertDefinitionAccessorCallAllowed = (
     domain: InternalCommittedStoreTreeDomain,
 ): void => {
-    const frame = domain[definitionDomainRecords][FAMILY_DEFINITION_FRAME]
+    const frame = domain[definitionDomainRecords][DEFINITION_CALLBACK_FRAME]
     if (frame === undefined || frame.allowDefinitions) return
-    const error = new CallbackCapabilityError()
+    const controlFault = frame.session.getControlFault()
+    if (controlFault.kind === "fault") throw controlFault.error
+    const error =
+        frame.createAccessorFault === undefined
+            ? new CallbackCapabilityError()
+            : (frame.accessorFault ??= frame.createAccessorFault())
     frame.session.latchControlFault(error)
     throw error
 }
+
+/** @internal Rejects definition construction before option/value validation in
+ * encoder callbacks while preserving the first exact latched control fault. */
+export const assertDefinitionConstructionAllowed = (
+    domain: InternalCommittedStoreTreeDomain,
+): void =>
+    assertRuntimeDefinitionConstructionAllowed(domain[definitionDomainRecords])
+
+/** @internal Compatibility name retained for the already-published family
+ * composition. */
+export const assertDefinitionFamilyCallAllowed =
+    assertDefinitionAccessorCallAllowed
+
+/** @internal Brand and register an arbitrary mutable definition handle. */
+export const registerDefinitionHandle = <Handle extends object>(
+    domain: InternalCommittedStoreTreeDomain,
+    mutableHandle: Handle,
+): Readonly<Handle> =>
+    registerRuntimeStateHandle(domain[definitionDomainRecords], mutableHandle)
+
+/** @internal Neutral owner classification for optional definition modules.
+ * Callers still prove their own kind through their module-local registry. */
+export const classifyDefinitionHandleOwner = (
+    domain: InternalCommittedStoreTreeDomain,
+    value: unknown,
+): "local" | "invalid" =>
+    classifyEntryOwner(
+        domain[definitionDomainRecords],
+        value,
+        new SelectorEvaluationSession<AnyState>(),
+    )
 
 /** @internal Exact same-domain State admission for definition helpers. */
 export const assertDefinitionState = (
     domain: InternalCommittedStoreTreeDomain,
     value: unknown,
-): AnyState | undefined => {
+): DefinitionState | undefined => {
     const records = domain[definitionDomainRecords]
     if (
         (typeof value === "object" || typeof value === "function") &&
         value !== null &&
-        records.states.has(value)
+        records.states.has(value) &&
+        (records.atoms.has(value) || records.selectors.has(value))
     ) {
-        const frame = records[FAMILY_DEFINITION_FRAME]
+        const frame = records[DEFINITION_CALLBACK_FRAME]
         if (
             frame?.definitions.has(value) ||
             records[FAMILY_DEFINITIONS]?.has(value)
         ) {
-            return value as AnyState
+            return value as DefinitionState
         }
         return undefined
     }
@@ -273,7 +323,7 @@ export const assertDefinitionState = (
 /** @internal Marks successful family members and only their Atoms as reacquirable. */
 export const markReacquirableDefinitionState = (
     domain: InternalCommittedStoreTreeDomain,
-    state: AnyState,
+    state: DefinitionState,
 ): void => {
     const records = domain[definitionDomainRecords]
     const definitions =
@@ -2513,32 +2563,20 @@ export const createCommittedStoreTreeDomain = (
         activity: undefined,
     }
 
-    const registerDefinitionState = (state: object): void => {
-        const frame = records[FAMILY_DEFINITION_FRAME]
-        if (frame === undefined) return
-        if (!frame.allowDefinitions) {
-            const error = new CallbackCapabilityError()
-            frame.session.latchControlFault(error)
-            throw error
-        }
-        frame.definitions.add(state)
-    }
-
     const atom = <Value>(
         fallback: Value,
         options: AtomOptions<Value> = {},
     ): Atom<Value> => {
+        assertRuntimeDefinitionConstructionAllowed(records)
         const session = new SelectorEvaluationSession<AnyState>()
         const inspected = runGuardedCallback(records, session, () =>
             inspectSynchronousAtomValue(fallback),
         )
         if (inspected.kind === "error") throw inspected.error
-        const handle = makeStateHandle(
-            "atom",
-            records.ownerToken,
+        const handle = registerRuntimeStateHandle(
+            records,
+            makeStateHandle("atom"),
         ) as unknown as Atom<Value>
-        registerDefinitionState(handle)
-        records.states.add(handle)
         records.atoms.set(
             handle,
             Object.freeze({
@@ -2556,15 +2594,14 @@ export const createCommittedStoreTreeDomain = (
         initialize: () => Value,
         options: AtomOptions<Value> = {},
     ): Atom<Value> => {
+        assertRuntimeDefinitionConstructionAllowed(records)
         if (typeof initialize !== "function") {
             throw new TypeError("atomLazy requires an initializer function")
         }
-        const handle = makeStateHandle(
-            "atom",
-            records.ownerToken,
+        const handle = registerRuntimeStateHandle(
+            records,
+            makeStateHandle("atom"),
         ) as unknown as Atom<Value>
-        registerDefinitionState(handle)
-        records.states.add(handle)
         records.atoms.set(
             handle,
             Object.freeze({
@@ -2582,6 +2619,7 @@ export const createCommittedStoreTreeDomain = (
         get: (get: StateRead) => Value,
         options: SelectorOptions<Value> = {},
     ): Selector<Value> => {
+        assertRuntimeDefinitionConstructionAllowed(records)
         if (typeof get !== "function") {
             throw new TypeError("selector requires a getter function")
         }
@@ -2591,11 +2629,10 @@ export const createCommittedStoreTreeDomain = (
         ) {
             throw new TypeError("selector equal must be a function")
         }
-        const handle = makeStateHandle(
-            "selector",
-            records.ownerToken,
+        const handle = registerRuntimeStateHandle(
+            records,
+            makeStateHandle("selector"),
         ) as unknown as Selector<Value>
-        registerDefinitionState(handle)
         const definition: SelectorDefinition<AnyState, Value> = Object.freeze({
             node: handle as unknown as AnyState,
             get: get as (
@@ -2604,7 +2641,6 @@ export const createCommittedStoreTreeDomain = (
             ...(options.name === undefined ? {} : { name: options.name }),
             ...(options.equal === undefined ? {} : { equal: options.equal }),
         })
-        records.states.add(handle)
         records.selectors.set(handle, definition)
         return handle
     }

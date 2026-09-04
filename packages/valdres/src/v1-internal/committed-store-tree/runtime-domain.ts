@@ -1,10 +1,17 @@
 import type { SelectorDefinition } from "../selector-evaluator/types"
-import type { Atom, State } from "./types"
+import type { Atom, Collection, CollectionRow, Selector } from "./types"
 
-export type AnyState = State<any>
+/** Definition kinds a family factory may construct or return. */
+export type DefinitionState = Atom<any> | Selector<any>
+/** Internal dispatch admits the staged readonly collection kinds while the
+ * exported State alias deliberately remains Atom-or-Selector. */
+export type AnyState =
+    | DefinitionState
+    | CollectionRow<any, any>
+    | Collection<any, any, any, any>
 export type AnyAtom = Atom<any>
 export const REACQUIRABLE_ATOMS = Symbol()
-export const FAMILY_DEFINITION_FRAME = Symbol()
+export const DEFINITION_CALLBACK_FRAME = Symbol()
 export const FAMILY_DEFINITIONS = Symbol()
 
 export type AtomFallback =
@@ -24,10 +31,14 @@ export interface ControlFaultSession {
         | Readonly<{ kind: "fault"; error: unknown }>
 }
 
-export interface FamilyDefinitionFrame {
+export interface DefinitionCallbackFrame {
     readonly session: ControlFaultSession
     readonly definitions: WeakSet<object>
     readonly allowDefinitions: boolean
+    /** Optional accessor-only policy. Collection owns its TypeError text and
+     * injects the factory only for a collection encoder frame. */
+    readonly createAccessorFault?: () => TypeError
+    accessorFault?: TypeError
 }
 
 export interface SelectorRuntimeActivity {
@@ -61,7 +72,7 @@ export interface RuntimeDomainRecords {
     /** Successfully published family members, weakly recognized for aliases. */
     [FAMILY_DEFINITIONS]?: WeakSet<object>
     /** Synchronous construction frame; restored before public work resumes. */
-    [FAMILY_DEFINITION_FRAME]?: FamilyDefinitionFrame
+    [DEFINITION_CALLBACK_FRAME]?: DefinitionCallbackFrame
     /** Keyed definition helpers may opt exact Atoms into override retention. */
     [REACQUIRABLE_ATOMS]?: WeakSet<object>
     readonly atoms: WeakMap<object, AtomDefinition>
@@ -629,8 +640,42 @@ export const brandRuntimeHandle = <Value extends object>(
     return value
 }
 
-export const makeStateHandle = <Kind extends "atom" | "selector">(
+/** Rejects State construction before validation or other observable work in a
+ * definition callback that has no construction capability. An already-latched
+ * control fault always wins so a caught later construction attempt cannot
+ * replace the authoritative callback failure. */
+export const assertRuntimeDefinitionConstructionAllowed = (
+    domain: RuntimeDomainRecords,
+): void => {
+    const frame = domain[DEFINITION_CALLBACK_FRAME]
+    if (frame === undefined || frame.allowDefinitions) return
+    const controlFault = frame.session.getControlFault()
+    if (controlFault.kind === "fault") throw controlFault.error
+    const error = new CallbackCapabilityError()
+    frame.session.latchControlFault(error)
+    throw error
+}
+
+/** Create the mutable ordinary-object shape used by built-in State handles.
+ * Arbitrary callable readonly definitions use registerRuntimeStateHandle
+ * directly instead. */
+export const makeStateHandle = <Kind extends AnyState["kind"]>(
     kind: Kind,
-    ownerToken: object,
-): Readonly<{ kind: Kind }> =>
-    Object.freeze(brandRuntimeHandle({ kind }, ownerToken))
+): { kind: Kind } => ({ kind })
+
+/** Capability-check, same-domain brand, register, and freeze one definition
+ * handle. Kept neutral so optional definition modules remain tree-shakeable. */
+export const registerRuntimeStateHandle = <Handle extends object>(
+    domain: RuntimeDomainRecords,
+    mutableHandle: Handle,
+): Readonly<Handle> => {
+    assertRuntimeDefinitionConstructionAllowed(domain)
+    const frame = domain[DEFINITION_CALLBACK_FRAME]
+
+    const handle = Object.freeze(
+        brandRuntimeHandle(mutableHandle, domain.ownerToken),
+    )
+    domain.states.add(handle)
+    frame?.definitions.add(handle)
+    return handle
+}

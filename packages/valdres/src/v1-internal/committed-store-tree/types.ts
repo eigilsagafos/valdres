@@ -1,20 +1,94 @@
-declare const stateValue: unique symbol
+declare const privateStateValue: unique symbol
+declare const privateCollectionTypes: unique symbol
+declare const privateCollectionOptionTypes: unique symbol
+
+/** @internal Shared invariant marker for every State definition arm. */
+interface StateBase<Value> {
+    /** @internal Invariant type marker; no runtime property is installed. */
+    readonly [privateStateValue]: (value: Value) => Value
+}
+
+/** @internal Readonly State arms staged for the collection runtime. */
+interface ReadonlyState<Value, Kind extends "collection-row" | "collection">
+    extends StateBase<Value> {
+    readonly kind: Kind
+}
 
 /** A StoreTree-local writable cell definition. The handle itself owns no value. */
-export interface Atom<Value> {
+export interface Atom<Value> extends StateBase<Value> {
     readonly kind: "atom"
-    /** @internal Invariant type marker; no runtime property is installed. */
-    readonly [stateValue]: (value: Value) => Value
 }
 
 /** A pure synchronous derived-state definition. */
-export interface Selector<Value> {
+export interface Selector<Value> extends StateBase<Value> {
     readonly kind: "selector"
-    /** @internal Invariant type marker; no runtime property is installed. */
-    readonly [stateValue]: (value: Value) => Value
 }
 
+/** The root-readable surface stays Atom-or-Selector until the public collection slice. */
 export type State<Value> = Atom<Value> | Selector<Value>
+
+export type CollectionKey = string | number | bigint | boolean | null
+
+/** `undefined` is reserved for an absent collection row. */
+export type CollectionValue =
+    | null
+    | boolean
+    | number
+    | bigint
+    | string
+    | symbol
+    | object
+
+/** @internal Candidate readonly row handle; not a root export yet. */
+export interface CollectionRow<
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+> extends ReadonlyState<Value | undefined, "collection-row"> {
+    readonly kind: "collection-row"
+    readonly key: Key
+}
+
+/** @internal Candidate collection definition; not a root export yet. */
+export interface Collection<
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+    Input = Key,
+    Indexes = never,
+> extends ReadonlyState<readonly CollectionRow<Key, Value>[], "collection"> {
+    readonly kind: "collection"
+    readonly [privateCollectionTypes]: {
+        readonly key: Key
+        readonly value: Value
+        readonly indexes: Indexes
+        readonly input: Input
+    }
+    (input: Input): CollectionRow<Key, Value>
+}
+
+interface CollectionOptionCarrier<
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+    Input,
+> {
+    /** Index definitions remain closed until their public contract is frozen. */
+    readonly indexes?: never
+    readonly [privateCollectionOptionTypes]?: {
+        readonly key: (key: Key) => Key
+        readonly value: (value: Value) => Value
+        readonly input: (input: Input) => Input
+    }
+}
+
+/** @internal Candidate collection options; not a root export yet. */
+export type CollectionOptions<
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+    Input = Key,
+> = CollectionOptionCarrier<Key, Value, Input> &
+    (
+        | { readonly encodeKey: (input: Input) => Key }
+        | ([Input] extends [Key] ? { readonly encodeKey?: never } : never)
+    )
 
 export type StateRead = <Value>(state: State<Value>) => Value
 

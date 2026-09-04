@@ -1296,8 +1296,11 @@ describe("v1 public family capability and Store semantics", () => {
         let factoryCalls = 0
         const forbiddenDefinitionWork: readonly (() => unknown)[] = [
             () => atom(1),
+            () => atom(Promise.resolve(1) as never),
             () => atom.lazy(() => 1),
+            () => atom.lazy(null as never),
             () => selector(get => get(source)),
+            () => selector(null as never),
             () => existing("cached"),
             () => existing("new"),
         ]

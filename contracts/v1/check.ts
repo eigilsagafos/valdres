@@ -460,6 +460,15 @@ const requiredPublicIds = new Set([
     "core.collection",
     "core.collection-options.encode-key",
     "core.collection-options.indexes",
+    "core.invalid-collection-key-error",
+    "core.invalid-synchronous-collection-value-error",
+    "core.missing-collection-row-error",
+    "core.undefined-collection-value-error",
+    "core.type.collection",
+    "core.type.collection-key",
+    "core.type.collection-options",
+    "core.type.collection-row",
+    "core.type.collection-value",
     "core.query-definition.where",
     "core.query-definition.order-by",
     "core.query-definition.offset",
@@ -530,9 +539,9 @@ const frozenLegacyProvenanceInventorySha256 =
 const frozenReviewedLegacyDispositionSha256 =
     "e59fc2432d3402205d77cf96095b4b57ca870044d9db6c64bc908752d8fa01f8"
 const frozenTargetCoordinateInventorySha256 =
-    "dc24aae780a5197ffbaa307304163477842359a1970747eade36df8abc16d1c7"
+    "1f5233eb05b4eb5b4d825556c04868b253f6c26ec22074d8a2cdbe4c236085c9"
 const frozenReleaseTrackOwnershipSha256 =
-    "3a8dbd8ffa92e0c43c87ebfbf8f860727250f003d35680fc2b7c964829c7130c"
+    "387c925069e12648893d2805dfb0f83c3821477dd0238f76e6324701e856dab3"
 const frozenWorkspaceBaseline = Object.freeze({
     commit: "ff1424bde13445eba07fcb426f5493dd43898f72",
     packageVersion: "1.0.0-beta.22",
@@ -651,6 +660,10 @@ const requiredFrozenPublicCoordinates = new Map([
         { package: "valdres", subpath: ".", name: "CallbackCapabilityError" },
     ],
     [
+        "core.collection",
+        { package: "valdres", subpath: ".", name: "collection" },
+    ],
+    [
         "core.collection-options.encode-key",
         {
             package: "valdres",
@@ -723,11 +736,27 @@ const requiredFrozenPublicCoordinates = new Map([
         },
     ],
     [
+        "core.invalid-collection-key-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "InvalidCollectionKeyError",
+        },
+    ],
+    [
         "core.invalid-synchronous-atom-value-error",
         {
             package: "valdres",
             subpath: ".",
             name: "InvalidSynchronousAtomValueError",
+        },
+    ],
+    [
+        "core.invalid-synchronous-collection-value-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "InvalidSynchronousCollectionValueError",
         },
     ],
     [
@@ -744,6 +773,14 @@ const requiredFrozenPublicCoordinates = new Map([
             package: "valdres",
             subpath: ".",
             name: "InvalidTransactionTargetError",
+        },
+    ],
+    [
+        "core.missing-collection-row-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "MissingCollectionRowError",
         },
     ],
     [
@@ -814,6 +851,34 @@ const requiredFrozenPublicCoordinates = new Map([
         "core.transaction-phase-error",
         { package: "valdres", subpath: ".", name: "TransactionPhaseError" },
     ],
+    [
+        "core.type.collection",
+        { package: "valdres", subpath: ".", name: "Collection" },
+    ],
+    [
+        "core.type.collection-key",
+        { package: "valdres", subpath: ".", name: "CollectionKey" },
+    ],
+    [
+        "core.type.collection-options",
+        { package: "valdres", subpath: ".", name: "CollectionOptions" },
+    ],
+    [
+        "core.type.collection-row",
+        { package: "valdres", subpath: ".", name: "CollectionRow" },
+    ],
+    [
+        "core.type.collection-value",
+        { package: "valdres", subpath: ".", name: "CollectionValue" },
+    ],
+    [
+        "core.undefined-collection-value-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "UndefinedCollectionValueError",
+        },
+    ],
 ] as const)
 const requiredFrozenErrorCodes = new Map([
     ["core.callback-capability-error", "VALDRES_CALLBACK_CAPABILITY"],
@@ -830,10 +895,15 @@ const requiredFrozenErrorCodes = new Map([
         "core.invalid-atom-comparator-result-error",
         "VALDRES_INVALID_ATOM_COMPARATOR_RESULT",
     ],
+    ["core.invalid-collection-key-error", "VALDRES_INVALID_COLLECTION_KEY"],
     ["core.invalid-external-cleanup-error", "VALDRES_INVALID_EXTERNAL_CLEANUP"],
     [
         "core.invalid-synchronous-atom-value-error",
         "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
+    ],
+    [
+        "core.invalid-synchronous-collection-value-error",
+        "VALDRES_INVALID_SYNCHRONOUS_COLLECTION_VALUE",
     ],
     [
         "core.invalid-transaction-callback-result-error",
@@ -843,6 +913,7 @@ const requiredFrozenErrorCodes = new Map([
         "core.invalid-transaction-target-error",
         "VALDRES_INVALID_TRANSACTION_TARGET",
     ],
+    ["core.missing-collection-row-error", "VALDRES_MISSING_COLLECTION_ROW"],
     ["core.runtime-mismatch-error", "VALDRES_RUNTIME_MISMATCH"],
     ["core.scope-not-found-error", "VALDRES_SCOPE_NOT_FOUND"],
     [
@@ -855,6 +926,10 @@ const requiredFrozenErrorCodes = new Map([
     ["core.store-tree-mismatch-error", "VALDRES_STORE_TREE_MISMATCH"],
     ["core.transaction-closed-error", "VALDRES_TRANSACTION_CLOSED"],
     ["core.transaction-phase-error", "VALDRES_TRANSACTION_PHASE"],
+    [
+        "core.undefined-collection-value-error",
+        "VALDRES_UNDEFINED_COLLECTION_VALUE",
+    ],
 ] as const)
 const requiredExecutionErrorContracts = new Map([
     [
@@ -862,10 +937,22 @@ const requiredExecutionErrorContracts = new Map([
         ["atom.object-is-default", "error.stable-name-and-code"],
     ],
     [
+        "core.invalid-collection-key-error",
+        ["collection.row-identity", "error.stable-name-and-code"],
+    ],
+    [
         "core.invalid-synchronous-atom-value-error",
         [
             "atom.exact-value",
             "atom.lazy.sync-per-tree-fallback",
+            "error.stable-name-and-code",
+            "mutation.value-vs-updater",
+        ],
+    ],
+    [
+        "core.invalid-synchronous-collection-value-error",
+        [
+            "collection.atomic-deltas",
             "error.stable-name-and-code",
             "mutation.value-vs-updater",
         ],
@@ -882,6 +969,10 @@ const requiredExecutionErrorContracts = new Map([
             "transaction.one-tree-draft",
             "transaction.scope-cursor-no-savepoint",
         ],
+    ],
+    [
+        "core.missing-collection-row-error",
+        ["collection.update-existing-only", "error.stable-name-and-code"],
     ],
     [
         "core.scope-not-found-error",
@@ -943,6 +1034,15 @@ const requiredExecutionErrorContracts = new Map([
             "notification.after-stability",
         ],
     ],
+    [
+        "core.undefined-collection-value-error",
+        [
+            "collection.atomic-deltas",
+            "collection.effective-presence",
+            "error.stable-name-and-code",
+            "mutation.value-vs-updater",
+        ],
+    ],
 ] as const)
 const requiredFrozenAllowedValues = new Map([
     ["collection.materialize-options.priority", ["user-visible", "background"]],
@@ -967,6 +1067,11 @@ const requiredCallbackOutcomeErrors = new Map([
     ["callback.atom-lazy-initializer", "InvalidSynchronousAtomValueError"],
     ["callback.atom-comparator", "InvalidAtomComparatorResultError"],
     ["callback.atom-update", "InvalidSynchronousAtomValueError"],
+    ["callback.collection-encode-key", "InvalidCollectionKeyError"],
+    [
+        "callback.collection-row-update",
+        "InvalidSynchronousCollectionValueError",
+    ],
     ["callback.transaction", "InvalidTransactionCallbackResultError"],
     ["callback.transaction-scope", "InvalidTransactionCallbackResultError"],
 ] as const)
@@ -1184,6 +1289,10 @@ export function validateContractSet(input: ContractSet): Readonly<{
         }
     }
     assertCallbackErrorOwnership(callbackManifest.entries)
+    assertCollectionContractAuthority(
+        publicManifest.entries,
+        callbackManifest.entries,
+    )
     assertStoreSubscriberContract(
         publicManifest.entries,
         callbackManifest.entries,
@@ -1274,6 +1383,156 @@ function assertCallbackErrorOwnership(
             )
         }
     }
+}
+
+function assertCollectionContractAuthority(
+    publicEntries: readonly PublicEntry[],
+    callbackEntries: readonly CallbackEntry[],
+): void {
+    const publicById = new Map(
+        publicEntries.map(entry => [entry.id, entry] as const),
+    )
+    const callbackById = new Map(
+        callbackEntries.map(entry => [entry.id, entry] as const),
+    )
+    const requirePublic = (id: string): PublicEntry => {
+        const entry = publicById.get(id)
+        assert(entry !== undefined, `missing collection authority entry ${id}`)
+        return entry
+    }
+
+    const requiredTypes = new Map([
+        ["core.type.collection", "Collection"],
+        ["core.type.collection-key", "CollectionKey"],
+        ["core.type.collection-options", "CollectionOptions"],
+        ["core.type.collection-row", "CollectionRow"],
+        ["core.type.collection-value", "CollectionValue"],
+    ] as const)
+    for (const [id, name] of requiredTypes) {
+        const entry = requirePublic(id)
+        assert(
+            entry.kind === "type-export" &&
+                entry.target.package === "valdres" &&
+                entry.target.subpath === "." &&
+                entry.target.name === name &&
+                entry.target.status === "stable",
+            `${id} differs from the frozen root collection type coordinate`,
+        )
+    }
+
+    assert(
+        requirePublic("core.type.collection").notes.includes(
+            "Collection<Key, Value, Input = Key, Indexes = never>",
+        ) &&
+            requirePublic("core.type.collection").notes.includes(
+                "Input stays third",
+            ) &&
+            requirePublic("core.type.collection").notes.includes(
+                "index metadata stays fourth",
+            ),
+        "Collection generic order must remain Key, Value, Input, Indexes",
+    )
+    assert(
+        requirePublic("core.type.collection-key").notes.includes(
+            "string | number | bigint | boolean | null",
+        ) &&
+            requirePublic("core.type.collection-value").notes.includes(
+                "excludes undefined",
+            ) &&
+            requirePublic("core.type.collection-row").notes.includes(
+                "State<Value | undefined>",
+            ),
+        "collection key, value, and row absence domains differ from the frozen contract",
+    )
+    assert(
+        requirePublic("core.type.collection-options").notes.includes(
+            "requires encodeKey exactly when Input is not assignable to Key",
+        ),
+        "CollectionOptions must retain conditional rich-input encoding",
+    )
+
+    for (const id of [
+        "core.invalid-collection-key-error",
+        "core.invalid-synchronous-collection-value-error",
+        "core.missing-collection-row-error",
+        "core.undefined-collection-value-error",
+    ]) {
+        const entry = requirePublic(id)
+        assert(
+            entry.notes.includes("diagnostic shape is immutable") &&
+                entry.notes.includes("retains no"),
+            `${id} must retain an immutable, application-data-free diagnostic shape`,
+        )
+    }
+
+    const collection = requirePublic("core.collection")
+    const indexes = requirePublic("core.collection-options.indexes")
+    const state = requirePublic("core.type.state")
+    assert(
+        collection.contractIds.includes(
+            "collection.unindexed-foundation-beta",
+        ) &&
+            collection.notes.includes("indexes?: never") &&
+            collection.notes.includes("final-v1 indexes coordinate") &&
+            indexes.target.status === "stable" &&
+            indexes.contractIds.includes(
+                "collection.unindexed-foundation-beta",
+            ) &&
+            indexes.notes.includes("final-v1 target coordinate") &&
+            indexes.notes.includes("first beta exposes indexes?: never") &&
+            state.contractIds.includes("collection.invariant-readable-state") &&
+            state.notes.includes("private invariant value base") &&
+            state.notes.includes("current beta root State remains Atom | Selector") &&
+            state.notes.includes("family factory admission remains"),
+        "collection target-vs-first-beta staging or invariant State boundary differs from the frozen contract",
+    )
+
+    const rowUpdate = callbackById.get("callback.collection-row-update")
+    const encodeKey = callbackById.get("callback.collection-encode-key")
+    const familyFactory = callbackById.get("callback.family-create-node")
+    const indexExtractor = callbackById.get(
+        "callback.collection-index-extractor",
+    )
+    assert(
+        rowUpdate !== undefined &&
+            rowUpdate.errorRule.includes("MissingCollectionRowError") &&
+            rowUpdate.errorRule.includes("UndefinedCollectionValueError") &&
+            rowUpdate.thenableRule.includes(
+                "InvalidSynchronousCollectionValueError",
+            ),
+        "collection row updater errors differ from the frozen outcome boundary",
+    )
+    assert(
+        encodeKey !== undefined &&
+            encodeKey.errorRule.includes("InvalidCollectionKeyError") &&
+            encodeKey.errorRule.includes(
+                "propagates as that exact user-thrown value",
+            ) &&
+            encodeKey.thenableRule.includes("InvalidCollectionKeyError") &&
+            encodeKey.resultBoundary.includes(
+                "string, finite number, bigint, boolean, or null",
+            ),
+        "collection key encoder differs from the frozen key/error boundary",
+    )
+    assert(
+        familyFactory !== undefined &&
+            familyFactory.thenableRule.includes(
+                "same-domain Atom or Selector",
+            ) &&
+            familyFactory.resultBoundary.includes(
+                "Collection rows and collection definitions reject",
+            ),
+        "family factory admission must remain Atom-or-Selector after State widens",
+    )
+    assert(
+        indexExtractor !== undefined &&
+            indexExtractor.role.includes("Final-v1 target only") &&
+            indexExtractor.role.includes("unindexed foundation beta never") &&
+            indexExtractor.requiredContractIds.includes(
+                "collection.unindexed-foundation-beta",
+            ),
+        "index extraction must remain planned for final v1 and rejected by the first collection beta",
+    )
 }
 
 function assertStoreSubscriberContract(

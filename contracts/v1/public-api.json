@@ -661,10 +661,11 @@
                 "collection.row-identity",
                 "collection.membership-order",
                 "collection.atomic-deltas",
+                "collection.unindexed-foundation-beta",
                 "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "CollectionOptions contains exactly encodeKey and indexes; there is no Store policy, scheduler, or late index-definition option."
+            "notes": "The target is a callable/readable Collection<Key, Value, Input = Key, Indexes = never>. The first foundation beta admits encodeKey, spells indexes only as indexes?: never, rejects every own indexes key at runtime, and exports no index descriptor or collection.indexes property. The separately frozen final-v1 indexes coordinate remains planned."
         },
         {
             "id": "core.collection-options.encode-key",
@@ -715,11 +716,12 @@
             },
             "contractIds": [
                 "collection.atomic-deltas",
+                "collection.unindexed-foundation-beta",
                 "options.closed-surface",
                 "transaction.no-user-code-final-preflight"
             ],
             "decisionStatus": "approved",
-            "notes": "The immutable definition-time map owns value, multi-value, and ordered index definitions; it starts no Store materialization."
+            "notes": "This is a final-v1 target coordinate, not an accepted first-foundation-beta option. The first beta exposes indexes?: never, rejects every own indexes key, and ships no descriptor or collection.indexes property. A later indexed beta may replace that closed coordinate with the immutable definition-time map before materialization exists."
         },
         {
             "id": "core.external-atom",
@@ -1269,6 +1271,34 @@
             "notes": "The exact root class/code pair is InvalidAtomComparatorResultError / VALDRES_INVALID_ATOM_COMPARATOR_RESULT."
         },
         {
+            "id": "core.invalid-collection-key-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_INVALID_COLLECTION_KEY",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "InvalidCollectionKeyError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use a direct or encoded collection key in the portable string | finite number | bigint | boolean | null domain.",
+                "typeError": "An invalid direct or encoded key throws VALDRES_INVALID_COLLECTION_KEY before row caching or Store work.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.row-identity",
+                "error.stable-name-and-code"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is InvalidCollectionKeyError / VALDRES_INVALID_COLLECTION_KEY. Its diagnostic shape is immutable and retains no rejected key or rich input."
+        },
+        {
             "id": "core.invalid-synchronous-atom-value-error",
             "kind": "error",
             "owner": "valdres",
@@ -1297,6 +1327,35 @@
             ],
             "decisionStatus": "approved",
             "notes": "The exact root class/code pair is InvalidSynchronousAtomValueError / VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE."
+        },
+        {
+            "id": "core.invalid-synchronous-collection-value-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_INVALID_SYNCHRONOUS_COLLECTION_VALUE",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "InvalidSynchronousCollectionValueError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Keep direct and updater-produced collection row values synchronous and non-thenable.",
+                "typeError": "A thenable row value throws VALDRES_INVALID_SYNCHRONOUS_COLLECTION_VALUE and is neither staged nor awaited.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.atomic-deltas",
+                "error.stable-name-and-code",
+                "mutation.value-vs-updater"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is InvalidSynchronousCollectionValueError / VALDRES_INVALID_SYNCHRONOUS_COLLECTION_VALUE. Its diagnostic shape is immutable and retains no rejected row value or thenable."
         },
         {
             "id": "core.invalid-transaction-callback-result-error",
@@ -1355,6 +1414,34 @@
             ],
             "decisionStatus": "approved",
             "notes": "The exact root class/code pair is InvalidTransactionTargetError / VALDRES_INVALID_TRANSACTION_TARGET."
+        },
+        {
+            "id": "core.missing-collection-row-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_MISSING_COLLECTION_ROW",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "MissingCollectionRowError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use set for upsert and update only when the collection row is effectively present.",
+                "typeError": "Updating an absent or tombstoned row throws VALDRES_MISSING_COLLECTION_ROW before invoking the updater.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.update-existing-only",
+                "error.stable-name-and-code"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is MissingCollectionRowError / VALDRES_MISSING_COLLECTION_ROW. Its diagnostic shape is immutable and retains no row key or application value."
         },
         {
             "id": "core.runtime-mismatch-error",
@@ -2383,6 +2470,36 @@
             "notes": "The exact root class/code pair is TransactionPhaseError / VALDRES_TRANSACTION_PHASE."
         },
         {
+            "id": "core.undefined-collection-value-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_UNDEFINED_COLLECTION_VALUE",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "UndefinedCollectionValueError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use delete for absence and keep collection row values non-undefined.",
+                "typeError": "A direct or updater-produced undefined row value throws VALDRES_UNDEFINED_COLLECTION_VALUE before intent admission.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.atomic-deltas",
+                "collection.effective-presence",
+                "error.stable-name-and-code",
+                "mutation.value-vs-updater"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is UndefinedCollectionValueError / VALDRES_UNDEFINED_COLLECTION_VALUE. Its diagnostic shape is immutable and retains no row key or application value."
+        },
+        {
             "id": "core.transaction.delete",
             "kind": "method",
             "owner": "core",
@@ -2667,6 +2784,142 @@
             "notes": "AtomOptions remains public with exactly optional name and equal members."
         },
         {
+            "id": "core.type.collection",
+            "kind": "type-export",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Collection",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use Collection<Key, Value, Input = Key, Indexes = never> for callable row lookup and readonly ordered membership.",
+                "typeError": "Changing the canonical-key/value/input/index generic order or treating a collection as a writable row rejects.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.invariant-readable-state",
+                "collection.membership-order",
+                "collection.row-identity",
+                "collection.unindexed-foundation-beta"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Collection<Key, Value, Input = Key, Indexes = never> is callable from Input to CollectionRow<Key, Value> and readable as a stable readonly membership array. The private phantom makes all four coordinates real and keeps declaration emit nameable; Input stays third and future inferred index metadata stays fourth."
+        },
+        {
+            "id": "core.type.collection-key",
+            "kind": "type-export",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "CollectionKey",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use CollectionKey for canonical portable scalar row keys; encode richer lookup inputs.",
+                "typeError": "Symbol, undefined, object, non-finite number, and every non-canonical encoded key reject before row identity work.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["collection.row-identity"],
+            "decisionStatus": "approved",
+            "notes": "CollectionKey is exactly string | number | bigint | boolean | null; runtime admission narrows number to finite values. Symbol and undefined are deliberately excluded."
+        },
+        {
+            "id": "core.type.collection-options",
+            "kind": "type-export",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "CollectionOptions",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use CollectionOptions<Key, Value, Input = Key>; provide encodeKey when Input is richer than Key.",
+                "typeError": "A rich Input without encodeKey, an unknown option, or any first-beta indexes value rejects.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.row-identity",
+                "collection.unindexed-foundation-beta",
+                "options.closed-surface"
+            ],
+            "decisionStatus": "approved",
+            "notes": "CollectionOptions<Key, Value, Input = Key> requires encodeKey exactly when Input is not assignable to Key. The first foundation beta keeps the final-v1 indexes coordinate closed as indexes?: never and rejects any own indexes key at runtime."
+        },
+        {
+            "id": "core.type.collection-row",
+            "kind": "type-export",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "CollectionRow",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use CollectionRow<Key, Value> as the readonly row source and explicit row mutation target.",
+                "typeError": "Row reads include undefined absence while row writes accept only Value; collections and Atoms cannot substitute for row-only operations.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.effective-presence",
+                "collection.invariant-readable-state",
+                "collection.row-identity"
+            ],
+            "decisionStatus": "approved",
+            "notes": "CollectionRow<Key, Value> is a readonly kind=collection-row State<Value | undefined> with readonly canonical key: Key. Explicit row mutation overloads preserve Value-only writes despite the absent read result."
+        },
+        {
+            "id": "core.type.collection-value",
+            "kind": "type-export",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "CollectionValue",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Constrain generic collection values with CollectionValue and use delete for absence.",
+                "typeError": "A Value generic containing undefined and every direct or updater-produced undefined row write reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.atomic-deltas",
+                "collection.effective-presence"
+            ],
+            "decisionStatus": "approved",
+            "notes": "CollectionValue is the nameable null | boolean | number | bigint | string | symbol | object union. It includes function objects and excludes undefined, which is reserved exclusively for row absence."
+        },
+        {
             "id": "core.type.equal-func",
             "kind": "type-export",
             "owner": "core",
@@ -2860,9 +3113,14 @@
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
             },
-            "contractIds": ["atom.exact-value", "selector.pure-sync-dag"],
+            "contractIds": [
+                "atom.exact-value",
+                "collection.invariant-readable-state",
+                "collection.membership-order",
+                "selector.pure-sync-dag"
+            ],
             "decisionStatus": "approved",
-            "notes": "State remains public with the narrowed v1 synchronous contract."
+            "notes": "The final root State<Value> is the discriminated Atom | Selector | readonly collection-row | readonly collection union over one private invariant value base, preserving kind narrowing. Before the complete collection API is exposed, the current beta root State remains Atom | Selector and family factory admission remains that narrower definition union."
         },
         {
             "id": "core.type.store",

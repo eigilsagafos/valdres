@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
     WeakTupleMemberCache,
-    type FamilyWeakRuntime,
-} from "../../src/v1-internal/family"
+    type WeakMemberRuntime,
+} from "../../src/v1-internal/weak-member-cache"
 
 interface FakeWeakReference {
     target: object | undefined
@@ -17,7 +17,7 @@ interface FakeRegistration {
 }
 
 /** A deterministic stand-in for WeakRef and FinalizationRegistry. */
-class FakeWeakRuntime implements FamilyWeakRuntime {
+class FakeWeakRuntime implements WeakMemberRuntime {
     readonly references: FakeWeakReference[] = []
     readonly registrations: FakeRegistration[] = []
     #cleanup: ((held: object) => void) | undefined
@@ -94,11 +94,26 @@ const memberFactory = () => {
     }
 }
 
+const familyRecursionError = (): TypeError =>
+    new TypeError("family cannot recursively construct the same member")
+
+const createCache = <Value extends object>(
+    createMember: (args: ArrayLike<unknown>) => Value,
+    weakRuntime: WeakMemberRuntime,
+    onReady?: (member: Value) => void,
+): WeakTupleMemberCache<Value> =>
+    new WeakTupleMemberCache(
+        createMember,
+        familyRecursionError,
+        weakRuntime,
+        onReady,
+    )
+
 describe("WeakTupleMemberCache cleanup", () => {
     test("repairs a dead reference synchronously before rebuilding its member", () => {
         const runtime = new FakeWeakRuntime()
         const factory = memberFactory()
-        const cache = new WeakTupleMemberCache(factory.create, runtime)
+        const cache = createCache(factory.create, runtime)
         const first = cache.getOrCreateOne("step", ["step"])
 
         runtime.makeReferenceDead(0)
@@ -115,7 +130,7 @@ describe("WeakTupleMemberCache cleanup", () => {
     test("ignores a stale finalizer after dead-reference replacement", () => {
         const runtime = new FakeWeakRuntime()
         const factory = memberFactory()
-        const cache = new WeakTupleMemberCache(factory.create, runtime)
+        const cache = createCache(factory.create, runtime)
 
         cache.getOrCreateOne("step", ["step"])
         runtime.makeReferenceDead(0)
@@ -134,7 +149,7 @@ describe("WeakTupleMemberCache cleanup", () => {
     test("prunes one tuple branch while preserving its shared prefix and sibling", () => {
         const runtime = new FakeWeakRuntime()
         const factory = memberFactory()
-        const cache = new WeakTupleMemberCache(factory.create, runtime)
+        const cache = createCache(factory.create, runtime)
         cache.getOrCreateTuple(["process", "left"], ["process", "left"])
         const right = cache.getOrCreateTuple(
             ["process", "right"],
@@ -156,7 +171,7 @@ describe("WeakTupleMemberCache cleanup", () => {
     test("preserves a prefix route independently of its terminal member", () => {
         const runtime = new FakeWeakRuntime()
         const factory = memberFactory()
-        const cache = new WeakTupleMemberCache(factory.create, runtime)
+        const cache = createCache(factory.create, runtime)
         cache.getOrCreateOne("process", ["process"])
         const child = cache.getOrCreateTuple(
             ["process", "step"],
@@ -184,7 +199,7 @@ describe("WeakTupleMemberCache cleanup", () => {
     test("fully prunes a shared prefix after its final sibling is collected", () => {
         const runtime = new FakeWeakRuntime()
         const factory = memberFactory()
-        const cache = new WeakTupleMemberCache(factory.create, runtime)
+        const cache = createCache(factory.create, runtime)
         cache.getOrCreateTuple(["process", "left"], ["process", "left"])
         cache.getOrCreateTuple(["process", "right"], ["process", "right"])
 
@@ -199,7 +214,7 @@ describe("WeakTupleMemberCache cleanup", () => {
     test("immediately prunes routes created by a failed factory", () => {
         const runtime = new FakeWeakRuntime()
         const failure = new Error("construction failed")
-        const cache = new WeakTupleMemberCache<Member>(() => {
+        const cache = createCache<Member>(() => {
             throw failure
         }, runtime)
         let thrown: unknown
@@ -220,7 +235,7 @@ describe("WeakTupleMemberCache cleanup", () => {
     test("makes duplicate cleanup harmless even after the route is replaced", () => {
         const runtime = new FakeWeakRuntime()
         const factory = memberFactory()
-        const cache = new WeakTupleMemberCache(factory.create, runtime)
+        const cache = createCache(factory.create, runtime)
         cache.getOrCreateOne("step", ["step"])
 
         runtime.finalize(0)
@@ -240,7 +255,7 @@ describe("WeakTupleMemberCache cleanup", () => {
         let calls = 0
         let nestedError: unknown
         const published: Member[] = []
-        cache = new WeakTupleMemberCache(
+        cache = createCache(
             () => {
                 calls++
                 if (calls === 1) {
