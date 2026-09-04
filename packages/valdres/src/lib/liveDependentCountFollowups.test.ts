@@ -49,7 +49,7 @@ const assertLiveDependentCounts = (data: any, states: any[], label: string) => {
 
     const mismatches: string[] = []
     for (const state of states) {
-        const actual = data.liveDependentCount.get(state) ?? 0
+        const actual = data.graphNodes.get(state)?.live ?? 0
         const exp = expected.get(state) ?? 0
         if (actual !== exp) {
             const deps = [...(data.stateDependencies.get(state) ?? [])].map(
@@ -225,8 +225,8 @@ describe("liveDependentCount follow-up regressions", () => {
         expect(s.get(root)).toBe(2)
         expect(getStoreData(s).stateDependencies.get(root)).toContain(newBranch)
         expect(getStoreData(s).stateDependents.get(newBranch)).toContain(root)
-        expect(getStoreData(s).liveDependentCount.get(newBranch) ?? 0).toBe(1)
-        expect(getStoreData(s).liveDependentCount.get(oldBranch) ?? 0).toBe(0)
+        expect(getStoreData(s).graphNodes.get(newBranch)?.live ?? 0).toBe(1)
+        expect(getStoreData(s).graphNodes.get(oldBranch)?.live ?? 0).toBe(0)
     })
 
     test("cyclic dynamic dependency churn preserves live counts", () => {
