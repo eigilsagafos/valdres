@@ -266,7 +266,12 @@ export function inspectArtifact(tarball, metadata, mode = "timed") {
 
 // Uses the shipping build and prepack scripts from the selected immutable
 // commit. The archive is an isolated build directory, not a candidate branch.
-export async function packArtifact({ commit, output, mode = "timed" }) {
+export async function packArtifact({
+    commit,
+    output,
+    mode = "timed",
+    counterAdapter,
+}) {
     assertClean()
     checkInputs()
     requireGate(
@@ -305,12 +310,29 @@ export async function packArtifact({ commit, output, mode = "timed" }) {
     run(["bun", "run", "build:types"])
     if (mode === "timed") run(["bun", "run", "build"])
     else {
-        // The marker is attached at build time only, with no source edits or
-        // public exports. F2's control evidence adapter uses this separate build.
+        const control = runtimeTree === manifest.control.runtimeTree
+        requireGate(
+            control || typeof counterAdapter === "string",
+            "ARTIFACT-COUNTER-ADAPTER",
+            "candidate counter builds require their own archived evidence adapter",
+        )
+        const adapterPath = control
+            ? join(
+                  ROOT,
+                  "scripts/selector-kernel-tournament/control-instrumentation.mjs",
+              )
+            : resolve(build, counterAdapter)
+        requireGate(
+            control ||
+                (adapterPath.startsWith(build + "/") &&
+                    existsSync(adapterPath)),
+            "ARTIFACT-COUNTER-ADAPTER",
+            "adapter must belong to the selected source archive",
+        )
         const builder = join(output, "counter-build.mjs")
         writeFileSync(
             builder,
-            `import { readFileSync } from 'node:fs';\nimport { buildOptions, developmentBuildOptions } from ${JSON.stringify(join(pkg, "build.ts"))};\nfor (const options of [buildOptions, developmentBuildOptions]) {\n const result = await Bun.build({ ...options, plugins: [{ name: 'tournament-counter', setup(build) { build.onLoad({ filter: /public-domain\\.ts$/ }, args => ({ contents: readFileSync(args.path, 'utf8') + '\\nglobalThis[Symbol.for(${JSON.stringify(EVIDENCE_MARKER)})] = {mode: \\"counter\\"};', loader: 'ts' })); } }] });\n if (!result.success) throw new Error(result.logs.join('\\n'));\n}\n`,
+            `import { buildOptions, developmentBuildOptions } from ${JSON.stringify(join(pkg, "build.ts"))};\nimport { ${control ? "controlPlugin" : "createEvidencePlugin"} as makePlugin } from ${JSON.stringify(adapterPath)};\nfor (const options of [buildOptions, developmentBuildOptions]) {\n const result = await Bun.build({ ...options, plugins: [makePlugin()] });\n if (!result.success) throw new Error(result.logs.join('\\n'));\n}\n`,
         )
         run(["bun", builder])
     }
