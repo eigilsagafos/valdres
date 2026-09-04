@@ -808,8 +808,8 @@ Owns only:
   frontmatter as the repository's required non-release CI marker.
 
 It MUST NOT change runtime source, tests, build scripts, package manifests,
-lockfiles, workflows, or any release-bearing Changeset. The empty Changeset
-MUST name no package and request no version bump.
+lockfiles, workflows, or any release-bearing Changeset. The empty Changeset MUST
+name no package and request no version bump.
 
 ### 2. Foundation
 
