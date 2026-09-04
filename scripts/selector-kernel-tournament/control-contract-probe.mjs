@@ -1,6 +1,7 @@
 // Read-only diagnosis of the frozen public control contract. This emits facts,
 // never conformance passes, performance samples, or candidate decisions.
 import * as api from "valdres"
+import { readHydrationSnapshot } from "valdres/adapter-internals/v1"
 const target = api.store()
 let contextType = "not-called"
 let asyncResult
@@ -34,6 +35,23 @@ try {
         error = error.cause
     }
 }
+const hydrationSource = api.atom(2)
+target.set(hydrationSource, 8)
+let hydrationMissingReadError
+const hydrationFallback = readHydrationSnapshot(
+    target,
+    api.selector(get => {
+        try {
+            get(Object.freeze({ kind: "atom" }))
+        } catch (error) {
+            hydrationMissingReadError = {
+                name: error.name,
+                message: error.message,
+            }
+        }
+        return "fallback"
+    }),
+)
 console.log(
     JSON.stringify(
         {
@@ -45,6 +63,12 @@ console.log(
             onChange: typeof target.onChange,
             onCommitEnd: typeof target.onCommitEnd,
             scopeDetach: typeof target.scope("probe").detach,
+            hydrationCommittedLeaf: readHydrationSnapshot(
+                target,
+                hydrationSource,
+            ),
+            hydrationFallback,
+            hydrationMissingReadError,
             cycleErrors,
         },
         null,
