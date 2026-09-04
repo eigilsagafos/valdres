@@ -8,15 +8,15 @@ candidate implementation, public kernel interface, candidate workspace, winner,
 or promotion decision exists. The beta.36 runtime tree remains
 `35a20a12ff1087140b08622f9057c857900d17e5`.
 
-| Work order | Status                                                                                                                                                                            |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F0         | v2 authority implemented: 30 semantic cases, 17 workloads, six memory scenarios, 12 memory rows. Empty non-release Changeset retained.                                            |
-| F1         | Shipping pack driver, separate counter-marker build, installed Node/Bun probes, and reviewed admission restrictions implemented. Actual evidence instrumentation remains F2 work. |
-| F2         | Independent exhaustive graph oracle implemented. Complete packed admission audit recorded; semantic runner and observation adapter remain in progress.                            |
-| F3–F6      | Not completed; sequential dependencies remain.                                                                                                                                    |
-| F7         | No green control bundle yet. Admission probes are not conformance or eligibility evidence.                                                                                        |
-| F8         | No complete red proof bundle yet.                                                                                                                                                 |
-| F9         | Final neutrality/statistics review and foundation PR remain outstanding.                                                                                                          |
+| Work order | Status                                                                                                                                                                                             |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F0         | v2 authority implemented: 30 semantic cases, 17 workloads, six memory scenarios, 12 memory rows. Empty non-release Changeset retained.                                                             |
+| F1         | Shipping pack driver, separate counter-marker build, installed Node/Bun probes, and reviewed admission restrictions implemented. Actual control observation is implemented as a build-only plugin. |
+| F2         | Complete: all 30 cases, 740,951 edge attempts per replay, public/counter Node/Bun double replays, 58 frozen family tests, and 11 semantic red mutations verified.                                  |
+| F3–F6      | Not completed; sequential dependencies remain.                                                                                                                                                     |
+| F7         | No green control bundle yet. Admission probes are not conformance or eligibility evidence.                                                                                                         |
+| F8         | No complete red proof bundle yet.                                                                                                                                                                  |
+| F9         | Final neutrality/statistics review and foundation PR remain outstanding.                                                                                                                           |
 
 ## Resolved normative defects
 
