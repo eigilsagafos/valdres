@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { extractPackedArtifact } from "../performance/core-load/artifact.mjs"
 import {
+    assertPackedImports,
     command,
     EVIDENCE_MARKER,
     inspectArtifact,
@@ -47,6 +48,18 @@ function fixture(source = "export const value = 1", mutate = (pkg: any) => {}) {
     }
 }
 describe("F1 artifact admission", () => {
+    test("computed, external, and source-tree module loading fail closed", () => {
+        for (const source of [
+            "import('valdres/src')",
+            "import(target)",
+            "require(target)",
+            "export { model } from 'reference-model'",
+        ]) {
+            expect(() =>
+                assertPackedImports(source, "/synthetic/dist/index.js"),
+            ).toThrow("ARTIFACT-SOURCE-IMPORT")
+        }
+    })
     test("admits an intact uninstrumented fixture", () => {
         const f = fixture()
         try {

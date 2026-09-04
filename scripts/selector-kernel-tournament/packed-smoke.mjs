@@ -2,6 +2,37 @@ import assert from "node:assert/strict"
 import * as api from "valdres"
 import * as adapter from "valdres/adapter-internals/v1"
 const { atom, selector, store, family } = api
+assert.deepEqual(
+    Object.keys(api).sort(),
+    [
+        "CallbackCapabilityError",
+        "InvalidAtomComparatorResultError",
+        "InvalidSynchronousAtomValueError",
+        "InvalidTransactionCallbackResultError",
+        "InvalidTransactionTargetError",
+        "RuntimeMismatchError",
+        "ScopeNotFoundError",
+        "SelectorCapabilityError",
+        "SelectorCircularDependencyError",
+        "StoreDisposedError",
+        "StoreTreeMismatchError",
+        "SubscriberNotificationError",
+        "TransactionClosedError",
+        "TransactionPhaseError",
+        "atom",
+        "family",
+        "selector",
+        "store",
+    ].sort(),
+)
+assert.deepEqual(
+    Object.keys(adapter).sort(),
+    ["assertStore", "read", "readHydrationSnapshot", "subscribe"].sort(),
+)
+assert.equal(
+    Boolean(globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V1")]),
+    process.argv[2] === "counter",
+)
 const target = store()
 const source = atom(2)
 const doubled = selector(get => get(source) * 2)

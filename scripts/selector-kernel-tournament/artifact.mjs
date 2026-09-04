@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
+import ts from "typescript"
 import {
     extractPackedArtifact,
     hashTree,
@@ -30,6 +31,60 @@ import {
 } from "./inputs.mjs"
 
 export const EVIDENCE_MARKER = "VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V1"
+export function assertPackedImports(
+    source,
+    filename,
+    distRoot = dirname(filename),
+) {
+    const ast = ts.createSourceFile(
+        filename,
+        source,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.JS,
+    )
+    function modulePath(node) {
+        requireGate(
+            node && ts.isStringLiteral(node),
+            "ARTIFACT-SOURCE-IMPORT",
+            `${filename}: nonliteral module loading`,
+        )
+        const value = node.text
+        requireGate(
+            value.startsWith("./") || value.startsWith("../"),
+            "ARTIFACT-SOURCE-IMPORT",
+            `${filename}: external module ${value}`,
+        )
+        requireGate(
+            !/(?:^|\/)(?:src|test|v1-model|selector-oracle)(?:\/|\.)/.test(
+                value,
+            ) && value.endsWith(".js"),
+            "ARTIFACT-SOURCE-IMPORT",
+            `${filename}: ${value}`,
+        )
+        const path = resolve(dirname(filename), value)
+        requireGate(
+            path.startsWith(resolve(distRoot) + "/") && existsSync(path),
+            "ARTIFACT-SOURCE-IMPORT",
+            `${filename}: import outside packed dist`,
+        )
+    }
+    function visit(node) {
+        if (
+            (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+            node.moduleSpecifier
+        )
+            modulePath(node.moduleSpecifier)
+        if (
+            ts.isCallExpression(node) &&
+            (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+                node.expression.getText(ast) === "require")
+        )
+            modulePath(node.arguments[0])
+        ts.forEachChild(node, visit)
+    }
+    visit(ast)
+}
 export function command(argv, cwd, options = {}) {
     const result = spawnSync(argv[0], argv.slice(1), {
         cwd,
@@ -92,6 +147,11 @@ export function inspectArtifact(tarball, metadata, mode = "timed") {
             const source = readFileSync(
                 join(artifact.packageRoot, "dist", path),
                 "utf8",
+            )
+            assertPackedImports(
+                source,
+                join(artifact.packageRoot, "dist", path),
+                join(artifact.packageRoot, "dist"),
             )
             requireGate(
                 !/(?:from|import\s*\()\s*["'][^"']*(?:\/src\/|v1-model|selector-oracle|test\/)/.test(
@@ -263,7 +323,7 @@ export function smokeArtifact(artifactDirectory, runtime) {
         join(ROOT, "scripts/selector-kernel-tournament/packed-smoke.mjs"),
         join(target, "smoke.mjs"),
     )
-    const output = command([runtime, "smoke.mjs"], target)
+    const output = command([runtime, "smoke.mjs", metadata.mode], target)
     writeFileSync(join(artifactDirectory, `smoke-${runtime}.json`), output)
     return JSON.parse(output)
 }
