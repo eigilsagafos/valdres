@@ -76,7 +76,13 @@ export async function runSemanticCases({
         assert.ok(!fixtures.has(id))
         fixtures.set(id, body)
     }
-    let cleanups, trace, identities, nextIdentity
+    let cleanups, trace, identities, nextIdentity, counterTotals
+    const resetObservation = options => {
+        if (!observer) return
+        for (const [key, value] of Object.entries(observer.snapshot().common))
+            counterTotals[key] = (counterTotals[key] ?? 0) + value
+        observer.reset(options)
+    }
     const track = s => (cleanups.push(() => s.dispose()), s)
     const A = (id, value) => {
         const state = atom(value)
@@ -214,7 +220,7 @@ export async function runSemanticCases({
                 const attempts = []
                 for (let parent = 0; parent < n; parent++)
                     for (let dependency = 0; dependency < n; dependency++) {
-                        observer?.reset({ trace: false })
+                        resetObservation({ trace: false })
                         const gates = Array.from({ length: n }, (_, i) =>
                             A(`g${i}`, -1),
                         )
@@ -326,7 +332,7 @@ export async function runSemanticCases({
             }
         assert.equal(graphCount, 29853)
         assert.equal(attemptCount, 740951) // replaced below by independently computed inventory total
-        observer?.reset()
+        resetObservation()
         note("exhaustive", {
             graphs: graphCount,
             attempts: attemptCount,
@@ -944,7 +950,7 @@ export async function runSemanticCases({
                 repeat < parameters.repeatForDeterminism;
                 repeat++
             ) {
-                observer?.reset({ trace: false })
+                resetObservation({ trace: false })
                 const s = store(),
                     leaves = Array.from({ length: 5 }, (_, i) => A(`a${i}`, i)),
                     gate = A("gate", 0)
@@ -967,7 +973,7 @@ export async function runSemanticCases({
                             `s${i}`,
                             g =>
                                 g(leaves[(g(gate) + i) % 5]) +
-                                (i ? g(states[i - 1]) : 0),
+                                (i ? g(states[(g(gate) + i) % i]) : 0),
                         ),
                     )
                     definitions.push({
@@ -976,7 +982,10 @@ export async function runSemanticCases({
                         get: g =>
                             number(
                                 g(`a${(g("gate").value + i) % 5}`).value +
-                                    (i ? g(`s${i - 1}`).value : 0),
+                                    (i
+                                        ? g(`s${(g("gate").value + i) % i}`)
+                                              .value
+                                        : 0),
                             ),
                     })
                 }
@@ -1018,7 +1027,7 @@ export async function runSemanticCases({
                 repeatedDigest: repeats[0],
             })
         }
-        observer?.reset()
+        resetObservation()
     })
     assert.deepEqual(
         [...fixtures.keys()].sort(),
@@ -1030,17 +1039,22 @@ export async function runSemanticCases({
         trace = []
         identities = new WeakMap()
         nextIdentity = 1
+        counterTotals = {}
         observer?.reset()
         try {
             await fixtures.get(id)()
-            const before = snap()
             for (const dispose of cleanups.reverse()) dispose()
+            if (observer)
+                for (const [key, value] of Object.entries(
+                    observer.snapshot().common,
+                ))
+                    counterTotals[key] = (counterTotals[key] ?? 0) + value
             const row = {
                 id,
                 status: "pass",
                 trace,
                 traceSha256: digest(trace),
-                common: before?.common ?? null,
+                common: observer ? counterTotals : null,
                 mode: observer ? "counter" : "public",
             }
             rows.push(row)
