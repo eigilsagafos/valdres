@@ -30,7 +30,9 @@ const child = target.scope("child")
 child.set(source, 10)
 assert.equal(child.get(doubled), 20)
 assert.equal(target.get(doubled), 8)
-assert.equal(adapter.readHydrationSnapshot(target, doubled), 4)
+// Without a server leaf reader, hydration reads the current committed atom
+// outcome through a disposable selector host.
+assert.equal(adapter.readHydrationSnapshot(target, doubled), 8)
 const members = family(key => atom(key.length))
 const derived = family(key => selector(get => get(members(key)) + 1))
 assert.equal(target.get(derived("abc")), 4)
