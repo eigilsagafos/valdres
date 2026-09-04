@@ -49,6 +49,12 @@ function fixture(source = "export const value = 1", mutate = (pkg: any) => {}) {
 }
 describe("F1 artifact admission", () => {
     test("computed, external, and source-tree module loading fail closed", () => {
+        expect(() =>
+            assertPackedImports(
+                "const functionText = Function.prototype.toString",
+                "/synthetic/dist/index.js",
+            ),
+        ).not.toThrow()
         for (const source of [
             "import('valdres/src')",
             "import(target)",

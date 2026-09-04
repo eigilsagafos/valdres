@@ -75,7 +75,12 @@ export function assertPackedImports(
         // aliases, rather than pretending a regex sees through generated code.
         if (
             ts.isIdentifier(node) &&
-            ["require", "eval", "Function"].includes(node.text)
+            ["require", "eval", "Function"].includes(node.text) &&
+            !(
+                node.text === "Function" &&
+                node.parent?.parent?.getText(ast) ===
+                    "Function.prototype.toString"
+            )
         ) {
             requireGate(
                 false,
