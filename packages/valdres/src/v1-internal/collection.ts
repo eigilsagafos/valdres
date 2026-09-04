@@ -50,17 +50,6 @@ interface CollectionDefinitionRegistry {
     readonly rows: WeakMap<object, CollectionRowRecord>
 }
 
-type InspectedThenable =
-    | Readonly<{ kind: "not-thenable" }>
-    | Readonly<{
-          kind: "thenable"
-          target: object | ((...args: never[]) => unknown)
-          then: (...args: unknown[]) => unknown
-      }>
-    | Readonly<{ kind: "inspection-error"; error: unknown }>
-
-const NOT_THENABLE = Object.freeze({ kind: "not-thenable" as const })
-const NOOP = (): void => {}
 const referencePresenceNatively = (
     target: Selector<boolean>,
 ): WeakCollectionReference<Selector<boolean>> => new WeakRef(target)
@@ -128,35 +117,13 @@ const canonicalizeCollectionKey = (value: unknown): CollectionKey => {
     }
 }
 
-const inspectThenable = (value: unknown): InspectedThenable => {
-    if (
-        (typeof value !== "object" || value === null) &&
-        typeof value !== "function"
-    ) {
-        return NOT_THENABLE
-    }
-    try {
-        const then = (value as { readonly then?: unknown }).then
-        return typeof then === "function"
-            ? Object.freeze({
-                  kind: "thenable" as const,
-                  target: value,
-                  then: then as (...args: unknown[]) => unknown,
-              })
-            : NOT_THENABLE
-    } catch (error) {
-        return Object.freeze({ kind: "inspection-error" as const, error })
-    }
-}
-
 const rejectThenableCollectionKey = (
-    inspected: Extract<InspectedThenable, { kind: "thenable" }>,
+    inspected: Extract<
+        ReturnType<typeof inspectRuntimeThenable>,
+        { kind: "thenable" }
+    >,
 ): never => {
-    try {
-        Reflect.apply(inspected.then, inspected.target, [undefined, NOOP])
-    } catch {
-        // Containment never replaces the stable synchronous key failure.
-    }
+    containRuntimeThenable(inspected)
     throw invalidCollectionKey()
 }
 
@@ -173,7 +140,7 @@ const runCollectionEncoder = (
             try {
                 result = Reflect.apply(encodeKey, undefined, [callbackInput])
             } catch (thrown) {
-                const inspected = inspectThenable(thrown)
+                const inspected = inspectRuntimeThenable(thrown)
                 if (inspected.kind === "not-thenable") throw thrown
                 if (inspected.kind === "inspection-error") {
                     throw inspected.error
@@ -181,7 +148,7 @@ const runCollectionEncoder = (
                 return rejectThenableCollectionKey(inspected)
             }
 
-            const inspected = inspectThenable(result)
+            const inspected = inspectRuntimeThenable(result)
             if (inspected.kind === "not-thenable") return result
             if (inspected.kind === "inspection-error") throw inspected.error
             return rejectThenableCollectionKey(inspected)
@@ -267,7 +234,7 @@ export function createCollectionDefinition<
     options: CollectionOptions<Key, Value, Input>,
     weakRuntime?: WeakMemberRuntime,
 ): Collection<Key, Value, Input>
-/** @internal Store-free collection definition composed by the future root API. */
+/** @internal Store-free collection definition composed by the root API. */
 export function createCollectionDefinition(
     domain: InternalCommittedStoreTreeDomain,
     options?: unknown,

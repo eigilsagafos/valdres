@@ -1,9 +1,9 @@
 import type {
     SelectorComparisonBaseline,
-    SelectorDefinition,
     SelectorDependencySnapshot,
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
+    SelectorEvaluationStrategy,
     SelectorGraphEdgeAddition,
     SelectorGraphObservation,
     SelectorGraphTraversalBudget,
@@ -25,6 +25,15 @@ import type { Selector } from "./types"
 
 export type AnySelector = Selector<any>
 export type OutcomeToken = Readonly<{ id: number }>
+export type StoreScopeExtensionRecorder = (
+    code: number,
+    first?: unknown,
+    second?: unknown,
+    third?: unknown,
+) => void
+export type StoreScopeEvaluationStrategy = SelectorEvaluationStrategy & {
+    readonly recordExtension?: StoreScopeExtensionRecorder
+}
 export type StoreTreeCounter =
     | "sourceEpoch"
     | "routeVisits"
@@ -90,11 +99,9 @@ export interface StoreScopeCoordinator {
     readonly runtimeDomain: RuntimeDomainRecords
     readonly postSourceApply: boolean
     readonly instrumented: boolean
-    evaluate<Value>(
-        definition: SelectorDefinition<AnyState, Value>,
-        host: SelectorEvaluationHost<AnyState, OutcomeToken>,
-        session: SelectorEvaluationSession<AnyState>,
-    ): SelectorEvaluationProposal<AnyState, OutcomeToken, Value>
+    /** Inspector-owned evaluator metadata transports optional numeric codes
+     * without changing the ordinary coordinator or runtime-domain shape. */
+    readonly evaluate: StoreScopeEvaluationStrategy
 
     createOutcomeToken(): OutcomeToken
     serveScopeAtom(

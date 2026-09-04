@@ -419,7 +419,7 @@ assert.equal(inspectedValue, 2)
 const inspectionReport = inspectedReact.inspect.export()
 assert.equal(inspectionReport.schema, "valdres.react.inspect")
 assert.equal(inspectionReport.schemaVersion, 1)
-assert.equal(inspectionReport.core.schemaVersion, 5)
+assert.equal(inspectionReport.core.schemaVersion, 6)
 assert.equal(inspectionReport.core.recordingId, inspectionReport.react.coreRecordingId)
 assert.equal(inspectionReport.react.totals.subscriberCallbacks, 1)
 assert.equal(inspectionReport.react.totals.commitTimeGroups, 1)
@@ -592,7 +592,7 @@ const capture: StateInspectionCapture =
     inspectableCore.inspect.capture(inspectableCore.store, count)
 const inspectionReport: InspectableReactExport =
     inspectedReact.inspect.export()
-const coreSchemaVersion: 5 = inspectionReport.core.schemaVersion
+const coreSchemaVersion: 6 = inspectionReport.core.schemaVersion
 const proofMemoTotals: InspectionNewEdgeProofMemoTotals =
     inspectionReport.core.summaries[0]!.totals.cycle.newEdgeProofMemo
 const reverseProofTotals: InspectionReverseProofTotals =

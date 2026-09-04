@@ -1108,7 +1108,7 @@ const storeSubscriberContract = Object.freeze({
     storeNotes:
         "Store.sub(state, callback: () => void): () => void creates one independent synchronous zero-argument invalidation registration, even when callback identity repeats. Registration performs the same outcome materialization as get, but internally catches the public read throw of a successfully materialized ordinary current error outcome so it can register; only admission, disposal, or internal-publication failure registers nothing. A lifecycle-free registration does not notify. Changed target callback sets enter the frozen post-stability settlement snapshot in first-reaching order; callbacks within each target retain subscription insertion order; delivery is all-fire and each registration runs at most once. Without an already-authoritative post-apply RuntimeMismatchError, the first subscriber throw becomes the SubscriberNotificationError cause and later subscriber throws remain ordered causes. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. The returned unsubscribe is idempotent, removes future eligibility immediately, and cannot edit the current snapshot.",
     typeNotes:
-        "SubscribeFn is exactly <Value>(state: Atom<Value> | Selector<Value>, callback: () => void) => () => void. It returns one idempotent unsubscribe; family callback and deep-equality parameters are removed.",
+        "SubscribeFn is exactly <Value>(state: State<Value>, callback: () => void) => () => void. State includes Atom, Selector, collection-row, and collection inputs. It returns one idempotent unsubscribe; family callback and deep-equality parameters are removed.",
     errorNotes:
         "SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION is the immutable post-commit delivery wrapper for subscriber throws. Without an already-authoritative post-apply RuntimeMismatchError, cause is the exact first thrown value and causes is a frozen readonly array of all subscriber-thrown values in deterministic delivery order; committed is exactly true; phase is exactly notifying; source is exactly owned-mutation for the lifecycle-free slice. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. No external-source literal is frozen by this slice.",
 })
@@ -1482,9 +1482,16 @@ function assertCollectionContractAuthority(
             indexes.notes.includes("first beta exposes indexes?: never") &&
             state.contractIds.includes("collection.invariant-readable-state") &&
             state.notes.includes("private invariant value base") &&
-            state.notes.includes("current beta root State remains Atom | Selector") &&
-            state.notes.includes("family factory admission remains"),
-        "collection target-vs-first-beta staging or invariant State boundary differs from the frozen contract",
+            state.notes.includes(
+                "Atom | Selector | readonly collection-row | readonly collection",
+            ) &&
+            state.notes.includes(
+                "Family factory admission deliberately remains the narrower Atom | Selector",
+            ) &&
+            state.notes.includes(
+                "cannot return collection rows or collection definitions",
+            ),
+        "collection staging or invariant public State/family boundary differs from the frozen contract",
     )
 
     const rowUpdate = callbackById.get("callback.collection-row-update")
@@ -1576,7 +1583,10 @@ function assertStoreSubscriberContract(
     )
     assert(
         storeSub?.notes === storeSubscriberContract.storeNotes &&
-            subscribeFn?.notes === storeSubscriberContract.typeNotes,
+            subscribeFn?.notes === storeSubscriberContract.typeNotes &&
+            subscribeFn.contractIds.includes(
+                "collection.invariant-readable-state",
+            ),
         "Store.sub and SubscribeFn differ from the frozen zero-argument subscription signature or delivery contract",
     )
     assert(

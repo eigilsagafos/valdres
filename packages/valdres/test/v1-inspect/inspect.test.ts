@@ -84,7 +84,7 @@ const expectCompleteRecording = (
 ): void => {
     expect(recording).toMatchObject({
         schema: "valdres.inspect",
-        schemaVersion: 5,
+        schemaVersion: 6,
         recordingId: inspect.recordingId,
         complete: true,
         overflow: { summaries: 0, details: 0 },
@@ -287,6 +287,7 @@ describe("valdres/inspect public contract", () => {
         const ordinary = createStore()
         const inspected = createInspectableStore()
         const operationKeys = [
+            "delete",
             "dispose",
             "get",
             "reset",

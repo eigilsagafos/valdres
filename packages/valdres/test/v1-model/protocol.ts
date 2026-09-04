@@ -220,6 +220,11 @@ export type AuditEvent =
           ownershipChanges: readonly string[]
           effectiveAtomChanges: readonly string[]
           collectionDeltas: readonly EffectiveRowDelta[]
+          membershipChanges: readonly Readonly<{
+              scope: ScopeId
+              collection: CollectionId
+              sourceChanged: boolean
+          }>[]
       }>
     | Readonly<{
           kind: "scope-created"

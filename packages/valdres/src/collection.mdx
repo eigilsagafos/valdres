@@ -1,0 +1,173 @@
+---
+title: collection
+description: Define keyed rows with reactive ordered membership
+---
+
+# collection
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+    <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">
+        Signature
+    </div>
+    <code className="text-sm font-mono text-accent-500">
+        collection&lt;Key extends CollectionKey, Value extends
+        CollectionValue&gt;(options?: CollectionOptions&lt;Key, Value, Key&gt;):
+        Collection&lt;Key, Value, Key&gt;
+    </code>
+    <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
+            valdres
+        </span>
+        Define keyed rows and read their reactive membership
+    </div>
+</div>
+
+> **Adapter compatibility:** This beta is certified with `valdres-react` and
+> framework-free `valdres` usage. The Vue, Svelte, Solid, and Angular adapters
+> remain on the legacy core API and must not be combined with this beta yet.
+
+`collection` defines keyed rows whose values and membership live in a Store. The
+returned collection is both callable and readable: call it to get a row handle,
+then read the collection itself to get its currently present rows.
+
+```ts
+import { collection, presence, selector, store } from "valdres"
+
+type Session = { id: string; active: boolean }
+
+const sessions = collection<string, Session>()
+const app = store()
+const first = sessions("session-1")
+
+app.set(first, { id: first.key, active: true })
+
+app.get(first) // { id: "session-1", active: true }
+app.get(sessions) // [first]
+app.get(presence(first)) // true
+
+const activeSessions = selector(get =>
+    get(sessions).filter(row => get(row)?.active),
+)
+```
+
+Looking up or reading a row does not insert it. A row becomes a collection
+member when `set` makes it present.
+
+## Row handles
+
+Every call returns a readonly `CollectionRow<Key, Value>`:
+
+```ts
+const row = sessions("session-1")
+
+row.kind // "collection-row"
+row.key // "session-1"
+sessions.kind // "collection"
+sessions("session-1") === row // true while the row is live
+```
+
+Collection and row handles are frozen. The collection weakly memoizes each row,
+so callers and Stores share one canonical handle for a live key. If nothing
+retains a row, garbage collection may reclaim it and a later lookup may create a
+new handle for that key.
+
+Rows are Store-local state. One collection definition can be used with several
+Stores, but each Store has independent values and membership.
+
+## Keys and `encodeKey`
+
+Direct keys may be strings, finite numbers, bigints, booleans, or `null`.
+Primitive types stay distinct, and `-0` is canonicalized to `0`. `undefined`,
+`NaN`, infinities, symbols, objects, and functions are not valid direct keys.
+
+Use `encodeKey` when callers have a richer lookup value:
+
+```ts
+type SessionLookup = { tenant: string; id: string }
+
+const tenantSessions = collection<string, Session, SessionLookup>({
+    encodeKey: input => `${input.tenant}:${input.id}`,
+})
+
+tenantSessions({ tenant: "north", id: "1" }).key // "north:1"
+```
+
+`encodeKey` runs on every lookup, including cache hits. It must synchronously
+return a valid canonical key. Valdres retains the canonical key, not the rich
+input. The encoder is a guarded definition callback: it cannot perform Store
+work, construct State, or call family or collection accessors.
+
+`encodeKey` is the only collection option in this beta. Index definitions are
+not available yet, and an `indexes` or unknown option is rejected.
+
+## Reading membership
+
+`store.get(sessions)` returns a frozen readonly array of the rows effectively
+present in that Store or scope. A row's position comes from its most recent
+continuous absent-to-present transition:
+
+- A first `set`, reinsertion, or scoped `reset` that reveals a parent row places
+  the row according to that operation's order.
+- Updating, setting, or changing ownership while a row stays present keeps its
+  position.
+- Deleting a row removes it.
+- Reintroducing a deleted row later gives it a new position, usually at the end.
+
+Each Store and scope owns its membership-array identity. Repeated reads return
+the exact same array while ordered membership is unchanged. Value-only row
+updates also preserve that reference. A membership change publishes a new frozen
+array and never mutates an older snapshot retained by application code.
+
+## Reading and writing rows
+
+Rows and collections are ordinary readonly `State` inputs for `get`, `sub`, and
+selectors. Mutate a row through Store or Transaction methods:
+
+| Operation              | Result                                                               |
+| ---------------------- | -------------------------------------------------------------------- |
+| `get(row)`             | Returns the effective `Value`, or `undefined` when absent            |
+| `set(row, value)`      | Inserts or replaces the row                                          |
+| `update(row, updater)` | Replaces a present row from its current effective value              |
+| `delete(row)`          | Makes the row locally absent                                         |
+| `reset(row)`           | Removes the local value or deletion and reconnects scope inheritance |
+
+Values and updater results must be synchronous and cannot be `undefined`, which
+is reserved for absence. `set` stores function values exactly; only `update`
+invokes a function as an updater. The same operations work inside `store.txn`,
+and transaction reads include staged row values and membership.
+
+See the [store API](/valdres/store) for direct, scoped, and transaction
+examples.
+
+## Errors
+
+Collection-specific errors are exported from `valdres` and have stable `code`
+properties:
+
+| Error                                    | Code                                           | Cause                                                        |
+| ---------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
+| `InvalidCollectionKeyError`              | `VALDRES_INVALID_COLLECTION_KEY`               | A direct or encoded key is outside the supported key domain  |
+| `InvalidSynchronousCollectionValueError` | `VALDRES_INVALID_SYNCHRONOUS_COLLECTION_VALUE` | A row value or updater result is a Promise or other thenable |
+| `UndefinedCollectionValueError`          | `VALDRES_UNDEFINED_COLLECTION_VALUE`           | A row value or updater result is `undefined`                 |
+| `MissingCollectionRowError`              | `VALDRES_MISSING_COLLECTION_ROW`               | `update` targets an absent row                               |
+
+A Store, Transaction, or `presence` call rejects a branded row from another
+Valdres runtime domain with `RuntimeMismatchError`. A forged row-shaped object
+or the wrong kind of State throws `TypeError`. Failed transaction admission
+commits none of its Atom or collection-row writes.
+
+## Public types
+
+| Type                                                   | Meaning                                                              |
+| ------------------------------------------------------ | -------------------------------------------------------------------- |
+| `CollectionKey`                                        | `string \| number \| bigint \| boolean \| null`                      |
+| `CollectionValue`                                      | Any non-`undefined` value; thenables are rejected when written       |
+| `CollectionRow<Key, Value>`                            | Readonly `State<Value \| undefined>` with `kind` and canonical `key` |
+| `Collection<Key, Value, Input = Key, Indexes = never>` | Callable readonly membership State                                   |
+| `CollectionOptions<Key, Value, Input = Key>`           | Definition options; rich `Input` requires `encodeKey`                |
+
+## See also
+
+- [presence](/valdres/presence) - derive whether one row is present
+- [store](/valdres/store) - mutate rows directly or atomically
+- [selector](/valdres/selector) - derive values from rows and membership

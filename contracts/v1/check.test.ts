@@ -2363,6 +2363,79 @@ describe("v1 contract manifest validation", () => {
             /must be equal to constant/,
         )
     })
+
+    test("rejects drift across the frozen collection authority groups", () => {
+        const cases: readonly Readonly<{
+            mutate: (set: any) => void
+            diagnostic: RegExp
+        }>[] = [
+            {
+                mutate: set => {
+                    findPublicEntry(set, "core.type.collection").notes =
+                        findPublicEntry(
+                            set,
+                            "core.type.collection",
+                        ).notes.replace("Input stays third", "Input stays last")
+                },
+                diagnostic:
+                    /Collection generic order must remain Key, Value, Input, Indexes/,
+            },
+            {
+                mutate: set => {
+                    findPublicEntry(set, "core.type.collection-value").notes =
+                        findPublicEntry(
+                            set,
+                            "core.type.collection-value",
+                        ).notes.replace(
+                            "excludes undefined",
+                            "allows undefined",
+                        )
+                },
+                diagnostic:
+                    /collection key, value, and row absence domains differ from the frozen contract/,
+            },
+            {
+                mutate: set => {
+                    findPublicEntry(
+                        set,
+                        "core.invalid-collection-key-error",
+                    ).notes = findPublicEntry(
+                        set,
+                        "core.invalid-collection-key-error",
+                    ).notes.replace("retains no", "may retain")
+                },
+                diagnostic:
+                    /must retain an immutable, application-data-free diagnostic shape/,
+            },
+            {
+                mutate: set => {
+                    findPublicEntry(set, "core.type.state").notes =
+                        findPublicEntry(set, "core.type.state").notes.replace(
+                            "cannot return collection rows or collection definitions",
+                            "may return collection rows or collection definitions",
+                        )
+                },
+                diagnostic:
+                    /collection staging or invariant public State\/family boundary differs from the frozen contract/,
+            },
+            {
+                mutate: set => {
+                    set.callbackManifest.entries.find(
+                        (entry: any) =>
+                            entry.id === "callback.collection-row-update",
+                    ).errorRule = "A missing row invokes the updater."
+                },
+                diagnostic:
+                    /collection row updater errors differ from the frozen outcome boundary/,
+            },
+        ]
+
+        for (const { mutate, diagnostic } of cases) {
+            const set = mutableSet()
+            mutate(set)
+            expect(() => validateContractSet(set)).toThrow(diagnostic)
+        }
+    })
 })
 
 let pristineSet: ContractSet | undefined

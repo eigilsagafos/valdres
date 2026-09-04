@@ -24,6 +24,8 @@ const coreApiNames = [
     "atomFamily",
     "selectorFamily",
     "index",
+    "collection",
+    "presence",
     "store",
 ]
 

@@ -6,23 +6,23 @@ import {
     TransactionClosedError,
     createCommittedStoreTreeDomain,
     createInternalStoreTreeInstrumentation,
-    runInternalCollectionTransaction,
     type CommittedStoreTree,
-    type InternalRowWriter,
     type RootTransaction,
+    type State,
 } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
 import {
     createCollectionDefinition,
     getCollectionPresence,
 } from "../../src/v1-internal/collection"
+import { runCollectionTransaction } from "./collection-test-transaction"
 
-type InternalRead = (state: object) => any
+const read = (store: CommittedStoreTree, state: State<any>): any =>
+    store.get(state)
 
-const read = (store: CommittedStoreTree, state: object): any =>
-    (store.get as unknown as InternalRead)(state)
-
-const readTransaction = (transaction: RootTransaction, state: object): any =>
-    (transaction.get as unknown as InternalRead)(state)
+const readTransaction = (
+    transaction: RootTransaction,
+    state: State<any>,
+): any => transaction.get(state)
 
 const thrownBy = (operation: () => unknown): unknown => {
     try {
@@ -43,12 +43,12 @@ describe("v1 committed collection rows", () => {
         const second = Object.freeze({ version: 2 })
 
         expect(read(store, row)).toBeUndefined()
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.set(row, first),
         )
         expect(read(store, row)).toBe(first)
 
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.update(row, current => {
                 expect(current).toBe(first)
                 return second
@@ -56,11 +56,11 @@ describe("v1 committed collection rows", () => {
         )
         expect(read(store, row)).toBe(second)
 
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.delete(row),
         )
         expect(read(store, row)).toBeUndefined()
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.reset(row),
         )
         expect(read(store, row)).toBeUndefined()
@@ -76,7 +76,7 @@ describe("v1 committed collection rows", () => {
         const child = root.scope("child")
         const sibling = root.scope("sibling")
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.set(row, 1),
         )
         expect(read(root, row)).toBe(1)
@@ -86,34 +86,34 @@ describe("v1 committed collection rows", () => {
 
         let childNotifications = 0
         const childValue = domain.selector(
-            get => (get as unknown as InternalRead)(row) as number | undefined,
+            get => get(row) as number | undefined,
         )
         child.sub(childValue, () => childNotifications++)
         expect(child.get(childValue)).toBe(1)
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.scope(child).set(row, 1),
         )
         expect(childNotifications).toBe(0)
         expect(read(child, row)).toBe(1)
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.set(row, 2),
         )
         expect(read(child, row)).toBe(1)
         expect(childNotifications).toBe(0)
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.scope(child).reset(row),
         )
         expect(read(child, row)).toBe(2)
         expect(childNotifications).toBe(1)
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.set(row, 3),
         )
         expect(read(child, row)).toBe(3)
         expect(childNotifications).toBe(2)
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.scope("child").delete(row),
         )
         expect(read(child, row)).toBeUndefined()
@@ -121,7 +121,7 @@ describe("v1 committed collection rows", () => {
         expect(read(root, row)).toBe(3)
         expect(read(sibling, row)).toBe(3)
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.scope(child).reset(row),
         )
         expect(read(child, row)).toBe(3)
@@ -136,20 +136,20 @@ describe("v1 committed collection rows", () => {
         const root = domain.createStoreTree()
         const child = root.scope("child")
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) =>
+        runCollectionTransaction(domain, root, (_transaction, rows) =>
             rows.scope(child).delete(row),
         )
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.scope(child).reset(row)
             rows.set(row, "first")
         })
         expect(read(child, row)).toBe("first")
 
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.delete(row)
             rows.scope(child).delete(row)
         })
-        runInternalCollectionTransaction(domain, root, (_transaction, rows) => {
+        runCollectionTransaction(domain, root, (_transaction, rows) => {
             rows.set(row, "second")
             rows.scope(child).reset(row)
         })
@@ -163,7 +163,7 @@ describe("v1 committed collection rows", () => {
         const root = domain.createStoreTree()
         const child = root.scope("child")
 
-        runInternalCollectionTransaction(domain, root, (transaction, rows) => {
+        runCollectionTransaction(domain, root, (transaction, rows) => {
             rows.set(row, "one")
             const childTransaction = transaction.scope(child)
             const first = readTransaction(childTransaction, sessions)
@@ -172,7 +172,7 @@ describe("v1 committed collection rows", () => {
             expect(readTransaction(childTransaction, sessions)).toBe(first)
         })
 
-        runInternalCollectionTransaction(domain, root, (transaction, rows) => {
+        runCollectionTransaction(domain, root, (transaction, rows) => {
             rows.delete(row)
             rows.set(row, "two")
             const childTransaction = transaction.scope(child)
@@ -191,15 +191,11 @@ describe("v1 committed collection rows", () => {
         const row = sessions("a")
         const store = domain.createStoreTree()
         const atomValue = domain.selector(get => get(count))
-        const rowValue = domain.selector(
-            get => (get as unknown as InternalRead)(row) as number | undefined,
-        )
+        const rowValue = domain.selector(get => get(row) as number | undefined)
         let combinedEvaluations = 0
         const combined = domain.selector(get => {
             combinedEvaluations++
-            return `${get(count)}:${
-                (get as unknown as InternalRead)(row) as number | undefined
-            }`
+            return `${get(count)}:${get(row) as number | undefined}`
         })
         const order: string[] = []
         store.sub(rowValue, () => order.push("row"))
@@ -212,7 +208,7 @@ describe("v1 committed collection rows", () => {
         const settlementsBefore = instrumentation.read("propagationSettlements")
         const snapshotsBefore = instrumentation.read("notificationSnapshots")
 
-        runInternalCollectionTransaction(domain, store, (transaction, rows) => {
+        runCollectionTransaction(domain, store, (transaction, rows) => {
             rows.set(row, 2)
             transaction.set(count, 1)
         })
@@ -241,10 +237,10 @@ describe("v1 committed collection rows", () => {
         const sourceEpoch = instrumentation.read("sourceEpoch")
         const settlements = instrumentation.read("propagationSettlements")
 
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.delete(row),
         )
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.reset(row),
         )
         expect(read(store, row)).toBeUndefined()
@@ -257,25 +253,23 @@ describe("v1 committed collection rows", () => {
         const numbers = createCollectionDefinition<string, number>(domain)
         const row = numbers("a")
         const store = domain.createStoreTree()
-        const selected = domain.selector(
-            get => (get as unknown as InternalRead)(row) as number | undefined,
-        )
+        const selected = domain.selector(get => get(row) as number | undefined)
         let notifications = 0
         store.sub(selected, () => notifications++)
         expect(store.get(selected)).toBeUndefined()
 
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.set(row, Number.NaN),
         )
         expect(notifications).toBe(1)
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.set(row, Number.NaN),
         )
         expect(notifications).toBe(1)
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.set(row, -0),
         )
-        runInternalCollectionTransaction(domain, store, (_transaction, rows) =>
+        runCollectionTransaction(domain, store, (_transaction, rows) =>
             rows.set(row, 0),
         )
         expect(notifications).toBe(3)
@@ -284,16 +278,12 @@ describe("v1 committed collection rows", () => {
         store.sub(selected, () => {
             throw subscriberFailure
         })
-        let retainedWriter: InternalRowWriter | undefined
+        let retainedWriter: RootTransaction | undefined
         const committedError = thrownBy(() =>
-            runInternalCollectionTransaction(
-                domain,
-                store,
-                (_transaction, rows) => {
-                    retainedWriter = rows
-                    rows.set(row, 3)
-                },
-            ),
+            runCollectionTransaction(domain, store, (_transaction, rows) => {
+                retainedWriter = rows
+                rows.set(row, 3)
+            }),
         )
         expect(committedError).toBeInstanceOf(SubscriberNotificationError)
         expect((committedError as SubscriberNotificationError).committed).toBe(
@@ -328,14 +318,10 @@ describe("v1 committed collection rows", () => {
         const store = domain.createStoreTree()
 
         expect(() =>
-            runInternalCollectionTransaction(
-                domain,
-                store,
-                (transaction, rows) => {
-                    transaction.set(count, 1)
-                    rows.set(row, undefined)
-                },
-            ),
+            runCollectionTransaction(domain, store, (transaction, rows) => {
+                transaction.set(count, 1)
+                Reflect.apply(rows.set, rows, [row, undefined])
+            }),
         ).toThrow("cannot be undefined")
         expect(store.get(count)).toBe(0)
         expect(read(store, row)).toBeUndefined()
@@ -353,11 +339,8 @@ describe("v1 committed collection rows", () => {
         )
         expect(
             thrownBy(() =>
-                runInternalCollectionTransaction(
-                    domain,
-                    store,
-                    (_transaction, rows) =>
-                        rows.scope(hostile as CommittedStoreTree),
+                runCollectionTransaction(domain, store, (_transaction, rows) =>
+                    rows.scope(hostile as CommittedStoreTree),
                 ),
             ),
         ).toBe(inspectionFailure)
@@ -370,7 +353,7 @@ describe("v1 committed collection rows", () => {
         store.dispose()
 
         expect(() =>
-            runInternalCollectionTransaction(domain, store, undefined as never),
+            runCollectionTransaction(domain, store, undefined as never),
         ).toThrow(StoreDisposedError)
     })
 
@@ -383,11 +366,9 @@ describe("v1 committed collection rows", () => {
         const row = sessions("a")
         const store = domain.createStoreTree()
         const selected = domain.selector(get => {
-            const current = (get as unknown as InternalRead)(row) as
-                | number
-                | undefined
+            const current = get(row) as number | undefined
             if (current === 2) {
-                return (get as unknown as InternalRead)(foreign)
+                return get(foreign)
             }
             return get(count) + (current ?? 0)
         })
@@ -398,14 +379,10 @@ describe("v1 committed collection rows", () => {
         })
 
         const error = thrownBy(() =>
-            runInternalCollectionTransaction(
-                domain,
-                store,
-                (transaction, rows) => {
-                    rows.set(row, 2)
-                    transaction.set(count, 1)
-                },
-            ),
+            runCollectionTransaction(domain, store, (transaction, rows) => {
+                rows.set(row, 2)
+                transaction.set(count, 1)
+            }),
         )
         expect(error).toBeInstanceOf(SubscriberNotificationError)
         const notification = error as SubscriberNotificationError
@@ -427,7 +404,7 @@ describe("v1 committed collection rows", () => {
         const second = domain.createStoreTree()
         const value = Object.freeze({ owner: "first" })
 
-        runInternalCollectionTransaction(domain, first, (_transaction, rows) =>
+        runCollectionTransaction(domain, first, (_transaction, rows) =>
             rows.set(row, value),
         )
         expect(read(first, row)).toBe(value)

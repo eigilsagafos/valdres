@@ -9,7 +9,7 @@ import {
 import type { StoreScopeNode } from "./scope-node"
 import type {
     Atom,
-    AtomUpdater,
+    CollectionRow,
     CommittedStoreTree,
     RootTransaction,
     State,
@@ -543,22 +543,12 @@ export interface TreeTransactionHost {
         scope: StoreScopeNode,
         state: State<Value>,
     ): Value
-    transactionSet<Value>(
+    mutate(
         draft: TreeDraft,
         scope: StoreScopeNode,
-        atom: Atom<Value>,
-        value: Value,
-    ): void
-    transactionUpdate<Value>(
-        draft: TreeDraft,
-        scope: StoreScopeNode,
-        atom: Atom<Value>,
-        update: AtomUpdater<Value>,
-    ): void
-    transactionReset<Value>(
-        draft: TreeDraft,
-        scope: StoreScopeNode,
-        atom: Atom<Value>,
+        operation: "set" | "update" | "reset" | "delete",
+        target: Atom<unknown> | CollectionRow<any, any>,
+        input?: unknown,
     ): void
     transactionScope<Result>(
         draft: TreeDraft,
@@ -570,14 +560,12 @@ export interface TreeTransactionHost {
 }
 
 class RootTransactionCursor implements RootTransaction {
-    readonly get: <Value>(state: State<Value>) => Value
-    readonly set: <Value>(atom: Atom<Value>, value: Value) => void
-    readonly update: <Value>(
-        atom: Atom<Value>,
-        update: AtomUpdater<Value>,
-    ) => void
-    readonly reset: <Value>(atom: Atom<Value>) => void
-    readonly scope: {
+    declare readonly get: <Value>(state: State<Value>) => Value
+    declare readonly set: RootTransaction["set"]
+    declare readonly update: RootTransaction["update"]
+    declare readonly reset: RootTransaction["reset"]
+    declare readonly delete: RootTransaction["delete"]
+    declare readonly scope: {
         (target: string | CommittedStoreTree): RootTransaction
         <Result>(
             target: string | CommittedStoreTree,
@@ -592,14 +580,42 @@ class RootTransactionCursor implements RootTransaction {
     ) {
         this.get = <Value>(state: State<Value>): Value =>
             host.transactionGet(draft, scope, state)
-        this.set = <Value>(atom: Atom<Value>, value: Value): void =>
-            host.transactionSet(draft, scope, atom, value)
-        this.update = <Value>(
-            atom: Atom<Value>,
-            update: AtomUpdater<Value>,
-        ): void => host.transactionUpdate(draft, scope, atom, update)
-        this.reset = <Value>(atom: Atom<Value>): void =>
-            host.transactionReset(draft, scope, atom)
+        this.set = ((
+            target: Atom<unknown> | CollectionRow<any, any>,
+            value: unknown,
+        ): void =>
+            host.mutate(
+                draft,
+                scope,
+                "set",
+                target,
+                value,
+            )) as RootTransaction["set"]
+        this.update = ((
+            target: Atom<unknown> | CollectionRow<any, any>,
+            update: (current: any) => any,
+        ): void =>
+            host.mutate(
+                draft,
+                scope,
+                "update",
+                target,
+                update,
+            )) as RootTransaction["update"]
+        this.reset = ((target: Atom<unknown> | CollectionRow<any, any>): void =>
+            host.mutate(
+                draft,
+                scope,
+                "reset",
+                target,
+            )) as RootTransaction["reset"]
+        this.delete = ((row: CollectionRow<any, any>): void =>
+            host.mutate(
+                draft,
+                scope,
+                "delete",
+                row,
+            )) as RootTransaction["delete"]
         this.scope = (<Result>(
             ...args:
                 | [target: string | CommittedStoreTree]

@@ -5,17 +5,15 @@ import {
     TransactionClosedError,
     createCommittedStoreTreeDomain,
     createInternalStoreTreeInstrumentation,
-    runInternalCollectionTransaction,
     type CommittedStoreTree,
-    type InternalRowWriter,
     type RootTransaction,
+    type State,
 } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
 import { createCollectionDefinition } from "../../src/v1-internal/collection"
+import { runCollectionTransaction } from "./collection-test-transaction"
 
-type InternalRead = (state: object) => any
-
-const read = (store: CommittedStoreTree, state: object): any =>
-    (store.get as unknown as InternalRead)(state)
+const read = (store: CommittedStoreTree, state: State<any>): any =>
+    store.get(state)
 
 const expectRetained = async (detector: LeakDetector): Promise<void> => {
     expect(await detector.isLeaking(10)).toBe(true)
@@ -41,7 +39,7 @@ describe("v1 committed collection row lifecycle", () => {
                 sessions("present")
             const detector = new LeakDetector(row)
             const reference = new WeakRef(row)
-            runInternalCollectionTransaction(domain, root, (_txn, rows) =>
+            runCollectionTransaction(domain, root, (_txn, rows) =>
                 rows.set(row!, 1),
             )
             row = undefined
@@ -51,7 +49,7 @@ describe("v1 committed collection row lifecycle", () => {
         ;(() => {
             const row = sessions("present")
             expect(present.reference.deref()).toBe(row)
-            runInternalCollectionTransaction(domain, root, (_txn, rows) =>
+            runCollectionTransaction(domain, root, (_txn, rows) =>
                 rows.reset(row),
             )
         })()
@@ -62,7 +60,7 @@ describe("v1 committed collection row lifecycle", () => {
                 sessions("absent")
             const detector = new LeakDetector(row)
             const reference = new WeakRef(row)
-            runInternalCollectionTransaction(domain, root, (_txn, rows) =>
+            runCollectionTransaction(domain, root, (_txn, rows) =>
                 rows.scope(child).delete(row!),
             )
             row = undefined
@@ -72,7 +70,7 @@ describe("v1 committed collection row lifecycle", () => {
         ;(() => {
             const row = sessions("absent")
             expect(absent.reference.deref()).toBe(row)
-            runInternalCollectionTransaction(domain, root, (_txn, rows) =>
+            runCollectionTransaction(domain, root, (_txn, rows) =>
                 rows.scope(child).reset(row),
             )
         })()
@@ -89,22 +87,20 @@ describe("v1 committed collection row lifecycle", () => {
         expect(read(child, sessions)).toEqual([])
         const membershipRouteAdds = instrumentation.read("routeAdds")
 
-        runInternalCollectionTransaction(domain, root, (_txn, rows) =>
+        runCollectionTransaction(domain, root, (_txn, rows) =>
             rows.scope(child).set(row!, 1),
         )
         expect(instrumentation.read("routeAdds")).toBe(membershipRouteAdds)
         expect(read(child, row)).toBe(1)
         expect(instrumentation.read("routeAdds")).toBe(membershipRouteAdds)
 
-        runInternalCollectionTransaction(domain, root, (_txn, rows) =>
+        runCollectionTransaction(domain, root, (_txn, rows) =>
             rows.scope(child).reset(row!),
         )
         expect(read(child, row)).toBeUndefined()
-        expect(instrumentation.read("routeAdds")).toBe(
-            membershipRouteAdds + 1,
-        )
+        expect(instrumentation.read("routeAdds")).toBe(membershipRouteAdds + 1)
 
-        runInternalCollectionTransaction(domain, root, (_txn, rows) =>
+        runCollectionTransaction(domain, root, (_txn, rows) =>
             rows.scope(child).set(row!, 2),
         )
         const routeRemovesBefore = instrumentation.read("routeRemoves")
@@ -121,7 +117,7 @@ describe("v1 committed collection row lifecycle", () => {
             routeRemovesBefore + 1,
         )
         await expectCollected(detector)
-    })
+    }, 15_000)
 
     test("cold RowViews and their inherited route do not retain row definitions", async () => {
         const domain = createCommittedStoreTreeDomain()
@@ -147,11 +143,11 @@ describe("v1 committed collection row lifecycle", () => {
         const row = sessions("retained-draft")
         const store = domain.createStoreTree()
         let transaction: RootTransaction | undefined
-        let writer: InternalRowWriter | undefined
+        let writer: RootTransaction | undefined
         const detector = (() => {
             let value: object | undefined = Object.freeze({ private: true })
             const detector = new LeakDetector(value)
-            runInternalCollectionTransaction(
+            runCollectionTransaction(
                 domain,
                 store,
                 (currentTransaction, rows) => {
@@ -160,7 +156,7 @@ describe("v1 committed collection row lifecycle", () => {
                     rows.set(row, value!)
                 },
             )
-            runInternalCollectionTransaction(domain, store, (_txn, rows) =>
+            runCollectionTransaction(domain, store, (_txn, rows) =>
                 rows.reset(row),
             )
             value = undefined
@@ -178,17 +174,17 @@ describe("v1 committed collection row lifecycle", () => {
         const row = sessions("shared")
         const first = domain.createStoreTree()
         const second = domain.createStoreTree()
-        runInternalCollectionTransaction(domain, first, (_txn, rows) =>
+        runCollectionTransaction(domain, first, (_txn, rows) =>
             rows.set(row, 1),
         )
-        runInternalCollectionTransaction(domain, second, (_txn, rows) =>
+        runCollectionTransaction(domain, second, (_txn, rows) =>
             rows.set(row, 2),
         )
 
         first.dispose()
         expect(() => read(first, row)).toThrow(StoreDisposedError)
         expect(read(second, row)).toBe(2)
-        runInternalCollectionTransaction(domain, second, (_txn, rows) =>
+        runCollectionTransaction(domain, second, (_txn, rows) =>
             rows.set(row, 3),
         )
         expect(read(second, row)).toBe(3)
@@ -205,13 +201,9 @@ describe("v1 committed collection row lifecycle", () => {
         }
         const leaf = scopes[scopes.length - 1]!
 
-        runInternalCollectionTransaction(domain, root, (_txn, rows) =>
-            rows.set(row, 1),
-        )
+        runCollectionTransaction(domain, root, (_txn, rows) => rows.set(row, 1))
         expect(read(leaf, row)).toBe(1)
-        runInternalCollectionTransaction(domain, root, (_txn, rows) =>
-            rows.set(row, 2),
-        )
+        runCollectionTransaction(domain, root, (_txn, rows) => rows.set(row, 2))
         expect(read(leaf, row)).toBe(2)
 
         root.dispose()

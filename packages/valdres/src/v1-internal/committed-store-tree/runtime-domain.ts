@@ -6,8 +6,8 @@ import type { Atom, Collection, CollectionRow, Selector } from "./types"
 
 /** Definition kinds a family factory may construct or return. */
 export type DefinitionState = Atom<any> | Selector<any>
-/** Internal dispatch admits the staged readonly collection kinds while the
- * exported State alias deliberately remains Atom-or-Selector. */
+/** Internal dispatch admits every public readonly State kind, while family
+ * definition admission deliberately remains Atom-or-Selector. */
 export type AnyState =
     | DefinitionState
     | CollectionRow<any, any>
@@ -160,7 +160,7 @@ abstract class ImmutableRuntimeError extends Error {
     }
 }
 
-/** The stable owner failure that a later public facade will re-export. */
+/** The stable owner failure re-exported by the public runtime facade. */
 export class RuntimeMismatchError extends ImmutableRuntimeError {
     readonly code = "VALDRES_RUNTIME_MISMATCH"
 

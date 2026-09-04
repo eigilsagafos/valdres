@@ -88,6 +88,39 @@ a later lookup may run the factory again.
 A family is only a callable identity cache. It has no membership or enumeration
 API and no `delete`, `release`, `index`, Store, or collection surface.
 
+## Keyed collections
+
+`collection()` defines canonical keyed row handles and is itself a readonly
+State containing the rows currently present in a Store. `presence(row)` returns
+a readonly Selector for one row's presence:
+
+```ts
+import { collection, presence, store } from "valdres"
+
+type Session = { id: string; active: boolean }
+
+const sessions = collection<string, Session>()
+const session = sessions("session-1")
+const app = store()
+
+app.set(session, { id: session.key, active: true })
+app.get(session) // { id: "session-1", active: true }
+app.get(sessions) // [session]
+app.get(presence(session)) // true
+
+app.txn(transaction => {
+    transaction.update(session, current => ({ ...current, active: false }))
+    transaction.delete(session)
+})
+```
+
+Looking up or reading a row does not insert it. Store and Transaction operations
+support row `set`, `update`, `reset`, and `delete`; row values must be synchronous
+and cannot be `undefined`. Membership is a frozen ordered snapshot based on
+continuous absent-to-present transitions, so value-only updates preserve its
+identity. Child scopes inherit rows, a local delete hides a parent row, and
+reset reconnects inheritance.
+
 ## Opt-in structural equality
 
 `Object.is` remains the default comparator. Import `deepEqual` from the separate
@@ -135,16 +168,13 @@ const report = inspect.export()
 inspect.reset()
 ```
 
-The report correlates human labels with opaque operation, commit, evaluation,
-session, and search IDs. It includes selector work, proposed topology changes,
-forward cycle-search visits by host and call site, bounded reverse-proof
-outcomes and work, topology-delta reverse-snapshot attempts/outcomes/scanned and
-captured work, aggregate negative-proof memo admission/probe/prune counters,
-transient selector-host counts, and propagation/notification totals. Completed
-summaries and details use separate bounded rings with explicit overflow. Exports
-are immutable and JSON-safe; application values, callbacks, errors, and live
-State handles are never recorded. Labels are metadata, not identity. The core
-inspection schema is version 5.
+The report links labels to opaque operation, commit, evaluation, session, and
+search IDs. It records selector topology/search work, collection row and
+membership work, related counters, and propagation/notification totals.
+Summary/detail rings are bounded with explicit overflow. Exports are immutable
+and JSON-safe; collection keys, values, callbacks, errors, and live State handles
+are never recorded. Labels are metadata, not identity. The core inspection
+schema is version 6.
 
 Inspection adds recording and timing work only to the Store created by
 `createInspectableStore`. The recorder stays outside the ordinary root entry and

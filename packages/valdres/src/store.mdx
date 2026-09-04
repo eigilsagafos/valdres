@@ -94,6 +94,54 @@ const pendingCount = myStore.set(countAtom, Promise.resolve(43)) // Promise<numb
 await pendingCount
 ```
 
+## Collection rows
+
+A [collection](/valdres/collection) is a readonly membership State whose
+callable handle returns readonly rows. Read rows with `get` and mutate them with
+the Store's row overloads:
+
+```ts
+import { collection, store } from "valdres"
+
+type Todo = { title: string; done: boolean }
+
+const todos = collection<string, Todo>()
+const milk = todos("milk")
+const app = store()
+
+app.get(milk) // undefined
+app.set(milk, { title: "Buy milk", done: false }) // insert
+app.update(milk, current => ({ ...current, done: true }))
+app.get(todos) // [milk]
+app.delete(milk) // locally absent
+app.get(milk) // undefined
+app.set(milk, { title: "Buy milk again", done: false }) // reinsert
+app.reset(milk) // remove the root's local value
+```
+
+`set(row, value)` is an upsert. `update(row, updater)` requires an effectively
+present row and otherwise throws `MissingCollectionRowError`. Row values and
+updater results must be synchronous and cannot be `undefined`, which represents
+absence. Use `set` for function values; only `update` invokes its function.
+
+In a child scope, `delete(row)` installs a local absence that hides an inherited
+parent value. `reset(row)` removes either a local value or that deletion, then
+reconnects the row to its parent:
+
+```ts
+app.set(milk, { title: "Buy milk", done: false })
+const draft = app.scope("draft")
+
+draft.delete(milk)
+draft.get(milk) // undefined
+
+draft.reset(milk)
+draft.get(milk) // { title: "Buy milk", done: false }
+```
+
+The collection, each row, and [presence(row)](/valdres/presence) all work with
+`get`, `sub`, and selectors. Looking up or reading a row does not insert it.
+
 ## Subscribing to changes
 
 Subscription callbacks are notifications. Read the current value from the store
@@ -117,6 +165,27 @@ myStore.txn(({ set }) => {
     set(atomA, 1)
     set(atomB, 2)
     // Subscribers fire once after the transaction completes
+})
+```
+
+The transaction exposes the same collection-row operations. Its reads include
+all row and membership changes staged so far, and any error aborts Atom and row
+writes together:
+
+```ts
+const active = todos("active")
+const inherited = todos("inherited")
+app.set(inherited, { title: "Inherited", done: false })
+const draft = app.scope("transaction-draft")
+
+draft.txn(txn => {
+    txn.set(active, { title: "Active", done: false })
+    txn.update(active, current => ({ ...current, done: true }))
+    txn.delete(inherited)
+    txn.reset(inherited)
+
+    txn.get(active) // includes the staged update
+    txn.get(todos) // includes staged membership
 })
 ```
 

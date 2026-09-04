@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { atom, selector, store, type Store } from "valdres"
+import {
+    atom,
+    collection,
+    presence,
+    selector,
+    store,
+    type CollectionRow,
+    type Store,
+} from "valdres"
 import * as publicApi from "./index"
 
 type PublicApi = typeof import("./index")
@@ -37,10 +45,20 @@ describe("public surface", () => {
             const count = atom(0)
             const doubled = selector(get => get(count) * 2)
             const callbackAtom = atom<() => number>(() => 1)
+            const sessions = collection<string, { readonly id: string }>()
+            const row = sessions("a")
+            const rowPresence = presence(row)
             const selectedStore = store()
 
             const countValue: number = publicApi.useValue(count)
             const selectorValue: number = publicApi.useValue(doubled)
+            const rowValue: { readonly id: string } | undefined =
+                publicApi.useValue(row)
+            const membership: readonly CollectionRow<
+                string,
+                { readonly id: string }
+            >[] = publicApi.useValue(sessions)
+            const present: boolean = publicApi.useValue(rowPresence)
             const tuple: readonly [number, (value: number) => void] =
                 publicApi.useAtom(count, selectedStore)
             const setCallback: (value: () => number) => void =
@@ -54,6 +72,9 @@ describe("public surface", () => {
 
             void countValue
             void selectorValue
+            void rowValue
+            void membership
+            void present
             void tuple
             void setCallback
             void updateCount
@@ -67,6 +88,22 @@ describe("public surface", () => {
             publicApi.useUpdateAtom(doubled)
             // @ts-expect-error write hooks accept Atom, not Selector.
             publicApi.useResetAtom(doubled)
+            // @ts-expect-error collection rows are readonly to Atom hooks.
+            publicApi.useAtom(row)
+            // @ts-expect-error collections are readonly to Atom hooks.
+            publicApi.useAtom(sessions)
+            // @ts-expect-error collection rows are readonly to Atom hooks.
+            publicApi.useSetAtom(row)
+            // @ts-expect-error collections are readonly to Atom hooks.
+            publicApi.useSetAtom(sessions)
+            // @ts-expect-error collection rows are readonly to Atom hooks.
+            publicApi.useUpdateAtom(row)
+            // @ts-expect-error collections are readonly to Atom hooks.
+            publicApi.useUpdateAtom(sessions)
+            // @ts-expect-error collection rows are readonly to Atom hooks.
+            publicApi.useResetAtom(row)
+            // @ts-expect-error collections are readonly to Atom hooks.
+            publicApi.useResetAtom(sessions)
             // @ts-expect-error Provider requires an owner-supplied Store.
             const missingStore = <publicApi.Provider />
             const initialize: Parameters<typeof publicApi.Provider>[0] = {
