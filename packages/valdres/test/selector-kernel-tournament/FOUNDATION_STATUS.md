@@ -8,18 +8,18 @@ candidate implementation, public kernel interface, candidate workspace, winner,
 or promotion decision exists. The beta.36 runtime tree remains
 `35a20a12ff1087140b08622f9057c857900d17e5`.
 
-| Work order | Status                                                                                                                                                                                             |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F0         | v2 authority implemented: 30 semantic cases, 17 workloads, six memory scenarios, 12 memory rows. Empty non-release Changeset retained.                                                             |
-| F1         | Shipping pack driver, separate counter-marker build, installed Node/Bun probes, and reviewed admission restrictions implemented. Actual control observation is implemented as a build-only plugin. |
-| F2         | Complete: all 30 cases, 740,951 edge attempts per replay, public/counter Node/Bun double replays, 58 frozen family tests, and 11 semantic red mutations verified.                                  |
-| F3         | Complete: 17 workloads and 31 runtime rows checked in timed/counter modes; frozen counts, checksums, timer windows, and 900-step no-writes lifecycle retained.                                     |
-| F4         | Complete: separate protected/intended hypotheses, fixed 8/24/50 pairs, deterministic calibration, and live Node/Bun A/A checks.                                                                    |
-| F5         | Evidence validation implemented and self-tests pass. Fresh packed metadata verification is in progress before F6.                                                                                  |
-| F6         | Resource executors remain outstanding; resource evidence validation fails closed until their required workers and raw observations exist.                                                          |
-| F7         | No green control bundle yet. Admission probes are not conformance or eligibility evidence.                                                                                                         |
-| F8         | No complete red proof bundle yet.                                                                                                                                                                  |
-| F9         | Final neutrality/statistics review and foundation PR remain outstanding.                                                                                                                           |
+| Work order | Status                                                                                                                                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F0         | v2 authority implemented: 30 semantic cases, 17 workloads, six memory scenarios, 12 memory rows. Empty non-release Changeset retained.                                                                                                            |
+| F1         | Shipping pack driver, separate counter-marker build, installed Node/Bun probes, and reviewed admission restrictions implemented. Actual control observation is implemented as a build-only plugin.                                                |
+| F2         | Complete: all 30 cases, 740,951 edge attempts per replay, public/counter Node/Bun double replays, 58 frozen family tests, and 11 semantic red mutations verified.                                                                                 |
+| F3         | Complete: 17 workloads and 31 runtime rows checked in timed/counter modes; frozen counts, checksums, timer windows, and 900-step no-writes lifecycle retained.                                                                                    |
+| F4         | Complete: separate protected/intended hypotheses, fixed 8/24/50 pairs, deterministic calibration, and live Node/Bun A/A checks.                                                                                                                   |
+| F5         | Complete: sealed evidence, independent raw recomputation, exact process/build provenance, immutable intent, stage prerequisites, 55 self-tests, fresh timed/counter metadata checks, three core oracle preflights, and 31 counter rows validated. |
+| F6         | Resource executors remain outstanding; resource evidence validation fails closed until their required workers and raw observations exist.                                                                                                         |
+| F7         | No green control bundle yet. Admission probes are not conformance or eligibility evidence.                                                                                                                                                        |
+| F8         | No complete red proof bundle yet.                                                                                                                                                                                                                 |
+| F9         | Final neutrality/statistics review and foundation PR remain outstanding.                                                                                                                                                                          |
 
 ## Resolved normative defects
 
