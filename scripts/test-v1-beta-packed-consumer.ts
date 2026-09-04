@@ -378,7 +378,7 @@ assert.equal(inspectedValue, 2)
 const inspectionReport = inspectedReact.inspect.export()
 assert.equal(inspectionReport.schema, "valdres.react.inspect")
 assert.equal(inspectionReport.schemaVersion, 1)
-assert.equal(inspectionReport.core.schemaVersion, 4)
+assert.equal(inspectionReport.core.schemaVersion, 5)
 assert.equal(inspectionReport.core.recordingId, inspectionReport.react.coreRecordingId)
 assert.equal(inspectionReport.react.totals.subscriberCallbacks, 1)
 assert.equal(inspectionReport.react.totals.commitTimeGroups, 1)
@@ -524,6 +524,7 @@ import {
     type InspectionNewEdgeProofMemoTotals,
     type InspectionReverseProofOutcome,
     type InspectionReverseProofTotals,
+    type InspectionTopologyDeltaReverseSnapshotTotals,
     type StateInspectionCapture,
 } from "valdres/inspect"
 
@@ -546,11 +547,13 @@ const capture: StateInspectionCapture =
     inspectableCore.inspect.capture(inspectableCore.store, count)
 const inspectionReport: InspectableReactExport =
     inspectedReact.inspect.export()
-const coreSchemaVersion: 4 = inspectionReport.core.schemaVersion
+const coreSchemaVersion: 5 = inspectionReport.core.schemaVersion
 const proofMemoTotals: InspectionNewEdgeProofMemoTotals =
     inspectionReport.core.summaries[0]!.totals.cycle.newEdgeProofMemo
 const reverseProofTotals: InspectionReverseProofTotals =
     inspectionReport.core.summaries[0]!.totals.cycle.reverseProof
+const topologyDeltaSnapshotTotals: InspectionTopologyDeltaReverseSnapshotTotals =
+    reverseProofTotals.topologyDeltaSnapshot
 const reverseProofOutcome: InspectionReverseProofOutcome = "proven"
 const topologyDeltaSite: CycleSearchInspectionDetail["site"] =
     "topology-delta-proof"
@@ -576,6 +579,7 @@ void inspectionReport
 void coreSchemaVersion
 void proofMemoTotals
 void reverseProofTotals
+void topologyDeltaSnapshotTotals
 void reverseProofOutcome
 void topologyDeltaSite
 void topologyDeltaSearches

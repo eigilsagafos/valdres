@@ -41,6 +41,34 @@ export interface SelectorGraphEdgeAddition<Node> {
     readonly head: Node
 }
 
+/** @internal Outcome of one bounded active-prefix reverse snapshot attempt. */
+export type SelectorTopologyDeltaReverseSnapshotOutcome =
+    | "completed"
+    | "overflow"
+    | "unavailable"
+
+/** @internal Inspection-only observation of reverse snapshot construction. */
+export interface SelectorTopologyDeltaReverseSnapshotDiagnostics {
+    recordSnapshot(
+        outcome: SelectorTopologyDeltaReverseSnapshotOutcome,
+        scannedFrames: number,
+        activeFrames: number,
+        prefixEdges: number,
+    ): void
+}
+
+/**
+ * Evaluation-local reverse overlay for one exact topology-delta replay batch.
+ * The snapshot contributes active transient-prefix edges that are absent from
+ * committed reverse adjacency. Its mutable gate bounds repeated misses without
+ * retaining any evidence beyond the synchronous replay. An absent snapshot
+ * keeps only sole-active-target proofs eligible and otherwise fails closed.
+ */
+export interface SelectorTopologyDeltaReverseProofContext<Node> {
+    readonly transientDependents: ReadonlyMap<Node, readonly Node[]> | undefined
+    reverseProofEnabled: boolean
+}
+
 /**
  * Synchronous, bounded observation of exact selector-edge additions. An
  * undefined read means the host could not retain a complete interval and the
@@ -160,7 +188,8 @@ export interface SelectorNewEdgeProofMemoProvider<Node> {
  * supplied only at site 1 and is invoked only when a bounded host acceleration
  * cannot prove the negative first. Its evidence remains evaluation-local and
  * may cross a graph version only when one exact addition interval preserves a
- * fully exhausted, successor-closed negative proof.
+ * fully exhausted, successor-closed negative proof. The topology-delta reverse
+ * context is supplied only at site 2 and is shared by one exact replay batch.
  */
 export type SelectorCycleSearch<Node, Token extends object> = (
     start: Node,
@@ -171,6 +200,7 @@ export type SelectorCycleSearch<Node, Token extends object> = (
     /** Length of the active selector prefix whose acyclicity this proves. */
     acceptedPrefixLength: number,
     getNewEdgeProofMemo?: SelectorNewEdgeProofMemoProvider<Node>,
+    topologyDeltaReverseProof?: SelectorTopologyDeltaReverseProofContext<Node>,
 ) => readonly Node[] | undefined
 
 export interface SelectorEvaluationStrategy {
@@ -406,6 +436,109 @@ export class SelectorEvaluationSession<Node> {
             }
         }
         return undefined
+    }
+
+    /**
+     * Snapshot every active same-host transient prefix as reverse additions.
+     * Committed reverse edges are deliberately not subtracted: stale edges can
+     * only force canonical fallback from a negative-only reverse certificate.
+     * Any frame ambiguity, caller mismatch, or oversized snapshot fails closed.
+     */
+    captureTransientReverseDependents(
+        host: object,
+        selector: Node,
+        acceptedPrefixLength: number,
+        maxEntries: number,
+        diagnostics?: SelectorTopologyDeltaReverseSnapshotDiagnostics,
+    ): ReadonlyMap<Node, readonly Node[]> | undefined {
+        const seenSelectors = new Set<Node>()
+        const mutable = new Map<Node, Node[]>()
+        let matchedSelector = false
+        let scannedFrames = 0
+        let activeFrames = 0
+        let edgeCount = 0
+
+        for (const frame of this.#frames) {
+            scannedFrames++
+            if (scannedFrames > maxEntries) {
+                diagnostics?.recordSnapshot(
+                    "overflow",
+                    scannedFrames,
+                    activeFrames,
+                    edgeCount,
+                )
+                return undefined
+            }
+            if (!Object.is(frame.host, host)) continue
+            activeFrames++
+            if (
+                frame.revalidatePrefix === undefined ||
+                seenSelectors.has(frame.selector)
+            ) {
+                diagnostics?.recordSnapshot(
+                    "unavailable",
+                    scannedFrames,
+                    activeFrames,
+                    edgeCount,
+                )
+                return undefined
+            }
+            seenSelectors.add(frame.selector)
+            if (Object.is(frame.selector, selector)) {
+                if (
+                    matchedSelector ||
+                    frame.dependencyPrefix.length !== acceptedPrefixLength
+                ) {
+                    diagnostics?.recordSnapshot(
+                        "unavailable",
+                        scannedFrames,
+                        activeFrames,
+                        edgeCount,
+                    )
+                    return undefined
+                }
+                matchedSelector = true
+            }
+            for (const dependency of frame.dependencyPrefix) {
+                edgeCount++
+                if (edgeCount > maxEntries) {
+                    diagnostics?.recordSnapshot(
+                        "overflow",
+                        scannedFrames,
+                        activeFrames,
+                        edgeCount,
+                    )
+                    return undefined
+                }
+                const dependents = mutable.get(dependency.node)
+                if (dependents === undefined) {
+                    mutable.set(dependency.node, [frame.selector])
+                } else {
+                    dependents.push(frame.selector)
+                }
+            }
+        }
+
+        if (!matchedSelector) {
+            diagnostics?.recordSnapshot(
+                "unavailable",
+                scannedFrames,
+                activeFrames,
+                edgeCount,
+            )
+            return undefined
+        }
+        const snapshot = new Map<Node, readonly Node[]>()
+        for (const [dependency, dependents] of mutable) {
+            snapshot.set(dependency, Object.freeze(dependents))
+        }
+        diagnostics?.recordSnapshot(
+            "completed",
+            scannedFrames,
+            activeFrames,
+            edgeCount,
+        )
+        return snapshot
     }
 
     /** @internal */

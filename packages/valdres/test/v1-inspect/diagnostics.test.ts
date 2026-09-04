@@ -7,6 +7,7 @@ import {
 } from "../../src/index"
 import { readHydrationSnapshot } from "../../src/adapter-internals/v1"
 import { deepEqual } from "../../src/equality"
+import { createInspectionRecorder } from "../../src/v1-internal/inspection"
 import {
     createInspectableStore,
     type InspectionCycleBucket,
@@ -720,11 +721,15 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(store.get(parent)).toBe(1)
         inspect.reset()
 
-        store.txn(transaction => {
-            transaction.set(parentGate, true)
-            transaction.set(changedGate, true)
-            transaction.set(laterGate, true)
-        }, "negative topology delta")
+        inspect.span("negative topology delta outer", () =>
+            inspect.span("negative topology delta inner", () =>
+                store.txn(transaction => {
+                    transaction.set(parentGate, true)
+                    transaction.set(changedGate, true)
+                    transaction.set(laterGate, true)
+                }, "negative topology delta"),
+            ),
+        )
 
         expect(store.get(parent)).toBe(2)
         const report = inspect.export()
@@ -735,8 +740,37 @@ describe("valdres/inspect public structural diagnostics", () => {
                 detail.operationId === operation.operationId &&
                 detail.site === "topology-delta-proof",
         )
+        const snapshot = {
+            attempts: 1,
+            completed: 1,
+            overflow: 0,
+            unavailable: 0,
+            scannedActiveFrames: 1,
+            scannedPrefixEdges: 2,
+            maxScannedActiveFrames: 1,
+            maxScannedPrefixEdges: 2,
+            capturedActiveFrames: 1,
+            capturedPrefixEdges: 2,
+            maxCapturedActiveFrames: 1,
+            maxCapturedPrefixEdges: 2,
+        }
+        const commit = report.summaries.find(
+            summary =>
+                summary.type === "commit" &&
+                summary.operationId === operation.operationId,
+        )
+        if (commit === undefined) {
+            throw new Error("Missing negative topology delta commit")
+        }
+        const outer = spanNamed(report, "negative topology delta outer")
+        const inner = spanNamed(report, "negative topology delta inner")
+        const snapshotEvaluations = detailsOfType(
+            report,
+            "selector-evaluation",
+        ).filter(detail => detail.topologyDeltaReverseSnapshot !== undefined)
 
         expect(committed.topologyDeltaProof.searches).toBeGreaterThan(0)
+        expect(committed.topologyDeltaProof.visits).toBe(0)
         expect(committed.topologyDeltaProof.found).toBe(0)
         expect(operation.totals.cycle.bySite.topologyDeltaProof).toBe(
             committed.topologyDeltaProof.searches,
@@ -744,8 +778,30 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(committed.prefixRevalidation).toEqual(EMPTY_CYCLE_BUCKET)
         expect(proofs).toHaveLength(committed.topologyDeltaProof.searches)
         expect(
+            operation.totals.cycle.reverseProof.topologyDeltaSnapshot,
+        ).toEqual(snapshot)
+        expect(commit.totals.cycle.reverseProof.topologyDeltaSnapshot).toEqual(
+            snapshot,
+        )
+        expect(outer.totals.cycle.reverseProof.topologyDeltaSnapshot).toEqual(
+            snapshot,
+        )
+        expect(inner.totals.cycle.reverseProof.topologyDeltaSnapshot).toEqual(
+            snapshot,
+        )
+        expect(snapshotEvaluations).toHaveLength(1)
+        expect(snapshotEvaluations[0]).toMatchObject({
+            selector: { name: "delta-negative/parent" },
+            topologyDeltaReverseSnapshot: snapshot,
+        })
+        expect(
             proofs.every(
-                proof => proof.acceptedPrefixLength === 2 && !proof.found,
+                proof =>
+                    proof.acceptedPrefixLength === 2 &&
+                    !proof.found &&
+                    proof.visits === 0 &&
+                    (proof.reverseProof?.outcome === "terminal" ||
+                        proof.reverseProof?.outcome === "proven"),
             ),
         ).toBe(true)
     })
@@ -1162,7 +1218,7 @@ describe("valdres/inspect public structural diagnostics", () => {
                 cycle.reverseProof.disabled +
                 cycle.reverseProof.activeFrames +
                 cycle.reverseProof.unsupported,
-        ).toBe(cycle.bySite.newEdgeProof)
+        ).toBe(cycle.bySite.newEdgeProof + cycle.bySite.topologyDeltaProof)
         expect(cycle.found).toBe(0)
         expect(cycle.byLane.committed.prefixRevalidation).toEqual(
             EMPTY_CYCLE_BUCKET,
@@ -1216,5 +1272,67 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(operation.totals.notificationTargets).toBe(notifications)
         expect(operation.totals.subscriberCallbacks).toBe(notifications)
         expectJsonRoundTrip(report)
+    })
+
+    test("partitions completed, overflow, and unavailable reverse snapshot work", () => {
+        const setup = createInspectionRecorder()
+        const span = setup.recorder.beginInterval({
+            type: "span",
+            name: "snapshot aggregation",
+        })
+
+        setup.recorder.addWork({
+            cycle: {
+                topologyDeltaReverseSnapshot: {
+                    outcome: "completed",
+                    scannedFrames: 3,
+                    activeFrames: 2,
+                    prefixEdges: 3,
+                },
+            },
+        })
+        setup.recorder.addWork({
+            cycle: {
+                topologyDeltaReverseSnapshot: {
+                    outcome: "overflow",
+                    scannedFrames: 5,
+                    activeFrames: 4,
+                    prefixEdges: 4_097,
+                },
+            },
+        })
+        setup.recorder.addWork({
+            cycle: {
+                topologyDeltaReverseSnapshot: {
+                    outcome: "unavailable",
+                    scannedFrames: 2,
+                    activeFrames: 1,
+                    prefixEdges: 7,
+                },
+            },
+        })
+        setup.recorder.finishInterval(span, { result: "returned" })
+
+        const report = setup.inspect.export()
+        const snapshot = spanNamed(report, "snapshot aggregation").totals.cycle
+            .reverseProof.topologyDeltaSnapshot
+
+        expect(snapshot).toEqual({
+            attempts: 3,
+            completed: 1,
+            overflow: 1,
+            unavailable: 1,
+            scannedActiveFrames: 10,
+            scannedPrefixEdges: 4_107,
+            maxScannedActiveFrames: 5,
+            maxScannedPrefixEdges: 4_097,
+            capturedActiveFrames: 2,
+            capturedPrefixEdges: 3,
+            maxCapturedActiveFrames: 2,
+            maxCapturedPrefixEdges: 3,
+        })
+        expect(
+            snapshot.completed + snapshot.overflow + snapshot.unavailable,
+        ).toBe(snapshot.attempts)
     })
 })

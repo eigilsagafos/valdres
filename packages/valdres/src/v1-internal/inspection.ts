@@ -27,6 +27,9 @@ import type {
     SelectorNewEdgeProofMemoSeedReason,
     SelectorNewEdgeProofMemoSearchClassification,
     SelectorNewEdgeProofMemoProvider,
+    SelectorTopologyDeltaReverseProofContext,
+    SelectorTopologyDeltaReverseSnapshotDiagnostics,
+    SelectorTopologyDeltaReverseSnapshotOutcome,
 } from "./selector-evaluator/types"
 import {
     evaluateSelector,
@@ -130,9 +133,30 @@ export type InspectionReverseProofOutcome =
     | "active-frames"
     | "unsupported"
 
-/** Bounded reverse-first work and outcomes for logical site-1 proofs. */
+/** Construction outcomes and work for topology-delta reverse snapshots. */
+export type InspectionTopologyDeltaReverseSnapshotTotals = Readonly<{
+    /** These three outcomes partition all nonempty exact-delta attempts. */
+    readonly attempts: number
+    readonly completed: number
+    readonly overflow: number
+    readonly unavailable: number
+    /** Session frames scanned by every attempt, including fail-closed attempts. */
+    readonly scannedActiveFrames: number
+    /** Same-host prefix work scanned by every attempt. */
+    readonly scannedPrefixEdges: number
+    readonly maxScannedActiveFrames: number
+    readonly maxScannedPrefixEdges: number
+    /** Effective snapshot size, counted only after complete construction. */
+    readonly capturedActiveFrames: number
+    readonly capturedPrefixEdges: number
+    readonly maxCapturedActiveFrames: number
+    readonly maxCapturedPrefixEdges: number
+}> &
+    InspectionJsonObject
+
+/** Bounded reverse-first work and outcomes for all site-1/site-2 proofs. */
 export type InspectionReverseProofTotals = Readonly<{
-    /** These seven outcomes partition all new-edge proofs. */
+    /** These outcomes partition every site-1 and site-2 logical proof. */
     readonly terminal: number
     readonly proven: number
     readonly pathPossible: number
@@ -146,6 +170,7 @@ export type InspectionReverseProofTotals = Readonly<{
     readonly liveDependents: number
     readonly maxWork: number
     readonly maxFrontier: number
+    readonly topologyDeltaSnapshot: InspectionTopologyDeltaReverseSnapshotTotals
 }> &
     InspectionJsonObject
 
@@ -284,6 +309,7 @@ interface SelectorEvaluationInspectionBase extends InspectionDetailLinks {
     readonly graphVersionEnd: number
     readonly previousDependencyCount: number
     readonly newEdgeProofMemo?: InspectionNewEdgeProofMemoTotals
+    readonly topologyDeltaReverseSnapshot?: InspectionTopologyDeltaReverseSnapshotTotals
 }
 
 export type SelectorEvaluationInspectionDetail =
@@ -356,7 +382,7 @@ export interface InspectionRecorderFault {
 
 export interface InspectionExport {
     readonly schema: "valdres.inspect"
-    readonly schemaVersion: 4
+    readonly schemaVersion: 5
     readonly recordingId: string
     readonly summaries: readonly InspectionSummary[]
     readonly details: readonly InspectionDetail[]
@@ -479,6 +505,13 @@ type ReverseProofWorkDelta = Readonly<{
     maxFrontier: number
 }>
 
+type TopologyDeltaReverseSnapshotWorkDelta = Readonly<{
+    outcome: SelectorTopologyDeltaReverseSnapshotOutcome
+    scannedFrames: number
+    activeFrames: number
+    prefixEdges: number
+}>
+
 export interface InspectionWorkDelta {
     readonly selectorEvaluations?: number
     readonly proposedTopologyChanges?: number
@@ -496,6 +529,7 @@ export interface InspectionWorkDelta {
         host?: "committed" | "scratch" | "hydration"
         newEdgeProofMemo?: NewEdgeProofMemoWorkDelta
         reverseProof?: ReverseProofWorkDelta
+        topologyDeltaReverseSnapshot?: TopologyDeltaReverseSnapshotWorkDelta
     }>
 }
 
@@ -515,6 +549,7 @@ export interface InternalInspectionRecorder {
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
         getNewEdgeProofMemo?: SelectorNewEdgeProofMemoProvider<Node>,
+        topologyDeltaReverseProof?: SelectorTopologyDeltaReverseProofContext<Node>,
     ): readonly Node[] | undefined
     reference(
         target: object,
@@ -558,6 +593,21 @@ interface MutableNewEdgeProofMemoTotals {
     maxRetainedEntries: number
 }
 
+interface MutableTopologyDeltaReverseSnapshotTotals {
+    attempts: number
+    completed: number
+    overflow: number
+    unavailable: number
+    scannedActiveFrames: number
+    scannedPrefixEdges: number
+    maxScannedActiveFrames: number
+    maxScannedPrefixEdges: number
+    capturedActiveFrames: number
+    capturedPrefixEdges: number
+    maxCapturedActiveFrames: number
+    maxCapturedPrefixEdges: number
+}
+
 interface MutableCycleTotals {
     searches: number
     visits: number
@@ -583,6 +633,7 @@ interface MutableCycleTotals {
         liveDependents: number
         maxWork: number
         maxFrontier: number
+        topologyDeltaSnapshot: MutableTopologyDeltaReverseSnapshotTotals
     }
     lanes: Record<
         "committed" | "scratch" | "hydration",
@@ -813,6 +864,94 @@ const freezeNewEdgeProofMemoTotals = (
         }),
     })
 
+const createMutableTopologyDeltaReverseSnapshotTotals =
+    (): MutableTopologyDeltaReverseSnapshotTotals => ({
+        attempts: 0,
+        completed: 0,
+        overflow: 0,
+        unavailable: 0,
+        scannedActiveFrames: 0,
+        scannedPrefixEdges: 0,
+        maxScannedActiveFrames: 0,
+        maxScannedPrefixEdges: 0,
+        capturedActiveFrames: 0,
+        capturedPrefixEdges: 0,
+        maxCapturedActiveFrames: 0,
+        maxCapturedPrefixEdges: 0,
+    })
+
+const addTopologyDeltaReverseSnapshotWork = (
+    totals: MutableTopologyDeltaReverseSnapshotTotals,
+    delta: TopologyDeltaReverseSnapshotWorkDelta,
+): void => {
+    totals.attempts++
+    if (delta.outcome === "completed") totals.completed++
+    else if (delta.outcome === "overflow") totals.overflow++
+    else totals.unavailable++
+    totals.scannedActiveFrames = addFinite(
+        totals.scannedActiveFrames,
+        delta.scannedFrames,
+    )
+    totals.scannedPrefixEdges = addFinite(
+        totals.scannedPrefixEdges,
+        delta.prefixEdges,
+    )
+    totals.maxScannedActiveFrames = Math.max(
+        totals.maxScannedActiveFrames,
+        delta.scannedFrames,
+    )
+    totals.maxScannedPrefixEdges = Math.max(
+        totals.maxScannedPrefixEdges,
+        delta.prefixEdges,
+    )
+    if (delta.outcome !== "completed") return
+    totals.capturedActiveFrames = addFinite(
+        totals.capturedActiveFrames,
+        delta.activeFrames,
+    )
+    totals.capturedPrefixEdges = addFinite(
+        totals.capturedPrefixEdges,
+        delta.prefixEdges,
+    )
+    totals.maxCapturedActiveFrames = Math.max(
+        totals.maxCapturedActiveFrames,
+        delta.activeFrames,
+    )
+    totals.maxCapturedPrefixEdges = Math.max(
+        totals.maxCapturedPrefixEdges,
+        delta.prefixEdges,
+    )
+}
+
+const freezeTopologyDeltaReverseSnapshotTotals = (
+    totals: MutableTopologyDeltaReverseSnapshotTotals,
+): InspectionTopologyDeltaReverseSnapshotTotals => Object.freeze({ ...totals })
+
+const createTopologyDeltaReverseSnapshotDiagnostics = (
+    record: (delta: TopologyDeltaReverseSnapshotWorkDelta) => void,
+): Readonly<{
+    sink: SelectorTopologyDeltaReverseSnapshotDiagnostics
+    finish(): MutableTopologyDeltaReverseSnapshotTotals | undefined
+}> => {
+    const totals = createMutableTopologyDeltaReverseSnapshotTotals()
+    const sink: SelectorTopologyDeltaReverseSnapshotDiagnostics = {
+        recordSnapshot(outcome, scannedFrames, activeFrames, prefixEdges) {
+            const delta = {
+                outcome,
+                scannedFrames,
+                activeFrames,
+                prefixEdges,
+            }
+            addTopologyDeltaReverseSnapshotWork(totals, delta)
+            record(delta)
+        },
+    }
+    return Object.freeze({
+        sink: Object.freeze(sink),
+        finish: () => (totals.attempts === 0 ? undefined : totals),
+    })
+}
+
 const createNewEdgeProofDiagnostics = (
     record: (delta: NewEdgeProofMemoWorkDelta) => void,
 ): Readonly<{
@@ -942,6 +1081,8 @@ const createMutableTotals = (): MutableWorkTotals => ({
             liveDependents: 0,
             maxWork: 0,
             maxFrontier: 0,
+            topologyDeltaSnapshot:
+                createMutableTopologyDeltaReverseSnapshotTotals(),
         },
         lanes: {
             committed: {
@@ -990,7 +1131,12 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
             newEdgeProofMemo: freezeNewEdgeProofMemoTotals(
                 totals.cycle.newEdgeProofMemo,
             ),
-            reverseProof: Object.freeze({ ...totals.cycle.reverseProof }),
+            reverseProof: Object.freeze({
+                ...totals.cycle.reverseProof,
+                topologyDeltaSnapshot: freezeTopologyDeltaReverseSnapshotTotals(
+                    totals.cycle.reverseProof.topologyDeltaSnapshot,
+                ),
+            }),
             byLane: Object.freeze({
                 committed: Object.freeze({
                     prefixRevalidation: Object.freeze({
@@ -1505,6 +1651,13 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                         memo.maxRetainedEntries ?? 0,
                     )
                 }
+                const snapshot = cycle.topologyDeltaReverseSnapshot
+                if (snapshot !== undefined) {
+                    addTopologyDeltaReverseSnapshotWork(
+                        totals.cycle.reverseProof.topologyDeltaSnapshot,
+                        snapshot,
+                    )
+                }
                 const reverse = cycle.reverseProof
                 if (reverse !== undefined) {
                     const aggregate = totals.cycle.reverseProof
@@ -1772,6 +1925,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
         getNewEdgeProofMemo?: SelectorNewEdgeProofMemoProvider<Node>,
+        topologyDeltaReverseProof?: SelectorTopologyDeltaReverseProofContext<Node>,
     ): readonly Node[] | undefined {
         const siteName =
             site === 0
@@ -1807,21 +1961,26 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             maxFrontier: 0,
         }
         const reverseProof: SelectorReverseProofOutcome | undefined =
-            site === 1
+            site === 1 || site === 2
                 ? tryProveNoDependencyPathReverse(
                       start,
                       target,
                       host,
                       session,
                       reverseMeasurement,
-                      getNewEdgeProofMemo?.reverseProofEnabled ?? true,
+                      site === 1
+                          ? (getNewEdgeProofMemo?.reverseProofEnabled ?? true)
+                          : (topologyDeltaReverseProof?.reverseProofEnabled ??
+                                true),
+                      topologyDeltaReverseProof?.transientDependents,
                   )
                 : undefined
-        if (
-            reverseProof === "budget-exhausted" &&
-            getNewEdgeProofMemo !== undefined
-        ) {
-            getNewEdgeProofMemo.reverseProofEnabled = false
+        if (reverseProof === "budget-exhausted") {
+            if (site === 1 && getNewEdgeProofMemo !== undefined) {
+                getNewEdgeProofMemo.reverseProofEnabled = false
+            } else if (topologyDeltaReverseProof !== undefined) {
+                topologyDeltaReverseProof.reverseProofEnabled = false
+            }
         }
         const reverseProvedNegative =
             reverseProof === "proven-terminal" ||
@@ -2031,7 +2190,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const detailBounds = retainedBounds(details)
         return Object.freeze({
             schema: "valdres.inspect" as const,
-            schemaVersion: 4 as const,
+            schemaVersion: 5 as const,
             recordingId: this.#recordingId,
             summaries: Object.freeze(summaries),
             details: Object.freeze(details),
@@ -2429,6 +2588,19 @@ const createStoreTrace = (
             if (totals === undefined) return undefined
             return freezeNewEdgeProofMemoTotals(totals)
         }
+        const snapshotDiagnostics =
+            createTopologyDeltaReverseSnapshotDiagnostics(delta =>
+                recorder.addWork({
+                    cycle: { topologyDeltaReverseSnapshot: delta },
+                }),
+            )
+        const finishSnapshotDiagnostics = ():
+            | InspectionTopologyDeltaReverseSnapshotTotals
+            | undefined => {
+            const totals = snapshotDiagnostics.finish()
+            if (totals === undefined) return undefined
+            return freezeTopologyDeltaReverseSnapshotTotals(totals)
+        }
         const cycleSearch: SelectorCycleSearch<Node, Token> = (
             start,
             target,
@@ -2437,6 +2609,7 @@ const createStoreTrace = (
             site,
             acceptedPrefixLength,
             newEdgeProofMemo,
+            topologyDeltaReverseProof,
         ) =>
             recorder.findDependencyPath(
                 hostKind,
@@ -2451,6 +2624,7 @@ const createStoreTrace = (
                 attributedPublicationStart,
                 previousDependencies === undefined,
                 newEdgeProofMemo,
+                topologyDeltaReverseProof,
             )
         try {
             const proposal = evaluateSelector(
@@ -2459,6 +2633,7 @@ const createStoreTrace = (
                 session,
                 cycleSearch,
                 memoDiagnostics.sink,
+                snapshotDiagnostics.sink,
             )
             const proposedTopologyChanged =
                 previousDependencies === undefined ||
@@ -2490,6 +2665,7 @@ const createStoreTrace = (
                     : { proposedTopologyIdentical: 1 },
             )
             const newEdgeProofMemo = finishMemoDiagnostics()
+            const topologyDeltaReverseSnapshot = finishSnapshotDiagnostics()
             recorder.finishInterval(interval, {
                 result: "returned",
                 fields: {
@@ -2500,17 +2676,20 @@ const createStoreTrace = (
                     proposedEdgesRemoved,
                     graphVersionEnd: host.getSelectorGraphVersion(),
                     newEdgeProofMemo,
+                    topologyDeltaReverseSnapshot,
                 },
             })
             return proposal
         } catch (error) {
             const newEdgeProofMemo = finishMemoDiagnostics()
+            const topologyDeltaReverseSnapshot = finishSnapshotDiagnostics()
             recorder.finishInterval(interval, {
                 result: "threw",
                 fields: {
                     outcome: "threw",
                     graphVersionEnd: host.getSelectorGraphVersion(),
                     newEdgeProofMemo,
+                    topologyDeltaReverseSnapshot,
                 },
             })
             throw error
