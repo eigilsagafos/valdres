@@ -1,5 +1,27 @@
 {
     "bun": "1.4.0",
+    "policy": {
+        "ordinaryTolerancePercent": 2,
+        "coreRetainingGzipAllowance": 71,
+        "coreRetainingFixtures": [
+            "fixture atom",
+            "fixture atom-selector-store",
+            "fixture family",
+            "fixture all-exports",
+            "fixture adapter-internals"
+        ]
+    },
+    "featureBudgets": {
+        "dist": {
+            "raw": 278752,
+            "gzip": 79850
+        },
+        "packed": {
+            "raw": 387391,
+            "gzip": 102270
+        },
+        "fixtures": {}
+    },
     "dist": {
         "raw": 212506,
         "gzip": 59950

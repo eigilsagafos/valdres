@@ -39,7 +39,9 @@
         "core.family",
         "core.family-options.encode-key",
         "core.invalid-atom-comparator-result-error",
+        "core.invalid-collection-key-error",
         "core.invalid-synchronous-atom-value-error",
+        "core.invalid-synchronous-collection-value-error",
         "core.invalid-transaction-callback-result-error",
         "core.invalid-transaction-target-error",
         "core.global-atom",
@@ -51,6 +53,7 @@
         "core.query-definition.order-by",
         "core.query-definition.where",
         "core.runtime-mismatch-error",
+        "core.missing-collection-row-error",
         "core.scope-not-found-error",
         "core.server-snapshot-unavailable-error",
         "core.selector",
@@ -83,8 +86,14 @@
         "core.transaction.set",
         "core.transaction.update",
         "core.transaction-phase-error",
+        "core.undefined-collection-value-error",
         "core.type.atom",
         "core.type.atom-options",
+        "core.type.collection",
+        "core.type.collection-key",
+        "core.type.collection-options",
+        "core.type.collection-row",
+        "core.type.collection-value",
         "core.type.equal-func",
         "core.type.family-key",
         "core.type.get-value",
@@ -411,12 +420,28 @@
             "errorCode": "VALDRES_INVALID_ATOM_COMPARATOR_RESULT"
         },
         {
+            "id": "core.invalid-collection-key-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidCollectionKeyError",
+            "errorCode": "VALDRES_INVALID_COLLECTION_KEY"
+        },
+        {
             "id": "core.invalid-synchronous-atom-value-error",
             "kind": "error",
             "package": "valdres",
             "subpath": ".",
             "name": "InvalidSynchronousAtomValueError",
             "errorCode": "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE"
+        },
+        {
+            "id": "core.invalid-synchronous-collection-value-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidSynchronousCollectionValueError",
+            "errorCode": "VALDRES_INVALID_SYNCHRONOUS_COLLECTION_VALUE"
         },
         {
             "id": "core.invalid-transaction-callback-result-error",
@@ -526,6 +551,14 @@
             "subpath": ".",
             "name": "RuntimeMismatchError",
             "errorCode": "VALDRES_RUNTIME_MISMATCH"
+        },
+        {
+            "id": "core.missing-collection-row-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "MissingCollectionRowError",
+            "errorCode": "VALDRES_MISSING_COLLECTION_ROW"
         },
         {
             "id": "core.scope-not-found-error",
@@ -725,6 +758,14 @@
             "errorCode": "VALDRES_TRANSACTION_PHASE"
         },
         {
+            "id": "core.undefined-collection-value-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "UndefinedCollectionValueError",
+            "errorCode": "VALDRES_UNDEFINED_COLLECTION_VALUE"
+        },
+        {
             "id": "core.type.atom",
             "kind": "type-export",
             "package": "valdres",
@@ -737,6 +778,41 @@
             "package": "valdres",
             "subpath": ".",
             "name": "AtomOptions"
+        },
+        {
+            "id": "core.type.collection",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Collection"
+        },
+        {
+            "id": "core.type.collection-key",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CollectionKey"
+        },
+        {
+            "id": "core.type.collection-options",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CollectionOptions"
+        },
+        {
+            "id": "core.type.collection-row",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CollectionRow"
+        },
+        {
+            "id": "core.type.collection-value",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CollectionValue"
         },
         {
             "id": "core.type.equal-func",

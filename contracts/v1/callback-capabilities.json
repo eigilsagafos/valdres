@@ -244,8 +244,8 @@
                 "source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Effective absence throws MissingCollectionRowError before the updater is invoked; forbidden same-domain work throws CallbackCapabilityError; any other updater throw rejects before intent admission.",
-            "thenableRule": "A returned or thrown thenable is a named invalid synchronous updater failure and is never staged.",
+            "errorRule": "Effective absence throws MissingCollectionRowError before the updater is invoked; forbidden same-domain work throws CallbackCapabilityError; a returned undefined value throws UndefinedCollectionValueError before intent admission; any other updater throw rejects before intent admission.",
+            "thenableRule": "A returned or thrown thenable becomes InvalidSynchronousCollectionValueError, receives rejection containment, and is never staged or awaited.",
             "resultPolicy": "value-must-not-be-undefined",
             "resultBoundary": "Called exactly once for a present row; a valid non-undefined result becomes the one staged Present value intent and the public mutation returns void.",
             "requiredContractIds": [
@@ -276,8 +276,8 @@
             ],
             "guardDomain": "same-runtime-domain",
             "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A borrowed active selector get latches that fault even when caught. Any other throw creates no family member and is not cached.",
-            "thenableRule": "A thenable rejects as an invalid family factory result; the factory must synchronously return a same-domain State.",
-            "resultBoundary": "One same-domain State subtype constructed in this callback, or any already-published family member, is weakly memoized for the canonical identity tuple. A pre-existing ordinary State rejects so weak family identity never requires retroactive reverse indexing across Store overrides.",
+            "thenableRule": "A thenable rejects as an invalid family factory result; the factory must synchronously return a same-domain Atom or Selector.",
+            "resultBoundary": "One same-domain Atom or Selector constructed in this callback, or any already-published family Atom or Selector member, is weakly memoized for the canonical identity tuple. Collection rows and collection definitions reject even after public readable State widens. A pre-existing ordinary Atom or Selector rejects so weak family identity never requires retroactive reverse indexing across Store overrides.",
             "requiredContractIds": [
                 "family.variadic-primitive-identity",
                 "callback.definition-only",
@@ -327,11 +327,14 @@
                 "Store transaction",
                 "subscription registration",
                 "scope access",
-                "source invalidation"
+                "source invalidation",
+                "State definition construction",
+                "family or collection accessor calls",
+                "active selector-supplied get"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw or invalid scalar creates no row handle and is not cached.",
-            "thenableRule": "A returned or thrown thenable rejects as an invalid synchronous collection-key encoder result.",
+            "errorRule": "A collection or family accessor call during encodeKey throws a sticky TypeError; other forbidden same-domain work throws CallbackCapabilityError. A borrowed active selector get latches that fault even when caught. An ordinary non-thenable encoder throw propagates as that exact user-thrown value. An invalid returned canonical key throws InvalidCollectionKeyError. Every failure creates no row handle or cache entry.",
+            "thenableRule": "A returned or thrown thenable becomes InvalidCollectionKeyError, receives rejection containment, and creates no row handle or cache entry.",
             "resultBoundary": "A valid string, finite number, bigint, boolean, or null is canonicalized before row-handle memoization; original input is not retained.",
             "requiredContractIds": [
                 "collection.row-identity",
@@ -343,8 +346,8 @@
         {
             "id": "callback.collection-index-extractor",
             "apiEntryId": "core.collection-options.indexes",
-            "role": "Derive canonical structural index keys from one proposed present row value.",
-            "phase": "guarded-delta-derivation-before-preflight",
+            "role": "Final-v1 target only: derive canonical structural index keys from one proposed present row value. The unindexed foundation beta never admits or invokes this callback.",
+            "phase": "future-v1-guarded-delta-derivation-before-preflight",
             "suppliedCapabilities": [
                 "canonical row value",
                 "canonical row key"
@@ -364,6 +367,7 @@
             "resultBoundary": "Only validated inert canonical deltas cross into final no-user-code preflight/apply.",
             "requiredContractIds": [
                 "collection.atomic-deltas",
+                "collection.unindexed-foundation-beta",
                 "transaction.no-user-code-final-preflight",
                 "error.stable-name-and-code"
             ],

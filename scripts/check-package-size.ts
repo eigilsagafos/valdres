@@ -5,9 +5,9 @@
  * npm-produced tarball here so dist, packed-file, and consumer-fixture sizes
  * are all measurements of the artifact that every other validator sees.
  *
- * Ratchet the committed baseline after an intentional size change with:
- *
- *   VALDRES_UPDATE_SIZE_BASELINE=1 bun run check-size
+ * Pre-collection baselines stay immutable. The collection stack carries a
+ * reviewed feature envelope plus a temporary ordinary-fixture gzip seam until
+ * COL-008 replaces it with the final certified policy.
  */
 import { mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -18,7 +18,6 @@ const GZIP_LEVEL = 6
 
 const rootDir = join(import.meta.dir, "..")
 const baselinePath = join(import.meta.dir, "size-baseline.json")
-const updateBaseline = process.env.VALDRES_UPDATE_SIZE_BASELINE === "1"
 const tarballArgument = process.argv[2]
 
 if (!tarballArgument) {
@@ -158,14 +157,6 @@ try {
         fixtures[name] = { raw: bytes.length, gzip: gzipSize(bytes) }
     }
 
-    // Recorded, not compared. Bundler output is toolchain-specific: the same
-    // source built on Bun 1.3.13 measures ~2.2KB smaller than on 1.4.0, which
-    // is more than the whole 2% allowance. Stamping the version that produced
-    // these numbers lets a failure say whether toolchain drift is the likely
-    // cause instead of leaving a mystery multi-KB delta. (A baseline generated
-    // on a different Bun than CI enforces with silently consumed ~1.99% of the
-    // allowance for several releases.)
-    const actual = { bun: Bun.version, dist, distFiles, packed, fixtures }
     const lines = [
         "Measured sizes (bytes):",
         `  dist total          raw ${dist.raw}  gzip ${dist.gzip}`,
@@ -181,12 +172,7 @@ try {
     ]
     console.log(lines.join("\n"))
 
-    if (updateBaseline) {
-        await Bun.write(baselinePath, JSON.stringify(actual, null, 4) + "\n")
-        console.log(`\nBaseline written to ${relative(rootDir, baselinePath)}`)
-    } else {
-        await checkAgainstBaseline(dist, packed, fixtures, fixtureSources)
-    }
+    await checkAgainstBaseline(dist, packed, fixtures, fixtureSources)
 } finally {
     await rm(tempDir, { recursive: true, force: true })
 }
@@ -199,24 +185,55 @@ async function checkAgainstBaseline(
 ) {
     const baselineFile = Bun.file(baselinePath)
     if (!(await baselineFile.exists())) {
-        throw new Error(
-            `Missing ${relative(rootDir, baselinePath)}. Generate it with:\n` +
-                `  VALDRES_UPDATE_SIZE_BASELINE=1 bun run check-size`,
-        )
+        throw new Error(`Missing ${relative(rootDir, baselinePath)}`)
     }
     const baseline = await baselineFile.json()
     const failures: string[] = []
     const improvements: string[] = []
+    const policy = baseline.policy as
+        | {
+              ordinaryTolerancePercent?: number
+              coreRetainingGzipAllowance?: number
+              coreRetainingFixtures?: string[]
+          }
+        | undefined
+    const featureBudgets = baseline.featureBudgets as
+        | {
+              dist?: Size
+              packed?: Size
+              fixtures?: Record<string, Size>
+          }
+        | undefined
+    const allowance = policy?.coreRetainingGzipAllowance
+    const coreRetaining = new Set<string>(
+        policy?.coreRetainingFixtures ?? [],
+    )
 
-    const compare = (label: string, base: Size, size: Size) => {
+    if (baseline.bun !== Bun.version) {
+        failures.push(
+            `size policy requires Bun ${baseline.bun}; running ${Bun.version}`,
+        )
+    }
+    if (policy?.ordinaryTolerancePercent !== 2) {
+        failures.push("ordinary size tolerance must remain exactly 2%")
+    }
+    if (!Number.isSafeInteger(allowance) || allowance !== 71) {
+        failures.push("provisional collection gzip seam must remain 71 bytes")
+    }
+
+    const compareOrdinary = (label: string, base: Size, size: Size) => {
         for (const metric of ["raw", "gzip"] as const) {
             const expected = base[metric]
-            const ceiling = Math.ceil(expected * TOLERANCE)
+            const additive =
+                metric === "gzip" && coreRetaining.has(label)
+                    ? (allowance ?? 0)
+                    : 0
+            const ceiling = Math.ceil(expected * TOLERANCE) + additive
             const delta = size[metric] - expected
             const percent = ((delta / expected) * 100).toFixed(2)
             const detail =
                 `${label} ${metric}: expected ${expected} (ceiling ${ceiling}, ` +
-                `baseline + 2%), actual ${size[metric]}, delta ${
+                `immutable baseline + 2%${additive === 0 ? "" : ` + ${additive}`}), actual ${size[metric]}, delta ${
                     delta >= 0 ? "+" : ""
                 }${delta} bytes (${delta >= 0 ? "+" : ""}${percent}%)`
             if (size[metric] > ceiling) failures.push(detail)
@@ -224,16 +241,44 @@ async function checkAgainstBaseline(
         }
     }
 
-    compare("dist total", baseline.dist, dist)
-    compare("packed package", baseline.packed, packed)
+    const compareFeature = (
+        label: string,
+        budget: Size | undefined,
+        size: Size,
+    ) => {
+        if (
+            budget === undefined ||
+            !Number.isSafeInteger(budget.raw) ||
+            budget.raw <= 0 ||
+            !Number.isSafeInteger(budget.gzip) ||
+            budget.gzip <= 0
+        ) {
+            failures.push(`${label}: reviewed feature budget is missing`)
+            return
+        }
+        for (const metric of ["raw", "gzip"] as const) {
+            if (size[metric] > budget[metric]) {
+                failures.push(
+                    `${label} ${metric}: reviewed budget ${budget[metric]}, actual ${size[metric]}, ` +
+                        `over by ${size[metric] - budget[metric]} bytes`,
+                )
+            }
+        }
+    }
+
+    compareFeature("dist total", featureBudgets?.dist, dist)
+    compareFeature("packed package", featureBudgets?.packed, packed)
     for (const name of Object.keys(fixtureSources)) {
+        const featureBudget = featureBudgets?.fixtures?.[name]
+        if (featureBudget !== undefined) {
+            compareFeature(`feature fixture ${name}`, featureBudget, fixtures[name])
+            continue
+        }
         const base = baseline.fixtures?.[name]
         if (!base) {
-            failures.push(
-                `fixture ${name}: no baseline entry — regenerate the baseline`,
-            )
+            failures.push(`fixture ${name}: no immutable baseline entry`)
         } else {
-            compare(`fixture ${name}`, base, fixtures[name])
+            compareOrdinary(`fixture ${name}`, base, fixtures[name])
         }
     }
 
@@ -244,26 +289,9 @@ async function checkAgainstBaseline(
     if (failures.length > 0) {
         console.error(`\n${failures.length} size gate(s) exceeded:`)
         for (const line of failures) console.error(`  ✗ ${line}`)
-        // Only speaks up on an existing failure, so a contributor on a newer
-        // patch release whose sizes are fine never sees it.
-        if (baseline.bun !== undefined && baseline.bun !== Bun.version) {
-            console.error(
-                `\nNote: the baseline was recorded on Bun ${baseline.bun}, but this ` +
-                    `run is Bun ${Bun.version}. Bundler output differs between Bun ` +
-                    `versions by more than this gate's 2% allowance, so the delta above ` +
-                    `may be toolchain drift rather than your change. Compare against a ` +
-                    `run of main on THIS Bun version before regenerating.`,
-            )
-        } else if (baseline.bun === undefined) {
-            console.error(
-                `\nNote: this baseline predates Bun-version stamping. Regenerate it on ` +
-                    `the same Bun the CI gate pins (.github/workflows/ci.yaml) so the 2% ` +
-                    `allowance measures your change rather than a toolchain difference.`,
-            )
-        }
         console.error(
-            "\nIf the growth is intentional, regenerate the baseline with:\n" +
-                "  VALDRES_UPDATE_SIZE_BASELINE=1 bun run check-size",
+            "\nOrdinary baselines cannot be regenerated. Intentional growth requires " +
+                "an explicit architecture review and a reviewed policy edit.",
         )
         process.exitCode = 1
     } else {

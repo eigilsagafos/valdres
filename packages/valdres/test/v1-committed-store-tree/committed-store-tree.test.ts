@@ -1903,6 +1903,7 @@ describe("v1 persistent committed StoreTree host", () => {
             "src/v1-internal/selector-evaluator/evaluate.ts",
         )
         expect(v1Runtime).toContain("src/v1-internal/family.ts")
+        expect(v1Runtime).not.toContain("src/v1-internal/collection.ts")
         expect(v1Runtime).not.toContain("src/v1-internal/inspection.ts")
         expect(
             [...reachable].map(path => relative(packageRoot, path)),

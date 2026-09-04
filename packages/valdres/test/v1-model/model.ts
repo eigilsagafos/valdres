@@ -121,8 +121,12 @@ interface Draft {
 interface CommitBaseline {
     readonly atomOutcomes: Map<string, FallbackOutcome>
     readonly rowOutcomes: Map<string, EffectiveRowOutcome>
-    readonly rowLocals: Map<string, RowLocal | undefined>
     readonly memberships: Map<string, MembershipSnapshot>
+}
+
+interface NotificationTarget {
+    readonly scope: ScopeId
+    readonly target: TargetRef
 }
 
 class ModelFault extends Error {
@@ -800,7 +804,7 @@ export class ReferenceModel {
             candidateTree,
             touchedRows,
             baseline,
-            finalIntents,
+            draft,
         )
 
         if (ownershipChanges.length === 0) {
@@ -819,7 +823,10 @@ export class ReferenceModel {
             effectiveAtomChanges: Object.freeze([...effectiveAtomChanges]),
             collectionDeltas: Object.freeze([...collectionDeltas]),
         })
-        return this.notify(candidateTree)
+        return this.notify(
+            candidateTree,
+            this.notificationTargets(candidateTree, baseline, finalIntents),
+        )
     }
 
     private captureCommitBaseline(
@@ -830,7 +837,6 @@ export class ReferenceModel {
         const tree = draft.tree
         const atomOutcomes = new Map<string, FallbackOutcome>()
         const rowOutcomes = new Map<string, EffectiveRowOutcome>()
-        const rowLocals = new Map<string, RowLocal | undefined>()
         const memberships = new Map<string, MembershipSnapshot>()
         const collections = new Set<CollectionId>()
         for (const rowId of touchedRows)
@@ -847,10 +853,6 @@ export class ReferenceModel {
                     effectiveKey(scope.id, rowId),
                     this.readRowCommitted(tree, scope, rowId),
                 )
-                rowLocals.set(
-                    localKey(scope.id, "row", rowId),
-                    scope.rowLocals.get(rowId),
-                )
             }
             for (const collectionId of collections) {
                 memberships.set(
@@ -859,14 +861,14 @@ export class ReferenceModel {
                 )
             }
         }
-        return { atomOutcomes, rowOutcomes, rowLocals, memberships }
+        return { atomOutcomes, rowOutcomes, memberships }
     }
 
     private recomputeCollections(
         tree: TreeRecord,
         touchedRows: ReadonlySet<RowId>,
         baseline: CommitBaseline,
-        finalIntents: ReadonlyMap<string, Intent>,
+        draft: Draft,
     ): readonly EffectiveRowDelta[] {
         const collections = new Set<CollectionId>()
         for (const rowId of touchedRows)
@@ -896,13 +898,7 @@ export class ReferenceModel {
                     })
                     .map(rowId => ({
                         rowId,
-                        sequence: this.birthSequence(
-                            tree,
-                            scope,
-                            rowId,
-                            baseline,
-                            finalIntents,
-                        ),
+                        sequence: this.birthSequence(draft, scope, rowId),
                     }))
                     .sort((left, right) =>
                         left.sequence === right.sequence
@@ -914,7 +910,19 @@ export class ReferenceModel {
                     ...survivors,
                     ...births.map(birth => birth.rowId),
                 ]
-                if (!sameStrings(beforeMembership.rows, nextRows)) {
+                const inheritedRows =
+                    scope.parent === null
+                        ? EMPTY_ROWS
+                        : this.peekMembership(
+                              tree,
+                              this.liveScope(tree, scope.parent),
+                              collectionId,
+                          ).rows
+                if (
+                    !sameStrings(beforeMembership.rows, nextRows) ||
+                    (scope.memberships.get(collectionId) === undefined &&
+                        !sameStrings(inheritedRows, nextRows))
+                ) {
                     scope.memberships.set(
                         collectionId,
                         this.newMembership(nextRows),
@@ -958,52 +966,102 @@ export class ReferenceModel {
     }
 
     private birthSequence(
-        tree: TreeRecord,
+        draft: Draft,
         targetScope: ScopeRecord,
         rowId: RowId,
-        baseline: CommitBaseline,
-        finalIntents: ReadonlyMap<string, Intent>,
     ): number {
-        const sequences: number[] = []
-        let current: ScopeRecord | undefined = targetScope
-        while (current !== undefined) {
-            const local = current.rowLocals.get(rowId)
-            const finalIntent = finalIntents.get(
-                localKey(current.id, "row", rowId),
-            )
-            const beforeLocal = baseline.rowLocals.get(
-                localKey(current.id, "row", rowId),
-            )
-            const beforeEffective = baseline.rowOutcomes.get(
-                effectiveKey(current.id, rowId),
-            )
-            const afterEffective = this.readRowCommitted(tree, current, rowId)
-            if (
-                finalIntent !== undefined &&
-                !rowLocalEqual(beforeLocal, local) &&
-                beforeEffective?.kind === "absent" &&
-                afterEffective.kind === "present"
-            ) {
-                sequences.push(finalIntent.sequence)
-            }
-            if (local?.kind === "present") break
-            if (local?.kind === "absent")
-                throw new ModelFault("INVALID_BIRTH_PATH")
-            current =
-                current.parent === null
-                    ? undefined
-                    : tree.scopes.get(current.parent)
-        }
-        if (sequences.length === 0)
-            throw new ModelFault("MISSING_BIRTH_SEQUENCE")
-        return Math.max(...sequences)
+        return this.continuousBirthSequence(
+            draft,
+            targetScope,
+            rowId,
+            "MISSING_BIRTH_SEQUENCE",
+        )
     }
 
-    private notify(tree: TreeRecord): string | undefined {
+    private notificationTargets(
+        tree: TreeRecord,
+        baseline: CommitBaseline,
+        finalIntents: ReadonlyMap<string, Intent>,
+    ): readonly NotificationTarget[] {
+        const atoms: NotificationTarget[] = []
+        const rows: NotificationTarget[] = []
+        const collections: NotificationTarget[] = []
+        const seenAtoms = new Set<string>()
+        const seenRows = new Set<string>()
+        const seenCollections = new Set<string>()
+        const root = this.liveScope(tree, tree.root)
+
+        for (const intent of finalIntents.values()) {
+            if (intent.scope !== tree.root) continue
+            if (intent.mutation.targetKind === "atom") {
+                const atomId = intent.mutation.atom
+                const key = effectiveKey(root.id, atomId)
+                const before = baseline.atomOutcomes.get(key)!
+                const after = this.readAtomCommittedOutcome(tree, root, atomId)
+                if (
+                    !seenAtoms.has(key) &&
+                    !fallbackOutcomeEqual(before, after)
+                ) {
+                    seenAtoms.add(key)
+                    atoms.push({
+                        scope: root.id,
+                        target: { kind: "atom", atom: atomId },
+                    })
+                }
+                continue
+            }
+
+            const rowId = intent.mutation.row
+            const rowKey = effectiveKey(root.id, rowId)
+            const beforeRow = baseline.rowOutcomes.get(rowKey)!
+            const afterRow = this.readRowCommitted(tree, root, rowId)
+            if (
+                !seenRows.has(rowKey) &&
+                !rowOutcomeEqual(beforeRow, afterRow)
+            ) {
+                seenRows.add(rowKey)
+                rows.push({
+                    scope: root.id,
+                    target: { kind: "row", row: rowId },
+                })
+            }
+
+            const collectionId = this.row(rowId).collection
+            const collectionKey = membershipKey(root.id, collectionId)
+            const beforeMembership = baseline.memberships.get(collectionKey)!
+            const afterMembership = this.peekMembership(
+                tree,
+                root,
+                collectionId,
+            )
+            if (
+                !seenCollections.has(collectionKey) &&
+                !sameStrings(beforeMembership.rows, afterMembership.rows)
+            ) {
+                seenCollections.add(collectionKey)
+                collections.push({
+                    scope: root.id,
+                    target: {
+                        kind: "collection",
+                        collection: collectionId,
+                    },
+                })
+            }
+        }
+
+        return Object.freeze([...atoms, ...rows, ...collections])
+    }
+
+    private notify(
+        tree: TreeRecord,
+        targets: readonly NotificationTarget[],
+    ): string | undefined {
         const notified: string[] = []
+        const visited = new Set<string>()
         let firstError: string | undefined
-        for (const subscription of this.subscriptions.values()) {
-            if (subscription.tree !== tree.id) continue
+
+        const visit = (subscription: SubscriptionRecord): void => {
+            visited.add(subscription.id)
             const scope = this.liveScope(tree, subscription.scope)
             const next = this.readCommitted(tree, scope, subscription.target)
             if (!readOutcomeEqual(subscription.outcome, next)) {
@@ -1030,6 +1088,34 @@ export class ReferenceModel {
                     }
                 }
             }
+        }
+
+        for (const notificationTarget of targets) {
+            for (const subscription of this.subscriptions.values()) {
+                if (
+                    subscription.tree !== tree.id ||
+                    visited.has(subscription.id) ||
+                    subscription.scope !== notificationTarget.scope ||
+                    !targetRefEqual(
+                        subscription.target,
+                        notificationTarget.target,
+                    )
+                ) {
+                    continue
+                }
+                visit(subscription)
+            }
+        }
+
+        // The model has no route-materialization state. Only root-native
+        // targets above are ordering authority; cross-scope targets and
+        // presence Selectors retain legacy registration order and must be
+        // normalized out of differential ordering comparisons.
+        for (const subscription of this.subscriptions.values()) {
+            if (subscription.tree !== tree.id || visited.has(subscription.id)) {
+                continue
+            }
+            visit(subscription)
         }
         if (notified.length > 0) {
             this.trace.push({
@@ -1273,11 +1359,12 @@ export class ReferenceModel {
         draft: Draft,
         scope: ScopeRecord,
         rowId: RowId,
+        intents: readonly Intent[] = draft.intents,
     ): EffectiveRowOutcome {
         this.row(rowId)
         let current: ScopeRecord | undefined = scope
         while (current !== undefined) {
-            const intent = lastIntent(draft.intents, current.id, "row", rowId)
+            const intent = lastIntent(intents, current.id, "row", rowId)
             if (intent?.mutation.targetKind === "row") {
                 if (intent.mutation.kind === "present") {
                     return {
@@ -1354,62 +1441,46 @@ export class ReferenceModel {
         targetScope: ScopeRecord,
         rowId: RowId,
     ): number {
-        const finalIntents = collapseIntents(draft.intents)
-        const sequences: number[] = []
-        let current: ScopeRecord | undefined = targetScope
-        while (current !== undefined) {
-            const finalIntent = finalIntents.get(
-                localKey(current.id, "row", rowId),
-            )
-            const beforeLocal = current.rowLocals.get(rowId)
-            let finalLocal = beforeLocal
-            if (finalIntent?.mutation.targetKind === "row") {
-                finalLocal =
-                    finalIntent.mutation.kind === "present"
-                        ? {
-                              kind: "present",
-                              value: requiredValue(finalIntent.mutation.value),
-                          }
-                        : finalIntent.mutation.kind === "absent" &&
-                            current.parent !== null
-                          ? ABSENT_LOCAL
-                          : undefined
-            }
-            const before = this.readRowCommitted(draft.tree, current, rowId)
-            const after = this.readRowDraft(draft, current, rowId)
+        return this.continuousBirthSequence(
+            draft,
+            targetScope,
+            rowId,
+            "MISSING_DRAFT_BIRTH_SEQUENCE",
+        )
+    }
+
+    private continuousBirthSequence(
+        draft: Draft,
+        targetScope: ScopeRecord,
+        rowId: RowId,
+        missingCode: string,
+    ): number {
+        const baselineScope = this.liveScope(draft.tree, targetScope.id)
+        let previous = this.readRowCommitted(draft.tree, baselineScope, rowId)
+        let sequence: number | undefined
+        const prefix: Intent[] = []
+
+        for (const intent of draft.intents) {
+            prefix.push(intent)
             if (
-                finalIntent !== undefined &&
-                !rowLocalEqual(beforeLocal, finalLocal) &&
-                before.kind === "absent" &&
-                after.kind === "present"
+                intent.mutation.targetKind !== "row" ||
+                intent.mutation.row !== rowId
             ) {
-                sequences.push(finalIntent.sequence)
+                continue
             }
-            const localIntent = lastIntent(
-                draft.intents,
-                current.id,
-                "row",
-                rowId,
-            )
-            if (localIntent?.mutation.targetKind === "row") {
-                if (localIntent.mutation.kind === "present") break
-                if (localIntent.mutation.kind === "absent") {
-                    throw new ModelFault("INVALID_DRAFT_BIRTH_PATH")
-                }
-            } else {
-                const local = current.rowLocals.get(rowId)
-                if (local?.kind === "present") break
-                if (local?.kind === "absent")
-                    throw new ModelFault("INVALID_DRAFT_BIRTH_PATH")
+            const next = this.readRowDraft(draft, baselineScope, rowId, prefix)
+            if (previous.kind === "absent" && next.kind === "present") {
+                sequence = intent.sequence
+            } else if (previous.kind === "present" && next.kind === "absent") {
+                sequence = undefined
             }
-            current =
-                current.parent === null
-                    ? undefined
-                    : draft.tree.scopes.get(current.parent)
+            previous = next
         }
-        if (sequences.length === 0)
-            throw new ModelFault("MISSING_DRAFT_BIRTH_SEQUENCE")
-        return Math.max(...sequences)
+
+        if (previous.kind === "absent" || sequence === undefined) {
+            throw new ModelFault(missingCode)
+        }
+        return sequence
     }
 
     private membership(
@@ -1704,6 +1775,19 @@ function readOutcomeEqual(left: ReadOutcome, right: ReadOutcome): boolean {
             return tokenObjectIs(left.value, (right as typeof left).value)
         case "rows":
             return sameStrings(left.rows, (right as typeof left).rows)
+    }
+}
+
+function targetRefEqual(left: TargetRef, right: TargetRef): boolean {
+    if (left.kind !== right.kind) return false
+    switch (left.kind) {
+        case "atom":
+            return left.atom === (right as typeof left).atom
+        case "row":
+        case "presence":
+            return left.row === (right as typeof left).row
+        case "collection":
+            return left.collection === (right as typeof left).collection
     }
 }
 
