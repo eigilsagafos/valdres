@@ -74,6 +74,15 @@ export function memoryProcessSummary(sample) {
             releasedResidualBytes <= ceiling.releasedResidualBytes,
     }
 }
+export function assertMemoryAbsolute(sample) {
+    const summary = memoryProcessSummary(sample)
+    requireGate(
+        summary.absolutePass,
+        "MEMORY-ABSOLUTE",
+        `${sample.id}/${sample.runtime}: retained ${summary.retainedBytesPerUnit} B/unit; released ${summary.releasedResidualBytes} B`,
+    )
+    return summary
+}
 export function decideMemory(records) {
     const byLane = new Map()
     for (const record of records) {

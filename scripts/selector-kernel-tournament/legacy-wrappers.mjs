@@ -1,7 +1,7 @@
 import ts from "typescript"
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { ROOT, requireGate, fileHash } from "./inputs.mjs"
+import { ROOT, requireGate, fileHash, manifest } from "./inputs.mjs"
 // Extract frozen benchmark bodies as syntax, never import their legacy runtime.
 // The generated module binds their constructor names to the installed v1 root.
 export function buildLegacyWrappers(output) {
@@ -112,7 +112,62 @@ export function buildLegacyWrappers(output) {
         "GC protocol",
     )
     const code = `export async function makeLegacy(kind,api,consume) {\n const {atom:valdresAtom,selector:valdresSelector,store:valdresCreateStore}=api;\n const do_not_optimize=consume; let perform; const measureOne=async(_name,fn)=>{perform=fn};\n if(kind==='scope'){await (${scope})();return perform;}\n if(kind==='scratch'){await (${scratch})();return perform;}\n if(kind==='subscription'){const count=100,fanIn=false,includeMount=false;${setup}\nconst noop=()=>{};return ${valdres};}\n throw new Error('unknown legacy wrapper '+kind);\n}\n`
-    const withGC = `${helpers}\nexport async function collectHeap(){await settleAndCollect();return Math.round(heapUsed())}\n${code}`
+    const memoryFactories = new Map()
+    function visitMemory(node) {
+        if (
+            ts.isCallExpression(node) &&
+            node.expression.getText(memory) === "measureRetained" &&
+            ts.isStringLiteral(node.arguments[0]) &&
+            ts.isArrowFunction(node.arguments[1])
+        ) {
+            const name = node.arguments[0].text
+            const scenario = manifest.memoryScenarios.find(
+                row => row.name === name,
+            )
+            if (scenario) {
+                requireGate(
+                    !memoryFactories.has(scenario.id),
+                    "MEMORY-PORT-ANCHOR",
+                    "duplicate scenario",
+                )
+                let factory = node.arguments[1].getText(memory)
+                if (scenario.id === "M-ATOM-ONLY-STORES") {
+                    const before =
+                        "for (const state of states) target.set(state, state.defaultValue)"
+                    requireGate(
+                        factory.split(before).length === 2,
+                        "MEMORY-PORT-ANCHOR",
+                        "initial atom values",
+                    )
+                    factory = factory.replace(
+                        before,
+                        "for (let i = 0; i < states.length; i++) target.set(states[i], i)",
+                    )
+                }
+                if (scenario.id === "M-SCOPE-CREATION-DISPOSAL") {
+                    requireGate(
+                        factory.split("scope.detach()").length === 2,
+                        "MEMORY-PORT-ANCHOR",
+                        "scope disposal",
+                    )
+                    factory = factory.replace(
+                        "scope.detach()",
+                        "scope.dispose()",
+                    )
+                }
+                memoryFactories.set(scenario.id, factory)
+            }
+        }
+        ts.forEachChild(node, visitMemory)
+    }
+    visitMemory(memory)
+    requireGate(
+        memoryFactories.size === manifest.memoryScenarios.length,
+        "MEMORY-PORT-ANCHOR",
+        "incomplete scenarios",
+    )
+    const factories = `export function makeMemoryFactory(id, api) { const {atom, selector, store} = api; switch(id) { ${[...memoryFactories].map(([id, factory]) => `case ${JSON.stringify(id)}: return ${factory};`).join("\n")} default: throw new Error("MEMORY-ID: unknown scenario"); }}\n`
+    const withGC = `${helpers}\nexport {settleAndCollect as settleMemory, heapUsed as readMemoryHeap};\nexport async function collectHeap(){await settleAndCollect();return Math.round(heapUsed())}\n${code}\n${factories}`
     const compiled = new Bun.Transpiler({
         loader: "ts",
         target: "node",

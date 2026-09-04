@@ -14,6 +14,8 @@ import {
 import { strictKeys, same, evidencePath } from "./evidence.mjs"
 import { validateProcess } from "./process-evidence.mjs"
 import { verifyCompiledWorker } from "./runner-validation.mjs"
+import { packedRootReachability } from "./reachability.mjs"
+import { requireStableEnvironment } from "./provenance.mjs"
 export function normalizeSizes(value) {
     strictKeys(
         value,
@@ -106,6 +108,12 @@ export function validateSizeEvidence(root, value, { artifacts, index }) {
         ["control", "candidate"],
         "SIZE-PROCESSES",
     )
+    const reachability = json(evidencePath(root, "root-reachability.json"))
+    strictKeys(
+        reachability,
+        ["control", "candidate"],
+        "ARTIFACT-ROOT-REACHABILITY",
+    )
     for (const ref of value.processes) {
         strictKeys(ref, ["arm", "process", "sha256"], "SIZE-SCHEMA")
         requireGate(
@@ -120,6 +128,12 @@ export function validateSizeEvidence(root, value, { artifacts, index }) {
             root,
             artifactPath.slice(0, artifactPath.lastIndexOf("/")),
             metadata.tarball,
+        )
+        same(
+            reachability[ref.arm],
+            packedRootReachability(tarball, metadata),
+            "ARTIFACT-ROOT-REACHABILITY",
+            "recorded root graph differs",
         )
         validateProcess(process, {
             argv: [
@@ -226,5 +240,73 @@ export function validateMemoryEvidence(root, records, { artifacts }) {
             "PID or process order",
         )
         end = process.endedAt
+    }
+    for (let i = 0; i < records.length; i += 2) {
+        const pair = records.slice(i, i + 2)
+        requireGate(
+            pair.length === 2 &&
+                pair[0].id === pair[1].id &&
+                pair[0].runtime === pair[1].runtime &&
+                pair[0].pairId === pair[1].pairId,
+            "MEMORY-ORDER",
+            "another lane ran between paired arms",
+        )
+        same(
+            pair.map(r => r.arm),
+            manifest.stages.A.timingOrder[Number(pair[0].pairId) % 2],
+            "MEMORY-ORDER",
+            "wrong arm order",
+        )
+    }
+    const environments = json(evidencePath(root, "memory/environments.json"))
+    exactRows(
+        environments.map(e => e.id + "/" + e.runtime),
+        manifest.memoryScenarios.flatMap(s =>
+            s.runtimes.map(runtime => s.id + "/" + runtime),
+        ),
+        "MEMORY-ENVIRONMENT",
+    )
+    for (const lane of environments) {
+        strictKeys(lane, ["id", "runtime", "pairs"], "MEMORY-ENVIRONMENT")
+        requireGate(
+            lane.pairs.length === 5,
+            "MEMORY-ENVIRONMENT",
+            "missing memory pair",
+        )
+        for (let pair = 0; pair < 5; pair++) {
+            const observation = lane.pairs[pair]
+            strictKeys(
+                observation,
+                ["pairId", "before", "after"],
+                "MEMORY-ENVIRONMENT",
+            )
+            requireGate(
+                observation.pairId === String(pair),
+                "MEMORY-ENVIRONMENT",
+                "missing ordinal",
+            )
+            requireStableEnvironment(observation.before, observation.after)
+            const pairRows = records.filter(
+                r =>
+                    r.id === lane.id &&
+                    r.runtime === lane.runtime &&
+                    r.pairId === String(pair),
+            )
+            requireGate(
+                pairRows.length === 2,
+                "MEMORY-PAIRS",
+                "incomplete pair",
+            )
+            const first = json(evidencePath(root, pairRows[0].process)),
+                last = json(evidencePath(root, pairRows[1].process))
+            requireGate(
+                Date.parse(observation.before.at) <=
+                    Date.parse(first.startedAt) &&
+                    Date.parse(observation.after.at) >=
+                        Date.parse(last.endedAt),
+                "MEMORY-ENVIRONMENT",
+                "observations do not bracket pair",
+            )
+        }
     }
 }
