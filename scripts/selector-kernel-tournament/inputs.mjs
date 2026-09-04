@@ -239,27 +239,30 @@ export function verifyMemorySource(source, input = manifest) {
 
 // Freeze all neutral runner inputs plus family-owned paths. Candidate-local
 // adapters belong outside these directories; this is not a production seam.
-export function protectedPaths(root = ROOT) {
+export function protectedPaths(root = ROOT, commit) {
+    const tracked = git(
+        commit ? ["ls-tree", "-r", "--name-only", commit] : ["ls-files"],
+        root,
+    )
+        .split("\n")
+        .filter(Boolean)
+    const prefixes = [
+        DIRECTORY + "/",
+        "scripts/selector-kernel-tournament/",
+        "packages/valdres/test/utils/",
+        "packages/valdres/test/performance/",
+        "packages/valdres/test/v1-model/",
+        "packages/valdres/test/oracle/",
+    ]
     return [
         ...new Set([
-            ...git(
-                [
-                    "ls-files",
-                    "--",
-                    DIRECTORY,
-                    "scripts/selector-kernel-tournament",
-                    "scripts/lib/paired-decision*",
-                    "scripts/lib/robust-estimators*",
-                    "scripts/lib/read-bench-results*",
-                    "packages/valdres/test/utils",
-                    "packages/valdres/test/performance",
-                    "packages/valdres/test/v1-model",
-                    "packages/valdres/test/oracle",
-                ],
-                root,
-            )
-                .split("\n")
-                .filter(Boolean),
+            ...tracked.filter(
+                path =>
+                    prefixes.some(prefix => path.startsWith(prefix)) ||
+                    /^scripts\/lib\/(?:paired-decision|robust-estimators|read-bench-results)/.test(
+                        path,
+                    ),
+            ),
             ...manifest.frozenInputs.map(item => item.path),
             ...manifest.productLanes.family.protectedPaths,
             manifest.spec.path,
@@ -269,7 +272,7 @@ export function protectedPaths(root = ROOT) {
     ].sort()
 }
 export function protectedSnapshot(root = ROOT, commit) {
-    const files = protectedPaths(root).map(path => ({
+    const files = protectedPaths(root, commit).map(path => ({
         path,
         sha256: commit
             ? sha256(
@@ -283,6 +286,11 @@ export function protectedSnapshot(root = ROOT, commit) {
 }
 export function verifyProtected(root, foundation) {
     const expected = protectedSnapshot(ROOT, foundation)
+    exactRows(
+        protectedPaths(root),
+        expected.files.map(item => item.path),
+        "PROVENANCE-PROTECTED-PATH",
+    )
     for (const item of expected.files)
         requireGate(
             fileHash(resolve(root, item.path)) === item.sha256,

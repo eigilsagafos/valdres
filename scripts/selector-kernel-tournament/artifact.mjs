@@ -188,6 +188,12 @@ export function captureCommand(argv, cwd, options = {}) {
     return {
         argv,
         cwd,
+        environment: {
+            ...environment,
+            NODE_ENV: "production",
+            FORCE_COLOR: "0",
+        },
+        pid: result.pid ?? null,
         startedAt,
         endedAt: new Date().toISOString(),
         status: result.status,
@@ -314,12 +320,20 @@ export async function packArtifact({
     symlinkSync(join(ROOT, "node_modules"), join(build, "node_modules"), "dir")
     const pkg = join(build, "packages/valdres")
     const run = argv => {
-        const result = command(argv, pkg)
+        const result = captureCommand(argv, pkg)
         writeFileSync(
-            join(output, `build-${fileHashString(argv).slice(0, 12)}.log`),
-            result,
+            join(
+                output,
+                `build-${fileHashString(argv).slice(0, 12)}.process.json`,
+            ),
+            JSON.stringify(result, null, 2) + "\n",
         )
-        return result
+        requireGate(
+            !result.error && result.status === 0,
+            "ARTIFACT-COMMAND",
+            result.stderr,
+        )
+        return result.stdout
     }
     const startedAt = new Date().toISOString()
     run(["bun", "run", "build:types"])
@@ -369,8 +383,27 @@ export async function packArtifact({
         gitSha: commit,
         runtimeTree,
         repositoryDirty: false,
-        buildCommand:
-            "bun run build:types && bun run build && bun ../../scripts/prepack.ts && npm pack --ignore-scripts --json",
+        buildCommand: `bun run build:types && ${mode === "timed" ? "bun run build" : "bun counter-build.mjs"} && bun ../../scripts/prepack.ts && npm pack --ignore-scripts --json`,
+        counterAdapterSha256:
+            mode === "counter"
+                ? runtimeTree === manifest.control.runtimeTree
+                    ? fileHash(
+                          join(
+                              ROOT,
+                              "scripts/selector-kernel-tournament/control-instrumentation.mjs",
+                          ),
+                      )
+                    : fileHash(resolve(build, counterAdapter))
+                : null,
+        counterObserverSha256:
+            mode === "counter" && runtimeTree === manifest.control.runtimeTree
+                ? fileHash(
+                      join(
+                          ROOT,
+                          "scripts/selector-kernel-tournament/control-observer-runtime.mjs",
+                      ),
+                  )
+                : null,
         counterBuildCommand:
             mode === "counter" ? "bun counter-build.mjs" : null,
         bundler: `Bun ${Bun.version}`,

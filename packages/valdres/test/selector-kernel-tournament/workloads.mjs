@@ -121,6 +121,7 @@ export async function runWorkload({
             benchmark.snapshotWorkCounters = () => ({
                 kind: "tournament-common",
                 counters: observer.snapshot().common,
+                candidateSpecific: observer.snapshot().candidateSpecific ?? {},
             })
         }
         const scenario =
@@ -154,6 +155,9 @@ export async function runWorkload({
             checksum: result.semanticChecksum,
             common,
             core: result,
+            candidateSpecific: observer
+                ? result.internalWork.atTimerEnd.candidateSpecific
+                : null,
         }
     }
     const m = meter(api)
@@ -379,7 +383,11 @@ export async function runWorkload({
     const durationNs =
         mode === "timed" ? (performance.now() - start) * 1e6 : null
     const measured = m.end()
-    const common = observer?.snapshot().common ?? null
+    const snapshot = observer?.snapshot()
+    const common = snapshot?.common ?? null
+    const candidateSpecific = observer
+        ? (snapshot.candidateSpecific ?? {})
+        : null
     const outcome = verify()
     if (row.group === "hydration")
         measured.counts.hydrationRead = outcome.hydrationReads
@@ -416,5 +424,6 @@ export async function runWorkload({
         checksum,
         common,
         core: null,
+        candidateSpecific,
     }
 }

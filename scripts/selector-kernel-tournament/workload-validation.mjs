@@ -115,6 +115,7 @@ export function validateWorkloadSample(
             "counts",
             "checksum",
             "common",
+            "candidateSpecific",
             "core",
         ],
         "WORKLOAD-SCHEMA",
@@ -138,7 +139,8 @@ export function validateWorkloadSample(
         mode === "timed"
             ? Number.isFinite(sample.durationNs) &&
                   sample.durationNs >= (row.minimumAggregatedDurationNs ?? 1) &&
-                  sample.common === null
+                  sample.common === null &&
+                  sample.candidateSpecific === null
             : sample.durationNs === null && sample.common !== null,
         "ARTIFACT-INSTRUMENTATION",
         "timed and counter evidence cannot mix",
@@ -154,6 +156,19 @@ export function validateWorkloadSample(
         row.id,
     )
     if (sample.common) {
+        requireGate(
+            sample.candidateSpecific &&
+                typeof sample.candidateSpecific === "object" &&
+                !Array.isArray(sample.candidateSpecific) &&
+                Object.entries(sample.candidateSpecific).every(
+                    ([key, value]) =>
+                        key !== "visits" &&
+                        Number.isSafeInteger(value) &&
+                        value >= 0,
+                ),
+            "COUNTER-SCHEMA",
+            "invalid candidate counters",
+        )
         keys(sample.common, commonNames, "COUNTER-SCHEMA")
         for (const key of commonNames.filter(k => k !== "checksum"))
             requireGate(
@@ -189,6 +204,17 @@ export function validateWorkloadSample(
                 "postDrain",
             ],
             "WORKLOAD-CORE",
+        )
+        requireGate(
+            sample.core.mode === (mode === "timed" ? "timed" : "counters") &&
+                sample.core.postDrain?.notificationsAdded === 0 &&
+                sample.core.selectedFinalValues === null &&
+                sample.core.oracleTraceSha256 === null &&
+                (mode === "timed"
+                    ? sample.durationNs === sample.core.elapsedMs * 1e6
+                    : sample.core.elapsedMs === null),
+            "WORKLOAD-CORE",
+            "core timing, drain, or observation mode differs",
         )
         requireGate(
             sample.core.semanticChecksum === expected.checksum &&

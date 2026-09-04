@@ -8,6 +8,7 @@ import {
     manifest,
     requireGate,
     fileHash,
+    git,
 } from "./inputs.mjs"
 import {
     command,
@@ -15,9 +16,19 @@ import {
     installArtifact,
     inspectArtifact,
 } from "./artifact.mjs"
-export function runSemantics({ artifactDirectory, output, repeats = 2 }) {
+export function runSemantics({
+    artifactDirectory,
+    output,
+    repeats = 2,
+    stage = "A",
+}) {
     assertClean()
     const inputs = checkInputs()
+    const head = git(["rev-parse", "HEAD"])
+    requireGate(["C", "A"].includes(stage), "SEMANTIC-STAGE", stage)
+    const caseIds = manifest.semanticCases
+        .filter(row => row.requiredAt.includes(stage))
+        .map(row => row.id)
     requireGate(
         repeats === 2,
         "SEMANTIC-DETERMINISM",
@@ -64,6 +75,7 @@ export function runSemantics({ artifactDirectory, output, repeats = 2 }) {
                     "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v2.json",
                 ),
                 join(output, `${stem}.ndjson`),
+                ...(stage === "C" ? [caseIds.join(",")] : []),
             ]
             const processResult = captureCommand(args, ROOT, {
                 timeout: 600000,
@@ -84,7 +96,7 @@ export function runSemantics({ artifactDirectory, output, repeats = 2 }) {
             )
             const result = JSON.parse(processResult.stdout)
             requireGate(
-                result.rows.length === manifest.semanticCases.length,
+                result.rows.length === caseIds.length,
                 "SEMANTIC-INVENTORY",
                 stem,
             )
@@ -107,9 +119,16 @@ export function runSemantics({ artifactDirectory, output, repeats = 2 }) {
             })
         }
     }
+    assertClean()
+    requireGate(
+        git(["rev-parse", "HEAD"]) === head,
+        "PROVENANCE-HARNESS-HEAD",
+        "harness changed",
+    )
     const result = {
         schemaVersion: 2,
         kind: "semantic-evidence",
+        stage,
         inputs,
         artifact,
         workerSha256: fileHash(worker),

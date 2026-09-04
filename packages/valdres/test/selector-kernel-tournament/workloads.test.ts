@@ -58,6 +58,7 @@ test("bad work or checksum is rejected before statistics", () => {
         counts: expected.counts,
         checksum: expected.checksum,
         common: null,
+        candidateSpecific: null,
         core: null,
     }
     expect(() => validateWorkloadSample(sample, input)).not.toThrow()
