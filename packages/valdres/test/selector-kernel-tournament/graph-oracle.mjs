@@ -2,7 +2,26 @@ import { requireGate } from "../../../../scripts/selector-kernel-tournament/gate
 
 // Independent Boolean transitive closure. Neither production search policy nor
 // the selector oracle's DFS participates in this edge-admission expectation.
-export function closure(adjacency) {
+export function validateAdjacency(adjacency, caseId = "C-GRAPH-001") {
+    requireGate(
+        Array.isArray(adjacency) &&
+            adjacency.every(
+                row =>
+                    Array.isArray(row) &&
+                    new Set(row).size === row.length &&
+                    row.every(
+                        v =>
+                            Number.isSafeInteger(v) &&
+                            v >= 0 &&
+                            v < adjacency.length,
+                    ),
+            ),
+        caseId,
+        "unknown vertex or malformed adjacency",
+    )
+}
+export function closure(adjacency, caseId = "C-GRAPH-001") {
+    validateAdjacency(adjacency, caseId)
     const n = adjacency.length
     const reachable = adjacency.map(row =>
         Array.from({ length: n }, (_, i) => row.includes(i)),
@@ -14,11 +33,19 @@ export function closure(adjacency) {
     return reachable
 }
 export function insertionClosesCycle(adjacency, parent, dependency) {
+    validateAdjacency(adjacency)
+    requireGate(
+        [parent, dependency].every(
+            v => Number.isSafeInteger(v) && v >= 0 && v < adjacency.length,
+        ),
+        "C-GRAPH-001",
+        "unknown attempted vertex",
+    )
     return parent === dependency || closure(adjacency)[dependency][parent]
 }
 export function assertDAG(adjacency, caseId = "C-GRAPH-001") {
     requireGate(
-        closure(adjacency).every((row, i) => !row[i]),
+        closure(adjacency, caseId).every((row, i) => !row[i]),
         caseId,
         "authoritative graph contains a cycle",
     )
@@ -58,6 +85,20 @@ export function validateCyclePath(
     },
     caseId = "A-GRAPH-001",
 ) {
+    validateAdjacency(effective, caseId)
+    validateAdjacency(installed, caseId)
+    requireGate(
+        installed.length === effective.length &&
+            [
+                parent,
+                dependency,
+                ...(Array.isArray(rawPath) ? rawPath : []),
+            ].every(
+                v => Number.isSafeInteger(v) && v >= 0 && v < effective.length,
+            ),
+        caseId,
+        "unknown path vertex or graph width",
+    )
     requireGate(
         ["dependency", "parent"].includes(origin),
         caseId,

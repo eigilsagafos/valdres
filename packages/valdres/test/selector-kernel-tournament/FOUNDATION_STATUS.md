@@ -1,24 +1,110 @@
-# Foundation v3 status
+# Selector-kernel tournament foundation v3
 
-The v3 authority separates the unchanged eight-scenario source absolute memory
-gate from the six-scenario packed paired gate. Both are blocking. Packed retained
-ratios use five alternating pairs and the first-release residual ceiling; later
-drains remain raw diagnostics. Global atoms/native async remain outside the
-rewrite. Their original source regression tests remain mandatory.
+F0–F9 implementation is complete. Readiness is determined only by fresh sealed
+v3 green, red, verification, and review artifacts plus an ancestry-preserving
+main landing. This tracked document is not evidence that a run or landing passed.
+No candidate implementation or shared/public kernel interface is introduced.
 
-The reviewed Lansing commit is `frozenFoundationSha`, the exact candidate base.
-A later ancestry-preserving main landing is `foundationMergeSha`, distribution
-only. No main merge/rebase occurs on this branch. Candidate work requires complete
-v3 F9 evidence, green/red seals, and verified landing first.
+## Authority and execution
 
-F0–F6 are implemented. V3 regression tests pass; the complete F8 executor,
-independent reviews, final freeze, and fresh F7/F8/F9 bundles follow. This file
-records implementation status, never a substitute for recorded gate evidence.
+The reviewed Lansing tree is frozen as `frozenFoundationSha` before the final
+run. Every final bundle must identify that same clean SHA. A tracked-byte fix
+requires a new frozen SHA and a complete rerun of green, red, and verification.
+The frozen base remains rooted at spec merge
+`20dddc5c307a1213f3888ab0dabc60a59a165b36`; this branch does not merge moving main.
 
-## Immutable earlier diagnostics
+`foundationMergeSha` is a later main landing used only to distribute tooling.
+It must preserve the frozen SHA as an ancestor; squash and rebase landing are
+forbidden. Readiness checks foundation-owned tournament bytes at landing and
+resolves frozen inputs from the original authority. Candidate branches must
+start at the frozen SHA, and protected files compare against it. Recorded
+invocation paths are evidence; validators read their own protected frozen bytes.
 
-Earlier v1/v2 and failed F7 bundles cannot satisfy v3 readiness. They remain at
-`~/.gstack/projects/eigilsagafos-valdres/selector-kernel-tournament/`:
+## Implemented work order
+
+- F0: closed v3 manifest/report schemas, frozen hashes, source ceiling checks,
+  protected paths, and exactly one empty non-release Changeset.
+- F1: isolated source archives, separate normal production/counter packs,
+  authenticated private adapters/builders, full installed-tree/import checks.
+- F2: independent exhaustive 1–5-node graph closure, operation-boundary DAG
+  evidence, exported error identity, stage-specific C/A contracts, deterministic
+  differential traces, and the frozen independent family lane.
+- F3: complete 17-workload corpus and fixed counters/checksums, preserving the
+  ShiftX fixtures and all 900 no-writes lifecycle steps.
+- F4: existing paired statistics with fixed 8/24/50 pairs, separate protected
+  and intended hypotheses/BH families, p95 gates, explicit inconclusive results.
+- F5: immutable plans, exact process/hash/sample evidence, raw power/thermal and
+  competing-process inventory, closed report recomputation and readiness gates.
+- F6: independent source absolute and packed paired memory domains, unchanged
+  ceilings and package-size infrastructure, root-reachability checks.
+- F7: complete beta.36-vs-beta.36 control runner, raw noise diagnostics without
+  an intended-win obligation, immutable passing/failing bundle seals.
+- F8: 14 failure classes with 20 explicit variants and 40 baseline/mutation
+  processes. Added variants exercise intermediate graph state, exported cycle
+  identity, equality-recovery notification, and both memory domains.
+- F9: independent neutrality/statistics review artifacts and hashed dispositions,
+  exact CI/test completeness checks, isolated publish dry-run and cleanup,
+  final freeze, full verification, and landing handoff.
+
+## Memory scope
+
+The unchanged `architecture.memory.ts` runs all eight original Bun/Node scenarios
+from source archives, retaining every original absolute ceiling. Global atom
+and async disposal remain source regressions outside the selector rewrite.
+Packed memory covers six scenarios, both runtimes, and five alternating pairs.
+It blocks on retained head/control ratio above 1.10 and the original absolute
+FIRST-release residual ceiling. All three later-drain observations are preserved
+as diagnostics. Cold packed artifacts do not use source retained-byte ceilings.
+At C, heap reports are diagnostic; qualification A and the control require both
+memory domains. Family compatibility and core-load qualification remain A gates.
+
+## Deterministic reproduction
+
+From a clean frozen checkout with pinned Bun/Node and installed dependencies:
+
+```sh
+bun scripts/selector-kernel-tournament/inputs.mjs check
+bun scripts/selector-kernel-tournament/control-bundle.mjs run NEW_RUN_ID
+bun scripts/selector-kernel-tournament/red-bundle.mjs run GREEN_ROOT NEW_RED_ROOT
+bun scripts/selector-kernel-tournament/verification.mjs run NEW_VERIFICATION_ROOT REVIEWS_ROOT
+```
+
+The verification runner executes `bun run verify` (all enabled repository CI
+steps), all tournament self-tests, existing paired/robust statistic tests, frozen
+family tests, exact direct-source Bun/Node memory tests, and the publish dry-run
+in a disposable archive. Every raw process includes the exact argv/cwd and output.
+The review bundle must be sealed, independently authored for both review roles,
+and cover exactly the final frozen tree. Findings resolve to hashed artifacts.
+
+Evidence root:
+`~/.gstack/projects/eigilsagafos-valdres/selector-kernel-tournament/`.
+Final green bundles use `<frozenFoundationSha>/beta36-control/1/<runId>/`.
+Each bundle has a full `SHA256SUMS`; its digest is recorded by the successor
+readiness/handoff artifact. Missing, stale, unknown, incomplete, or altered
+artifacts cannot satisfy readiness. No candidate verdict follows from a review.
+
+## Review dispositions and landing
+
+The independent reviews found and drove fixes to C/A stage boundaries, process
+competition detection, intermediate graph evidence/domain validation, exported
+cycle-error identity, equality recovery assertions, exact F9 completeness and
+hashed dispositions, chronological ShiftX gesture timing, and bimodal claim
+handling. Final review artifacts record the reviewed tree and all dispositions.
+
+The next permitted workspace is `selector-kernel-foundation-landing`. Its task
+is to land this frozen authority with ancestry preserved, keep every
+foundation-owned tournament byte, preserve upstream shared-manifest entries,
+and create the foundation PR targeting main. The ordinary PR/Bencher and GitHub
+Ubuntu checks remain landing checks; local verification runs on macOS arm64.
+The landing workspace records the actual merge SHA and green/red/verification
+seal digests in readiness evidence. Candidate work remains locked until F9
+artifacts and the foundation merge are recorded and validated. Do not create a
+candidate workspace, candidate PR, or family workspace from this handoff.
+
+## Earlier immutable diagnostics
+
+All earlier v1/v2 and development bundles remain preserved and are ineligible
+for v3 readiness. Selected checkpoints under the shared evidence root:
 
 - `ba9d0833ddff9c700e622db4fa9584ed5f051209/beta36-control/1/foundation-control-initial/`:
   SHA256SUMS `60d83dca4976cac014cdbe250a91847b0da178eefcd7ff8caab13b4df6783d56`.
@@ -28,9 +114,23 @@ Earlier v1/v2 and failed F7 bundles cannot satisfy v3 readiness. They remain at
   SHA256SUMS `1d5a5aae3d9aed2df65102f82bc04eba9a3e2eec6d7ea8e6ca1f276e25351b3a`.
 - `foundation-development/v2-foundation-verification-6ed63687/`:
   SHA256SUMS `7f0a8993a0b531285022f19ec7c4846c4a704f7cedaf1ac232b726cf420b7d54`.
+- `foundation-development/v3-domain-probe-c78d2633/`: failed parser probe,
+  SHA256SUMS `c31a81899ce3ba3bb360f4dac4bc9f491c151e5833d7a80905199f24a9150753`.
+- `foundation-development/v3-domain-probe-e5f0e807/`: 32 source rows pass,
+  SHA256SUMS `dc5734e586dfb4de841aa78f35d3f19445be937df86ae8260830d2a9601d3012`.
+- `foundation-development/v3-red-probe-initial/`: failed mode setup,
+  SHA256SUMS `d43a3dd15fd04eaaf80b1f4c5a68c6d0263223682653caab7f5d3e8ae066700e`.
+- `foundation-development/v3-red-probe-counter-mode/`: failed fixture setup,
+  SHA256SUMS `257146995db70bd69d50146f85dc8d5c8adfb56ad4bef3d9db8c9fb511f35787`.
+- `foundation-development/v3-red-probe-fixture/`: original 17 variants pass,
+  SHA256SUMS `bd932fd867103a22f0c230271acfe6de4e9673e09e8b9bc560cd2fdc2f256594`.
+- `foundation-development/v3-domain-probe-6124a1c0/`: 32 source rows pass,
+  SHA256SUMS `ac785c2f1f84f587eb92166805206e3f7e5ad7b2f4879ee2cfddb4f7c052d71f`.
 
-The prior independent resource audit fixed two concrete defects: installed
-shared chunks are now rehashed before each process, and later GC drains cannot
-rescue a first-release ceiling failure. Neither fix changed production code or
-existing tests/ceilings. The source-versus-packed calibration and landing ancestry
-corrections were explicitly authorized in the v3 work order.
+The post-review development red bundle `foundation-development/v3-red-probe-reviewed/`
+passed all 20 variants (40 processes); its SHA256SUMS digest is
+`79fe1e96c8a872a8a2e239ba8898244361f2ebcc8b0954a69611cdacae63d767`.
+
+The earlier resource audit also fixed installed shared-chunk verification and
+first-release observation selection. None of these changes modified production
+source, existing tests, ceilings, versions, lockfiles, or public declarations.

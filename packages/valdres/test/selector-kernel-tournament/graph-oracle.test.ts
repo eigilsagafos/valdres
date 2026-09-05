@@ -4,6 +4,7 @@ import {
     labeledDAGs,
     validateCyclePath,
     validateGraphRejection,
+    assertDAG,
 } from "./graph-oracle.mjs"
 
 test("enumerates every labeled DAG through five nodes without duplicates", () => {
@@ -25,6 +26,16 @@ test("independent closure rejects cycles and accepts acyclic insertions", () => 
     expect(insertionClosesCycle(graph, 2, 0)).toBe(true)
     expect(insertionClosesCycle(graph, 0, 2)).toBe(false)
     expect(insertionClosesCycle(graph, 0, 1)).toBe(false)
+    for (const invalid of [
+        [[99], []],
+        [["unknown"], []],
+        [[1, 1], []],
+        [[-1], []],
+        [null, []],
+        [[], [0.5]],
+    ])
+        expect(() => assertDAG(invalid)).toThrow("C-GRAPH-001")
+    expect(() => insertionClosesCycle(graph, 99, 99)).toThrow("C-GRAPH-001")
 })
 
 test("normative causal path checks reject concrete structural mutations", () => {
