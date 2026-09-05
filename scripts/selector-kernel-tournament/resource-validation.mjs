@@ -77,15 +77,26 @@ export function memoryProcessSummary(sample) {
             "MEMORY-SAMPLES",
             "missing raw heaps or drains",
         )
-        const residuals = row.releasedHeaps.map(heap =>
-            Math.max(0, heap - row.before),
-        )
-        requireGate(
-            !(residuals[0] < residuals[1] && residuals[1] < residuals[2]),
-            "MEMORY-MONOTONIC-LEAK",
-            sample.id,
-        )
     }
+    // One process is one observation. Preserve the frozen memory harness's
+    // median across its three independent samples at EACH release drain, just
+    // as for retained and released byte ceilings. Do not turn one JIT/GC
+    // subsample into an extra process-level observation.
+    const releasedResidualByDrain = [0, 1, 2].map(drain =>
+        ordinaryMedian(
+            sample.samples.map(row =>
+                Math.max(0, row.releasedHeaps[drain] - row.before),
+            ),
+        ),
+    )
+    requireGate(
+        !(
+            releasedResidualByDrain[0] < releasedResidualByDrain[1] &&
+            releasedResidualByDrain[1] < releasedResidualByDrain[2]
+        ),
+        "MEMORY-MONOTONIC-LEAK",
+        sample.id,
+    )
     const retainedBytes = ordinaryMedian(
             sample.samples.map(s => Math.max(0, s.retainedHeap - s.before)),
         ),
@@ -100,6 +111,7 @@ export function memoryProcessSummary(sample) {
         retainedBytes,
         retainedBytesPerUnit,
         releasedResidualBytes,
+        releasedResidualByDrain,
         absolutePass:
             retainedBytesPerUnit <= ceiling.retainedBytesPerUnit &&
             releasedResidualBytes <= ceiling.releasedResidualBytes,

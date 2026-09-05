@@ -78,6 +78,17 @@ test("post-release leak detection compares retained residual, not heap changes b
     const sample = observations()[0].sample
     sample.samples[2].releasedHeaps = [999994, 999996, 999998]
     expect(() => memoryProcessSummary(sample)).not.toThrow()
-    sample.samples[2].releasedHeaps = [1000000, 1000002, 1000004]
+    for (const row of sample.samples)
+        row.releasedHeaps = [1000000, 1000002, 1000004]
+    expect(() => memoryProcessSummary(sample)).toThrow("MEMORY-MONOTONIC-LEAK")
+})
+
+test("post-release checks preserve the existing process-level median and retain individual JIT/GC outliers", () => {
+    const sample = observations()[0].sample
+    sample.samples[0].releasedHeaps = [1000001, 1000002, 1000003]
+    expect(memoryProcessSummary(sample).releasedResidualByDrain).toEqual([
+        0, 0, 0,
+    ])
+    sample.samples[1].releasedHeaps = [1000001, 1000002, 1000003]
     expect(() => memoryProcessSummary(sample)).toThrow("MEMORY-MONOTONIC-LEAK")
 })

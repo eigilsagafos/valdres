@@ -237,7 +237,8 @@ test("retained-memory and every raw/gzip size gate preserve absolute and relativ
         })),
     }
     expect(memoryProcessSummary(sample).absolutePass).toBe(true)
-    sample.samples[0].releasedHeaps = [1000001, 1000002, 1000003]
+    for (const row of sample.samples)
+        row.releasedHeaps = [1000001, 1000002, 1000003]
     expect(() => memoryProcessSummary(sample)).toThrow("MEMORY-MONOTONIC-LEAK")
     const base = {
             root: { raw: 10000, gzip: 5000 },
