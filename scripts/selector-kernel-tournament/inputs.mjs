@@ -17,7 +17,7 @@ export const git = (args, root = ROOT) =>
 import { requireGate } from "./gate.mjs"
 export { requireGate } from "./gate.mjs"
 export const manifest = json(
-    resolve(ROOT, DIRECTORY, "fixture-manifest.v2.json"),
+    resolve(ROOT, DIRECTORY, "fixture-manifest.v3.json"),
 )
 export const reportSchema = json(
     resolve(ROOT, DIRECTORY, "candidate-report.schema.json"),
@@ -135,7 +135,7 @@ export function checkInputs(root = ROOT, input = manifest) {
         specGitSha: SPEC_COMMIT,
         specSha256: input.spec.sha256,
         manifestSha256: fileHash(
-            resolve(root, DIRECTORY, "fixture-manifest.v2.json"),
+            resolve(root, DIRECTORY, "fixture-manifest.v3.json"),
         ),
         reportSchemaSha256: fileHash(
             resolve(root, DIRECTORY, "candidate-report.schema.json"),
@@ -192,14 +192,10 @@ export function verifyMemorySource(source, input = manifest) {
     visit(ast)
     exactRows(
         Object.keys(limits ?? {}),
-        [
-            ...input.memoryScenarios.map(row => row.name),
-            "global fan-out",
-            "store disposal and async cancellation",
-        ],
+        input.sourceMemoryScenarios.map(row => row.name),
         "INPUT-MEMORY-SOURCE",
     )
-    for (const scenario of input.memoryScenarios) {
+    for (const scenario of input.sourceMemoryScenarios) {
         const node = cases.get(scenario.name)
         requireGate(node, "INPUT-MEMORY-SOURCE", scenario.name)
         const dimensions = []
@@ -429,14 +425,12 @@ export function validateInventoryRows(report) {
         const scenario = manifest.memoryScenarios.find(
             item => item.id === row.id,
         )
-        const ceiling = scenario?.absoluteCeilings[row.runtime]
+        const ceiling = scenario?.releaseCeilings[row.runtime]
         requireGate(
             ceiling &&
                 row.unitCount === scenario.units &&
-                row.retainedBytesPerUnitCeiling ===
-                    ceiling.retainedBytesPerUnit &&
-                row.releasedResidualBytesCeiling ===
-                    ceiling.releasedResidualBytes,
+                row.domain === "packed-paired" &&
+                row.releasedResidualBytesCeiling === ceiling,
             "REPORT-MEMORY-CEILING",
             row.id,
         )

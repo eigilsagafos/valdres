@@ -32,7 +32,7 @@ export async function validateRedBundle(
         "RED-SCHEMA",
     )
     requireGate(
-        proof.schemaVersion === 2 &&
+        proof.schemaVersion === 3 &&
             proof.kind === "red-gate-proofs" &&
             proof.foundationSha === foundationSha,
         "RED-IDENTITY",

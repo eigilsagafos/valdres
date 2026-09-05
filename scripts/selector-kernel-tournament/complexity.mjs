@@ -56,7 +56,7 @@ export function validateComplexity(
         ],
         "COMPLEXITY-SCHEMA",
     )
-    requireGate(raw.schemaVersion === 2, "COMPLEXITY-SCHEMA", "version")
+    requireGate(raw.schemaVersion === 3, "COMPLEXITY-SCHEMA", "version")
     const modules = productionChanges(foundationSha, candidateSha)
     same(raw.modules, modules, "COMPLEXITY-DIFF", "line inventory differs")
     requireGate(

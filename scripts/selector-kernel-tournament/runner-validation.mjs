@@ -134,7 +134,7 @@ export function validateWorkloadInvocation(
                 : []),
             runner.worker,
             consumer,
-            join(ROOT, DIRECTORY, "fixture-manifest.v2.json"),
+            join(ROOT, DIRECTORY, "fixture-manifest.v3.json"),
             id,
             mode,
             runner.wrapper,

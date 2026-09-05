@@ -71,7 +71,7 @@ export function resourceAdversary(id, artifactDirectory, output, mode) {
                 join(consumer, "node_modules/valdres"),
                 join(
                     ROOT,
-                    "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v2.json",
+                    "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v3.json",
                 ),
                 "M-LIVE-SELECTOR-GRAPHS",
                 wrapper,

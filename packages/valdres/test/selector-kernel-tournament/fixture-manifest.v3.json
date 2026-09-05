@@ -1,9 +1,9 @@
 {
-    "schemaVersion": 2,
-    "id": "valdres-selector-kernel-tournament-v2",
+    "schemaVersion": 3,
+    "id": "valdres-selector-kernel-tournament-v3",
     "spec": {
         "path": "docs/designs/selector-kernel-tournament.md",
-        "sha256": "4e4f026fafcf1ed4e8e91e32f0029542a63e9c1e07489a6eafedd459fc95f91c"
+        "sha256": "7ad47b450915f95c3d02f7d3f666187cd9bb0820d8371a37a9d43c4ffe8749e8"
     },
     "control": {
         "package": "valdres",
@@ -193,10 +193,13 @@
             "inconclusiveAdvances": false
         },
         "memory": {
+            "domain": "packed-paired",
             "pairs": 5,
             "retainedRatioMaximum": 1.1,
-            "requireExistingAbsoluteCeilings": true,
-            "requireThreeFullCollections": true
+            "requireFirstReleaseAbsoluteCeilings": true,
+            "requireThreeFullCollections": true,
+            "postReleaseDrains": 3,
+            "laterDrains": "diagnostic-only"
         },
         "size": {
             "baselineFile": "scripts/size-baseline.json",
@@ -216,6 +219,20 @@
             "p95RatioMaximum": 1.2,
             "claimEstimateMaximum": 1,
             "claimIntervalUpperExclusive": 1
+        },
+        "sourceMemory": {
+            "domain": "source-absolute",
+            "harness": "packages/valdres/test/performance/architecture.memory.ts",
+            "samplesPerScenario": 3,
+            "requireEveryExistingAbsoluteCeiling": true,
+            "runtimes": [
+                "bun",
+                "node"
+            ],
+            "arms": [
+                "control",
+                "candidate"
+            ]
         }
     },
     "semanticCases": [
@@ -519,15 +536,9 @@
             ],
             "unit": "atom-state",
             "units": 4000,
-            "absoluteCeilings": {
-                "bun": {
-                    "retainedBytesPerUnit": 160,
-                    "releasedResidualBytes": 524288
-                },
-                "node": {
-                    "retainedBytesPerUnit": 120,
-                    "releasedResidualBytes": 262144
-                }
+            "releaseCeilings": {
+                "bun": 524288,
+                "node": 262144
             }
         },
         {
@@ -540,15 +551,9 @@
             ],
             "unit": "selector",
             "units": 1500,
-            "absoluteCeilings": {
-                "bun": {
-                    "retainedBytesPerUnit": 2400,
-                    "releasedResidualBytes": 524288
-                },
-                "node": {
-                    "retainedBytesPerUnit": 1500,
-                    "releasedResidualBytes": 262144
-                }
+            "releaseCeilings": {
+                "bun": 524288,
+                "node": 262144
             }
         },
         {
@@ -561,15 +566,9 @@
             ],
             "unit": "selector",
             "units": 1000,
-            "absoluteCeilings": {
-                "bun": {
-                    "retainedBytesPerUnit": 2100,
-                    "releasedResidualBytes": 524288
-                },
-                "node": {
-                    "retainedBytesPerUnit": 1400,
-                    "releasedResidualBytes": 262144
-                }
+            "releaseCeilings": {
+                "bun": 524288,
+                "node": 262144
             }
         },
         {
@@ -582,15 +581,9 @@
             ],
             "unit": "scope",
             "units": 1500,
-            "absoluteCeilings": {
-                "bun": {
-                    "retainedBytesPerUnit": 3200,
-                    "releasedResidualBytes": 524288
-                },
-                "node": {
-                    "retainedBytesPerUnit": 3400,
-                    "releasedResidualBytes": 262144
-                }
+            "releaseCeilings": {
+                "bun": 524288,
+                "node": 262144
             }
         },
         {
@@ -603,15 +596,9 @@
             ],
             "unit": "staged-state",
             "units": 2500,
-            "absoluteCeilings": {
-                "bun": {
-                    "retainedBytesPerUnit": 360,
-                    "releasedResidualBytes": 524288
-                },
-                "node": {
-                    "retainedBytesPerUnit": 120,
-                    "releasedResidualBytes": 262144
-                }
+            "releaseCeilings": {
+                "bun": 524288,
+                "node": 262144
             }
         },
         {
@@ -624,15 +611,9 @@
             ],
             "unit": "scope-depth-level",
             "units": 64,
-            "absoluteCeilings": {
-                "bun": {
-                    "retainedBytesPerUnit": 30000,
-                    "releasedResidualBytes": 524288
-                },
-                "node": {
-                    "retainedBytesPerUnit": 14000,
-                    "releasedResidualBytes": 262144
-                }
+            "releaseCeilings": {
+                "bun": 524288,
+                "node": 262144
             }
         }
     ],
@@ -982,6 +963,7 @@
         "timings.ndjson",
         "timing-decisions.json",
         "counters.json",
+        "source-memory.json",
         "memory.ndjson",
         "sizes.json",
         "host-hooks.json",
@@ -992,5 +974,175 @@
         "report.json",
         "report.md",
         "SHA256SUMS"
+    ],
+    "sourceMemoryScenarios": [
+        {
+            "id": "S-ATOM-ONLY-STORES",
+            "name": "atom-only stores",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": [
+                "bun",
+                "node"
+            ],
+            "unit": "atom-state",
+            "units": 4000,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 160,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 120,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "S-LIVE-SELECTOR-GRAPHS",
+            "name": "live selector graphs",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": [
+                "bun",
+                "node"
+            ],
+            "unit": "selector",
+            "units": 1500,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 2400,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 1500,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "S-DYNAMIC-DEPENDENCY-CHURN",
+            "name": "dynamic dependency churn",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": [
+                "bun",
+                "node"
+            ],
+            "unit": "selector",
+            "units": 1000,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 2100,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 1400,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "S-SCOPE-CREATION-DISPOSAL",
+            "name": "scope creation and disposal",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": [
+                "bun",
+                "node"
+            ],
+            "unit": "scope",
+            "units": 1500,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 3200,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 3400,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "S-SINGLE-STORE-TRANSACTIONS",
+            "name": "single-store transactions",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": [
+                "bun",
+                "node"
+            ],
+            "unit": "staged-state",
+            "units": 2500,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 360,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 120,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "S-DEEP-CROSS-SCOPE-TRANSACTIONS",
+            "name": "deep cross-scope transactions",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": [
+                "bun",
+                "node"
+            ],
+            "unit": "scope-depth-level",
+            "units": 64,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 30000,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 14000,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "S-GLOBAL-FAN-OUT",
+            "name": "global fan-out",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": [
+                "bun",
+                "node"
+            ],
+            "unit": "store",
+            "units": 1000,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 3700,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 3400,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        },
+        {
+            "id": "S-STORE-DISPOSAL-ASYNC",
+            "name": "store disposal and async cancellation",
+            "sourceTest": "packages/valdres/test/performance/architecture.memory.ts",
+            "runtimes": [
+                "bun",
+                "node"
+            ],
+            "unit": "store",
+            "units": 500,
+            "absoluteCeilings": {
+                "bun": {
+                    "retainedBytesPerUnit": 7500,
+                    "releasedResidualBytes": 524288
+                },
+                "node": {
+                    "retainedBytesPerUnit": 7500,
+                    "releasedResidualBytes": 262144
+                }
+            }
+        }
     ]
 }

@@ -270,7 +270,7 @@ export async function validateShiftx(
         "SHIFTX-FREEZE",
     )
     requireGate(
-        freeze.schemaVersion === 2 &&
+        freeze.schemaVersion === 3 &&
             fileHash(evidencePath(root, freeze.plan)) === freeze.sha256 &&
             Number.isFinite(Date.parse(freeze.frozenAt)),
         "SHIFTX-FREEZE",

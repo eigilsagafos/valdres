@@ -30,6 +30,7 @@ import { artifactIdentity } from "./artifact-validation.mjs"
 import { validateTimings, validatePreflight } from "./timing-evidence.mjs"
 import { verifyPreflightEvidence } from "./preflight.mjs"
 import { validateCounters } from "./counter-validation.mjs"
+import { validateSourceMemory } from "./source-memory.mjs"
 import { decideMemory, decideSizes } from "./resource-validation.mjs"
 import { validateComplexity } from "./complexity.mjs"
 import { validateProcess } from "./process-evidence.mjs"
@@ -71,6 +72,7 @@ export function computeSelection(gates, stage, humanDecision = null) {
                   "performance",
                   "p95",
                   "memory",
+                  "sourceMemory",
                   "size",
                   ...(["shiftx", "integration"].includes(stage)
                       ? ["shiftx"]
@@ -137,7 +139,7 @@ export function renderReport(report) {
         )
     }
     lines.push(
-        "Raw process observations, exact commands, hashes, and separate hypothesis decisions are in the linked JSON evidence. Family compatibility is frozen and non-scoring. Counter-process retained heap is diagnostic; scored retained memory uses uninstrumented artifacts.",
+        "Raw process observations, exact commands, hashes, and separate hypothesis decisions are in the linked JSON evidence. Family compatibility is frozen and non-scoring. Counter-process retained heap is diagnostic; packed paired memory uses uninstrumented artifacts; source absolute memory uses the unchanged eight-scenario harness.",
         "",
     )
     return lines.join("\n")
@@ -158,7 +160,7 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
         "REPORT-RUN-SCHEMA",
     )
     requireGate(
-        index.schemaVersion === 2 &&
+        index.schemaVersion === 3 &&
             ["control", "candidate"].includes(index.kind) &&
             ["C", "A", "shiftx", "integration"].includes(index.stage) &&
             /^[A-Za-z0-9._:-]+$/.test(index.runId),
@@ -175,11 +177,13 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
     strictKeys(index.preflights, ["C", "A"], "REPORT-RUN-SCHEMA")
     for (const value of Object.values(index.preflights))
         strictKeys(value, ["control", "candidate"], "REPORT-RUN-SCHEMA")
-    if (index.kind === "candidate") {
-        const { validateFoundationReadiness } = await import("./readiness.mjs")
-        await validateFoundationReadiness(root)
-    }
     const plan = verifyFrozenPlan(root, index.plan)
+    if (index.kind === "candidate") {
+        const { validateFoundationReadiness, requireCandidateBase } =
+            await import("./readiness.mjs")
+        const readiness = await validateFoundationReadiness(root)
+        requireCandidateBase(plan.gitSha, readiness)
+    }
     const { validatePriorStage } = await import("./transitions.mjs")
     await validatePriorStage(root, plan)
     requireGate(
@@ -282,6 +286,11 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
         "MEMORY-INVENTORY",
         "memory evidence missing",
     )
+    const sourceMemory = validateSourceMemory(
+        root,
+        json(evidencePath(root, "source-memory.json")),
+        { artifacts, index },
+    )
     const sizes = json(evidencePath(root, "sizes.json"))
     validateSizeEvidence(root, sizes, { artifacts, index })
     const size = decideSizes(sizes.control, sizes.candidate, sizes.baseline)
@@ -313,6 +322,7 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
                 stage === "A" ? decision.tailStatus : "not-run",
                 "timing-decisions.json",
             ),
+            sourceMemory: gate("pass", "source-memory.json"),
             memory: gate(
                 memory.length
                     ? memory.every(r => r.status === "pass")
@@ -333,6 +343,8 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
         tag: manifest.control.tag,
     }
     const resources = {
+        sourceMemoryEvidence: "source-memory.json",
+        sourceMemory,
         memoryEvidence: "memory.ndjson",
         sizeEvidence: "sizes.json",
         memory,
@@ -368,7 +380,7 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
             ),
         )
         const result = {
-            schemaVersion: 2,
+            schemaVersion: 3,
             tournamentId: manifest.id,
             kind: "foundation-control",
             runId: index.runId,
@@ -418,7 +430,7 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
     )
     const timed = artifacts.candidate.timed,
         report = {
-            schemaVersion: 2,
+            schemaVersion: 3,
             tournamentId: manifest.id,
             runId: index.runId,
             candidate: {
@@ -491,7 +503,7 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
 export function validateReviewDispositions(value) {
     strictKeys(value, ["schemaVersion", "findings"], "REVIEW-SCHEMA")
     requireGate(
-        value.schemaVersion === 2 &&
+        value.schemaVersion === 3 &&
             Array.isArray(value.findings) &&
             new Set(value.findings.map(f => f.id)).size ===
                 value.findings.length,

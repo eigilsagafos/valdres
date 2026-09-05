@@ -8,7 +8,7 @@ const adapter = await import(
     pathToFileURL(packageRoot + "/dist/adapter-internals/v1.js")
 )
 const observer =
-    globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V2")]
+    globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V3")]
 const foreign = await import(pathToFileURL(foreignRoot + "/dist/index.js"))
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
 const raw = openSync(rawPath, "wx")
@@ -41,7 +41,7 @@ try {
     })
     console.log(
         JSON.stringify({
-            schemaVersion: 2,
+            schemaVersion: 3,
             kind: "semantic-process",
             runtime: typeof Bun === "undefined" ? "node" : "bun",
             mode: observer ? "counter" : "public",

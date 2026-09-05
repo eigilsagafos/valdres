@@ -33,7 +33,7 @@ export function validateWorkloadExpectations(value, manifest) {
         "WORKLOAD-EXPECTATIONS",
     )
     requireGate(
-        value.schemaVersion === 2 && value.tournamentId === manifest.id,
+        value.schemaVersion === 3 && value.tournamentId === manifest.id,
         "WORKLOAD-EXPECTATIONS",
         "version",
     )
@@ -121,7 +121,7 @@ export function validateWorkloadSample(
         "WORKLOAD-SCHEMA",
     )
     requireGate(
-        sample.schemaVersion === 2 &&
+        sample.schemaVersion === 3 &&
             sample.kind === "workload-process" &&
             sample.runtime === runtime &&
             sample.id === row.id &&

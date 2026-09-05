@@ -73,7 +73,7 @@ export function validateProvenanceEvidence(root, index) {
         "PROVENANCE-SCHEMA",
     )
     requireGate(
-        value.schemaVersion === 2 &&
+        value.schemaVersion === 3 &&
             ["control", "candidate"].includes(value.kind) &&
             value.repositoryDirty === false,
         "PROVENANCE-SCHEMA",

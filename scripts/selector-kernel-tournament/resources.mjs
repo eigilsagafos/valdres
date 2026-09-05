@@ -127,7 +127,7 @@ export function runMemoryProcess(
             consumer,
             join(
                 ROOT,
-                "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v2.json",
+                "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v3.json",
             ),
             row.id,
             wrapper,
@@ -264,7 +264,7 @@ export function collectSizes(root, { controlDirectory, headDirectory, index }) {
         )
     }
     const value = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         ...measurements,
         baseline: normalizeSizes(
             json(join(ROOT, manifest.stages.size.baselineFile)),

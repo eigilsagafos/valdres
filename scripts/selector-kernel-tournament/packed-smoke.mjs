@@ -33,7 +33,7 @@ assert.deepEqual(
     ["assertStore", "read", "readHydrationSnapshot", "subscribe"].sort(),
 )
 assert.equal(
-    Boolean(globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V2")]),
+    Boolean(globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V3")]),
     process.argv[2] === "counter",
 )
 const target = store()

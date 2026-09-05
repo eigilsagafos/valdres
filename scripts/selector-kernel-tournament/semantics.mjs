@@ -73,7 +73,7 @@ export function runSemantics({
                 join(foreign, "node_modules/valdres"),
                 join(
                     ROOT,
-                    "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v2.json",
+                    "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v3.json",
                 ),
                 join(output, `${stem}.ndjson`),
                 ...(stage === "C" ? [caseIds.join(",")] : []),
@@ -132,7 +132,7 @@ export function runSemantics({
         "harness changed",
     )
     const result = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         kind: "semantic-evidence",
         stage,
         inputs,

@@ -20,7 +20,7 @@ const adapter = await import(
     pathToFileURL(packageRoot + "/dist/adapter-internals/v1.js")
 )
 const observer =
-    globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V2")]
+    globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V3")]
 const { makeLegacy, collectHeap } = await import(pathToFileURL(wrapperPath))
 const result = await runWorkload({
     api,
@@ -59,7 +59,7 @@ const entrySha256 = createHash("sha256")
     .digest("hex")
 console.log(
     JSON.stringify({
-        schemaVersion: 2,
+        schemaVersion: 3,
         kind: "workload-process",
         runtime: typeof Bun === "undefined" ? "node" : "bun",
         pid: process.pid,

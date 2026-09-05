@@ -158,7 +158,7 @@ export function captureProvenance({
         "working inputs differ from frozen foundation",
     )
     return {
-        schemaVersion: 2,
+        schemaVersion: 3,
         kind,
         foundation: {
             gitSha: foundationSha,
@@ -244,7 +244,7 @@ export function validatePlan(plan) {
         "PLAN-SCHEMA",
     )
     requireGate(
-        plan.schemaVersion === 2 &&
+        plan.schemaVersion === 3 &&
             ["C", "A", "shiftx", "integration"].includes(plan.stage) &&
             Number.isInteger(plan.revision) &&
             plan.revision >= 1 &&

@@ -69,7 +69,7 @@ export function validatePreflight(value, stage, identity) {
         "PREFLIGHT-SCHEMA",
     )
     requireGate(
-        value.schemaVersion === 2 &&
+        value.schemaVersion === 3 &&
             value.stage === stage &&
             value.gitSha === identity.gitSha &&
             value.timedArtifactSha256 === identity.tarballSha256 &&

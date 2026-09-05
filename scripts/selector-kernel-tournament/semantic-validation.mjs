@@ -260,7 +260,7 @@ export function validateSemanticEvidence(
         "SEMANTIC-EVIDENCE-SCHEMA",
     )
     requireGate(
-        evidence.schemaVersion === 2 &&
+        evidence.schemaVersion === 3 &&
             evidence.kind === "semantic-evidence" &&
             evidence.artifact.gitSha === identity.gitSha &&
             evidence.artifact.tarballSha256 === identity.tarballSha256 &&
@@ -347,7 +347,7 @@ export function validateSemanticEvidence(
                 join(root, worker),
                 consumer,
                 foreign,
-                join(ROOT, DIRECTORY, "fixture-manifest.v2.json"),
+                join(ROOT, DIRECTORY, "fixture-manifest.v3.json"),
                 join(root, raw),
                 ...(evidence.stage === "C"
                     ? [
@@ -378,7 +378,7 @@ export function validateSemanticEvidence(
         same(
             { ...stdout, rows: [] },
             {
-                schemaVersion: 2,
+                schemaVersion: 3,
                 kind: "semantic-process",
                 runtime: process.runtime,
                 mode,

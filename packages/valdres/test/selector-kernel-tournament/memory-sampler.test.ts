@@ -55,7 +55,7 @@ test("a fresh Node sampler with no State operations does not manufacture a retai
                 subject,
                 join(
                     ROOT,
-                    "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v2.json",
+                    "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v3.json",
                 ),
                 "M-ATOM-ONLY-STORES",
                 wrapper,

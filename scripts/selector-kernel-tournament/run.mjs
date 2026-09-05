@@ -12,7 +12,10 @@ import {
 } from "./inputs.mjs"
 import { writeEvidence } from "./evidence.mjs"
 import { captureProvenance, freezePlan, validatePlan } from "./provenance.mjs"
-import { validateFoundationReadiness } from "./readiness.mjs"
+import {
+    validateFoundationReadiness,
+    requireCandidateBase,
+} from "./readiness.mjs"
 import { validatePriorStage } from "./transitions.mjs"
 export const EVIDENCE_ROOT = join(
     homedir(),
@@ -58,6 +61,12 @@ export async function initializeRun({
             )
             writeEvidence(root, "foundation-readiness.json", readiness)
             await validateFoundationReadiness(root)
+            requireGate(
+                foundationSha === readiness.frozenFoundationSha,
+                "FOUNDATION-CANDIDATE-BASE",
+                "foundation differs from readiness",
+            )
+            requireCandidateBase(plan.gitSha, readiness)
             if (plan.stage !== "C") {
                 requireGate(
                     priorStage,
@@ -100,7 +109,7 @@ export async function initializeRun({
             ]),
         )
         const index = {
-            schemaVersion: 2,
+            schemaVersion: 3,
             kind: plan.kind,
             runId,
             stage: plan.stage,

@@ -86,7 +86,7 @@ export function createPreflight(
                 })
     }
     return {
-        schemaVersion: 2,
+        schemaVersion: 3,
         stage,
         gitSha: timed.gitSha,
         timedArtifactSha256: timed.tarballSha256,

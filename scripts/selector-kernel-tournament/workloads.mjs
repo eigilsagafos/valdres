@@ -23,7 +23,7 @@ import {
 } from "./workload-validation.mjs"
 export const EXPECTATIONS = join(
     ROOT,
-    "packages/valdres/test/selector-kernel-tournament/workload-expectations.v2.json",
+    "packages/valdres/test/selector-kernel-tournament/workload-expectations.v3.json",
 )
 export function prepareWorkloads(output) {
     assertClean()
@@ -93,7 +93,7 @@ export function runWorkloadProcess({
         packageRoot,
         join(
             ROOT,
-            "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v2.json",
+            "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v3.json",
         ),
         row.id,
         mode,
@@ -141,7 +141,7 @@ export function checkWorkloadCorpus(artifactDirectory, output) {
                 }),
             )
     const result = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         kind: "workload-corpus-validation",
         artifact,
         runner,

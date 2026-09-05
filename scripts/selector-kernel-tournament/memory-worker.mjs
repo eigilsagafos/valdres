@@ -12,7 +12,7 @@ const manifest = JSON.parse(readFileSync(manifestPath, "utf8")),
 assert.ok(row, "MEMORY-ID: unknown scenario")
 const api = await import(pathToFileURL(packageRoot + "/dist/index.js"))
 assert.equal(
-    globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V2")],
+    globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V3")],
     undefined,
     "ARTIFACT-INSTRUMENTATION: scored memory requires production artifact",
 )
@@ -67,7 +67,7 @@ const samplerCalibration = {
 const samples = await measure(create, row.units, mutation)
 console.log(
     JSON.stringify({
-        schemaVersion: 2,
+        schemaVersion: 3,
         kind: "memory-process",
         id,
         runtime: typeof Bun === "undefined" ? "node" : "bun",

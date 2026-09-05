@@ -47,12 +47,10 @@ export function packedRootReachability(tarball, metadata) {
         visit(join(root, "dist/index.js"))
         return {
             entry: "dist/index.js",
-            files: [...seen]
-                .sort()
-                .map(path => ({
-                    path: relative(root, path),
-                    sha256: fileHash(path),
-                })),
+            files: [...seen].sort().map(path => ({
+                path: relative(root, path),
+                sha256: fileHash(path),
+            })),
             packageManifestSha256: fileHash(artifact.packageJsonPath),
             distTreeSha256: artifact.distTreeSha256,
         }

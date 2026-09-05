@@ -15,7 +15,7 @@ import { buildLegacyWrappers } from "../../../../scripts/selector-kernel-tournam
 const expectations = json(
     join(
         ROOT,
-        "packages/valdres/test/selector-kernel-tournament/workload-expectations.v2.json",
+        "packages/valdres/test/selector-kernel-tournament/workload-expectations.v3.json",
     ),
 )
 test("frozen corpus is complete and no-writes retains all 900 lifecycle steps", () => {
@@ -47,7 +47,7 @@ test("bad work or checksum is rejected before statistics", () => {
         entrySha256: "1".repeat(64),
     }
     const sample = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         kind: "workload-process",
         runtime: "node",
         pid: 1,

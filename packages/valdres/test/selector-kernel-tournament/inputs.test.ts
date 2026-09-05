@@ -54,12 +54,9 @@ function rows(stage = "A") {
                               id: row.id,
                               runtime,
                               unitCount: row.units,
-                              retainedBytesPerUnitCeiling:
-                                  row.absoluteCeilings[runtime]
-                                      .retainedBytesPerUnit,
+                              domain: "packed-paired",
                               releasedResidualBytesCeiling:
-                                  row.absoluteCeilings[runtime]
-                                      .releasedResidualBytes,
+                                  row.releaseCeilings[runtime],
                           })),
                       ),
         },
@@ -68,9 +65,9 @@ function rows(stage = "A") {
     }
 }
 describe("F0 frozen authority", () => {
-    test("v2 scope cannot regress to legacy async/global or synthetic hydration", () => {
-        expect(manifest.schemaVersion).toBe(2)
-        expect(manifest.id).toBe("valdres-selector-kernel-tournament-v2")
+    test("v3 scope cannot regress to legacy async/global or synthetic hydration", () => {
+        expect(manifest.schemaVersion).toBe(3)
+        expect(manifest.id).toBe("valdres-selector-kernel-tournament-v3")
         expect(manifest.semanticCases).toHaveLength(30)
         expect(manifest.performanceWorkloads).toHaveLength(17)
         expect(manifest.memoryScenarios).toHaveLength(6)

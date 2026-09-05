@@ -77,7 +77,7 @@ export function runCorePreflight(root, artifactDirectory, directory) {
         rows.push({ scenario, process: path, sha256: evidence.sha256 })
     }
     const value = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         artifactSha256: artifact.tarballSha256,
         directory,
         rows,
@@ -93,7 +93,7 @@ export function validateCorePreflight(root, path, artifact) {
         "CORE-PREFLIGHT-SCHEMA",
     )
     requireGate(
-        value.schemaVersion === 2 &&
+        value.schemaVersion === 3 &&
             value.artifactSha256 === artifact.tarballSha256,
         "CORE-PREFLIGHT-IDENTITY",
         "wrong artifact",

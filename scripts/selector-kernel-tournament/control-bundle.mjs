@@ -14,6 +14,7 @@ import {
     validateTimings,
     withRunnerLock,
 } from "./timing-evidence.mjs"
+import { collectSourceMemory } from "./source-memory.mjs"
 import { collectMemory, collectSizes } from "./resources.mjs"
 import { verifyProvenanceCurrent } from "./provenance.mjs"
 import { writeEvidence, sealEvidence } from "./evidence.mjs"
@@ -26,7 +27,7 @@ export async function buildControlBundle({
     evidenceRoot = EVIDENCE_ROOT,
 } = {}) {
     const plan = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         kind: "control",
         id: "beta36-control",
         revision: 1,
@@ -103,7 +104,7 @@ export async function buildControlBundle({
             )
             writeEvidence(root, "counter-workloads/runner.json", corpus.runner)
             const counters = {
-                schemaVersion: 2,
+                schemaVersion: 3,
                 stage: "A",
                 artifactSha256: artifacts.counter.tarballSha256,
                 rows: corpus.rows.map(row => {
@@ -164,7 +165,12 @@ export async function buildControlBundle({
                 index,
             }
             collectSizes(root, resourceInputs)
-            progress("retained-memory")
+            progress("source-absolute-memory")
+            collectSourceMemory(root, {
+                artifacts: { control: artifacts, candidate: artifacts },
+                index,
+            })
+            progress("packed-paired-memory")
             collectMemory(root, resourceInputs)
             verifyProvenanceCurrent(provenance)
             writeEvidence(root, "completion.json", {

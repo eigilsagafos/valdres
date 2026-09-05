@@ -195,4 +195,4 @@ export const observer = {
     },
 }
 observer.reset()
-globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V2")] = observer
+globalThis[Symbol.for("VALDRES_TOURNAMENT_COUNTER_ARTIFACT_V3")] = observer

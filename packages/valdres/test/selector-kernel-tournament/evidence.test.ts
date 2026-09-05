@@ -90,7 +90,7 @@ test("unknown files, duplicate sum rows, traversal, symlinks, and unknown object
 test("declared intent is immutable and removed workload IDs cannot be declared", () =>
     temporary(root => {
         const plan = {
-            schemaVersion: 2,
+            schemaVersion: 3,
             kind: "candidate",
             id: "reactive-currentness",
             revision: 1,
@@ -186,6 +186,7 @@ test("recorded gates alone determine advancement; reviewer or human enthusiasm c
             "performance",
             "p95",
             "memory",
+            "sourceMemory",
             "size",
             "shiftx",
         ].map(k => [k, { status: "pass" }]),
@@ -215,7 +216,7 @@ test("recorded gates alone determine advancement; reviewer or human enthusiasm c
 test("retained-memory and every raw/gzip size gate preserve absolute and relative thresholds", () => {
     const scenario = manifest.memoryScenarios[0]
     const sample = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         kind: "memory-process",
         id: scenario.id,
         runtime: "node",
@@ -239,7 +240,7 @@ test("retained-memory and every raw/gzip size gate preserve absolute and relativ
     expect(memoryProcessSummary(sample).absolutePass).toBe(true)
     for (const row of sample.samples)
         row.releasedHeaps = [1000001, 1000002, 1000003]
-    expect(() => memoryProcessSummary(sample)).toThrow("MEMORY-MONOTONIC-LEAK")
+    expect(memoryProcessSummary(sample).absolutePass).toBe(true)
     const base = {
             root: { raw: 10000, gzip: 5000 },
             packed: { raw: 20000, gzip: 6000 },

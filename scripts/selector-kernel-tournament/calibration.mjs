@@ -70,7 +70,7 @@ export function runCalibration(artifactDirectory, output) {
         })
     }
     const result = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         kind: "same-artifact-statistics-calibration",
         foundationGitSha: git(["rev-parse", "HEAD"]),
         artifact,

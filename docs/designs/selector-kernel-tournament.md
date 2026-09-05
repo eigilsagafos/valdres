@@ -8,7 +8,7 @@
 - Historical diagnostic: `valdres@1.0.0-beta.35` at
   `1d565045859e0787a164ac491e97d1069ad687ec`
 - Normative fixture inventory:
-  [`fixture-manifest.v2.json`](../../packages/valdres/test/selector-kernel-tournament/fixture-manifest.v2.json)
+  [`fixture-manifest.v3.json`](../../packages/valdres/test/selector-kernel-tournament/fixture-manifest.v3.json)
 - Normative report schema:
   [`candidate-report.schema.json`](../../packages/valdres/test/selector-kernel-tournament/candidate-report.schema.json)
 
@@ -59,17 +59,21 @@ human decision. Agreement between models is not evidence of correctness.
 - No family or collection behavior is made contingent on the tournament.
 - No beta number is reserved in a branch name, PR title, or source manifest.
 
-## Normative v2 correction
+## Normative v3 correction
 
-The authoritative behavior is the packed beta.36 root and approved v1 contracts.
-Version 2 contains 30 semantic cases, 17 performance workloads, and six memory
-scenarios (12 Bun/Node rows). It removes the legacy native-async and global-atom
-lanes, narrows hydration to the shipped adapter, and corrects the active-cycle
-path/cause convention. No authoritative v1 candidate evidence exists; the
-earlier foundation-development bundle remains diagnostic only. Global atoms are
-absent from the packed v1 root. Legacy async/global tests and their absolute
-ceilings remain unchanged repository regressions, outside tournament
-eligibility/scoring.
+The authoritative selector behavior is the packed beta.36 root and approved v1
+contracts. Version 3 retains 30 semantic cases, 17 performance workloads, and
+six packed memory scenarios (12 Bun/Node lanes). Global atoms and native async
+remain outside the rewrite and packed tournament scoring. The exact unchanged
+legacy direct-source memory harness additionally supplies a separate blocking
+absolute gate for all eight existing scenarios, including global fan-out and
+async disposal. This regression gate introduces no globalAtom rewrite or public
+kernel interface. Family remains frozen, independent, and non-scoring.
+
+V3 separates source absolute memory from packed paired memory, and the reviewed
+frozen foundation commit from its later main landing commit. V1/v2 and every
+failed development bundle remain immutable diagnostics and cannot satisfy v3
+readiness. Every changed authority and evidence format uses version 3.
 
 ## Governing rules
 
@@ -606,31 +610,43 @@ new run ID and the invalid run remains in the evidence bundle.
 
 ### Retained memory
 
-- Run five alternating control/candidate pairs per manifest memory scenario.
-- Each process uses the existing drain plus three full-GC protocol.
-- Report retained bytes per unit and released residual bytes for every sample.
-- Candidate median retained bytes per unit MUST be `<= 1.10x` control in every
-  scenario and MUST pass the existing Bun and Node absolute ceilings.
-- Released residual MUST pass the existing absolute ceiling. A monotonic
-  retained increase across three post-release drains is an immediate failure.
+Two independently blocking measurement domains are required for beta.36 and
+qualifying candidates. Their values cannot be interchanged.
 
-The manifest freezes these six scenarios from
-`test/performance/architecture.memory.ts`; its hash and the duplicated values
-below must agree before a run starts:
+**Source absolute:** run the exact unchanged
+`test/performance/architecture.memory.ts` from each arm's source archive under
+Bun and Node, with its original three samples, drain/full-GC protocol, all eight
+scenarios, and every retained/released ceiling. Preserve commands, source/archive
+hashes, process output, runner results, and every emitted scenario measurement.
+The harness emits process medians; its internal samples are not instrumented.
 
-| Scenario ID                       | Unit (count)         | Bun retained / released | Node retained / released |
-| --------------------------------- | -------------------- | ----------------------- | ------------------------ |
-| `M-ATOM-ONLY-STORES`              | atom state (4,000)   | 160 B / 524,288 B       | 120 B / 262,144 B        |
-| `M-LIVE-SELECTOR-GRAPHS`          | selector (1,500)     | 2,400 B / 524,288 B     | 1,500 B / 262,144 B      |
-| `M-DYNAMIC-DEPENDENCY-CHURN`      | selector (1,000)     | 2,100 B / 524,288 B     | 1,400 B / 262,144 B      |
-| `M-SCOPE-CREATION-DISPOSAL`       | scope (1,500)        | 3,200 B / 524,288 B     | 3,400 B / 262,144 B      |
-| `M-SINGLE-STORE-TRANSACTIONS`     | staged state (2,500) | 360 B / 524,288 B       | 120 B / 262,144 B        |
-| `M-DEEP-CROSS-SCOPE-TRANSACTIONS` | depth level (64)     | 30,000 B / 524,288 B    | 14,000 B / 262,144 B     |
+| Source scenario                    | Units | Bun retained / released | Node retained / released |
+| ---------------------------------- | ----- | ----------------------- | ------------------------ |
+| atom-only stores                   | 4,000 | 160 B / 524,288 B        | 120 B / 262,144 B         |
+| live selector graphs               | 1,500 | 2,400 B / 524,288 B      | 1,500 B / 262,144 B       |
+| dynamic dependency churn           | 1,000 | 2,100 B / 524,288 B      | 1,400 B / 262,144 B       |
+| scope creation and disposal        | 1,500 | 3,200 B / 524,288 B      | 3,400 B / 262,144 B       |
+| single-store transactions          | 2,500 | 360 B / 524,288 B        | 120 B / 262,144 B         |
+| deep cross-scope transactions       | 64    | 30,000 B / 524,288 B     | 14,000 B / 262,144 B      |
+| global fan-out                     | 1,000 | 3,700 B / 524,288 B      | 3,400 B / 262,144 B       |
+| store disposal and async cancellation | 500 | 7,500 B / 524,288 B      | 7,500 B / 262,144 B       |
 
 Retained ceilings are bytes per unit; released ceilings are residual bytes per
-process. At the memory-gated stages, the report has one row for every frozen
-scenario/runtime pair. The foundation validator rejects missing, duplicate, or
-unknown rows and any ceiling or unit-count drift.
+process. The manifest checks all eight names, units, runtimes, and ceilings
+against the frozen source. The separate source report records both arms and
+runtimes (32 rows) and rejects missing, duplicate, unknown, or changed values.
+
+**Packed paired:** run five alternating production-artifact control/candidate
+pairs for the first six scenarios above. Candidate median retained bytes per
+unit MUST be `<= 1.10x` control. Each process uses three independent samples;
+retain all three post-release drain observations for every sample. Each drain
+uses the existing three-full-GC helper. The median of the FIRST release drain
+MUST pass the unchanged Bun 524,288 B / Node 262,144 B absolute residual ceiling
+in both arms. Later drains are raw diagnostic evidence only: neither increasing
+nor decreasing later observations can fail or rescue this first-release gate.
+The source retained-byte ceilings MUST NOT be applied to cold packed artifacts:
+the compiled layouts differ. The paired report contains all 12 scenario/runtime
+rows, with exact five-pair completeness, retained ratios, and release ceilings.
 
 ### Built artifact size
 
@@ -736,6 +752,7 @@ An authoritative run writes one immutable directory:
 ├── timings.ndjson
 ├── timing-decisions.json
 ├── counters.json
+├── source-memory.json
 ├── memory.ndjson
 ├── sizes.json
 ├── host-hooks.json
@@ -836,7 +853,7 @@ Base: `origin/main` at `1c03f126ba714d0765c3386e613f4c892b89829b`
 Owns only:
 
 - this specification;
-- `fixture-manifest.v2.json`;
+- `fixture-manifest.v3.json`;
 - `candidate-report.schema.json`;
 - `.changeset/selector-kernel-tournament-spec.md`, containing only empty YAML
   frontmatter as the repository's required non-release CI marker.
@@ -876,12 +893,27 @@ Forbidden paths:
 - package versions, lockfile, package changelog, and all Changesets except the
   single empty non-release marker explicitly allowed above.
 
-The foundation PR ends by freezing its merge SHA, runner hashes, expected
-traces/checksums, and a green beta.36 control evidence bundle.
+The final reviewed Lansing authority commit is `frozenFoundationSha`. All tracked
+files settle before that commit; the complete green, red, and verification
+bundles are run from its clean tree. Any later tracked-byte correction requires
+a new frozen SHA and a full rerun of every bundle.
+
+`foundationMergeSha` is a later main landing commit used only to distribute the
+tooling. Landing MUST preserve ancestry: the frozen SHA is an ancestor of both
+that landing SHA and `origin/main`; squash and rebase landing are forbidden.
+This branch remains rooted at spec merge
+`20dddc5c307a1213f3888ab0dabc60a59a165b36` and MUST NOT merge or rebase moving main.
+Readiness proves every foundation-owned tournament file landed byte-for-byte,
+while allowing unrelated upstream paths to differ. Frozen inputs are resolved
+from the spec/control/frozen authority, never from current main. In particular,
+beta.36 family inputs, size baseline, memory source, and selector substrate are
+not replaced by collection-era inputs. Candidate protected paths are compared
+against `frozenFoundationSha`.
 
 ### 3. C-stage spikes
 
-All three branches start at that exact foundation merge SHA:
+All three branches start at exactly `frozenFoundationSha`, never at the moving
+main landing SHA:
 
 - `spike-selector-kernel-incumbent-lite`;
 - `spike-selector-kernel-reactive-currentness`;
@@ -922,17 +954,18 @@ a new revision and requires a full evidence rerun.
 
 Branch: `test-selector-kernel-foundation-fix-<issue-id>`
 
-Base: current `origin/main` containing the foundation
+Base: the current reviewed `frozenFoundationSha`
 
 Owns only the broken candidate-neutral fixture/runner/statistics change. Once
-merged, every active spike or qualification branch rebases onto the new
-foundation, receives a new foundation SHA, and discards all prior verdicts.
+reviewed and landed with ancestry preserved, every active spike or qualification
+branch starts again at the new frozen authority SHA and discards all prior
+verdicts. Unrelated main history is not a tournament substrate.
 
 ### 6. Mechanical packaging proof
 
 Branch: `test-selector-kernel-packaging`
 
-Base: the foundation merge SHA
+Base: `frozenFoundationSha`
 
 May prove static split-entry isolation, shared `v1Domain` identity,
 declarations, packed consumers, adapter/React compatibility, and root bundle
@@ -999,7 +1032,7 @@ contains no candidate kernel.
 - Assert the beta.36 commit and runtime tree hashes.
 - Assert existing core-load fixture hashes.
 - Assert the pre.28 registry identity and tarball SHA-256 before any claim run.
-- Assert all six memory scenario names, units, runtimes, and absolute ceilings
+- Assert all eight source memory names, units, runtimes, and absolute ceilings
   against the frozen architecture-memory source.
 - Assert the complete size baseline and its measurement script hashes before
   comparing every existing raw/gzip metric.
@@ -1082,8 +1115,10 @@ metadata, or `SHA256SUMS` fails with one precise error.
 
 ### F6. Reuse memory and size gates
 
-- Run the current Bun/Node GC drain and absolute ceilings against both arms.
-- Add paired retained-bytes reporting without weakening existing gates.
+- Run the unchanged direct-source Bun/Node harness and all eight absolute gates
+  against both arms.
+- Run six packed scenarios with five alternating pairs, retained ratio <= 1.10,
+  and unchanged first-release ceilings. Later drains remain raw diagnostics.
 - Measure the exact packed control/candidate artifacts with the existing size
   script and record root reachability inputs.
 
@@ -1117,12 +1152,24 @@ Create test-only mutations that each fail exactly one class:
 - timed instrumentation;
 - provenance mismatch;
 - deterministic 20% slowdown;
-- retained-memory leak;
+- retained-memory leak in both source absolute and packed paired domains;
 - root bundle leakage.
 
 These mutations are fixtures, never candidate implementations.
 
-### F9. Review and merge
+### F9. Review, freeze, verify, and hand off landing
+
+The v3 execution order is explicit: implement and regression-test v3, complete
+all F8 mutation implementations, run independent neutrality and statistics
+reviews, fix artifact-backed findings, then settle every tracked file and commit
+`frozenFoundationSha`. From that clean SHA run a fresh complete F7 control, all
+F8 red proofs, both source memory runtimes, and the full F9 repository checks.
+Preserve and checksum every passing and failed bundle. No tracked edits follow
+this run; any tracked fix creates a new frozen SHA and reruns every artifact.
+Finish with frozen SHA, bundle paths and SHA256SUMS digests, test totals,
+remaining PR/Bencher status, and a separate landing-workspace handoff. This
+handoff is not authorization to launch a candidate workspace or candidate PR.
+
 
 - Run core, React, and frozen family tests, types, package/packed checks, memory
   lanes, and the tournament self-tests.
@@ -1243,11 +1290,11 @@ resource gates.
 | --------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | now                                           | `spec-selector-kernel-tournament`              | beta.36 `1c03f126`                                                  | land three declarative artifacts plus the required empty non-release CI marker |
 | after the spec lands                          | `test-selector-kernel-foundation`              | exact spec merge SHA on `origin/main`                               | one implementation agent owns F0-F9 sequentially; run `/review` before merge   |
-| after foundation F9 and green/red bundles     | `spike-selector-kernel-incumbent-lite`         | exact frozen foundation merge SHA                                   | one candidate agent, Contract C and declared intended lanes only               |
-| same gate, in parallel                        | `spike-selector-kernel-reactive-currentness`   | same frozen foundation merge SHA                                    | one candidate agent, Contract C and declared intended lanes only               |
-| same gate, in parallel                        | `spike-selector-kernel-dynamic-topological`    | same frozen foundation merge SHA                                    | one candidate agent, Contract C and declared intended lanes only               |
+| after foundation F9 and green/red bundles     | `spike-selector-kernel-incumbent-lite`         | exact reviewed `frozenFoundationSha`                                   | one candidate agent, Contract C and declared intended lanes only               |
+| same gate, in parallel                        | `spike-selector-kernel-reactive-currentness`   | same reviewed `frozenFoundationSha`                                    | one candidate agent, Contract C and declared intended lanes only               |
+| same gate, in parallel                        | `spike-selector-kernel-dynamic-topological`    | same reviewed `frozenFoundationSha`                                    | one candidate agent, Contract C and declared intended lanes only               |
 | per C survivor                                | matching `qualify-selector-kernel-<candidate>` | same frozen foundation SHA plus cherry-picked frozen candidate diff | one qualification agent completes Contract A and the synthetic/resource screen |
-| after an A survivor needs external packaging  | `test-selector-kernel-packaging`               | frozen foundation merge SHA                                         | one mechanical packaging agent; no names, exports, or algorithm                |
+| after an A survivor needs external packaging  | `test-selector-kernel-packaging`               | reviewed `frozenFoundationSha`                                         | one mechanical packaging agent; no names, exports, or algorithm                |
 | after A plus synthetic/resource qualification | reuse the qualification workspace for ShiftX   | exact qualified candidate revision                                  | evidence runner only; no code tuning during a run                              |
 | after at least one full survivor              | `internal-selector-kernel-boundary`            | then-current `origin/main`                                          | derive the smallest internal boundary from working implementations             |
 | after artifact-backed selection               | `integrate-selector-kernel-winner`             | then-current `origin/main`                                          | apply the winner and rerun every gate                                          |

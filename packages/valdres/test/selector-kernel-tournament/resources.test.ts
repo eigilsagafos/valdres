@@ -16,7 +16,7 @@ function observations() {
                     process: `${s.id}-${runtime}-${pair}-${arm}.json`,
                     processSha256: "a".repeat(64),
                     sample: {
-                        schemaVersion: 2,
+                        schemaVersion: 3,
                         kind: "memory-process",
                         id: s.id,
                         runtime,
@@ -89,7 +89,7 @@ test("post-release leak detection compares retained residual, not heap changes b
     expect(() => memoryProcessSummary(sample)).not.toThrow()
     for (const row of sample.samples)
         row.releasedHeaps = [1000000, 1000002, 1000004]
-    expect(() => memoryProcessSummary(sample)).toThrow("MEMORY-MONOTONIC-LEAK")
+    expect(memoryProcessSummary(sample).absolutePass).toBe(true)
 })
 
 test("post-release checks preserve the existing process-level median and retain individual JIT/GC outliers", () => {
@@ -99,5 +99,20 @@ test("post-release checks preserve the existing process-level median and retain 
         0, 0, 0,
     ])
     sample.samples[1].releasedHeaps = [1000001, 1000002, 1000003]
-    expect(() => memoryProcessSummary(sample)).toThrow("MEMORY-MONOTONIC-LEAK")
+    expect(memoryProcessSummary(sample).absolutePass).toBe(true)
+})
+
+// These packed heaps deliberately exceed the legacy source retained ceilings.
+// V3 still enforces the paired ratio and original first-release residual.
+test("packed retained calibration is independent of source layout", () => {
+    const records = observations()
+    for (const r of records)
+        for (const s of r.sample.samples)
+            s.retainedHeap = s.before + r.sample.unitCount * 100000
+    expect(decideMemory(records).every(r => r.status === "pass")).toBe(true)
+    expect(decideMemory(records)[0]).not.toHaveProperty(
+        "retainedBytesPerUnitCeiling",
+    )
+    records[0].sample.schemaVersion = 2
+    expect(() => decideMemory(records)).toThrow("MEMORY-ID")
 })

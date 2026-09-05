@@ -1,7 +1,7 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://valdres.dev/schemas/selector-kernel-candidate-report.v2.json",
-    "title": "Valdres selector-kernel candidate report v2",
+    "$id": "https://valdres.dev/schemas/selector-kernel-candidate-report.v3.json",
+    "title": "Valdres selector-kernel candidate report v3",
     "type": "object",
     "additionalProperties": false,
     "required": [
@@ -586,9 +586,9 @@
                 "retainedRatio",
                 "controlMedianReleasedResidualBytes",
                 "candidateMedianReleasedResidualBytes",
-                "retainedBytesPerUnitCeiling",
                 "releasedResidualBytesCeiling",
-                "rawEvidence"
+                "rawEvidence",
+                "domain"
             ],
             "properties": {
                 "id": {
@@ -627,16 +627,15 @@
                     "type": "integer",
                     "minimum": 0
                 },
-                "retainedBytesPerUnitCeiling": {
-                    "type": "integer",
-                    "minimum": 0
-                },
                 "releasedResidualBytesCeiling": {
                     "type": "integer",
                     "minimum": 0
                 },
                 "rawEvidence": {
                     "$ref": "#/$defs/nonEmptyString"
+                },
+                "domain": {
+                    "const": "packed-paired"
                 }
             }
         },
@@ -682,14 +681,85 @@
                     "$ref": "#/$defs/nonEmptyString"
                 }
             }
+        },
+        "sourceMemorySummary": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "domain",
+                "id",
+                "runtime",
+                "arm",
+                "status",
+                "unitCount",
+                "retainedBytes",
+                "retainedBytesPerUnit",
+                "releasedResidualBytes",
+                "retainedBytesPerUnitCeiling",
+                "releasedResidualBytesCeiling",
+                "rawEvidence"
+            ],
+            "properties": {
+                "domain": {
+                    "const": "source-absolute"
+                },
+                "id": {
+                    "enum": [
+                        "S-ATOM-ONLY-STORES",
+                        "S-LIVE-SELECTOR-GRAPHS",
+                        "S-DYNAMIC-DEPENDENCY-CHURN",
+                        "S-SCOPE-CREATION-DISPOSAL",
+                        "S-SINGLE-STORE-TRANSACTIONS",
+                        "S-DEEP-CROSS-SCOPE-TRANSACTIONS",
+                        "S-GLOBAL-FAN-OUT",
+                        "S-STORE-DISPOSAL-ASYNC"
+                    ]
+                },
+                "runtime": {
+                    "enum": ["bun", "node"]
+                },
+                "arm": {
+                    "enum": ["control", "candidate"]
+                },
+                "status": {
+                    "enum": ["pass", "fail"]
+                },
+                "unitCount": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "retainedBytes": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "retainedBytesPerUnit": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "releasedResidualBytes": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "retainedBytesPerUnitCeiling": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "releasedResidualBytesCeiling": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "rawEvidence": {
+                    "$ref": "#/$defs/nonEmptyString"
+                }
+            }
         }
     },
     "properties": {
         "schemaVersion": {
-            "const": 2
+            "const": 3
         },
         "tournamentId": {
-            "const": "valdres-selector-kernel-tournament-v2"
+            "const": "valdres-selector-kernel-tournament-v3"
         },
         "runId": {
             "type": "string",
@@ -1088,7 +1158,8 @@
                 "p95",
                 "memory",
                 "size",
-                "shiftx"
+                "shiftx",
+                "sourceMemory"
             ],
             "properties": {
                 "provenance": {
@@ -1116,6 +1187,9 @@
                     "$ref": "#/$defs/gate"
                 },
                 "shiftx": {
+                    "$ref": "#/$defs/gate"
+                },
+                "sourceMemory": {
                     "$ref": "#/$defs/gate"
                 }
             }
@@ -1167,7 +1241,14 @@
         "resources": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["memoryEvidence", "sizeEvidence", "memory", "size"],
+            "required": [
+                "memoryEvidence",
+                "sizeEvidence",
+                "memory",
+                "size",
+                "sourceMemoryEvidence",
+                "sourceMemory"
+            ],
             "properties": {
                 "memoryEvidence": {
                     "$ref": "#/$defs/nonEmptyString"
@@ -1185,6 +1266,15 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/$defs/sizeSummary"
+                    }
+                },
+                "sourceMemoryEvidence": {
+                    "const": "source-memory.json"
+                },
+                "sourceMemory": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/sourceMemorySummary"
                     }
                 }
             }

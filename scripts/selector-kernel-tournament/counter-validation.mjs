@@ -15,7 +15,7 @@ export function validateCounters(
         "COUNTER-SCHEMA",
     )
     requireGate(
-        counters.schemaVersion === 2 &&
+        counters.schemaVersion === 3 &&
             counters.stage === stage &&
             counters.artifactSha256 === artifact.tarballSha256 &&
             artifact.mode === "counter",

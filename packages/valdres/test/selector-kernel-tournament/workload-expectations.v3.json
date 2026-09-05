@@ -1,6 +1,6 @@
 {
-    "schemaVersion": 2,
-    "tournamentId": "valdres-selector-kernel-tournament-v2",
+    "schemaVersion": 3,
+    "tournamentId": "valdres-selector-kernel-tournament-v3",
     "rows": [
         {
             "id": "P-NEG-ATOM-2048",

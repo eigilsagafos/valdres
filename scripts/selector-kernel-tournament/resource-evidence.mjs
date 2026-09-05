@@ -97,7 +97,7 @@ export function validateSizeEvidence(root, value, { artifacts, index }) {
         ["schemaVersion", "control", "candidate", "baseline", "processes"],
         "SIZE-SCHEMA",
     )
-    requireGate(value.schemaVersion === 2, "SIZE-SCHEMA", "version")
+    requireGate(value.schemaVersion === 3, "SIZE-SCHEMA", "version")
     same(
         value.baseline,
         normalizeSizes(json(join(ROOT, manifest.stages.size.baselineFile))),
@@ -217,7 +217,7 @@ export function validateMemoryEvidence(root, records, { artifacts }) {
                 ...(record.runtime === "node" ? ["--expose-gc"] : []),
                 worker,
                 consumer,
-                join(ROOT, DIRECTORY, "fixture-manifest.v2.json"),
+                join(ROOT, DIRECTORY, "fixture-manifest.v3.json"),
                 record.id,
                 wrapper,
             ],

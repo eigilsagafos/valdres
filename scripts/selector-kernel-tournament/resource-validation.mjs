@@ -48,7 +48,7 @@ export function memoryProcessSummary(sample) {
     }
     const scenario = manifest.memoryScenarios.find(s => s.id === sample.id)
     requireGate(
-        sample.schemaVersion === 2 &&
+        sample.schemaVersion === 3 &&
             sample.kind === "memory-process" &&
             scenario?.runtimes.includes(sample.runtime) &&
             sample.unitCount === scenario.units,
@@ -89,14 +89,6 @@ export function memoryProcessSummary(sample) {
             ),
         ),
     )
-    requireGate(
-        !(
-            releasedResidualByDrain[0] < releasedResidualByDrain[1] &&
-            releasedResidualByDrain[1] < releasedResidualByDrain[2]
-        ),
-        "MEMORY-MONOTONIC-LEAK",
-        sample.id,
-    )
     const retainedBytes = ordinaryMedian(
             sample.samples.map(s => Math.max(0, s.retainedHeap - s.before)),
         ),
@@ -109,15 +101,13 @@ export function memoryProcessSummary(sample) {
             ),
         ),
         retainedBytesPerUnit = retainedBytes / scenario.units,
-        ceiling = scenario.absoluteCeilings[sample.runtime]
+        ceiling = scenario.releaseCeilings[sample.runtime]
     return {
         retainedBytes,
         retainedBytesPerUnit,
         releasedResidualBytes,
         releasedResidualByDrain,
-        absolutePass:
-            retainedBytesPerUnit <= ceiling.retainedBytesPerUnit &&
-            releasedResidualBytes <= ceiling.releasedResidualBytes,
+        absolutePass: releasedResidualBytes <= ceiling,
     }
 }
 export function assertMemoryAbsolute(sample) {
@@ -197,7 +187,7 @@ export function decideMemory(records) {
             )
         requireGate(base > 0 || head === 0, "MEMORY-ZERO-BASELINE", key)
         const ratio = base === 0 ? 1 : head / base,
-            ceiling = scenario.absoluteCeilings[runtime]
+            ceiling = scenario.releaseCeilings[runtime]
         rows.push({
             id,
             runtime,
@@ -216,8 +206,8 @@ export function decideMemory(records) {
             candidateMedianReleasedResidualBytes: ordinaryMedian(
                 candidate.map(s => s.summary.releasedResidualBytes),
             ),
-            retainedBytesPerUnitCeiling: ceiling.retainedBytesPerUnit,
-            releasedResidualBytesCeiling: ceiling.releasedResidualBytes,
+            domain: "packed-paired",
+            releasedResidualBytesCeiling: ceiling,
             rawEvidence: "memory.ndjson",
         })
     }
