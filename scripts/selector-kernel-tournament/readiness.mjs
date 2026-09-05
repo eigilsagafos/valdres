@@ -102,9 +102,21 @@ export function mergeFoundationScripts(before, frozen, upstream) {
             "exact tournament lane addition required",
         )
         requireGate(
-            upstreamDelta.every(word => word.startsWith("test/")) &&
+            upstreamDelta.every(
+                word =>
+                    word.startsWith("test/") &&
+                    word
+                        .split("/")
+                        .every(part => !["", ".", ".."].includes(part)) &&
+                    !word
+                        .toLowerCase()
+                        .startsWith("test/selector-kernel-tournament/"),
+            ) &&
                 new Set(main).size === main.length &&
-                delta.every(word => !main.includes(word)),
+                delta.every(
+                    word =>
+                        !main.some(existing => existing.toLowerCase() === word),
+                ),
             "FOUNDATION-SCRIPT-DELTA",
             "duplicate or non-additive upstream lane",
         )

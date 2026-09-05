@@ -184,6 +184,63 @@ test("real divergent landing preserves the exact foundation delta and every upst
             p.version = base.version
         })
         reject(() => write(owned, "frozen authority\n\n"))
+        for (const alias of [
+            "test/selector-kernel-tournament/",
+            "test/./selector-kernel-tournament",
+            "test/other/../selector-kernel-tournament",
+            "test/Selector-Kernel-Tournament",
+            "test/selector-kernel-tournament/readiness.test.ts",
+        ]) {
+            write(
+                pkg,
+                JSON.stringify({
+                    ...upstream,
+                    scripts: {
+                        ...upstream.scripts,
+                        "test:runtime":
+                            upstream.scripts["test:runtime"] + " " + alias,
+                    },
+                }),
+            )
+            git("add", ".")
+            const aliasedMain = git(
+                "commit-tree",
+                git("write-tree"),
+                "-p",
+                spec,
+                "-m",
+                "aliased upstream fixture",
+            )
+            write(
+                pkg,
+                JSON.stringify({
+                    ...union,
+                    scripts: {
+                        ...union.scripts,
+                        "test:runtime":
+                            union.scripts["test:runtime"] + " " + alias,
+                    },
+                }),
+            )
+            git("add", ".")
+            const bad = git(
+                "commit-tree",
+                git("write-tree"),
+                "-p",
+                aliasedMain,
+                "-p",
+                frozen,
+                "-m",
+                "aliased merge fixture",
+            )
+            git("update-ref", "refs/remotes/origin/main", bad)
+            expect(() =>
+                verifyFoundationLanding(
+                    { ...readiness, foundationMergeSha: bad },
+                    { root, spec },
+                ),
+            ).toThrow("FOUNDATION-SCRIPT-DELTA")
+        }
         const tree = git("rev-parse", `${landing}^{tree}`)
         for (const parents of [
             [main],
