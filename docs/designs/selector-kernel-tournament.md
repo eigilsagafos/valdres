@@ -910,6 +910,25 @@ beta.36 family inputs, size baseline, memory source, and selector substrate are
 not replaced by collection-era inputs. Candidate protected paths are compared
 against `frozenFoundationSha`.
 
+The landing is a two-parent merge with upstream first and the exact frozen SHA
+second; their merge base is the spec commit. Shared package manifests preserve
+all upstream fields and scripts, applying only the exact spec-to-foundation
+script delta. `test:runtime` preserves the original invocation and all upstream
+appended test lanes, then appends the tournament lane exactly once. The standalone
+`test:selector-kernel-tournament` command remains exact. Missing, altered,
+duplicated, or removed additions fail closed; no current merged string is an
+allowlist. Ownership is calculated from the frozen branch, not upstream's diff.
+
+Every `frozenInputs` entry is read as bytes from `manifest.control.gitSha` and
+hashed before parsing. Control observation anchors use that commit's authenticated
+runtime tree. Size evidence includes the historical measurement script and
+baseline bytes. Foundation manifest, schemas, and specification are authenticated
+against the frozen foundation. Landing readiness recomputes green/red/F9 proofs
+in a clean detached checkout of that exact foundation, retaining its oracle,
+statistics, and verification dependency graph. A disposable pre-freeze integration
+check uses the same ancestry, owned-file, shared-manifest, and input gates but
+cannot confer candidate readiness or substitute for the later main landing.
+
 ### 3. C-stage spikes
 
 All three branches start at exactly `frozenFoundationSha`, never at the moving

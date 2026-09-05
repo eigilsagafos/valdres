@@ -3,6 +3,9 @@ import { join, dirname } from "node:path"
 import { existsSync, mkdirSync } from "node:fs"
 import {
     ROOT,
+    frozenInputBytes,
+    frozenInputJson,
+    sha256,
     manifest,
     json,
     fileHash,
@@ -67,8 +70,8 @@ export function prepareMemory(root, { controlDirectory, headDirectory }) {
         runner = {
             workerSha256: fileHash(worker),
             wrapperSha256: generated.generatedSha256,
-            sourceSha256: fileHash(
-                join(ROOT, manifest.memoryScenarios[0].sourceTest),
+            sourceSha256: sha256(
+                frozenInputBytes(manifest.memoryScenarios[0].sourceTest),
             ),
         }
     writeEvidence(root, "memory/runner.json", runner)
@@ -228,6 +231,11 @@ export function collectSizes(root, { controlDirectory, headDirectory, index }) {
         processes = [],
         artifacts = {},
         reachability = {}
+    for (const path of [
+        manifest.stages.size.measurementScript,
+        manifest.stages.size.baselineFile,
+    ])
+        writeEvidence(root, "size-authority/" + path, frozenInputBytes(path))
     for (const arm of ["control", "candidate"]) {
         const directory = directories[arm],
             artifact = json(join(directory, "artifact.json"))
@@ -244,7 +252,11 @@ export function collectSizes(root, { controlDirectory, headDirectory, index }) {
         const process = captureCommand(
             [
                 "bun",
-                join(ROOT, manifest.stages.size.measurementScript),
+                join(
+                    root,
+                    "size-authority",
+                    manifest.stages.size.measurementScript,
+                ),
                 join(directory, artifact.tarball),
             ],
             ROOT,
@@ -267,7 +279,7 @@ export function collectSizes(root, { controlDirectory, headDirectory, index }) {
         schemaVersion: 3,
         ...measurements,
         baseline: normalizeSizes(
-            json(join(ROOT, manifest.stages.size.baselineFile)),
+            frozenInputJson(manifest.stages.size.baselineFile),
         ),
         processes,
     }

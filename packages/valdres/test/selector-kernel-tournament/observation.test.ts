@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test"
 import { observer } from "../../../../scripts/selector-kernel-tournament/control-observer-runtime.mjs"
 import { instrumentControl } from "../../../../scripts/selector-kernel-tournament/control-instrumentation.mjs"
-import { readFileSync } from "node:fs"
-import { ROOT } from "../../../../scripts/selector-kernel-tournament/inputs.mjs"
+import { controlSourceBytes } from "../../../../scripts/selector-kernel-tournament/inputs.mjs"
 
 test("control observation anchors are exhaustive and reject source drift", () => {
     for (const relative of [
@@ -11,8 +10,8 @@ test("control observation anchors are exhaustive and reject source drift", () =>
         "committed-store-tree/scratch-selector-host.ts",
         "committed-store-tree/committed-store-tree.ts",
     ]) {
-        const path = ROOT + "/packages/valdres/src/v1-internal/" + relative
-        const source = readFileSync(path, "utf8")
+        const path = "packages/valdres/src/v1-internal/" + relative
+        const source = controlSourceBytes(path).toString("utf8")
         expect(instrumentControl(source, path)).toContain("tournamentObserver")
         expect(() => instrumentControl("", path)).toThrow(
             "CONTROL-ADAPTER-ANCHOR",

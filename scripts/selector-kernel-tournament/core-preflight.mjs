@@ -3,6 +3,9 @@ import { assertInstalledArtifact } from "./artifact.mjs"
 import { join } from "node:path"
 import {
     ROOT,
+    frozenInputBytes,
+    frozenInputJson,
+    sha256,
     manifest,
     json,
     fileHash,
@@ -13,17 +16,16 @@ import { captureCommand, installArtifact } from "./artifact.mjs"
 import { writeEvidence, evidencePath, strictKeys, same } from "./evidence.mjs"
 import { validateProcess } from "./process-evidence.mjs"
 import {
-    readFixture,
+    validateFixture,
     assertExpectedResult,
 } from "../../packages/valdres/test/performance/core-load/lib.mjs"
-const fixture = join(
-        ROOT,
-        "packages/valdres/test/performance/core-load/fixture.v1.json",
-    ),
-    worker = join(
-        ROOT,
-        "packages/valdres/test/performance/core-load/run-sample.mjs",
-    )
+const fixturePath =
+    "packages/valdres/test/performance/core-load/fixture.v1.json"
+function controlFixture() {
+    const value = frozenInputJson(fixturePath)
+    validateFixture(value, fixturePath)
+    return value
+}
 const scenarios = ["initial-view-core", "writes", "no-writes"]
 function argv(consumer, scenario, authorityRoot = ROOT) {
     return [
@@ -64,6 +66,12 @@ export function runCorePreflight(root, artifactDirectory, directory) {
         artifact,
         consumer,
     )
+    requireGate(
+        fileHash(join(ROOT, fixturePath)) ===
+            sha256(frozenInputBytes(fixturePath)),
+        "CORE-PREFLIGHT-AUTHORITY",
+        "execute core oracle from the frozen checkout",
+    )
     const rows = []
     for (const scenario of scenarios) {
         assertInstalledArtifact(
@@ -77,7 +85,7 @@ export function runCorePreflight(root, artifactDirectory, directory) {
         const sample = JSON.parse(process.stdout)
         assertExpectedResult(
             sample,
-            readFixture(fixture),
+            controlFixture(),
             scenario,
             "CORE-PREFLIGHT",
         )
@@ -138,13 +146,13 @@ export function validateCorePreflight(root, path, artifact) {
             sample.target.entrySha256 === artifact.productionEntrySha256 &&
                 sample.target.distTreeSha256 === artifact.distTreeSha256 &&
                 sample.process.pid === process.pid &&
-                sample.fixtureSha256 === fileHash(fixture),
+                sample.fixtureSha256 === sha256(frozenInputBytes(fixturePath)),
             "CORE-PREFLIGHT-IDENTITY",
             "loaded inputs differ",
         )
         assertExpectedResult(
             sample,
-            readFixture(fixture),
+            controlFixture(),
             row.scenario,
             "CORE-PREFLIGHT",
         )
@@ -157,7 +165,7 @@ export function validateCorePreflight(root, path, artifact) {
     return value
 }
 export function absoluteCoreGate(rows) {
-    const ceilings = readFixture(fixture).measurement.ceilingsMs
+    const ceilings = controlFixture().measurement.ceilingsMs
     return rows
         .filter(r => r.id.startsWith("P-CORE-"))
         .map(row => ({

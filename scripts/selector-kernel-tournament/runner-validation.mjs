@@ -3,7 +3,15 @@ import { assertInstalledArtifact } from "./artifact.mjs"
 import { mkdtempSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { ROOT, DIRECTORY, fileHash, requireGate, json } from "./inputs.mjs"
+import {
+    ROOT,
+    DIRECTORY,
+    frozenInputBytes,
+    sha256,
+    fileHash,
+    requireGate,
+    json,
+} from "./inputs.mjs"
 import { command } from "./artifact.mjs"
 import { buildLegacyWrappers } from "./legacy-wrappers.mjs"
 import { evidencePath, same, strictKeys } from "./evidence.mjs"
@@ -109,9 +117,8 @@ export function validateWorkloadInvocation(
     )
     requireGate(
         fileHash(join(root, directory, "initial-view-core.v1.json")) ===
-            fileHash(
-                join(
-                    ROOT,
+            sha256(
+                frozenInputBytes(
                     "packages/valdres/test/performance/core-load/initial-view-core.v1.json",
                 ),
             ),

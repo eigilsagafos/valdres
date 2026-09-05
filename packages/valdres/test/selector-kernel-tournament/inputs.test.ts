@@ -6,6 +6,7 @@ import {
     checkInputs,
     manifest,
     ROOT,
+    frozenInputBytes,
     schemaCheck,
     validateInventoryRows,
     verifyMemorySource,
@@ -143,17 +144,15 @@ describe("F0 frozen authority", () => {
             "INPUT-CONTROL-TREE",
         ))
     test("memory source ceiling drift fails", () => {
-        const source = readFileSync(
-            resolve(ROOT, manifest.memoryScenarios[0].sourceTest),
-            "utf8",
-        ).replace("retainedBytesPerUnit: 160", "retainedBytesPerUnit: 161")
+        const source = frozenInputBytes(manifest.memoryScenarios[0].sourceTest)
+            .toString("utf8")
+            .replace("retainedBytesPerUnit: 160", "retainedBytesPerUnit: 161")
         expect(() => verifyMemorySource(source)).toThrow("INPUT-MEMORY-CEILING")
     })
     test("memory source unit drift fails", () => {
-        const source = readFileSync(
-            resolve(ROOT, manifest.memoryScenarios[0].sourceTest),
-            "utf8",
-        ).replace("length: 4_000", "length: 4_001")
+        const source = frozenInputBytes(manifest.memoryScenarios[0].sourceTest)
+            .toString("utf8")
+            .replace("length: 4_000", "length: 4_001")
         expect(() => verifyMemorySource(source)).toThrow("INPUT-MEMORY-UNITS")
     })
     test.each(["C", "A"])("complete %s inventory", stage =>

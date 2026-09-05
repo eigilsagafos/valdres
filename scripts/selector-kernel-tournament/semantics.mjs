@@ -3,6 +3,8 @@ import { mkdirSync, writeFileSync, existsSync } from "node:fs"
 import { join, resolve } from "node:path"
 import {
     ROOT,
+    frozenInputBytes,
+    sha256,
     assertClean,
     checkInputs,
     json,
@@ -49,12 +51,16 @@ export function runSemantics({
                 "build",
                 join(
                     ROOT,
+                    frozenInputBytes,
+                    sha256,
                     "scripts/selector-kernel-tournament/semantic-worker.mjs",
                 ),
                 "--target=node",
                 `--outfile=${worker}`,
             ],
             ROOT,
+            frozenInputBytes,
+            sha256,
         ),
     )
     const processRows = []
@@ -73,6 +79,8 @@ export function runSemantics({
                 join(foreign, "node_modules/valdres"),
                 join(
                     ROOT,
+                    frozenInputBytes,
+                    sha256,
                     "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v3.json",
                 ),
                 join(output, `${stem}.ndjson`),
@@ -155,6 +163,12 @@ export function runFrozenFamily(output) {
     const files = manifest.productLanes.family.protectedPaths.filter(p =>
         p.endsWith(".test.ts"),
     )
+    for (const path of files)
+        requireGate(
+            fileHash(join(ROOT, path)) === sha256(frozenInputBytes(path)),
+            "FAMILY-AUTHORITY",
+            "execute frozen family tests from the frozen checkout: " + path,
+        )
     const result = captureCommand(
         ["bun", "test", "--reporter=dots", ...files.map(p => resolve(ROOT, p))],
         join(ROOT, "packages/valdres"),
@@ -173,7 +187,7 @@ export function runFrozenFamily(output) {
         scoring: false,
         files: files.map(path => ({
             path,
-            sha256: fileHash(join(ROOT, path)),
+            sha256: sha256(frozenInputBytes(path)),
         })),
         process: "family.process.json",
     }

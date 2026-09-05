@@ -2,6 +2,8 @@ import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs"
 import { dirname, join } from "node:path"
 import {
     ROOT,
+    frozenInputBytes,
+    sha256,
     DIRECTORY,
     manifest,
     json,
@@ -167,7 +169,7 @@ export async function runRedCase({ id, variant, controlRoot, mode, output }) {
             }
             requireGate(
                 fileHash(join(source.directory, SOURCE_HARNESS)) ===
-                    fileHash(join(ROOT, SOURCE_HARNESS)),
+                    sha256(frozenInputBytes(SOURCE_HARNESS)),
                 "SOURCE-MEMORY-HARNESS",
                 "red fixture changed harness",
             )

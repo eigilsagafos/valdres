@@ -1,8 +1,9 @@
 import { assertInstalledArtifact } from "./artifact.mjs"
-import { mkdirSync, existsSync, writeFileSync, cpSync } from "node:fs"
+import { mkdirSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
     ROOT,
+    frozenInputBytes,
     assertClean,
     checkInputs,
     manifest,
@@ -35,12 +36,11 @@ export function prepareWorkloads(output) {
     const worker = join(output, "worker.mjs"),
         wrapper = join(output, "legacy-wrappers.mjs")
     const wrapperInputs = buildLegacyWrappers(wrapper)
-    cpSync(
-        join(
-            ROOT,
+    writeFileSync(
+        join(output, "initial-view-core.v1.json"),
+        frozenInputBytes(
             "packages/valdres/test/performance/core-load/initial-view-core.v1.json",
         ),
-        join(output, "initial-view-core.v1.json"),
     )
     writeFileSync(
         join(output, "build.log"),

@@ -14,11 +14,78 @@ export const sha256 = bytes => createHash("sha256").update(bytes).digest("hex")
 export const fileHash = path => sha256(readFileSync(path))
 export const git = (args, root = ROOT) =>
     execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim()
+// Unlike git(), authority reads preserve every byte, including the final newline.
+export function gitBlob(commit, path, root = ROOT) {
+    requireGate(
+        /^[a-f0-9]{40}$/.test(commit) &&
+            typeof path === "string" &&
+            path.length > 0 &&
+            !path.startsWith("/") &&
+            !path.includes("\\") &&
+            !path.split("/").some(part => ["", ".", ".."].includes(part)),
+        "INPUT-GIT-BLOB",
+        "exact commit and repository-relative blob required",
+    )
+    const object = `${commit}:${path}`
+    requireGate(
+        git(["cat-file", "-t", object], root) === "blob",
+        "INPUT-GIT-BLOB",
+        path,
+    )
+    return execFileSync("git", ["cat-file", "blob", object], {
+        cwd: root,
+        maxBuffer: 64 * 1024 * 1024,
+    })
+}
 import { requireGate } from "./gate.mjs"
 export { requireGate } from "./gate.mjs"
 export const manifest = json(
     resolve(ROOT, DIRECTORY, "fixture-manifest.v3.json"),
 )
+export function frozenInputBytes(path, { root = ROOT, input = manifest } = {}) {
+    const matches = input.frozenInputs.filter(row => row.path === path)
+    requireGate(matches.length === 1, "INPUT-FROZEN-ID", path)
+    const bytes = gitBlob(input.control.gitSha, path, root)
+    requireGate(sha256(bytes) === matches[0].sha256, "INPUT-FROZEN-HASH", path)
+    return bytes
+}
+export const frozenInputJson = (path, options) =>
+    JSON.parse(frozenInputBytes(path, options).toString("utf8"))
+export function controlSourceBytes(path, root = ROOT) {
+    requireGate(
+        path.startsWith("packages/valdres/src/"),
+        "INPUT-CONTROL-SOURCE",
+        path,
+    )
+    assertControl(
+        git(
+            ["rev-parse", `${manifest.control.gitSha}:packages/valdres/src`],
+            root,
+        ),
+    )
+    return gitBlob(manifest.control.gitSha, path, root)
+}
+export function authenticateAuthorityFiles(
+    root = ROOT,
+    foundation = git(["rev-parse", "HEAD"], root),
+) {
+    for (const path of [
+        manifest.spec.path,
+        ...[
+            "fixture-manifest.v3.json",
+            "fixture-manifest.schema.json",
+            "candidate-report.schema.json",
+            "control-report.schema.json",
+        ].map(name => `${DIRECTORY}/${name}`),
+    ]) {
+        requireGate(
+            fileHash(resolve(root, path)) ===
+                sha256(gitBlob(foundation, path, root)),
+            "INPUT-FOUNDATION-HASH",
+            path,
+        )
+    }
+}
 export const reportSchema = json(
     resolve(ROOT, DIRECTORY, "candidate-report.schema.json"),
 )
@@ -73,20 +140,16 @@ export function assertControl(tree) {
         tree,
     )
 }
-export function checkInputs(root = ROOT, input = manifest) {
+export function checkInputs(root = ROOT, input = manifest, foundation) {
     schemaCheck(input, "manifest")
     requireGate(
         fileHash(resolve(root, input.spec.path)) === input.spec.sha256,
         "INPUT-SPEC-HASH",
         input.spec.path,
     )
-    for (const item of input.frozenInputs) {
-        requireGate(
-            fileHash(resolve(root, item.path)) === item.sha256,
-            "INPUT-FROZEN-HASH",
-            item.path,
-        )
-    }
+    authenticateAuthorityFiles(root, foundation)
+    for (const item of input.frozenInputs)
+        frozenInputBytes(item.path, { root, input })
     assertControl(
         git(
             ["rev-parse", `${input.control.gitSha}:packages/valdres/src`],
@@ -113,13 +176,16 @@ export function checkInputs(root = ROOT, input = manifest) {
         root,
     )
     verifyMemorySource(
-        readFileSync(
-            resolve(root, input.memoryScenarios[0].sourceTest),
-            "utf8",
-        ),
+        frozenInputBytes(input.memoryScenarios[0].sourceTest, {
+            root,
+            input,
+        }).toString("utf8"),
         input,
     )
-    const size = json(resolve(root, input.stages.size.baselineFile))
+    const size = frozenInputJson(input.stages.size.baselineFile, {
+        root,
+        input,
+    })
     requireGate(
         size.packed.gzip === input.stages.size.controlPackedGzipBytes &&
             Object.entries(size.distFiles).some(

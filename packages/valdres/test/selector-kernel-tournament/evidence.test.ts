@@ -266,10 +266,10 @@ test("raw size parsing retains each metric and rejects rehashed baseline substit
     const { parseSizeOutput, normalizeSizes } = await import(
         "../../../../scripts/selector-kernel-tournament/resource-evidence.mjs"
     )
-    const { json, ROOT } = await import(
+    const { frozenInputJson } = await import(
         "../../../../scripts/selector-kernel-tournament/inputs.mjs"
     )
-    const baseline = json(join(ROOT, manifest.stages.size.baselineFile))
+    const baseline = frozenInputJson(manifest.stages.size.baselineFile)
     const text = [
         "Measured sizes (bytes):",
         `  dist total raw ${baseline.dist.raw} gzip ${baseline.dist.gzip}`,

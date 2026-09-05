@@ -6,6 +6,9 @@ import { tmpdir } from "node:os"
 import { buildLegacyWrappers } from "./legacy-wrappers.mjs"
 import {
     ROOT,
+    frozenInputBytes,
+    frozenInputJson,
+    sha256,
     DIRECTORY,
     manifest,
     json,
@@ -25,7 +28,7 @@ export function normalizeSizes(value) {
         "SIZE-METRICS",
     )
     requireGate(
-        value.bun === json(join(ROOT, manifest.stages.size.baselineFile)).bun &&
+        value.bun === frozenInputJson(manifest.stages.size.baselineFile).bun &&
             value.bun === Bun.version,
         "SIZE-VERSION",
         "size toolchain differs from frozen baseline",
@@ -101,7 +104,7 @@ export function validateSizeEvidence(root, value, { artifacts, index }) {
     requireGate(value.schemaVersion === 3, "SIZE-SCHEMA", "version")
     same(
         value.baseline,
-        normalizeSizes(json(join(ROOT, manifest.stages.size.baselineFile))),
+        normalizeSizes(frozenInputJson(manifest.stages.size.baselineFile)),
         "SIZE-BASELINE",
         "frozen size baseline changed",
     )
@@ -110,6 +113,16 @@ export function validateSizeEvidence(root, value, { artifacts, index }) {
         ["control", "candidate"],
         "SIZE-PROCESSES",
     )
+    for (const path of [
+        manifest.stages.size.measurementScript,
+        manifest.stages.size.baselineFile,
+    ])
+        requireGate(
+            fileHash(evidencePath(root, "size-authority/" + path)) ===
+                sha256(frozenInputBytes(path)),
+            "SIZE-AUTHORITY",
+            path,
+        )
     const reachability = json(evidencePath(root, "root-reachability.json"))
     strictKeys(
         reachability,
@@ -140,7 +153,11 @@ export function validateSizeEvidence(root, value, { artifacts, index }) {
         validateProcess(process, {
             argv: [
                 "bun",
-                join(recordedRoot(), manifest.stages.size.measurementScript),
+                join(
+                    root,
+                    "size-authority",
+                    manifest.stages.size.measurementScript,
+                ),
                 tarball,
             ],
         })
@@ -171,7 +188,9 @@ export function validateMemoryEvidence(root, records, { artifacts }) {
         fileHash(worker) === runner.workerSha256 &&
             fileHash(wrapper) === runner.wrapperSha256 &&
             runner.sourceSha256 ===
-                fileHash(join(ROOT, manifest.memoryScenarios[0].sourceTest)),
+                sha256(
+                    frozenInputBytes(manifest.memoryScenarios[0].sourceTest),
+                ),
         "MEMORY-RUNNER-HASH",
         "memory sources changed",
     )

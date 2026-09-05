@@ -1,7 +1,8 @@
 import { recordedRoot } from "./recorded-root.mjs"
 import { join } from "node:path"
 import {
-    ROOT,
+    frozenInputBytes,
+    sha256,
     manifest,
     fileHash,
     json,
@@ -26,7 +27,7 @@ export function validateFamily(root, path) {
     )
     const expected = manifest.productLanes.family.protectedPaths
         .filter(p => p.endsWith(".test.ts"))
-        .map(path => ({ path, sha256: fileHash(join(ROOT, path)) }))
+        .map(path => ({ path, sha256: sha256(frozenInputBytes(path)) }))
     same(family.files, expected, "FAMILY-FROZEN-HASH", "family files changed")
     const process = json(evidencePath(root, family.process))
     validateProcess(process, {

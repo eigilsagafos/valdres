@@ -47,7 +47,7 @@ export function writeEvidence(root, path, value) {
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(
         file,
-        typeof value === "string"
+        typeof value === "string" || value instanceof Uint8Array
             ? value
             : JSON.stringify(value, null, 2) + "\n",
         { flag: "wx" },

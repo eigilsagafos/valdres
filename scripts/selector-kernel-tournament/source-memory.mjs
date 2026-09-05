@@ -7,10 +7,11 @@ import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import {
     ROOT,
+    frozenInputBytes,
+    sha256,
     manifest,
     git,
     fileHash,
-    sha256,
     json,
     requireGate,
     exactRows,
@@ -65,7 +66,7 @@ export function materializeSource(archive, commit) {
     const snapshot = sourceSnapshot(directory, commit)
     requireGate(
         fileHash(join(directory, SOURCE_HARNESS)) ===
-            fileHash(join(ROOT, SOURCE_HARNESS)),
+            sha256(frozenInputBytes(SOURCE_HARNESS)),
         "SOURCE-MEMORY-HARNESS",
         "frozen harness changed",
     )
@@ -284,7 +285,7 @@ export function validateSourceMemory(
         requireGate(
             ref.gitSha === metadata.gitSha &&
                 ref.sourceArchiveSha256 === metadata.sourceArchiveSha256 &&
-                ref.harnessSha256 === fileHash(join(ROOT, SOURCE_HARNESS)),
+                ref.harnessSha256 === sha256(frozenInputBytes(SOURCE_HARNESS)),
             "SOURCE-MEMORY-IDENTITY",
             ref.arm,
         )

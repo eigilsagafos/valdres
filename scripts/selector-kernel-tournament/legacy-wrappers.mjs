@@ -1,21 +1,24 @@
 import ts from "typescript"
-import { readFileSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
-import { ROOT, requireGate, fileHash, manifest } from "./inputs.mjs"
+import { writeFileSync } from "node:fs"
+import {
+    requireGate,
+    fileHash,
+    manifest,
+    gitBlob,
+    frozenInputBytes,
+    sha256,
+} from "./inputs.mjs"
 // Extract frozen benchmark bodies as syntax, never import their legacy runtime.
 // The generated module binds their constructor names to the installed v1 root.
 export function buildLegacyWrappers(output) {
     const sources = {}
     function source(name) {
-        const path = join(
-            ROOT,
-            "packages/valdres/test/performance",
-            name + ".bench.ts",
-        )
-        sources[path.slice(ROOT.length + 1)] = fileHash(path)
+        const path = "packages/valdres/test/performance/" + name + ".bench.ts"
+        const bytes = gitBlob(manifest.control.gitSha, path)
+        sources[path] = sha256(bytes)
         return ts.createSourceFile(
             path,
-            readFileSync(path, "utf8"),
+            bytes.toString("utf8"),
             ts.ScriptTarget.Latest,
             true,
             ts.ScriptKind.TS,
@@ -76,14 +79,12 @@ export function buildLegacyWrappers(output) {
         .find(p => p.name?.getText(ast) === "valdres")
         ?.initializer?.getText(ast)
     requireGate(valdres, "WORKLOAD-PORT-ANCHOR", "Valdres teardown")
-    const memoryPath = join(
-        ROOT,
-        "packages/valdres/test/performance/architecture.memory.ts",
-    )
-    sources[memoryPath.slice(ROOT.length + 1)] = fileHash(memoryPath)
+    const memoryPath = manifest.memoryScenarios[0].sourceTest
+    const memoryBytes = frozenInputBytes(memoryPath)
+    sources[memoryPath] = sha256(memoryBytes)
     const memory = ts.createSourceFile(
         memoryPath,
-        readFileSync(memoryPath, "utf8"),
+        memoryBytes.toString("utf8"),
         ts.ScriptTarget.Latest,
         true,
         ts.ScriptKind.TS,
