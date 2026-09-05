@@ -42,6 +42,16 @@ export const RED_CASES = [
     ],
     ["provenance-mismatch", "provenance-mismatch", "PROVENANCE-RESULT-ROW"],
     [
+        "provenance-mismatch",
+        "semantic-cache-identity",
+        "SEMANTIC-EVIDENCE-IDENTITY",
+    ],
+    [
+        "provenance-mismatch",
+        "semantic-cache-mode",
+        "SEMANTIC-EVIDENCE-IDENTITY",
+    ],
+    [
         "deterministic-20-percent-slowdown",
         "deterministic-20-percent-slowdown",
         "PERFORMANCE-REGRESSION",

@@ -1,7 +1,7 @@
 import { recordedRoot } from "./recorded-root.mjs"
 import { assertInstalledArtifact } from "./artifact.mjs"
 import { readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { createHash } from "node:crypto"
 import {
     ROOT,
@@ -14,7 +14,7 @@ import {
     exactRows,
     checkInputs,
 } from "./inputs.mjs"
-import { evidencePath, strictKeys, same } from "./evidence.mjs"
+import { evidencePath, strictKeys, same, canonical } from "./evidence.mjs"
 import {
     labeledDAGs,
     insertionClosesCycle,
@@ -269,9 +269,20 @@ export function validateSemanticEvidence(
     mode,
     cache = new Map(),
 ) {
-    const key = relative + "/" + fileHash(evidencePath(root, relative))
-    if (cache.has(key)) return cache.get(key)
-    const evidence = json(evidencePath(root, relative))
+    const path = evidencePath(root, relative)
+    const bytes = readFileSync(path)
+    // A shared report cache spans arms, modes and recorded invocations. Bind
+    // every caller input, including all installed-artifact identity fields.
+    const key = canonical({
+        root: resolve(root),
+        path: resolve(path),
+        invocationRoot: root,
+        recordedRoot: recordedRoot(),
+        evidenceSha256: sha256(bytes),
+        identity,
+        mode,
+    })
+    const evidence = JSON.parse(bytes.toString("utf8"))
     strictKeys(
         evidence,
         [
@@ -286,7 +297,8 @@ export function validateSemanticEvidence(
         "SEMANTIC-EVIDENCE-SCHEMA",
     )
     requireGate(
-        evidence.schemaVersion === 3 &&
+        ["public", "counter"].includes(mode) &&
+            evidence.schemaVersion === 3 &&
             evidence.kind === "semantic-evidence" &&
             evidence.artifact.gitSha === identity.gitSha &&
             evidence.artifact.tarballSha256 === identity.tarballSha256 &&
@@ -321,7 +333,8 @@ export function validateSemanticEvidence(
         evidencePath(root, worker),
         "scripts/selector-kernel-tournament/semantic-worker.mjs",
     )
-    const results = []
+    const results = [],
+        rawEvidence = []
     for (const process of evidence.processRows) {
         strictKeys(
             process,
@@ -346,11 +359,6 @@ export function validateSemanticEvidence(
             fileHash(evidencePath(root, raw)) === process.rawSha256,
             "SEMANTIC-RAW-HASH",
             raw,
-        )
-        const summaries = validateSemanticRaw(
-            evidencePath(root, raw),
-            mode,
-            evidence.stage,
         )
         const result = json(
             evidencePath(root, join(dirname(relative), process.process)),
@@ -422,12 +430,7 @@ export function validateSemanticEvidence(
             "SEMANTIC-TRACE",
             "stdout summary mismatch",
         )
-        same(
-            [...summaries.values()],
-            process.rows,
-            "SEMANTIC-TRACE",
-            "summary differs from raw evidence",
-        )
+        rawEvidence.push({ path: evidencePath(root, raw), rows: process.rows })
         results.push(process)
     }
     for (const runtime of ["bun", "node"]) {
@@ -439,6 +442,19 @@ export function validateSemanticEvidence(
             replays[1].rows.map(r => [r.id, r.traceSha256]),
             "SEMANTIC-DETERMINISM",
             runtime,
+        )
+    }
+    // Never cache filesystem/provenance checks: referenced raw/process/worker
+    // bytes, installed chunks, invocation and frozen inputs were revalidated
+    // above even on a hit. Only the expensive oracle analysis is reusable.
+    if (cache.has(key)) return cache.get(key)
+    for (const raw of rawEvidence) {
+        const summaries = validateSemanticRaw(raw.path, mode, evidence.stage)
+        same(
+            [...summaries.values()],
+            raw.rows,
+            "SEMANTIC-TRACE",
+            "summary differs from raw evidence",
         )
     }
     cache.set(key, results)

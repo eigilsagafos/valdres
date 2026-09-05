@@ -35,6 +35,7 @@ import {
 import { validateWorkloadSample } from "./workload-validation.mjs"
 import { assertTimingDuration } from "./timing-evidence.mjs"
 import { decideTournament } from "../lib/paired-decision-tournament.ts"
+import { validateSemanticEvidence } from "./semantic-validation.mjs"
 
 function buildWorker(output, name) {
     const worker = join(output, name + ".mjs")
@@ -85,6 +86,66 @@ export async function runRedCase({ id, variant, controlRoot, mode, output }) {
         controlRoot,
         expectedGate: row.expectedGate,
     })
+    if (id === "provenance-mismatch" && variant.startsWith("semantic-cache-")) {
+        const identity = json(join(timedDirectory, "artifact.json"))
+        const relative = "semantics-public/semantics.json"
+        const cache = new Map()
+        const warmed = validateSemanticEvidence(
+            controlRoot,
+            relative,
+            identity,
+            "public",
+            cache,
+        )
+        writeEvidence(output, "cache-warmup.json", {
+            evidence: relative,
+            evidenceSha256: fileHash(join(controlRoot, relative)),
+            identity,
+            mode: "public",
+            validatedProcesses: warmed.length,
+            cacheEntries: cache.size,
+        })
+        requireGate(
+            warmed.length === 4 && cache.size === 1,
+            "RED-CACHE-WARMUP",
+            "valid control evidence must populate the shared cache",
+        )
+        const submitted =
+            mutation && variant === "semantic-cache-identity"
+                ? {
+                      ...identity,
+                      gitSha: "0".repeat(40),
+                      tarballSha256: "f".repeat(64),
+                  }
+                : identity
+        const observation =
+            mutation && variant === "semantic-cache-mode" ? "counter" : "public"
+        writeEvidence(output, "cache-submission.json", {
+            arm: mutation ? "mismatched-test-submission" : "control",
+            identity: submitted,
+            mode: observation,
+            sharedCache: true,
+        })
+        const result = validateSemanticEvidence(
+            controlRoot,
+            relative,
+            submitted,
+            observation,
+            cache,
+        )
+        requireGate(!mutation, "RED-MUTATION-SURVIVED", variant)
+        requireGate(
+            result === warmed,
+            "RED-CACHE-REUSE",
+            "identical context must reuse the completed analysis",
+        )
+        return {
+            status: "pass",
+            class: id,
+            variant,
+            validatedProcesses: result.length,
+        }
+    }
     if (/^[AC]-/.test(row.expectedGate)) {
         const counter = installed(counterDirectory, output, "counter")
         const foreign = installed(timedDirectory, output, "foreign")

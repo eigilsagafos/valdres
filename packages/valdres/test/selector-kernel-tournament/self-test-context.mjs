@@ -18,6 +18,7 @@ const files = [
     "provenance-inventory.test.ts",
     "readiness.test.ts",
     "resources.test.ts",
+    "semantic-cache.test.ts",
     "semantic-cases.test.ts",
     "shiftx-validation.test.ts",
     "source-memory.test.ts",
@@ -89,7 +90,7 @@ export function isolatedTournamentFile() {
             process.stdout.write(result.stdout ?? "")
             process.stderr.write(result.stderr ?? "")
             const totals = validateSelfTestResult(result, {
-                tests: 81,
+                tests: 82,
                 files: files.length,
             })
             console.log(

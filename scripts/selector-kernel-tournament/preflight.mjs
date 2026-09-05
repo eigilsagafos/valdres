@@ -154,7 +154,16 @@ export function verifyPreflightEvidence(
         )
         validateFamily(root, value.family.evidence)
     }
+    // Group references within this fixed root/artifact invocation. Validate
+    // each complete evidence file once, then check every declared trace row.
+    const groups = new Map()
     for (const row of value.rows) {
+        const key = JSON.stringify([row.evidence, row.mode])
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key).push(row)
+    }
+    for (const rows of groups.values()) {
+        const row = rows[0]
         const results = validateSemanticEvidence(
             root,
             row.evidence,
@@ -162,14 +171,16 @@ export function verifyPreflightEvidence(
             row.mode,
             cache,
         )
-        const expected = results
-            .find(p => p.runtime === row.runtime && p.repeat === 0)
-            .rows.find(r => r.id === row.id)
-        requireGate(
-            expected?.status === row.status &&
-                expected.traceSha256 === row.traceSha256,
-            "PREFLIGHT-TRACE",
-            row.id,
-        )
+        for (const row of rows) {
+            const expected = results
+                .find(p => p.runtime === row.runtime && p.repeat === 0)
+                .rows.find(r => r.id === row.id)
+            requireGate(
+                expected?.status === row.status &&
+                    expected.traceSha256 === row.traceSha256,
+                "PREFLIGHT-TRACE",
+                row.id,
+            )
+        }
     }
 }
