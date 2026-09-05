@@ -53,7 +53,12 @@ function buildWorker(output, name) {
 function installed(directory, output, name) {
     const metadata = json(join(directory, "artifact.json"))
     const consumer = join(output, name)
-    installArtifact(join(directory, metadata.tarball), metadata, consumer)
+    installArtifact(
+        join(directory, metadata.tarball),
+        metadata,
+        consumer,
+        metadata.mode,
+    )
     return { packageRoot: join(consumer, "node_modules/valdres"), metadata }
 }
 export async function runRedCase({ id, variant, controlRoot, mode, output }) {
