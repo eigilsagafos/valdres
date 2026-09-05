@@ -267,6 +267,17 @@ export async function runRedCase({ id, variant, controlRoot, mode, output }) {
         return { status: "pass" }
     }
     requireGate(id === "provenance-mismatch", "RED-ID", id)
+    writeEvidence(
+        output,
+        "initial-view-core.v1.json",
+        readFileSync(
+            join(
+                ROOT,
+                "packages/valdres/test/performance/core-load/initial-view-core.v1.json",
+            ),
+            "utf8",
+        ),
+    )
     const worker = buildWorker(output, "workload-worker")
     const wrapper = join(output, "factories.mjs")
     buildLegacyWrappers(wrapper)
