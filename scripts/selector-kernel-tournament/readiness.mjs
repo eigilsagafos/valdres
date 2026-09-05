@@ -391,6 +391,10 @@ if (import.meta.main) {
             landingSha,
             upstreamSha,
         })
+        verifyFoundationLanding(
+            { frozenFoundationSha, foundationMergeSha: landingSha },
+            { mainRef: landingSha },
+        )
         checkInputs(ROOT, undefined, frozenFoundationSha)
         console.log(
             JSON.stringify({

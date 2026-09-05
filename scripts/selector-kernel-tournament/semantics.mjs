@@ -51,16 +51,12 @@ export function runSemantics({
                 "build",
                 join(
                     ROOT,
-                    frozenInputBytes,
-                    sha256,
                     "scripts/selector-kernel-tournament/semantic-worker.mjs",
                 ),
                 "--target=node",
                 `--outfile=${worker}`,
             ],
             ROOT,
-            frozenInputBytes,
-            sha256,
         ),
     )
     const processRows = []
@@ -79,8 +75,6 @@ export function runSemantics({
                 join(foreign, "node_modules/valdres"),
                 join(
                     ROOT,
-                    frozenInputBytes,
-                    sha256,
                     "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v3.json",
                 ),
                 join(output, `${stem}.ndjson`),
