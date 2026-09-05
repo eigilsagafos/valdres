@@ -37,7 +37,7 @@ import { validateProcess } from "./process-evidence.mjs"
 import { sourceMemoryCommand, assertSourceMemory } from "./source-memory.mjs"
 
 export const EXPECTED_TESTS = {
-    tournament: 77,
+    tournament: 78,
     "paired-statistics": 67,
     "frozen-family": 58,
     "source-memory-bun": 8,
@@ -73,17 +73,34 @@ export function requireVerificationTotals(id, totals) {
 }
 export function verificationCommands(root = ROOT) {
     const pkg = join(root, "packages/valdres")
+    // captureCommand deliberately pins production artifact processes. Ordinary
+    // repository tests must inherit CI's unset NODE_ENV so Bun selects test mode.
+    // Keep the explicit env operation in recorded argv; source-memory commands
+    // retain their existing required production environment.
     return [
-        { id: "repository-ci", argv: ["bun", "run", "verify"], cwd: root },
+        {
+            id: "repository-ci",
+            argv: ["env", "-u", "NODE_ENV", "bun", "run", "verify"],
+            cwd: root,
+        },
         {
             id: "tournament",
-            argv: ["bun", "test", "test/selector-kernel-tournament"],
+            argv: [
+                "env",
+                "-u",
+                "NODE_ENV",
+                "bun",
+                "test",
+                "test/selector-kernel-tournament",
+            ],
             cwd: pkg,
         },
         {
             id: "paired-statistics",
             argv: [
                 "env",
+                "-u",
+                "NODE_ENV",
                 "VALDRES_ALLOW_ROOT_BUN_TEST=1",
                 "bun",
                 "test",
@@ -96,6 +113,9 @@ export function verificationCommands(root = ROOT) {
         {
             id: "frozen-family",
             argv: [
+                "env",
+                "-u",
+                "NODE_ENV",
                 "bun",
                 "test",
                 "--reporter=dots",

@@ -1,8 +1,13 @@
 import { test, expect } from "bun:test"
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { captureCommand } from "../../../../scripts/selector-kernel-tournament/artifact.mjs"
 import {
     requireVerificationTotals,
     verificationTotals,
     EXPECTED_TESTS,
+    verificationCommands,
 } from "../../../../scripts/selector-kernel-tournament/verification.mjs"
 import { validatePreflight } from "../../../../scripts/selector-kernel-tournament/timing-evidence.mjs"
 import { manifest } from "../../../../scripts/selector-kernel-tournament/inputs.mjs"
@@ -77,4 +82,33 @@ test("C preflight does not import A core-load or family admission rules", () => 
             identity,
         ),
     ).toThrow("FAMILY-COMPATIBILITY")
+})
+
+test("F9 runs ordinary tests in Bun test mode and keeps source memory in production", () => {
+    const rows = verificationCommands()
+    for (const row of rows.filter(r => !r.id.startsWith("source-memory-"))) {
+        expect(row.argv.slice(0, 3)).toEqual(["env", "-u", "NODE_ENV"])
+    }
+    for (const row of rows.filter(r => r.id.startsWith("source-memory-"))) {
+        expect(row.argv).not.toContain("-u")
+    }
+    const directory = mkdtempSync(join(tmpdir(), "tournament-f9-mode-"))
+    try {
+        writeFileSync(
+            join(directory, "mode.test.ts"),
+            'import {test,expect} from "bun:test";test("development regressions stay enabled",()=>expect(process.env.NODE_ENV).toBe("test"));\n',
+        )
+        const production = captureCommand(
+            ["bun", "test", "mode.test.ts"],
+            directory,
+        )
+        expect(production.status).toBe(1)
+        const ordinary = captureCommand(
+            ["env", "-u", "NODE_ENV", "bun", "test", "mode.test.ts"],
+            directory,
+        )
+        expect(ordinary.status).toBe(0)
+    } finally {
+        rmSync(directory, { recursive: true, force: true })
+    }
 })

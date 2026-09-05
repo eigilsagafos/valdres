@@ -134,3 +134,20 @@ passed all 20 variants (40 processes); its SHA256SUMS digest is
 The earlier resource audit also fixed installed shared-chunk verification and
 first-release observation selection. None of these changes modified production
 source, existing tests, ceilings, versions, lockfiles, or public declarations.
+
+A complete frozen attempt at `5b4cd42804f81a9abd8541bc480e412dae211ca6` produced
+a passing green control and all passing red proofs, then exposed an F9 launcher
+defect: ordinary repository tests inherited the production-artifact launcher's
+`NODE_ENV=production`. F9 now records an explicit `env -u NODE_ENV` for ordinary
+CI/test commands, while source-memory commands retain their required production
+mode. A subprocess regression proves both modes; the self-test count is 78. This
+tracked correction requires a new reviewed freeze and every final evidence
+bundle to be rerun. The superseded attempt remains immutable under that SHA,
+with these SHA256SUMS digests:
+
+- Green `beta36-control/1/foundation-v3-final-20260905/`:
+  `5486d2ff0701349ac09aca6ca16d0c299a81c981d83ffc2a02b80573d8acc82e`.
+- Red `foundation-v3-final-red-20260905/`:
+  `239e71fa2cdff615aa40141527a563543a28dccd705f1583cbbfc58d7af31056`.
+- Failed verification `foundation-v3-final-verification-20260905/`:
+  `eac9c36d720fb8a63d767a6377904f1f47567d5422d895552561dbd1a6204a2e`.
