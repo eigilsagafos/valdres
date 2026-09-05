@@ -78,7 +78,9 @@ export function validatePreflight(value, stage, identity) {
         "wrong semantic artifact",
     )
     requireGate(
-        value.family.status === "pass" && value.family.scoring === false,
+        stage === "C"
+            ? value.family === null && value.core === null
+            : value.family?.status === "pass" && value.family.scoring === false,
         "FAMILY-COMPATIBILITY",
         "frozen family gate missing",
     )

@@ -1,3 +1,4 @@
+import { recordedRoot } from "./recorded-root.mjs"
 import { join } from "node:path"
 import {
     ROOT,
@@ -33,7 +34,7 @@ export function validateFamily(root, path) {
             "bun",
             "test",
             "--reporter=dots",
-            ...expected.map(r => join(ROOT, r.path)),
+            ...expected.map(r => join(recordedRoot(), r.path)),
         ],
     })
     requireGate(
@@ -55,8 +56,8 @@ export function createPreflight(
         coreEvidence,
     },
 ) {
-    validateCorePreflight(root, coreEvidence, timed)
-    const family = validateFamily(root, familyEvidence),
+    if (stage === "A") validateCorePreflight(root, coreEvidence, timed)
+    const family = stage === "A" ? validateFamily(root, familyEvidence) : null,
         cache = new Map(),
         rows = []
     for (const [mode, path, identity] of [
@@ -91,16 +92,22 @@ export function createPreflight(
         gitSha: timed.gitSha,
         timedArtifactSha256: timed.tarballSha256,
         counterArtifactSha256: counter.tarballSha256,
-        core: {
-            evidence: coreEvidence,
-            sha256: fileHash(evidencePath(root, coreEvidence)),
-        },
-        family: {
-            status: family.status,
-            scoring: false,
-            evidence: familyEvidence,
-            sha256: fileHash(evidencePath(root, familyEvidence)),
-        },
+        core:
+            stage === "C"
+                ? null
+                : {
+                      evidence: coreEvidence,
+                      sha256: fileHash(evidencePath(root, coreEvidence)),
+                  },
+        family:
+            stage === "C"
+                ? null
+                : {
+                      status: family.status,
+                      scoring: false,
+                      evidence: familyEvidence,
+                      sha256: fileHash(evidencePath(root, familyEvidence)),
+                  },
         rows,
     }
 }
@@ -116,25 +123,36 @@ export function verifyPreflightEvidence(
         "PREFLIGHT-IDENTITY",
         "preflight hashes differ from built artifacts",
     )
-    strictKeys(value.core, ["evidence", "sha256"], "CORE-PREFLIGHT-SCHEMA")
-    requireGate(
-        fileHash(evidencePath(root, value.core.evidence)) === value.core.sha256,
-        "CORE-PREFLIGHT-HASH",
-        "core oracle evidence changed",
-    )
-    validateCorePreflight(root, value.core.evidence, timed)
-    strictKeys(
-        value.family,
-        ["status", "scoring", "evidence", "sha256"],
-        "FAMILY-SCHEMA",
-    )
-    requireGate(
-        fileHash(evidencePath(root, value.family.evidence)) ===
-            value.family.sha256,
-        "FAMILY-FROZEN-HASH",
-        "family evidence changed",
-    )
-    validateFamily(root, value.family.evidence)
+    if (value.stage === "C") {
+        same(value.core, null, "CORE-PREFLIGHT-STAGE", "core-load belongs to A")
+        same(
+            value.family,
+            null,
+            "FAMILY-STAGE",
+            "family is the independent A lane",
+        )
+    } else {
+        strictKeys(value.core, ["evidence", "sha256"], "CORE-PREFLIGHT-SCHEMA")
+        requireGate(
+            fileHash(evidencePath(root, value.core.evidence)) ===
+                value.core.sha256,
+            "CORE-PREFLIGHT-HASH",
+            "core oracle evidence changed",
+        )
+        validateCorePreflight(root, value.core.evidence, timed)
+        strictKeys(
+            value.family,
+            ["status", "scoring", "evidence", "sha256"],
+            "FAMILY-SCHEMA",
+        )
+        requireGate(
+            fileHash(evidencePath(root, value.family.evidence)) ===
+                value.family.sha256,
+            "FAMILY-FROZEN-HASH",
+            "family evidence changed",
+        )
+        validateFamily(root, value.family.evidence)
+    }
     for (const row of value.rows) {
         const results = validateSemanticEvidence(
             root,

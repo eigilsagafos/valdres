@@ -101,12 +101,16 @@ export function interactionDuration(trace, scenario) {
         "missing start or fixed gesture steps",
     )
     const start = starts[0],
-        last = steps.at(-1)
+        last = steps.reduce(
+            (latest, step) => (step.ts > latest.ts ? step : latest),
+            steps[0],
+        )
     requireGate(
         Number.isFinite(start.ts) &&
             steps.every(
                 e =>
                     Number.isFinite(e.ts) &&
+                    e.ts >= start.ts &&
                     e.pid === start.pid &&
                     e.tid === start.tid,
             ) &&
@@ -201,7 +205,9 @@ export function decideShiftx(lanes, baselineId) {
                           ? "fail"
                           : "inconclusive",
                 claim =
-                    estimateRatio < 1 && interval90[1] < 1
+                    estimateRatio < 1 &&
+                    interval90[1] < 1 &&
+                    !d.flags.includes("bimodal")
                         ? "pass"
                         : "inconclusive"
             return {

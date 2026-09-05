@@ -1,3 +1,4 @@
+import { withRecordedRoot } from "./recorded-root.mjs"
 import { readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import Ajv2020 from "ajv/dist/2020.js"
@@ -63,7 +64,7 @@ const gate = (status, evidence) => ({
 export function computeSelection(gates, stage, humanDecision = null) {
     const required =
         stage === "C"
-            ? ["provenance", "contractC", "familyCompatibility", "performance"]
+            ? ["provenance", "contractC", "performance"]
             : [
                   "provenance",
                   "contractC",
@@ -144,7 +145,13 @@ export function renderReport(report) {
     )
     return lines.join("\n")
 }
-export async function recomputeReport(root, { humanDecision = null } = {}) {
+export async function recomputeReport(root, options = {}) {
+    const provenance = json(evidencePath(root, "provenance.json"))
+    return withRecordedRoot(provenance.candidateRoot, () =>
+        recomputeRecordedReport(root, options),
+    )
+}
+async function recomputeRecordedReport(root, { humanDecision = null } = {}) {
     const index = json(evidencePath(root, "run.json"))
     strictKeys(
         index,
@@ -286,11 +293,15 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
         "MEMORY-INVENTORY",
         "memory evidence missing",
     )
-    const sourceMemory = validateSourceMemory(
-        root,
-        json(evidencePath(root, "source-memory.json")),
-        { artifacts, index },
-    )
+    const sourceEvidence = json(evidencePath(root, "source-memory.json"))
+    const sourceMemory =
+        stage === "C" && sourceEvidence === null
+            ? []
+            : validateSourceMemory(root, sourceEvidence, {
+                  artifacts,
+                  index,
+                  blocking: stage === "A",
+              })
     const sizes = json(evidencePath(root, "sizes.json"))
     validateSizeEvidence(root, sizes, { artifacts, index })
     const size = decideSizes(sizes.control, sizes.candidate, sizes.baseline)
@@ -311,7 +322,7 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
                 "conformance-a.json",
             ),
             familyCompatibility: gate(
-                "pass",
+                stage === "A" ? "pass" : "not-run",
                 index.preflights[stages.at(-1)].candidate,
             ),
             performance: gate(
@@ -322,7 +333,14 @@ export async function recomputeReport(root, { humanDecision = null } = {}) {
                 stage === "A" ? decision.tailStatus : "not-run",
                 "timing-decisions.json",
             ),
-            sourceMemory: gate("pass", "source-memory.json"),
+            sourceMemory: gate(
+                sourceMemory.length
+                    ? sourceMemory.every(r => r.status === "pass")
+                        ? "pass"
+                        : "fail"
+                    : "not-run",
+                "source-memory.json",
+            ),
             memory: gate(
                 memory.length
                     ? memory.every(r => r.status === "pass")

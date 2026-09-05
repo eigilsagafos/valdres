@@ -3,6 +3,7 @@ import {
     insertionClosesCycle,
     labeledDAGs,
     validateCyclePath,
+    validateGraphRejection,
 } from "./graph-oracle.mjs"
 
 test("enumerates every labeled DAG through five nodes without duplicates", () => {
@@ -62,4 +63,43 @@ test("cached raw rotation preserves exactly the same causal graph", () => {
     expect(() =>
         validateCyclePath({ ...input, path: [2, 1, 0, 2], origin: "parent" }),
     ).toThrow("causally closing edge")
+})
+
+test("Contract C accepts alternate valid rotation and blame while A enforces causal rejection", () => {
+    const graph = [[1], [2], []]
+    const attempt = {
+        parent: 2,
+        dependency: 0,
+        installed: graph,
+        path: [1, 2, 0, 1],
+        blame: 1,
+        value: null,
+    }
+    expect(() => validateGraphRejection(attempt, graph, "C")).not.toThrow()
+    expect(() => validateGraphRejection(attempt, graph, "A")).toThrow(
+        "A-GRAPH-001",
+    )
+    expect(() =>
+        validateGraphRejection({ ...attempt, path: [0, 2, 0] }, graph, "C"),
+    ).toThrow("C-GRAPH-001")
+    expect(() =>
+        validateGraphRejection(
+            { ...attempt, installed: [[1], [2], [0]] },
+            graph,
+            "C",
+        ),
+    ).toThrow("C-GRAPH-001")
+    const prefix = [[1, 2], [2], []]
+    const lost = {
+        parent: 0,
+        dependency: 0,
+        installed: [[], [2], []],
+        path: [0, 0],
+        blame: 0,
+        value: null,
+    }
+    expect(() => validateGraphRejection(lost, prefix, "C")).not.toThrow()
+    expect(() => validateGraphRejection(lost, prefix, "A")).toThrow(
+        "A-GRAPH-002",
+    )
 })

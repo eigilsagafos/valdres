@@ -18,6 +18,61 @@ import { captureCommand, command } from "./artifact.mjs"
 import { writeEvidence, same, strictKeys, evidencePath } from "./evidence.mjs"
 import { INHERITED_ENVIRONMENT, validateProcess } from "./process-evidence.mjs"
 export const ENVIRONMENT_KEYS = INHERITED_ENVIRONMENT
+export function competingProcesses(stdout, observerPid) {
+    requireGate(
+        Number.isSafeInteger(observerPid) && observerPid > 0,
+        "PROVENANCE-ENVIRONMENT",
+        "observer PID required",
+    )
+    const rows = stdout
+        .trim()
+        .split("\n")
+        .map(line => {
+            const m = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line)
+            requireGate(
+                m,
+                "PROVENANCE-ENVIRONMENT",
+                "malformed process inventory",
+            )
+            return { pid: +m[1], ppid: +m[2], args: m[3] }
+        })
+    requireGate(
+        rows.some(r => r.pid === observerPid) &&
+            new Set(rows.map(r => r.pid)).size === rows.length,
+        "PROVENANCE-ENVIRONMENT",
+        "observer missing or duplicate PID",
+    )
+    const ancestors = new Set([observerPid])
+    let parent = observerPid
+    while (
+        (parent = rows.find(r => r.pid === parent)?.ppid) &&
+        !ancestors.has(parent)
+    )
+        ancestors.add(parent)
+    return rows
+        .filter(
+            r =>
+                !ancestors.has(r.pid) &&
+                /^(?:\S*\/)?(?:bun|node)(?:\s|$)/.test(r.args) &&
+                (/selector-kernel-tournament\/(?:control-bundle|red-bundle|bundle|calibration|workloads|semantics|resources|source-memory|verification|admission-probe|control-contract-probe)\.mjs(?:\s|$)/.test(
+                    r.args,
+                ) ||
+                    /(?:^|\/)(?:memory|semantic|workload|red)-worker\.mjs(?:\s|$)/.test(
+                        r.args,
+                    ) ||
+                    /\/(?:timing-[CA]|memory|counter-workloads)\/worker\.mjs(?:\s|$)/.test(
+                        r.args,
+                    ) ||
+                    /architecture\.memory|core-load\/.*(?:run-sample|runner|worker)|(?:^|\s)(?:bench|bench:bun|bench:node|benchmark)(?:\s|$)/.test(
+                        r.args,
+                    )),
+        )
+        .map(r => ({
+            pid: r.pid,
+            ppid: r.ppid,
+            invocationSha256: sha256(r.args),
+        }))
+}
 export function environmentObservation() {
     requireGate(
         platform() === "darwin",
@@ -42,42 +97,14 @@ export function environmentObservation() {
         "PROVENANCE-ENVIRONMENT",
         "missing benchmark inventory",
     )
-    const rows = inventory.stdout
-        .trim()
-        .split("\n")
-        .map(line => {
-            const m = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line)
-            return m
-                ? { pid: Number(m[1]), ppid: Number(m[2]), args: m[3] }
-                : null
-        })
-        .filter(Boolean)
-    const ancestors = new Set([process.pid])
-    let parent = process.pid
-    while (
-        (parent = rows.find(r => r.pid === parent)?.ppid) &&
-        !ancestors.has(parent)
-    )
-        ancestors.add(parent)
-    const competing = rows
-        .filter(
-            r =>
-                !ancestors.has(r.pid) &&
-                /^(?:\S*\/)?(?:bun|node)(?:\s|$)/.test(r.args) &&
-                /(?:selector-kernel-tournament\/(?:bundle|calibration|workloads|semantics|memory|workload-worker|semantic-worker)|architecture\.memory|core-load\/.*(?:runner|worker))/.test(
-                    r.args,
-                ),
-        )
-        .map(r => ({
-            pid: r.pid,
-            ppid: r.ppid,
-            invocationSha256: sha256(r.args),
-        }))
+    const competing = competingProcesses(inventory.stdout, process.pid)
     return {
         at: new Date().toISOString(),
         power,
         thermal,
         processes,
+        inventory,
+        observerPid: process.pid,
         competing,
     }
 }
@@ -85,11 +112,34 @@ export function requireStableEnvironment(before, after) {
     for (const observation of [before, after]) {
         strictKeys(
             observation,
-            ["at", "power", "thermal", "processes", "competing"],
+            [
+                "at",
+                "power",
+                "thermal",
+                "processes",
+                "inventory",
+                "observerPid",
+                "competing",
+            ],
             "PROVENANCE-ENVIRONMENT",
         )
-        for (const key of ["power", "thermal", "processes"])
+        for (const key of ["power", "thermal", "processes", "inventory"])
             validateProcess(observation[key])
+        same(
+            observation.inventory.argv,
+            ["ps", "-axo", "pid=,ppid=,args="],
+            "PROVENANCE-ENVIRONMENT",
+            "raw process inventory command differs",
+        )
+        same(
+            observation.competing,
+            competingProcesses(
+                observation.inventory.stdout,
+                observation.observerPid,
+            ),
+            "PROVENANCE-ENVIRONMENT",
+            "benchmark classification differs from raw argv inventory",
+        )
         requireGate(
             Array.isArray(observation.competing) &&
                 observation.competing.length === 0,

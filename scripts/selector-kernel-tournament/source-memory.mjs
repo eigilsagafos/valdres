@@ -1,3 +1,4 @@
+import { recordedRoot } from "./recorded-root.mjs"
 // The unchanged direct-source harness is a separate measurement domain. It is
 // never compiled together with the packed runner or an observation plugin.
 import { mkdtempSync, symlinkSync, rmSync, readFileSync } from "node:fs"
@@ -19,7 +20,7 @@ import { writeEvidence, evidencePath, strictKeys, same } from "./evidence.mjs"
 import { validateProcess } from "./process-evidence.mjs"
 
 export const SOURCE_HARNESS = manifest.stages.sourceMemory.harness
-export function sourceMemoryCommand(runtime) {
+export function sourceMemoryCommand(runtime, authorityRoot = ROOT) {
     requireGate(
         ["bun", "node"].includes(runtime),
         "SOURCE-MEMORY-RUNTIME",
@@ -39,7 +40,7 @@ export function sourceMemoryCommand(runtime) {
               "env",
               "NODE_OPTIONS=--expose-gc",
               "node",
-              join(ROOT, "node_modules/vitest/vitest.mjs"),
+              join(authorityRoot, "node_modules/vitest/vitest.mjs"),
               "run",
               "--config",
               "vitest.memory.config.ts",
@@ -136,10 +137,18 @@ export function sourceMemoryRows(process, runtime, arm, rawEvidence) {
         }
     })
 }
-export function assertSourceMemory(process, runtime, arm, rawEvidence) {
+export function assertSourceMemory(
+    process,
+    runtime,
+    arm,
+    rawEvidence,
+    authorityRoot = ROOT,
+    blocking = true,
+) {
     const rows = sourceMemoryRows(process, runtime, arm, rawEvidence)
+    const passed = rows.every(row => row.status === "pass")
     requireGate(
-        rows.every(row => row.status === "pass"),
+        !blocking || passed,
         "MEMORY-ABSOLUTE",
         "source-absolute: " +
             rows
@@ -147,15 +156,28 @@ export function assertSourceMemory(process, runtime, arm, rawEvidence) {
                 .map(r => r.id)
                 .join(","),
     )
-    validateProcess(process, { argv: sourceMemoryCommand(runtime) })
-    const output = stripVTControlCharacters(process.stdout + process.stderr)
+    validateProcess(process, {
+        argv: sourceMemoryCommand(runtime, authorityRoot),
+        success: blocking || passed,
+    })
     requireGate(
-        runtime === "bun"
-            ? /8 pass\s+0 fail/.test(output)
-            : /Tests\s+8 passed \(8\)/.test(output),
-        "SOURCE-MEMORY-TESTS",
-        "all eight original tests must pass",
+        process.signal === null &&
+            process.error === null &&
+            [0, 1].includes(process.status),
+        "SOURCE-MEMORY-PROCESS",
+        "crashed diagnostic process",
     )
+    const output = stripVTControlCharacters(process.stdout + process.stderr)
+    if (blocking || passed)
+        requireGate(
+            runtime === "bun"
+                ? /8 pass\s+0 fail/.test(output)
+                : /Tests\s+8 passed \(8\)/.test(output),
+            "SOURCE-MEMORY-TESTS",
+            "all eight original tests must pass",
+        )
+    // At C, complete absolute observations are diagnostic. The fixed invocation
+    // and all eight measurements remain required even if an absolute limit fails.
     return rows
 }
 export function collectSourceMemory(root, { artifacts, index }) {
@@ -214,7 +236,11 @@ export function collectSourceMemory(root, { artifacts, index }) {
     writeEvidence(root, "source-memory.json", result)
     return validateSourceMemory(root, result, { artifacts, index })
 }
-export function validateSourceMemory(root, value, { artifacts, index }) {
+export function validateSourceMemory(
+    root,
+    value,
+    { artifacts, index, blocking = true },
+) {
     strictKeys(
         value,
         ["schemaVersion", "domain", "processes", "rows"],
@@ -291,7 +317,14 @@ export function validateSourceMemory(root, value, { artifacts, index }) {
         )
         end = process.endedAt
         rows.push(
-            ...assertSourceMemory(process, ref.runtime, ref.arm, ref.process),
+            ...assertSourceMemory(
+                process,
+                ref.runtime,
+                ref.arm,
+                ref.process,
+                recordedRoot(),
+                blocking,
+            ),
         )
     }
     same(

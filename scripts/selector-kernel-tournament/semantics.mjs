@@ -76,6 +76,7 @@ export function runSemantics({
                     "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v3.json",
                 ),
                 join(output, `${stem}.ndjson`),
+                stage,
                 ...(stage === "C" ? [caseIds.join(",")] : []),
             ]
             for (const directory of [consumer, foreign])

@@ -161,16 +161,11 @@ export async function validateFoundationReadiness(
         green: readiness.green,
         foundationSha: readiness.frozenFoundationSha,
     })
-    const verification = json(
-        join(readiness.verification.path, "verification.json"),
-    )
-    requireGate(
-        verification.status === "pass" &&
-            verification.foundationSha === readiness.frozenFoundationSha &&
-            verification.independentNeutralityReview === "completed" &&
-            verification.independentStatisticsReview === "completed",
-        "FOUNDATION-F9",
-        "final verification evidence missing",
+    const { validateVerificationBundle } = await import("./verification.mjs")
+    validateVerificationBundle(
+        readiness.verification.path,
+        readiness.verification.sha256sums,
+        readiness.frozenFoundationSha,
     )
     return readiness
 }

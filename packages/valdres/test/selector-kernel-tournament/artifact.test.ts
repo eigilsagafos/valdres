@@ -37,6 +37,7 @@ function fixture(source = "export const value = 1", mutate = (pkg: any) => {}) {
     command(["tar", "-czf", tarball, "package"], root)
     const artifact = extractPackedArtifact(tarball)
     const metadata = {
+        schemaVersion: 3,
         mode: "timed",
         repositoryDirty: false,
         gitSha: "1".repeat(40),

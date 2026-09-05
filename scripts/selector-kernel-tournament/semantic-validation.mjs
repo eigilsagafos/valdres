@@ -1,3 +1,4 @@
+import { recordedRoot } from "./recorded-root.mjs"
 import { assertInstalledArtifact } from "./artifact.mjs"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -19,6 +20,7 @@ import {
     insertionClosesCycle,
     assertDAG,
     validateCyclePath,
+    validateGraphRejection,
 } from "../../packages/valdres/test/selector-kernel-tournament/graph-oracle.mjs"
 import { verifyCompiledWorker } from "./runner-validation.mjs"
 import { validateProcess } from "./process-evidence.mjs"
@@ -67,6 +69,9 @@ export function validateSemanticRaw(path, mode, stage = "A") {
                             "parent",
                             "dependency",
                             "cycle",
+                            "exportedCycleError",
+                            "afterSetupReads",
+                            "afterSet",
                             "value",
                             "blame",
                             "path",
@@ -89,28 +94,29 @@ export function validateSemanticRaw(path, mode, stage = "A") {
                         "SEMANTIC-RAW-MODE",
                         "wrong observation artifact",
                     )
-                    if (attempt.cycle) {
+                    requireGate(
+                        attempt.exportedCycleError ===
+                            (attempt.cycle ? true : null) &&
+                            Array.isArray(attempt.afterSetupReads) &&
+                            attempt.afterSetupReads.length === row.n,
+                        "C-GRAPH-001",
+                        "exported error identity or operation boundaries missing",
+                    )
+                    for (const graph of [
+                        ...attempt.afterSetupReads,
+                        attempt.afterSet,
+                    ]) {
                         requireGate(
-                            attempt.blame === p && attempt.value === null,
-                            "A-GRAPH-001",
-                            "wrong causal blame",
+                            mode === "counter"
+                                ? Array.isArray(graph) && graph.length === row.n
+                                : graph === null,
+                            "C-GRAPH-001",
+                            "missing intermediate graph",
                         )
-                        validateCyclePath({
-                            path: attempt.path,
-                            parent: p,
-                            dependency: d,
-                            effective: row.graph,
-                            installed: attempt.installed ?? row.graph,
-                            origin:
-                                attempt.path[0] === d ? "dependency" : "parent",
-                        })
-                        if (attempt.installed)
-                            same(
-                                attempt.installed[p],
-                                row.graph[p],
-                                "A-GRAPH-002",
-                                "earlier prefix lost",
-                            )
+                        if (graph) assertDAG(graph, "C-GRAPH-001")
+                    }
+                    if (attempt.cycle) {
+                        validateGraphRejection(attempt, row.graph, stage)
                     } else {
                         const graph = row.graph.map((edges, i) =>
                             i === p ? [...edges, d] : edges,
@@ -152,6 +158,26 @@ export function validateSemanticRaw(path, mode, stage = "A") {
                 "SEMANTIC-TRACE",
                 "invalid or duplicate trace summary",
             )
+            if (row.id === "A-EQUAL-001") {
+                same(
+                    row.trace.filter(t =>
+                        ["comparisons", "notifications"].includes(t.name),
+                    ),
+                    [
+                        {
+                            name: "comparisons",
+                            value: [
+                                [1, 3],
+                                [1, 5],
+                                [1, 2],
+                            ],
+                        },
+                        { name: "notifications", value: ["error", 1, 2] },
+                    ],
+                    "A-EQUAL-001",
+                    "equality recovery trace differs",
+                )
+            }
             summaries.set(row.id, row)
         } else {
             strictKeys(
@@ -347,8 +373,9 @@ export function validateSemanticEvidence(
                 join(root, worker),
                 consumer,
                 foreign,
-                join(ROOT, DIRECTORY, "fixture-manifest.v3.json"),
+                join(recordedRoot(), DIRECTORY, "fixture-manifest.v3.json"),
                 join(root, raw),
+                evidence.stage,
                 ...(evidence.stage === "C"
                     ? [
                           manifest.semanticCases

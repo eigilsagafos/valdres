@@ -95,6 +95,7 @@ export async function runRedCase({ id, variant, controlRoot, mode, output }) {
                 foreign.packageRoot,
                 join(ROOT, DIRECTORY, "fixture-manifest.v3.json"),
                 join(output, "semantic.ndjson"),
+                "A",
                 row.expectedGate,
                 ...(mutation ? [variant] : []),
             ],

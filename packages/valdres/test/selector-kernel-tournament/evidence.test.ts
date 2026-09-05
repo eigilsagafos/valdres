@@ -154,6 +154,12 @@ test("power loss, a thermal transition or another benchmark invalidate the entir
         power: { ...processRecord(), stdout: "Now drawing from 'AC Power'" },
         thermal: { ...processRecord(), stdout: "No warning" },
         processes: processRecord(),
+        inventory: {
+            ...processRecord(),
+            argv: ["ps", "-axo", "pid=,ppid=,args="],
+            stdout: "1 0 launchd\n42 1 bun control-bundle.mjs\n",
+        },
+        observerPid: 42,
         competing: [],
     }
     expect(() => requireStableEnvironment(before, before)).not.toThrow()
@@ -174,7 +180,7 @@ test("power loss, a thermal transition or another benchmark invalidate the entir
             ...before,
             competing: [{ pid: 42 }],
         }),
-    ).toThrow("ENVIRONMENT-INVALIDATED")
+    ).toThrow("PROVENANCE-ENVIRONMENT")
 })
 test("recorded gates alone determine advancement; reviewer or human enthusiasm cannot rescue a failure", () => {
     const gates = Object.fromEntries(

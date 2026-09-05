@@ -1,3 +1,4 @@
+import { recordedRoot } from "./recorded-root.mjs"
 import { assertInstalledArtifact } from "./artifact.mjs"
 import { join } from "node:path"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -139,7 +140,7 @@ export function validateSizeEvidence(root, value, { artifacts, index }) {
         validateProcess(process, {
             argv: [
                 "bun",
-                join(ROOT, manifest.stages.size.measurementScript),
+                join(recordedRoot(), manifest.stages.size.measurementScript),
                 tarball,
             ],
         })
@@ -217,7 +218,7 @@ export function validateMemoryEvidence(root, records, { artifacts }) {
                 ...(record.runtime === "node" ? ["--expose-gc"] : []),
                 worker,
                 consumer,
-                join(ROOT, DIRECTORY, "fixture-manifest.v3.json"),
+                join(recordedRoot(), DIRECTORY, "fixture-manifest.v3.json"),
                 record.id,
                 wrapper,
             ],

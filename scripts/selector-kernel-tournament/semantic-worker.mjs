@@ -1,8 +1,15 @@
 import { pathToFileURL } from "node:url"
 import { readFileSync, writeSync, openSync, closeSync } from "node:fs"
 import { runSemanticCases } from "../../packages/valdres/test/selector-kernel-tournament/semantic-cases.mjs"
-const [packageRoot, foreignRoot, manifestPath, rawPath, filter, mutation] =
-    process.argv.slice(2)
+const [
+    packageRoot,
+    foreignRoot,
+    manifestPath,
+    rawPath,
+    stage,
+    filter,
+    mutation,
+] = process.argv.slice(2)
 const api = await import(pathToFileURL(packageRoot + "/dist/index.js"))
 const adapter = await import(
     pathToFileURL(packageRoot + "/dist/adapter-internals/v1.js")
@@ -37,6 +44,7 @@ try {
         manifest,
         only,
         mutation,
+        stage,
         emit,
     })
     console.log(

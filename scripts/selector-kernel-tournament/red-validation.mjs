@@ -18,6 +18,12 @@ export function validateRedProcesses(root, proof) {
         worker,
         "scripts/selector-kernel-tournament/red-worker.mjs",
     )
+    requireGate(
+        typeof proof.authorityRoot === "string" &&
+            proof.authorityRoot.startsWith("/"),
+        "RED-IDENTITY",
+        "recorded authority root required",
+    )
     const used = new Set()
     for (const row of proof.rows) {
         strictKeys(
@@ -49,7 +55,7 @@ export function validateRedProcesses(root, proof) {
                 argv: [
                     "bun",
                     worker,
-                    ROOT,
+                    proof.authorityRoot,
                     row.id,
                     row.variant,
                     proof.control.path,
@@ -95,7 +101,14 @@ export async function validateRedBundle(
     const proof = json(evidencePath(root, "red.json"))
     strictKeys(
         proof,
-        ["schemaVersion", "kind", "foundationSha", "control", "rows"],
+        [
+            "schemaVersion",
+            "kind",
+            "foundationSha",
+            "authorityRoot",
+            "control",
+            "rows",
+        ],
         "RED-SCHEMA",
     )
     requireGate(

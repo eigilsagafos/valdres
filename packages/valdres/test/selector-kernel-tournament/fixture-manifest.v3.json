@@ -110,6 +110,18 @@
         {
             "path": "packages/valdres/src/family.mdx",
             "sha256": "a411d7587aca6aa7344f2e7161b8c01b74ff291b4888f1e6134745d947ece8b9"
+        },
+        {
+            "path": "scripts/verify.ts",
+            "sha256": "fbb243cef9085499fc7c95b8ee1db0559e7df2a0d1a969f5e2f12a99a6a07eba"
+        },
+        {
+            "path": ".github/workflows/ci.yaml",
+            "sha256": "d582e5ed9ef0b2937107010f1431ad39f5224291039792434bd35abad2a7e899"
+        },
+        {
+            "path": "scripts/ci-publish.sh",
+            "sha256": "51f7fd3c46ac4e2804d8d9888052edfc335582daf1c8d8f6e903e7e7d40e045a"
         }
     ],
     "implementations": [

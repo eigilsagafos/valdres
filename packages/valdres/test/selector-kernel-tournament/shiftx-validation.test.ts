@@ -99,3 +99,45 @@ test("ShiftX keeps the existing paired estimator, protected direction, and bound
     ).toBe(true)
     expect(decideShiftx(lanes(1), "pre28-claim").status).toBe("inconclusive")
 })
+
+test("fifteen-step timing uses the chronologically final step and excludes pre-start markers", () => {
+    const scenario = {
+        startMarker: "start",
+        stepMarker: "step",
+        expectedSteps: 15,
+    }
+    const steps = Array.from({ length: 15 }, (_, i) => ({
+        name: "step",
+        ts: 110 + i * 5,
+        pid: 1,
+        tid: 2,
+    }))
+    const trace = {
+        traceEvents: [
+            { name: "start", ts: 100, pid: 1, tid: 2 },
+            { name: "RunTask", ts: 100, dur: 130, pid: 1, tid: 2 },
+            ...steps.toReversed(),
+        ],
+    }
+    expect(interactionDuration(trace, scenario)).toBe(130000)
+    trace.traceEvents[2].ts = 99
+    expect(() => interactionDuration(trace, scenario)).toThrow(
+        "SHIFTX-INTERACTION",
+    )
+})
+test("a split process state cannot establish the diagnostic pre28 claim", () => {
+    const rows = lanes(0.5)
+    for (const row of rows)
+        row.samples.forEach(
+            (s, i) => (s.headNs = s.baseNs * (i % 2 ? 0.7 : 0.5)),
+        )
+    const result = decideShiftx(rows, "pre28-claim")
+    expect(result.status).toBe("inconclusive")
+    expect(
+        result.rows.every(
+            r =>
+                r.flags.includes("bimodal") &&
+                r.decisions.pre28Claim.status === "inconclusive",
+        ),
+    ).toBe(true)
+})

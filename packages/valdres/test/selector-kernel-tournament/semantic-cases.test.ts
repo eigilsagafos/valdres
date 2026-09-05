@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { runSemanticCases } from "./semantic-cases.mjs"
+import { runSemanticCases, requireCircularCause } from "./semantic-cases.mjs"
 import { manifest } from "../../../../scripts/selector-kernel-tournament/inputs.mjs"
 
 test("semantic admission rejects unknown fixtures without driving a runtime", async () => {
@@ -32,4 +32,20 @@ test("a red mutation cannot be silently skipped or applied to an unrelated fixtu
             mutation: "wrong-causal-blame",
         }),
     ).rejects.toThrow("MUTATION-MODE")
+})
+
+test("renamed ordinary errors cannot impersonate the artifact's exported cycle class", () => {
+    class CycleError extends Error {
+        name = "SelectorCircularDependencyError"
+    }
+    const real = new CycleError("cycle")
+    expect(requireCircularCause(real, CycleError)).toBe(real)
+    const fake = Object.assign(new Error("cycle"), {
+        name: real.name,
+        selector: "p",
+        path: ["p", "p"],
+    })
+    expect(() => requireCircularCause(fake, CycleError)).toThrow(
+        "exported SelectorCircularDependencyError identity",
+    )
 })

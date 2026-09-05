@@ -1,3 +1,4 @@
+import { recordedRoot } from "./recorded-root.mjs"
 import { assertInstalledArtifact } from "./artifact.mjs"
 import { join } from "node:path"
 import {
@@ -24,14 +25,20 @@ const fixture = join(
         "packages/valdres/test/performance/core-load/run-sample.mjs",
     )
 const scenarios = ["initial-view-core", "writes", "no-writes"]
-function argv(consumer, scenario) {
+function argv(consumer, scenario, authorityRoot = ROOT) {
     return [
         "node",
-        worker,
+        join(
+            authorityRoot,
+            "packages/valdres/test/performance/core-load/run-sample.mjs",
+        ),
         "--package-root",
         join(consumer, "node_modules/valdres"),
         "--fixture",
-        fixture,
+        join(
+            authorityRoot,
+            "packages/valdres/test/performance/core-load/fixture.v1.json",
+        ),
         "--adapter",
         "v1",
         "--scenario",
@@ -120,7 +127,11 @@ export function validateCorePreflight(root, path, artifact) {
         )
         const process = json(evidencePath(root, row.process))
         validateProcess(process, {
-            argv: argv(join(root, value.directory, "consumer"), row.scenario),
+            argv: argv(
+                join(root, value.directory, "consumer"),
+                row.scenario,
+                recordedRoot(),
+            ),
         })
         const sample = JSON.parse(process.stdout)
         requireGate(

@@ -1,3 +1,4 @@
+import { recordedRoot } from "./recorded-root.mjs"
 import { assertInstalledArtifact } from "./artifact.mjs"
 import { mkdtempSync, rmSync } from "node:fs"
 import { join } from "node:path"
@@ -134,12 +135,12 @@ export function validateWorkloadInvocation(
                 : []),
             runner.worker,
             consumer,
-            join(ROOT, DIRECTORY, "fixture-manifest.v3.json"),
+            join(recordedRoot(), DIRECTORY, "fixture-manifest.v3.json"),
             id,
             mode,
             runner.wrapper,
-            join(ROOT, "packages/valdres/test/performance/core-load"),
-            EXPECTATIONS,
+            join(recordedRoot(), "packages/valdres/test/performance/core-load"),
+            join(recordedRoot(), DIRECTORY, "workload-expectations.v3.json"),
         ],
     })
 }

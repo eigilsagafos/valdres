@@ -52,6 +52,7 @@ export async function buildRedBundle(
             schemaVersion: 3,
             kind: development ? "diagnostic-red-probe" : "red-gate-proofs",
             foundationSha,
+            authorityRoot: ROOT,
             control,
             rows: [],
         }

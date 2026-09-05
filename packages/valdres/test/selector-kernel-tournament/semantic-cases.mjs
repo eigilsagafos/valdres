@@ -6,6 +6,7 @@ import {
     insertionClosesCycle,
     assertDAG,
     validateCyclePath,
+    validateGraphRejection,
 } from "./graph-oracle.mjs"
 const digest = value =>
     createHash("sha256").update(JSON.stringify(value)).digest("hex")
@@ -25,8 +26,16 @@ const causes = error => {
     }
     return result
 }
-const circular = error =>
-    causes(error).find(e => e?.name === "SelectorCircularDependencyError")
+export function requireCircularCause(error, exportedClass) {
+    const cause = causes(error).find(
+        e => e?.name === "SelectorCircularDependencyError",
+    )
+    assert.ok(
+        typeof exportedClass === "function" && cause instanceof exportedClass,
+        "exported SelectorCircularDependencyError identity required",
+    )
+    return cause
+}
 const number = value => ({ kind: "number", value })
 
 // Only this test observation protocol is shared. Implementations translate their
@@ -39,10 +48,16 @@ export async function runSemanticCases({
     manifest,
     only,
     mutation,
+    stage = "A",
     emit = () => {},
 }) {
+    assert.ok(["C", "A"].includes(stage), "SEMANTIC-STAGE: unknown contract")
+    const circular = error =>
+        requireCircularCause(error, api.SelectorCircularDependencyError)
     const mutationTargets = {
         "false-negative-cycle": "C-GRAPH-001",
+        "post-set-cycle": "C-GRAPH-001",
+        "renamed-cycle-error": "C-GRAPH-001",
         "false-positive-cycle": "C-GRAPH-001",
         "offending-edge-installation": "A-GRAPH-001",
         "wrong-causal-blame": "A-GRAPH-001",
@@ -50,6 +65,7 @@ export async function runSemanticCases({
         "lost-prefix": "A-GRAPH-002",
         "notification-reorder": "A-SUB-001",
         "notification-duplication": "A-SUB-001",
+        "equality-recovery-notification": "A-EQUAL-001",
         "scratch-publication-leak": "C-TXN-001",
         "hydration-publication-leak": "A-HYDRATE-001",
         "family-quarantine-bypass": "A-FAMILY-002",
@@ -198,10 +214,38 @@ export async function runSemanticCases({
         let oe = expected.error
         while (oe?.cause) oe = oe.cause
         assert.equal(oe.kind, "cycle")
-        assert.equal(nodes.indexOf(c.selector), Number(oe.selector))
-        assert.deepEqual(
-            c.path.map(x => String(nodes.indexOf(x))),
-            oe.path,
+        if (stage === "A") {
+            assert.equal(nodes.indexOf(c.selector), Number(oe.selector))
+            assert.deepEqual(
+                c.path.map(x => String(nodes.indexOf(x))),
+                oe.path,
+            )
+        }
+        const graph = nodes.map((_, i) => (i === length - 1 ? [] : [i + 1]))
+        const installed = observer
+            ? nodes.map((_, i) =>
+                  (deps(s, String(i)) ?? [])
+                      .filter(x => /^\d+$/.test(x))
+                      .map(Number),
+              )
+            : null
+        // For cached rejection the closing edge is 0->1; use its effective DAG.
+        const parent = cached ? 0 : length - 1,
+            dependency = cached ? 1 : 0
+        if (cached)
+            for (let i = 0; i < length; i++)
+                graph[i] = i === 0 ? [] : [(i + 1) % length]
+        validateGraphRejection(
+            {
+                parent,
+                dependency,
+                installed,
+                value: null,
+                blame: nodes.indexOf(c.selector),
+                path: c.path.map(x => nodes.indexOf(x)),
+            },
+            graph,
+            stage,
         )
         note("cycle", {
             selector: nodes.indexOf(c.selector),
@@ -234,16 +278,40 @@ export async function runSemanticCases({
                             }),
                         )
                         const s = store()
-                        for (const node of nodes) s.get(node)
+                        function installedGraph() {
+                            if (!observer) return null
+                            const graph = Array.from({ length: n }, () => [])
+                            for (const record of observer
+                                .snapshot()
+                                .hosts.find(h => h.id === observer.hostOf(s))
+                                .records)
+                                graph[+record.selector] = record.dependencies
+                                    .filter(d => /^\d+$/.test(d))
+                                    .map(Number)
+                            assertDAG(graph, "C-GRAPH-001")
+                            return graph
+                        }
+                        const afterSetupReads = []
+                        for (const node of nodes) {
+                            s.get(node)
+                            afterSetupReads.push(installedGraph())
+                        }
+                        let afterSet
                         const expected = insertionClosesCycle(
                             graph,
                             parent,
                             dependency,
                         )
-                        const actual = capture(() => {
-                            s.set(gates[parent], dependency)
-                            return s.get(nodes[parent])
-                        })
+                        const setter = capture(() =>
+                            s.set(gates[parent], dependency),
+                        )
+                        afterSet = installedGraph()
+                        if (mutation === "post-set-cycle" && afterSet)
+                            afterSet[parent].push(parent)
+                        if (afterSet) assertDAG(afterSet, "C-GRAPH-001")
+                        const actual = setter.error
+                            ? setter
+                            : capture(() => s.get(nodes[parent]))
                         if (mutation === "false-negative-cycle" && expected)
                             delete actual.error
                         if (mutation === "false-positive-cycle" && !expected)
@@ -258,17 +326,19 @@ export async function runSemanticCases({
                                 expected,
                             }),
                         )
-                        let installed, path, blame
-                        if (observer) {
-                            installed = Array.from({ length: n }, () => [])
-                            for (const r of observer
-                                .snapshot()
-                                .hosts.find(h => h.id === observer.hostOf(s))
-                                .records)
-                                installed[+r.selector] = r.dependencies
-                                    .filter(d => /^\d+$/.test(d))
-                                    .map(Number)
-                            assertDAG(installed)
+                        let installed = installedGraph(),
+                            path,
+                            blame
+                        if (mutation === "renamed-cycle-error" && expected) {
+                            const cause = circular(actual.error)
+                            actual.error = Object.assign(
+                                new Error("test-only renamed ordinary Error"),
+                                {
+                                    name: "SelectorCircularDependencyError",
+                                    selector: cause.selector,
+                                    path: cause.path,
+                                },
+                            )
                         }
                         if (expected) {
                             cycles++
@@ -276,26 +346,18 @@ export async function runSemanticCases({
                             assert.ok(c)
                             blame = nodes.indexOf(c.selector)
                             path = c.path.map(x => nodes.indexOf(x))
-                            assert.equal(blame, parent)
-                            if (installed) {
-                                assert.ok(
-                                    !installed[parent].includes(dependency),
-                                )
-                                validateCyclePath(
-                                    {
-                                        path,
-                                        parent,
-                                        dependency,
-                                        effective: graph,
-                                        installed,
-                                        origin:
-                                            path[0] === dependency
-                                                ? "dependency"
-                                                : "parent",
-                                    },
-                                    "C-GRAPH-001",
-                                )
-                            }
+                            validateGraphRejection(
+                                {
+                                    parent,
+                                    dependency,
+                                    installed: installed ?? null,
+                                    path,
+                                    blame,
+                                    value: null,
+                                },
+                                graph,
+                                stage,
+                            )
                         } else {
                             const expanded = graph.map((edges, i) =>
                                 i === parent ? [...edges, dependency] : edges,
@@ -313,6 +375,12 @@ export async function runSemanticCases({
                             parent,
                             dependency,
                             cycle: expected,
+                            exportedCycleError: expected
+                                ? circular(actual.error) instanceof
+                                  api.SelectorCircularDependencyError
+                                : null,
+                            afterSetupReads,
+                            afterSet: afterSet ?? null,
                             value: actual.value ?? null,
                             blame: blame ?? null,
                             path: path ?? null,
@@ -681,6 +749,13 @@ export async function runSemanticCases({
         assert.ok(calls.every(x => x[0] === 1))
         s.set(a, 2)
         assert.equal(s.get(q).value, 2)
+        if (mutation === "equality-recovery-notification") seen.length = 0
+        assert.deepEqual(calls, [
+            [1, 3],
+            [1, 5],
+            [1, 2],
+        ])
+        assert.deepEqual(seen, ["error", 1, 2])
         note("comparisons", calls)
         note("notifications", seen)
     })

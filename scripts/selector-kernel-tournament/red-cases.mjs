@@ -2,6 +2,8 @@
 // memory paths without creating candidate implementations.
 export const RED_CASES = [
     ["false-negative-cycle", "false-negative-cycle", "C-GRAPH-001"],
+    ["false-negative-cycle", "post-set-cycle", "C-GRAPH-001"],
+    ["false-negative-cycle", "renamed-cycle-error", "C-GRAPH-001"],
     ["false-positive-cycle", "false-positive-cycle", "C-GRAPH-001"],
     [
         "offending-edge-installation",
@@ -25,6 +27,11 @@ export const RED_CASES = [
         "scratch-hydration-publication-leak",
         "hydration-publication-leak",
         "A-HYDRATE-001",
+    ],
+    [
+        "notification-reorder-duplication",
+        "equality-recovery-notification",
+        "A-EQUAL-001",
     ],
     ["family-quarantine-bypass", "family-quarantine-bypass", "A-FAMILY-002"],
     ["frozen-family-path", "frozen-family-path", "PROVENANCE-PROTECTED-PATH"],

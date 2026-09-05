@@ -1,5 +1,6 @@
+import { recordedRoot } from "./recorded-root.mjs"
 import { readFileSync, readdirSync, mkdtempSync, rmSync } from "node:fs"
-import { join, dirname } from "node:path"
+import { join, dirname, resolve } from "node:path"
 import { tmpdir } from "node:os"
 import { execFileSync } from "node:child_process"
 import {
@@ -12,10 +13,12 @@ import {
     requireGate,
     exactRows,
 } from "./inputs.mjs"
-import { inspectArtifact, command } from "./artifact.mjs"
+import { inspectArtifact, command, counterBuildSource } from "./artifact.mjs"
 import { evidencePath, strictKeys, same } from "./evidence.mjs"
 import { validateProcess } from "./process-evidence.mjs"
 const keys = [
+    "schemaVersion",
+    "counterAdapterPath",
     "mode",
     "gitSha",
     "runtimeTree",
@@ -53,7 +56,8 @@ export function validateArtifactEvidence(root, path, { gitSha, mode }) {
     const metadata = json(evidencePath(root, path))
     strictKeys(metadata, keys, "PROVENANCE-BUILD-METADATA")
     requireGate(
-        metadata.gitSha === gitSha &&
+        metadata.schemaVersion === 3 &&
+            metadata.gitSha === gitSha &&
             metadata.mode === mode &&
             !metadata.repositoryDirty,
         "PROVENANCE-BUILD-METADATA",
@@ -193,7 +197,8 @@ export function validateArtifactEvidence(root, path, { gitSha, mode }) {
             "shipping build",
         )
         requireGate(
-            metadata.counterAdapterSha256 === null &&
+            metadata.counterAdapterPath === null &&
+                metadata.counterAdapterSha256 === null &&
                 metadata.counterObserverSha256 === null,
             "ARTIFACT-INSTRUMENTATION",
             "timed observer metadata",
@@ -210,7 +215,58 @@ export function validateArtifactEvidence(root, path, { gitSha, mode }) {
             "PROVENANCE-ADAPTER-HASH",
             "missing adapter",
         )
-        if (metadata.runtimeTree === manifest.control.runtimeTree)
+        const isControl = metadata.runtimeTree === manifest.control.runtimeTree
+        requireGate(
+            typeof metadata.counterAdapterPath === "string" &&
+                !metadata.counterAdapterPath.startsWith("/") &&
+                !metadata.counterAdapterPath
+                    .split("/")
+                    .some(p => p === ".." || p === "." || p === "") &&
+                !/[\\\r\n\0]/.test(metadata.counterAdapterPath),
+            "PROVENANCE-ADAPTER-HASH",
+            "canonical archived adapter path required",
+        )
+        if (isControl)
+            requireGate(
+                metadata.counterAdapterPath ===
+                    "scripts/selector-kernel-tournament/control-instrumentation.mjs",
+                "PROVENANCE-ADAPTER-HASH",
+                "control adapter path differs",
+            )
+        else {
+            requireGate(
+                /^100(?:644|755) blob /.test(
+                    git(["ls-tree", gitSha, "--", metadata.counterAdapterPath]),
+                ),
+                "PROVENANCE-ADAPTER-HASH",
+                "adapter must be an archived regular file",
+            )
+            requireGate(
+                sha256(
+                    execFileSync(
+                        "git",
+                        ["show", `${gitSha}:${metadata.counterAdapterPath}`],
+                        { cwd: ROOT },
+                    ),
+                ) === metadata.counterAdapterSha256 &&
+                    metadata.counterObserverSha256 === null,
+                "PROVENANCE-ADAPTER-HASH",
+                "candidate adapter differs from source archive",
+            )
+        }
+        const adapterPath = isControl
+            ? join(recordedRoot(), metadata.counterAdapterPath)
+            : resolve(processes[1].cwd, "../..", metadata.counterAdapterPath)
+        same(
+            readFileSync(
+                evidencePath(root, join(directory, "counter-build.mjs")),
+                "utf8",
+            ),
+            counterBuildSource(processes[1].cwd, adapterPath, isControl),
+            "PROVENANCE-COUNTER-BUILDER",
+            "builder differs from frozen options and archived adapter",
+        )
+        if (isControl)
             requireGate(
                 metadata.counterAdapterSha256 ===
                     fileHash(

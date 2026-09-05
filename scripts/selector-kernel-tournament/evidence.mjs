@@ -10,6 +10,8 @@ import {
 import { join, resolve, relative, dirname } from "node:path"
 import { fileHash, sha256, json, requireGate, exactRows } from "./inputs.mjs"
 export function evidencePath(root, path) {
+    if (existsSync(root))
+        requireGate(!lstatSync(root).isSymbolicLink(), "EVIDENCE-SYMLINK", root)
     requireGate(
         typeof path === "string" &&
             path.length > 0 &&
@@ -53,6 +55,7 @@ export function writeEvidence(root, path, value) {
     return { path, sha256: fileHash(file), bytes: lstatSync(file).size }
 }
 export function evidenceFiles(root) {
+    requireGate(!lstatSync(root).isSymbolicLink(), "EVIDENCE-SYMLINK", root)
     const output = []
     function visit(directory) {
         for (const name of readdirSync(directory).sort()) {

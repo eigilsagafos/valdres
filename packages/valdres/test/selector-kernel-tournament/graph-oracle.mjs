@@ -106,3 +106,39 @@ export function validateCyclePath(
     }
     assertDAG(installed, caseId)
 }
+
+// Contract C admits any structurally valid reported cycle. C does not impose
+// Contract A's causal blame, raw origin, or accepted-prefix guarantees.
+export function validateGraphRejection(attempt, graph, stage) {
+    requireGate(
+        ["C", "A"].includes(stage),
+        "SEMANTIC-STAGE",
+        "unknown contract",
+    )
+    const { parent, dependency, installed, path, blame, value } = attempt
+    const causal = stage === "A"
+    requireGate(
+        value === null && (!causal || blame === parent),
+        causal ? "A-GRAPH-001" : "C-GRAPH-001",
+        "wrong cycle result or causal blame",
+    )
+    validateCyclePath(
+        {
+            path,
+            parent,
+            dependency,
+            effective: graph,
+            installed: installed ?? graph,
+            causal,
+            origin:
+                causal && path?.[0] !== dependency ? "parent" : "dependency",
+        },
+        causal ? "A-GRAPH-001" : "C-GRAPH-001",
+    )
+    if (causal && installed)
+        requireGate(
+            JSON.stringify(installed[parent]) === JSON.stringify(graph[parent]),
+            "A-GRAPH-002",
+            "earlier prefix lost",
+        )
+}

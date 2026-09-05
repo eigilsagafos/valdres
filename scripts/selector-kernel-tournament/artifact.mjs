@@ -213,6 +213,11 @@ export function command(argv, cwd, options = {}) {
     return result.stdout
 }
 export function inspectArtifact(tarball, metadata, mode = "timed") {
+    requireGate(
+        metadata.schemaVersion === 3,
+        "ARTIFACT-VERSION",
+        "v3 artifact metadata required",
+    )
     requireGate(["timed", "counter"].includes(mode), "ARTIFACT-MODE", mode)
     requireGate(
         metadata.mode === mode && metadata.repositoryDirty === false,
@@ -359,10 +364,7 @@ export async function packArtifact({
             "adapter must belong to the selected source archive",
         )
         const builder = join(output, "counter-build.mjs")
-        writeFileSync(
-            builder,
-            `import { buildOptions, developmentBuildOptions } from ${JSON.stringify(join(pkg, "build.ts"))};\nimport { ${control ? "controlPlugin" : "createEvidencePlugin"} as makePlugin } from ${JSON.stringify(adapterPath)};\nfor (const options of [buildOptions, developmentBuildOptions]) {\n const result = await Bun.build({ ...options, plugins: [makePlugin()] });\n if (!result.success) throw new Error(result.logs.join('\\n'));\n}\n`,
-        )
+        writeFileSync(builder, counterBuildSource(pkg, adapterPath, control))
         run(["bun", builder])
     }
     run(["bun", join(build, "scripts/prepack.ts")])
@@ -379,6 +381,13 @@ export async function packArtifact({
     const tarball = join(output, filename)
     const inspected = extractPackedArtifact(tarball)
     const metadata = {
+        schemaVersion: 3,
+        counterAdapterPath:
+            mode === "counter"
+                ? runtimeTree === manifest.control.runtimeTree
+                    ? "scripts/selector-kernel-tournament/control-instrumentation.mjs"
+                    : counterAdapter
+                : null,
         mode,
         gitSha: commit,
         runtimeTree,
@@ -529,4 +538,8 @@ if (import.meta.main) {
         throw new Error(
             "usage: artifact.mjs pack <commit> <output> [timed|counter] | smoke <artifact-directory>",
         )
+}
+
+export function counterBuildSource(pkg, adapterPath, control) {
+    return `import { buildOptions, developmentBuildOptions } from ${JSON.stringify(join(pkg, "build.ts"))};\nimport { ${control ? "controlPlugin" : "createEvidencePlugin"} as makePlugin } from ${JSON.stringify(adapterPath)};\nfor (const options of [buildOptions, developmentBuildOptions]) {\n const result = await Bun.build({ ...options, plugins: [makePlugin()] });\n if (!result.success) throw new Error(result.logs.join('\\n'));\n}\n`
 }
