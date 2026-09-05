@@ -173,4 +173,90 @@ if (isolatedTournamentFile()) {
                 validateSelfTestResult(bad, { tests: 2, files: 1 }),
             ).toThrow("TOURNAMENT-SELF-TESTS")
     })
+
+    test("red, F9 and family proofs bind the authenticated source invocation context", async () => {
+        const { ROOT, fileHash, frozenInputBytes, sha256 } = await import(
+            "../../../../scripts/selector-kernel-tournament/inputs.mjs"
+        )
+        const { writeEvidence, sealEvidence } = await import(
+            "../../../../scripts/selector-kernel-tournament/evidence.mjs"
+        )
+        const { validateRedProcesses } = await import(
+            "../../../../scripts/selector-kernel-tournament/red-validation.mjs"
+        )
+        const { validateVerificationBundle } = await import(
+            "../../../../scripts/selector-kernel-tournament/verification.mjs"
+        )
+        const { validateFamily } = await import(
+            "../../../../scripts/selector-kernel-tournament/preflight.mjs"
+        )
+        const root = mkdtempSync(join(tmpdir(), "tournament-recorded-context-"))
+        try {
+            // These are protocol fixtures, not executed CI or family evidence.
+            expect(() =>
+                validateRedProcesses(
+                    root,
+                    { authorityRoot: "/unrelated" },
+                    ROOT,
+                ),
+            ).toThrow("RED-AUTHORITY")
+            const frozen = "1".repeat(40)
+            writeEvidence(root, "verification.json", {
+                schemaVersion: 3,
+                kind: "foundation-verification",
+                foundationSha: frozen,
+                authorityRoot: "/unrelated",
+                status: "pass",
+                commands: [],
+                reviews: {},
+                limitations: {},
+            })
+            const files = manifest.productLanes.family.protectedPaths
+                .filter(p => p.endsWith(".test.ts"))
+                .map(path => ({ path, sha256: sha256(frozenInputBytes(path)) }))
+            const process = {
+                argv: [
+                    "bun",
+                    "test",
+                    "--reporter=dots",
+                    ...files.map(r => join(ROOT, r.path)),
+                ],
+                cwd: join(ROOT, "packages/valdres"),
+                environment: { NODE_ENV: "production", FORCE_COLOR: "0" },
+                pid: 7,
+                startedAt: "2026-09-05T00:00:00.000Z",
+                endedAt: "2026-09-05T00:00:01.000Z",
+                status: 0,
+                signal: null,
+                error: null,
+                stdout: "",
+                stderr: "58 pass\n0 fail\n",
+            }
+            writeEvidence(root, "family.json", {
+                status: "pass",
+                scoring: false,
+                files,
+                process: "family.process.json",
+            })
+            writeEvidence(root, "family.process.json", process)
+            expect(() => validateFamily(root, "family.json")).not.toThrow()
+            writeFileSync(
+                join(root, "family.process.json"),
+                JSON.stringify({
+                    ...process,
+                    cwd: "/unrelated/packages/valdres",
+                }),
+            )
+            expect(() => validateFamily(root, "family.json")).toThrow(
+                "PROVENANCE-INVOCATION",
+            )
+            const sums = sealEvidence(root)
+            expect(() =>
+                validateVerificationBundle(root, sums, frozen, ROOT),
+            ).toThrow("F9-AUTHORITY")
+            expect(fileHash(join(root, "SHA256SUMS"))).toBe(sums)
+        } finally {
+            rmSync(root, { recursive: true, force: true })
+        }
+    })
 }

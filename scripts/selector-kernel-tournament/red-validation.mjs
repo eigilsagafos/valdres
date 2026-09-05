@@ -4,10 +4,21 @@ import { verifySeal, evidencePath, strictKeys, same } from "./evidence.mjs"
 import { validateProcess } from "./process-evidence.mjs"
 import { verifyCompiledWorker } from "./runner-validation.mjs"
 import { RED_CASES } from "./red-cases.mjs"
+import { recordedRoot } from "./recorded-root.mjs"
 export const RED_GATES = Object.fromEntries(
     RED_CASES.map(r => [r.id, r.expectedGate]),
 )
-export function validateRedProcesses(root, proof) {
+export function validateRedProcesses(
+    root,
+    proof,
+    authorityRoot = recordedRoot(),
+) {
+    same(
+        proof.authorityRoot,
+        authorityRoot,
+        "RED-AUTHORITY",
+        "red launcher must use the authenticated recorded authority",
+    )
     exactRows(
         proof.rows.map(r => r.id + "/" + r.variant),
         RED_CASES.map(r => r.id + "/" + r.variant),
@@ -52,6 +63,7 @@ export function validateRedProcesses(root, proof) {
             const process = json(evidencePath(root, ref.process))
             const directory = join(root, row.variant + "-" + mode)
             validateProcess(process, {
+                cwd: authorityRoot,
                 argv: [
                     "bun",
                     worker,
@@ -95,7 +107,7 @@ export function validateRedProcesses(root, proof) {
 export async function validateRedBundle(
     root,
     expectedSums,
-    { green, foundationSha },
+    { green, foundationSha, authorityRoot = recordedRoot() },
 ) {
     verifySeal(root, expectedSums)
     const proof = json(evidencePath(root, "red.json"))
@@ -120,5 +132,5 @@ export async function validateRedBundle(
     )
     same(proof.control, green, "RED-IDENTITY", "wrong green control")
     verifySeal(green.path, green.sha256sums)
-    return validateRedProcesses(root, proof)
+    return validateRedProcesses(root, proof, authorityRoot)
 }

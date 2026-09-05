@@ -371,15 +371,22 @@ export async function validateFrozenProofs(readiness) {
         "green control proof missing",
     )
     const { validateRedBundle } = await import("./red-validation.mjs")
+    // The green provenance was authenticated and recomputed above. Red and
+    // repository proofs must describe that same source invocation context.
+    const authorityRoot = json(
+        evidencePath(readiness.green.path, "provenance.json"),
+    ).candidateRoot
     await validateRedBundle(readiness.red.path, readiness.red.sha256sums, {
         green: readiness.green,
         foundationSha: readiness.frozenFoundationSha,
+        authorityRoot,
     })
     const { validateVerificationBundle } = await import("./verification.mjs")
     validateVerificationBundle(
         readiness.verification.path,
         readiness.verification.sha256sums,
         readiness.frozenFoundationSha,
+        authorityRoot,
     )
     return {
         frozenFoundationSha: readiness.frozenFoundationSha,

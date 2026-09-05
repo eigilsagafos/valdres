@@ -135,6 +135,7 @@ export function validateCorePreflight(root, path, artifact) {
         )
         const process = json(evidencePath(root, row.process))
         validateProcess(process, {
+            cwd: recordedRoot(),
             argv: argv(
                 join(root, value.directory, "consumer"),
                 row.scenario,

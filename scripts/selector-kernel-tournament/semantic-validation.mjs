@@ -376,6 +376,7 @@ export function validateSemanticEvidence(
                 "node_modules/valdres",
             )
         validateProcess(result, {
+            cwd: recordedRoot(),
             argv: [
                 process.runtime,
                 join(root, worker),
@@ -444,6 +445,12 @@ export function validateSemanticEvidence(
             runtime,
         )
     }
+    same(
+        evidence.artifact,
+        identity,
+        "SEMANTIC-EVIDENCE-IDENTITY",
+        "embedded artifact metadata differs",
+    )
     // Never cache filesystem/provenance checks: referenced raw/process/worker
     // bytes, installed chunks, invocation and frozen inputs were revalidated
     // above even on a hit. Only the expensive oracle analysis is reusable.

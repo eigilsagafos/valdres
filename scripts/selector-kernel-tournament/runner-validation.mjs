@@ -135,6 +135,7 @@ export function validateWorkloadInvocation(
     )
     assertInstalledArtifact(consumer, artifact)
     validateProcess(process, {
+        cwd: recordedRoot(),
         argv: [
             runtime,
             ...(runtime === "node" && mode === "counter"

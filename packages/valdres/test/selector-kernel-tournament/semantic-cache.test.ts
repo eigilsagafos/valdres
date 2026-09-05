@@ -113,6 +113,7 @@ if (isolatedTournamentFile()) {
             )
             for (const [id, path, gate] of [
                 ["process-bytes", fixture.process, "PROVENANCE-INVOCATION"],
+                ["process-cwd", fixture.process, "PROVENANCE-INVOCATION"],
                 [
                     "installed-bytes",
                     fixture.installedEntry,
@@ -123,9 +124,11 @@ if (isolatedTournamentFile()) {
             ]) {
                 const before = readFileSync(path)
                 try {
-                    if (id === "process-bytes") {
+                    if (id === "process-bytes" || id === "process-cwd") {
                         const process = JSON.parse(before.toString())
-                        process.argv[1] += ".substituted"
+                        if (id === "process-bytes")
+                            process.argv[1] += ".substituted"
+                        else process.cwd = relocated
                         writeFileSync(path, JSON.stringify(process))
                     } else
                         writeFileSync(
@@ -135,6 +138,27 @@ if (isolatedTournamentFile()) {
                     expected.push(probe(id, gate, () => run()))
                 } finally {
                     writeFileSync(path, before)
+                }
+            }
+            const evidencePath = join(root, fixture.relative)
+            const before = readFileSync(evidencePath)
+            for (const field of [
+                "unknownAuthorityField",
+                "productionEntrySha256",
+            ]) {
+                try {
+                    const evidence = JSON.parse(before.toString())
+                    evidence.artifact[field] = "f".repeat(64)
+                    writeFileSync(evidencePath, JSON.stringify(evidence))
+                    expected.push(
+                        probe(
+                            "embedded-" + field,
+                            "SEMANTIC-EVIDENCE-IDENTITY",
+                            () => run(),
+                        ),
+                    )
+                } finally {
+                    writeFileSync(evidencePath, before)
                 }
             }
             expect(outcomes).toEqual(expected)

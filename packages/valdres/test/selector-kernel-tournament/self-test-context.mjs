@@ -90,7 +90,7 @@ export function isolatedTournamentFile() {
             process.stdout.write(result.stdout ?? "")
             process.stderr.write(result.stderr ?? "")
             const totals = validateSelfTestResult(result, {
-                tests: 82,
+                tests: 84,
                 files: files.length,
             })
             console.log(

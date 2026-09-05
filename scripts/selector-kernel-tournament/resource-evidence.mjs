@@ -151,6 +151,7 @@ export function validateSizeEvidence(root, value, { artifacts, index }) {
             "recorded root graph differs",
         )
         validateProcess(process, {
+            cwd: recordedRoot(),
             argv: [
                 "bun",
                 join(
@@ -232,6 +233,7 @@ export function validateMemoryEvidence(root, records, { artifacts }) {
                 "node_modules/valdres",
             )
         validateProcess(process, {
+            cwd: recordedRoot(),
             argv: [
                 record.runtime,
                 ...(record.runtime === "node" ? ["--expose-gc"] : []),

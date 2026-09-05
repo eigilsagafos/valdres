@@ -1,9 +1,16 @@
 import { recordedRoot } from "./recorded-root.mjs"
 // The unchanged direct-source harness is a separate measurement domain. It is
 // never compiled together with the packed runner or an observation plugin.
-import { mkdtempSync, symlinkSync, rmSync, readFileSync } from "node:fs"
+import {
+    mkdtempSync,
+    mkdirSync,
+    existsSync,
+    symlinkSync,
+    rmSync,
+    readFileSync,
+} from "node:fs"
 import { stripVTControlCharacters } from "node:util"
-import { dirname, join } from "node:path"
+import { dirname, join, isAbsolute } from "node:path"
 import { tmpdir } from "node:os"
 import {
     ROOT,
@@ -60,8 +67,25 @@ export function sourceSnapshot(directory, commit) {
         ),
     )
 }
-export function materializeSource(archive, commit) {
-    const directory = mkdtempSync(join(tmpdir(), "tournament-source-memory-"))
+export function sourceMemoryWorkingDirectory(root, arm) {
+    requireGate(
+        isAbsolute(root) && ["control", "candidate"].includes(arm),
+        "SOURCE-MEMORY-CONTEXT",
+        "absolute evidence root and known arm required",
+    )
+    return join(root, "source-memory", arm + "-source", "packages/valdres")
+}
+export function materializeSource(archive, commit, output) {
+    if (output !== undefined) {
+        requireGate(
+            isAbsolute(output) && !existsSync(output),
+            "SOURCE-MEMORY-CONTEXT",
+            "new absolute source directory required",
+        )
+        mkdirSync(output, { recursive: true })
+    }
+    const directory =
+        output ?? mkdtempSync(join(tmpdir(), "tournament-source-memory-"))
     command(["tar", "-xf", archive, "-C", directory], ROOT)
     const snapshot = sourceSnapshot(directory, commit)
     requireGate(
@@ -195,12 +219,17 @@ export function collectSourceMemory(root, { artifacts, index }) {
             "SOURCE-MEMORY-ARCHIVE",
             arm,
         )
-        const source = materializeSource(archive, metadata.gitSha)
+        const cwd = sourceMemoryWorkingDirectory(root, arm)
+        const source = materializeSource(
+            archive,
+            metadata.gitSha,
+            join(cwd, "../.."),
+        )
         try {
             for (const runtime of ["bun", "node"]) {
                 const process = captureCommand(
                     sourceMemoryCommand(runtime),
-                    join(source.directory, "packages/valdres"),
+                    cwd,
                 )
                 const path = `source-memory/${arm}-${runtime}.process.json`
                 const ref = writeEvidence(root, path, process)
@@ -311,7 +340,7 @@ export function validateSourceMemory(
         }
         const process = json(evidencePath(root, ref.process))
         requireGate(
-            process.cwd.endsWith("/packages/valdres") &&
+            process.cwd === sourceMemoryWorkingDirectory(root, ref.arm) &&
                 (!end || Date.parse(process.startedAt) >= Date.parse(end)),
             "SOURCE-MEMORY-PROCESSES",
             "cwd or process order",

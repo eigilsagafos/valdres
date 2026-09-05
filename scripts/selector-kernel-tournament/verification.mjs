@@ -37,7 +37,7 @@ import { validateProcess } from "./process-evidence.mjs"
 import { sourceMemoryCommand, assertSourceMemory } from "./source-memory.mjs"
 
 export const EXPECTED_TESTS = {
-    tournament: 83, // 82 child cases plus one separately reported dispatcher
+    tournament: 85, // 84 child cases plus one separately reported dispatcher
     "paired-statistics": 67,
     "frozen-family": 58,
     "source-memory-bun": 8,
@@ -281,7 +281,12 @@ function publishDryRun(root, frozen) {
         rmSync(sandbox, { recursive: true, force: true })
     }
 }
-export function validateVerificationBundle(root, expectedSums, frozen) {
+export function validateVerificationBundle(
+    root,
+    expectedSums,
+    frozen,
+    authorityRoot = ROOT,
+) {
     verifySeal(root, expectedSums)
     const value = json(evidencePath(root, "verification.json"))
     strictKeys(
@@ -306,7 +311,13 @@ export function validateVerificationBundle(root, expectedSums, frozen) {
         "F9-IDENTITY",
         "wrong foundation or incomplete result",
     )
-    const wanted = verificationCommands(value.authorityRoot)
+    same(
+        value.authorityRoot,
+        authorityRoot,
+        "F9-AUTHORITY",
+        "verification must use the authenticated recorded authority",
+    )
+    const wanted = verificationCommands(authorityRoot)
     exactRows(
         value.commands.map(r => r.id),
         wanted.map(r => r.id),

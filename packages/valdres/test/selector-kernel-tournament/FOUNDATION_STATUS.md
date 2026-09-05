@@ -39,9 +39,10 @@ invocation paths are evidence; validators read their own protected frozen bytes.
   ceilings and package-size infrastructure, root-reachability checks.
 - F7: complete beta.36-vs-beta.36 control runner, raw noise diagnostics without
   an intended-win obligation, immutable passing/failing bundle seals.
-- F8: 14 failure classes with 20 explicit variants and 40 baseline/mutation
+- F8: 14 failure classes with 22 explicit variants and 44 baseline/mutation
   processes. Added variants exercise intermediate graph state, exported cycle
-  identity, equality-recovery notification, and both memory domains.
+  identity, equality-recovery notification, both memory domains, and shared
+  semantic-cache reuse across artifact identities and observation modes.
 - F9: independent neutrality/statistics review artifacts and hashed dispositions,
   exact CI/test completeness checks, isolated publish dry-run and cleanup,
   final freeze, full verification, and landing handoff.

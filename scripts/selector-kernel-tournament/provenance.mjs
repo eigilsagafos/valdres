@@ -17,6 +17,7 @@ import {
 import { captureCommand, command } from "./artifact.mjs"
 import { writeEvidence, same, strictKeys, evidencePath } from "./evidence.mjs"
 import { INHERITED_ENVIRONMENT, validateProcess } from "./process-evidence.mjs"
+import { recordedRoot } from "./recorded-root.mjs"
 export const ENVIRONMENT_KEYS = INHERITED_ENVIRONMENT
 export function competingProcesses(stdout, observerPid) {
     requireGate(
@@ -124,7 +125,7 @@ export function requireStableEnvironment(before, after) {
             "PROVENANCE-ENVIRONMENT",
         )
         for (const key of ["power", "thermal", "processes", "inventory"])
-            validateProcess(observation[key])
+            validateProcess(observation[key], { cwd: recordedRoot() })
         same(
             observation.inventory.argv,
             ["ps", "-axo", "pid=,ppid=,args="],

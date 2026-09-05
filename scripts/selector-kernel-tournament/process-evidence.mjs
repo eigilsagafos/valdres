@@ -26,7 +26,7 @@ export const PROCESS_KEYS = [
     "stdout",
     "stderr",
 ]
-export function validateProcess(value, { argv, success = true } = {}) {
+export function validateProcess(value, { argv, cwd, success = true } = {}) {
     strictKeys(value, PROCESS_KEYS, "PROVENANCE-PROCESS-SCHEMA")
     requireGate(
         Array.isArray(value.argv) &&
@@ -38,6 +38,13 @@ export function validateProcess(value, { argv, success = true } = {}) {
     )
     if (argv)
         same(value.argv, argv, "PROVENANCE-INVOCATION", "exact command differs")
+    if (cwd !== undefined)
+        same(
+            value.cwd,
+            cwd,
+            "PROVENANCE-INVOCATION",
+            "working directory differs",
+        )
     requireGate(
         value.environment &&
             typeof value.environment === "object" &&

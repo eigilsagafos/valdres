@@ -31,6 +31,7 @@ export function validateFamily(root, path) {
     same(family.files, expected, "FAMILY-FROZEN-HASH", "family files changed")
     const process = json(evidencePath(root, family.process))
     validateProcess(process, {
+        cwd: join(recordedRoot(), "packages/valdres"),
         argv: [
             "bun",
             "test",

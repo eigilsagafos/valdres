@@ -17,7 +17,7 @@ if (isolatedTournamentFile()) {
     } = await import(
         "../../../../scripts/selector-kernel-tournament/evidence.mjs"
     )
-    const { manifest } = await import(
+    const { manifest, ROOT } = await import(
         "../../../../scripts/selector-kernel-tournament/inputs.mjs"
     )
     const {
@@ -140,6 +140,10 @@ if (isolatedTournamentFile()) {
     test("exact invocation, runtime environment, PID and full UTC process evidence are required", () => {
         const good = processRecord()
         expect(() => validateProcess(good, { argv: good.argv })).not.toThrow()
+        expect(() => validateProcess(good, { cwd: good.cwd })).not.toThrow()
+        expect(() => validateProcess(good, { cwd: "/unrelated" })).toThrow(
+            "PROVENANCE-INVOCATION",
+        )
         expect(() =>
             validateProcess(
                 {
@@ -182,6 +186,8 @@ if (isolatedTournamentFile()) {
             observerPid: 42,
             competing: [],
         }
+        for (const key of ["power", "thermal", "processes", "inventory"])
+            before[key].cwd = ROOT
         expect(() => requireStableEnvironment(before, before)).not.toThrow()
         expect(() =>
             requireStableEnvironment(before, {
