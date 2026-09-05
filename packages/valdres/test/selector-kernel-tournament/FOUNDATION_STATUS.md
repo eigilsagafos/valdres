@@ -17,9 +17,9 @@ or promotion decision exists. The beta.36 runtime tree remains
 | F4         | Complete: separate protected/intended hypotheses, fixed 8/24/50 pairs, deterministic calibration, and live Node/Bun A/A checks.                                                                                                                                                            |
 | F5         | Complete: sealed evidence, independent raw recomputation, exact process/build provenance, immutable intent, stage prerequisites, 55 self-tests, fresh timed/counter metadata checks, three core oracle preflights, and 31 counter rows validated.                                          |
 | F6         | Complete: frozen six-scenario Bun/Node executor, paired memory decisions, 38 size metrics, root reachability, and both real packed resource red proofs. The control audit exposes six absolute-ceiling failures and a post-release monotonic failure; F7 remains blocked on those defects. |
-| F7         | No green control bundle yet. Admission probes are not conformance or eligibility evidence.                                                                                                                                                                                                 |
+| F7         | Full control run recorded all public/counter semantics, 58 frozen family tests, 31 counter rows, 1,900 timing processes, and size evidence. C/A A/A and all size metrics pass. Memory fails; no green bundle.                                                                              |
 | F8         | No complete red proof bundle yet.                                                                                                                                                                                                                                                          |
-| F9         | Final neutrality/statistics review and foundation PR remain outstanding.                                                                                                                                                                                                                   |
+| F9         | Final neutrality/statistics review and foundation PR remain outstanding. F6 independent review found two defects; both are fixed and independently re-audited. Repository verification, publish dry-run, memory regressions, and self-tests pass; final F9 still waits on F7/F8.           |
 
 ## Resolved normative defects
 
@@ -130,3 +130,78 @@ These are F6 development proofs, not the complete F8 bundle linked to a green
 control. The requirement to publish a green control and the requirement to
 retain blocking resource ceilings are unresolved. No candidate admission is
 permitted.
+
+## Reviewed F6 corrections and F7 attempt
+
+Independent read-only review found two concrete F6 defects, both fixed in
+`6ed63687641d8d598aec364b1e663547fffb04ea` and re-audited:
+
+- Installed identity now binds the package manifest, production entry, and
+  complete dist tree before each memory/workload/semantic/core process and
+  during evidence recomputation. A real packed workload accepted an altered
+  shared chunk before the fix and rejects `ARTIFACT-INSTALL-HASH` afterward.
+- The absolute release ceiling uses the original first-drain observation. That
+  drain already performs three full GCs. Later drains remain observable for
+  growth detection and cannot rescue the frozen first-drain ceiling.
+
+The fresh F6 resource proofs at `v2-f6-resource-red-reviewed/` pass both intact
+baselines and fail both mutations at their intended gates. `SHA256SUMS` SHA-256:
+`1d5a5aae3d9aed2df65102f82bc04eba9a3e2eec6d7ea8e6ca1f276e25351b3a`.
+
+The full F7 command is:
+
+```sh
+bun scripts/selector-kernel-tournament/control-bundle.mjs run NEW_RUN_ID
+```
+
+It preserves a failed run and exits nonzero. The first complete attempt recorded
+all semantic replays, family compatibility, core oracle preflights, 31 counter
+rows, 256 C timing processes, 1,644 A timing processes, and 38 size metrics.
+Both timing stages passed their A/A non-regression and p95 decisions without an
+intended-win requirement. Memory stopped at
+`MEMORY-MONOTONIC-LEAK: M-DYNAMIC-DEPENDENCY-CHURN`.
+
+Its immutable directory under the shared root is:
+
+```text
+ba9d0833ddff9c700e622db4fa9584ed5f051209/beta36-control/1/foundation-control-initial/
+```
+
+`SHA256SUMS` SHA-256:
+`60d83dca4976cac014cdbe250a91847b0da178eefcd7ff8caab13b4df6783d56`. This is
+failed evidence, predates the two reviewed corrections, and is not a green
+bundle or a candidate-admission prerequisite.
+
+Fresh verification after the corrections:
+
+| Command                                                                                                              | Result                                                                                            |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `bun run verify`                                                                                                     | 19 enabled CI-equivalent steps pass; core/React/contracts/types/package/packed consumers included |
+| `DRY_RUN=1 bash scripts/ci-publish.sh` in an isolated archive                                                        | pass; every package manifest restored, no backup files                                            |
+| `bun run test:memory:bun` in `packages/valdres`                                                                      | 8 pass, unchanged legacy lanes                                                                    |
+| `bun run test:memory:node` in `packages/valdres`                                                                     | 8 pass, unchanged legacy lanes                                                                    |
+| `bun test test/selector-kernel-tournament` in `packages/valdres`                                                     | 63 pass, 148,855 assertions                                                                       |
+| `VALDRES_ALLOW_ROOT_BUN_TEST=1 bun test scripts/lib/paired-decision*.test.ts scripts/lib/robust-estimators*.test.ts` | 67 pass, 490 assertions                                                                           |
+| `bun scripts/selector-kernel-tournament/inputs.mjs check`                                                            | pass                                                                                              |
+
+These are macOS development results. The Ubuntu CI run and the separate Bencher
+PR measurement gate are not recorded as passed. The trusted benchmark change
+classifier returns `true`; its full measurement remains required at F9.
+
+## Upstream frozen-input conflict
+
+While this branch retained its required base, `origin/main` advanced to
+`0d101389a7a97a7e75533ced957333cb286d2aa4` through the collection PRs. It
+changed these inputs frozen by this tournament:
+
+- `scripts/size-baseline.json`
+- `scripts/check-package-size.ts`
+- `packages/valdres/src/v1-internal/family.ts`
+- `packages/valdres/test/v1-public-candidate/family.test.ts`
+- `packages/valdres/test/v1-public-candidate/family-cache.test.ts`
+
+A read-only merge preview also reports a package-script conflict. No merge or
+rebase was performed. Adopting upstream requires an explicit authority decision
+for the frozen family, size, public-surface, and runtime substrate; silently
+replacing those inputs would violate the current work order. This is separate
+from the unresolved control-memory policy. F8/F9 and the PR remain pending.
