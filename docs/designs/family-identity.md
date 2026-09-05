@@ -89,3 +89,87 @@ Before release, replace one ShiftX identity shim with this API and verify the
 same graph shape, values, notifications, and transaction boundaries. The family
 beta must remain separate from the cold-drop performance beta so either change
 can be rolled back and measured independently.
+
+## beta.36 ShiftX adoption report
+
+ShiftX benchmarked `family()` on beta.36 at their real call shapes (~510
+definitions reached as `atom(ref: string, context: string[])`, tens of
+thousands of accesses per gesture, 4x CPU throttle) against the hand-rolled
+`Map` shim it would replace. Correctness and identity semantics matched
+exactly (tuple identity, prefix-vs-longer-tuple distinctness, per-member
+independence, structural identity through the non-primitive fallback); the
+finding was purely a performance adoption gap, not a defect. They kept the
+hand-rolled `Map` and reported two concrete costs at their call shapes:
+
+- `encodeKey`-based lookup cost ~33ms of `encodeKey` time plus ~18ms in
+  `getOrCreateOne`, versus ~32ms total for their own hand-rolled encode +
+  `Map.get`.
+- A positional-tuple attempt (spreading their `context: string[]` into
+  distinct positional keys) cut their own encoding cost but the per-access
+  allocation and trie walk cost more than the encoding win, with GC alone at
+  ~26ms in one trace.
+
+Root-caused with a fresh-process Bun microbenchmark (200k-iteration warmed
+loop, matching their `(ref, context)` shape): a plain `Map.get` on an
+already-encoded key costs ~2ns; `family()`'s single-key/positional-tuple hot
+path (bypassing `encodeKey`) costs ~30-40ns — real but small in absolute
+terms even at tens of thousands of calls. The `encodeKey` path, however,
+measured ~220ns/call — because every `encodeKey` invocation runs through the
+full factory/encoder quarantine (`runDefinitionCallback`), which allocated a
+`WeakSet` and mapped an array of active selector-session read-guards on
+*every* call, not just on cache misses, regardless of whether either was
+ever populated.
+
+Fixed two allocations that the definition-callback quarantine can
+structurally never need outside factory construction or an active selector
+session: a `DefinitionCallbackFrame`'s `definitions` set is now `undefined`
+unless `allowDefinitions` is true (`phase === "factory"`) — every non-factory
+phase (`encoder`, `family-encoder`, `collection-encoder`) is rejected by
+`assertRuntimeDefinitionConstructionAllowed`/the equivalent inline check
+before the one call site that ever adds to that set is reached, so it is
+never populated for those phases — and the read-guard bookkeeping reuses a
+shared empty array instead of mapping one when there is no active selector
+session to guard, the common case for a family accessor called from ordinary
+application code. This is phrased in terms of the `allowDefinitions`
+invariant rather than "family is the only caller" deliberately: this frame
+type is shared with `collection()`'s own encoder phase (added after the
+original identity-cache measurement above), so the fix had to be re-derived
+against that shared shape, not against a caller count that was already
+stale by the time of writing.
+
+Net effect, measured through the repo's own paired `measureOne`/`compare`
+benchmark harness (not an ad-hoc timing loop) via manual alternating
+before/after rounds on both engines this library ships for: `encodeKey`
+cache hit dropped by roughly 5% on Bun/JSC and a comparable amount on
+Node/V8 — real and reproducible, but modest, not the double-digit figure an
+earlier single-run measurement suggested. The single-key and positional-tuple
+paths were already outside `runDefinitionCallback` on a cache hit and are
+unchanged. `test/performance/family.bench.ts` tracks all three hot paths
+against a hand-rolled-`Map` reference via `compare()` going forward, so the
+reference measurement is excluded from the PR gate the same way every other
+benchmark's reference side is (`BENCH_VALDRES_ONLY`).
+
+An independent architectural review (a separate, more capable model
+reviewing specifically for the kind of uncoordinated shared-infrastructure
+optimization this project is trying to avoid — see the kernel-tournament
+handoff) caught two real problems before this shipped: the fix was first
+written against a since-superseded shape of this frame (an `origin/main`
+rebase had already renamed it and added the `collection()` caller above),
+and the first version of the benchmark called `measureOne` directly for the
+hand-rolled-Map side instead of `compare()`, which would have let a
+near-noise-floor `Map.get` measurement enter the paired PR gate as its own
+tracked series. Both are fixed above.
+
+The remaining `encodeKey`-path cost sits in `runGuardedCallback`'s
+capability-boundary enforcement (shared with every guarded callback in the
+domain, not family-specific) and is out of scope for the family() lane.
+Closing more of the gap would mean either a wider capability-boundary
+redesign or a semantic trade-off (e.g. a genuinely allocation-free lookup
+path that gives up the encoder quarantine or the weak-cache identity
+guarantee for a narrower fast case) — see the accessor-level pre-built-keys
+API considered separately for the no-allocation-key-path request.
+
+`members()`/`subFamily()` enumeration remains out of scope for `family()` by
+design; ShiftX's two enumerated families (`mutationAtom`, `entityAtom`) are
+collection()-shaped and are expected to move there once L3 ships, per their
+own report.
