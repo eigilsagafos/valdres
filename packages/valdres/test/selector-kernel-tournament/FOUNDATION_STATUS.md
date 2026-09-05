@@ -8,18 +8,18 @@ candidate implementation, public kernel interface, candidate workspace, winner,
 or promotion decision exists. The beta.36 runtime tree remains
 `35a20a12ff1087140b08622f9057c857900d17e5`.
 
-| Work order | Status                                                                                                                                                                                                                                            |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F0         | v2 authority implemented: 30 semantic cases, 17 workloads, six memory scenarios, 12 memory rows. Empty non-release Changeset retained.                                                                                                            |
-| F1         | Shipping pack driver, separate counter-marker build, installed Node/Bun probes, and reviewed admission restrictions implemented. Actual control observation is implemented as a build-only plugin.                                                |
-| F2         | Complete: all 30 cases, 740,951 edge attempts per replay, public/counter Node/Bun double replays, 58 frozen family tests, and 11 semantic red mutations verified.                                                                                 |
-| F3         | Complete: 17 workloads and 31 runtime rows checked in timed/counter modes; frozen counts, checksums, timer windows, and 900-step no-writes lifecycle retained.                                                                                    |
-| F4         | Complete: separate protected/intended hypotheses, fixed 8/24/50 pairs, deterministic calibration, and live Node/Bun A/A checks.                                                                                                                   |
-| F5         | Complete: sealed evidence, independent raw recomputation, exact process/build provenance, immutable intent, stage prerequisites, 55 self-tests, fresh timed/counter metadata checks, three core oracle preflights, and 31 counter rows validated. |
-| F6         | Resource executors remain outstanding; resource evidence validation fails closed until their required workers and raw observations exist.                                                                                                         |
-| F7         | No green control bundle yet. Admission probes are not conformance or eligibility evidence.                                                                                                                                                        |
-| F8         | No complete red proof bundle yet.                                                                                                                                                                                                                 |
-| F9         | Final neutrality/statistics review and foundation PR remain outstanding.                                                                                                                                                                          |
+| Work order | Status                                                                                                                                                                                                                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| F0         | v2 authority implemented: 30 semantic cases, 17 workloads, six memory scenarios, 12 memory rows. Empty non-release Changeset retained.                                                                                                                                                     |
+| F1         | Shipping pack driver, separate counter-marker build, installed Node/Bun probes, and reviewed admission restrictions implemented. Actual control observation is implemented as a build-only plugin.                                                                                         |
+| F2         | Complete: all 30 cases, 740,951 edge attempts per replay, public/counter Node/Bun double replays, 58 frozen family tests, and 11 semantic red mutations verified.                                                                                                                          |
+| F3         | Complete: 17 workloads and 31 runtime rows checked in timed/counter modes; frozen counts, checksums, timer windows, and 900-step no-writes lifecycle retained.                                                                                                                             |
+| F4         | Complete: separate protected/intended hypotheses, fixed 8/24/50 pairs, deterministic calibration, and live Node/Bun A/A checks.                                                                                                                                                            |
+| F5         | Complete: sealed evidence, independent raw recomputation, exact process/build provenance, immutable intent, stage prerequisites, 55 self-tests, fresh timed/counter metadata checks, three core oracle preflights, and 31 counter rows validated.                                          |
+| F6         | Complete: frozen six-scenario Bun/Node executor, paired memory decisions, 38 size metrics, root reachability, and both real packed resource red proofs. The control audit exposes six absolute-ceiling failures and a post-release monotonic failure; F7 remains blocked on those defects. |
+| F7         | No green control bundle yet. Admission probes are not conformance or eligibility evidence.                                                                                                                                                                                                 |
+| F8         | No complete red proof bundle yet.                                                                                                                                                                                                                                                          |
+| F9         | Final neutrality/statistics review and foundation PR remain outstanding.                                                                                                                                                                                                                   |
 
 ## Resolved normative defects
 
@@ -95,3 +95,38 @@ Development artifacts and the diagnostic bundle live under:
 This path is explicitly outside the authoritative candidate-run layout. No
 candidate workspace is permitted next; this foundation workspace must first
 finish F0–F9, record green/red proofs, and have its PR merged.
+
+## F6 resource evidence
+
+The complete diagnostic audit preserves 120 fresh memory processes. Beta.36
+exceeds retained ceilings for atoms, single-store transactions, and deep
+transactions under both runtimes. All 38 packed-size metrics pass. No ceiling or
+frozen source was changed. This audit has no eligibility authority:
+
+- Development directory: `v2-f6-complete-audit/`
+- `SHA256SUMS` SHA-256:
+  `99efa5b1a48182ca6c2162d23a3e5c4af53e23a5735b0a0e823d4f36dd02e4c8`
+
+The sampler records three empty calibrations without State/Store operations to
+isolate its own initialization, then retains the existing three scored samples.
+Each release drain uses their process-level median residual. The fresh
+`v2-f6-probe-median/` run still fails `MEMORY-MONOTONIC-LEAK` for Bun dependency
+churn (262,478, 279,040, 279,216 bytes). The gate remains blocking.
+
+The two F6 resource adversaries each pass with the intact control and fail only
+at their intended gate after mutation. Retaining a real selector and its 2 MiB
+payload fails `MEMORY-ABSOLUTE`; a root import into evidence code fails
+`ARTIFACT-SOURCE-IMPORT` after recomputing tarball/dist hashes.
+
+- Development directory: `v2-f6-resource-red/`
+- `SHA256SUMS` SHA-256:
+  `837a0f304eb10d03793e64a2174e5fdb2d9de0f41fcac1594c235e3af517f630`
+- Reproduction:
+  `bun scripts/selector-kernel-tournament/resource-red-worker.mjs ID TIMED_ARTIFACT_DIRECTORY NEW_ABSOLUTE_OUTPUT baseline`
+  (then a separate output with `mutation`); IDs are `retained-memory-leak` and
+  `root-bundle-leakage`. Mutation exit status must be 1 at the named gate.
+
+These are F6 development proofs, not the complete F8 bundle linked to a green
+control. The requirement to publish a green control and the requirement to
+retain blocking resource ceilings are unresolved. No candidate admission is
+permitted.

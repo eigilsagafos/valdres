@@ -133,7 +133,7 @@ export async function withRunnerLock(evidenceRoot, body) {
         unlinkSync(file)
     }
 }
-function rotate(rows, seed) {
+export function rotateLanes(rows, seed) {
     let state = seed >>> 0
     const result = [...rows]
     for (let i = result.length - 1; i > 0; i--) {
@@ -141,13 +141,6 @@ function rotate(rows, seed) {
         const j = state % (i + 1)
         ;[result[i], result[j]] = [result[j], result[i]]
     }
-    const coreAbsolute = stage === "A" ? absoluteCoreGate(result.rows) : []
-    result.coreAbsolute = coreAbsolute
-    if (
-        plan.kind === "candidate" &&
-        coreAbsolute.some(row => row.status === "fail")
-    )
-        result.performanceStatus = "fail"
     return result
 }
 export function collectTimings({
@@ -216,7 +209,7 @@ export function collectTimings({
             )
             consumers[`${runtime}/${arm}`] = path
         }
-    const lanes = rotate(
+    const lanes = rotateLanes(
         manifest.performanceWorkloads
             .filter(row => row.requiredAt.includes(stage))
             .flatMap(row => row.runtimes.map(runtime => ({ row, runtime }))),
@@ -340,7 +333,7 @@ export function validateTimings(root, records, { stage, plan, artifacts }) {
         "TIMING-SCHEDULE",
         "implementation order",
     )
-    const planned = rotate(
+    const planned = rotateLanes(
         manifest.performanceWorkloads
             .filter(row => row.requiredAt.includes(stage))
             .flatMap(row => row.runtimes.map(runtime => ({ row, runtime }))),
