@@ -33,11 +33,11 @@ const rootDir = join(import.meta.dir, "..")
 const read = (path: string) => readFileSync(join(rootDir, path), "utf8")
 
 const pinnedVersion = read(".bun-version").trim()
-const ordinaryBaselineCommit = "7c55be567457218fb597f9cd9658b1c71997fb83"
+const ordinaryBaselineCommit = "15d535c7ec80b50fd31e44129a42232cbab19609"
 const immutableOrdinaryFixtures = {
     atom: { raw: 64797, gzip: 16861 },
     "atom-selector-store": { raw: 64984, gzip: 16930 },
-    family: { raw: 70080, gzip: 18542 },
+    family: { raw: 71064, gzip: 18990 },
     equality: { raw: 7231, gzip: 2210 },
     "adapter-internals": { raw: 64767, gzip: 16835 },
 }

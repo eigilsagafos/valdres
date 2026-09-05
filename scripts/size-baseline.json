@@ -6,9 +6,9 @@
         "gzipLevel": 6
     },
     "provenance": {
-        "ordinaryBaselineCommit": "7c55be567457218fb597f9cd9658b1c71997fb83",
+        "ordinaryBaselineCommit": "15d535c7ec80b50fd31e44129a42232cbab19609",
         "certificationBuildCount": 3,
-        "certifiedRuntimeBuildSha256": "18bf1036311e94b4de61050594e8fba4af44d31bdc2c20340da890da741e3578"
+        "certifiedRuntimeBuildSha256": "f81b3d68f43fac373749c2340a0c309dc67ec75d24ce2b5b2a5e229a4a6ee5d2"
     },
     "policy": {
         "ordinaryTolerancePercent": 2,
@@ -30,8 +30,8 @@
             "gzip": 16930
         },
         "family": {
-            "raw": 70080,
-            "gzip": 18542
+            "raw": 71064,
+            "gzip": 18990
         },
         "equality": {
             "raw": 7231,
@@ -48,8 +48,8 @@
             "gzip": 79850
         },
         "packed": {
-            "raw": 387391,
-            "gzip": 102270
+            "raw": 387568,
+            "gzip": 102658
         },
         "fixtures": {
             "collection": {
@@ -58,11 +58,11 @@
             },
             "all-exports": {
                 "raw": 98775,
-                "gzip": 27217
+                "gzip": 27229
             },
             "inspect": {
-                "raw": 97552,
-                "gzip": 25985
+                "raw": 97558,
+                "gzip": 25990
             }
         }
     }
