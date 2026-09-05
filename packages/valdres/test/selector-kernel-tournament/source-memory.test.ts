@@ -62,3 +62,14 @@ test("missing, duplicate, unknown, or altered source measurements cannot satisfy
         ).toThrow("SOURCE-MEMORY-")
     }
 })
+
+test("Vitest ANSI decoration does not discard original source measurements", () => {
+    const process = sample()
+    process.stdout = process.stdout
+        .split("\n")
+        .map(line => "\x1b[22m\x1b[39m" + line)
+        .join("\n")
+    expect(
+        sourceMemoryRows(process, "node", "control", "raw.json"),
+    ).toHaveLength(8)
+})

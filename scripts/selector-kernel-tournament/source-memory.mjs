@@ -1,6 +1,7 @@
 // The unchanged direct-source harness is a separate measurement domain. It is
 // never compiled together with the packed runner or an observation plugin.
 import { mkdtempSync, symlinkSync, rmSync, readFileSync } from "node:fs"
+import { stripVTControlCharacters } from "node:util"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import {
@@ -75,7 +76,9 @@ export function materializeSource(archive, commit) {
     return { directory, snapshot }
 }
 export function sourceMemoryRows(process, runtime, arm, rawEvidence) {
-    const observations = (process.stdout + "\n" + process.stderr)
+    const observations = stripVTControlCharacters(
+        process.stdout + "\n" + process.stderr,
+    )
         .split("\n")
         .filter(line => line.trim().startsWith('{"scenario":'))
         .map(line => JSON.parse(line.trim()))
@@ -145,7 +148,7 @@ export function assertSourceMemory(process, runtime, arm, rawEvidence) {
                 .join(","),
     )
     validateProcess(process, { argv: sourceMemoryCommand(runtime) })
-    const output = process.stdout + process.stderr
+    const output = stripVTControlCharacters(process.stdout + process.stderr)
     requireGate(
         runtime === "bun"
             ? /8 pass\s+0 fail/.test(output)
