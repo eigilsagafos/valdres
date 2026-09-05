@@ -1,3 +1,4 @@
+import { assertInstalledArtifact } from "./artifact.mjs"
 import { join, dirname } from "node:path"
 import { existsSync, mkdirSync } from "node:fs"
 import {
@@ -97,7 +98,7 @@ export function prepareMemory(root, { controlDirectory, headDirectory }) {
 }
 export function runMemoryProcess(
     root,
-    { worker, wrapper, runner },
+    { worker, wrapper, runner, artifacts },
     row,
     runtime,
     arm,
@@ -116,21 +117,23 @@ export function runMemoryProcess(
             "node_modules/valdres",
         ),
         path = `memory/${row.id}-${runtime}-${pair}-${arm}.process.json`,
-        process = captureCommand(
-            [
-                runtime,
-                ...(runtime === "node" ? ["--expose-gc"] : []),
-                worker,
-                consumer,
-                join(
-                    ROOT,
-                    "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v2.json",
-                ),
-                row.id,
-                wrapper,
-            ],
-            ROOT,
-        )
+        artifact = artifacts[arm].timed
+    assertInstalledArtifact(consumer, artifact)
+    const process = captureCommand(
+        [
+            runtime,
+            ...(runtime === "node" ? ["--expose-gc"] : []),
+            worker,
+            consumer,
+            join(
+                ROOT,
+                "packages/valdres/test/selector-kernel-tournament/fixture-manifest.v2.json",
+            ),
+            row.id,
+            wrapper,
+        ],
+        ROOT,
+    )
     const ref = writeEvidence(root, path, process)
     requireGate(
         process.status === 0 && process.error === null,

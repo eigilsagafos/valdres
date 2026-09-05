@@ -2,9 +2,13 @@ import { describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { extractPackedArtifact } from "../performance/core-load/artifact.mjs"
+import {
+    extractPackedArtifact,
+    hashTree,
+} from "../performance/core-load/artifact.mjs"
 import {
     assertPackedImports,
+    assertInstalledArtifact,
     command,
     EVIDENCE_MARKER,
     inspectArtifact,
@@ -48,6 +52,42 @@ function fixture(source = "export const value = 1", mutate = (pkg: any) => {}) {
     }
 }
 describe("F1 artifact admission", () => {
+    test("installed shared-chunk changes fail even when the production entry is unchanged", () => {
+        const root = mkdtempSync(join(tmpdir(), "tournament-installed-test-"))
+        try {
+            mkdirSync(join(root, "dist"))
+            writeFileSync(
+                join(root, "package.json"),
+                '{"name":"fixture","type":"module"}',
+            )
+            writeFileSync(
+                join(root, "dist/index.js"),
+                "export { value } from './chunk.js'\n",
+            )
+            writeFileSync(
+                join(root, "dist/chunk.js"),
+                "export const value = 1\n",
+            )
+            const metadata = {
+                packageManifestSha256: fileHash(join(root, "package.json")),
+                productionEntrySha256: fileHash(join(root, "dist/index.js")),
+                distTreeSha256: hashTree(join(root, "dist")),
+            }
+            expect(() => assertInstalledArtifact(root, metadata)).not.toThrow()
+            writeFileSync(
+                join(root, "dist/chunk.js"),
+                "export const value = 2\n",
+            )
+            expect(fileHash(join(root, "dist/index.js"))).toBe(
+                metadata.productionEntrySha256,
+            )
+            expect(() => assertInstalledArtifact(root, metadata)).toThrow(
+                "ARTIFACT-INSTALL-HASH",
+            )
+        } finally {
+            rmSync(root, { recursive: true, force: true })
+        }
+    })
     test("computed, external, and source-tree module loading fail closed", () => {
         expect(() =>
             assertPackedImports(

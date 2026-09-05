@@ -1,3 +1,4 @@
+import { assertInstalledArtifact } from "./artifact.mjs"
 import { mkdirSync, existsSync, writeFileSync, cpSync } from "node:fs"
 import { join } from "node:path"
 import {
@@ -84,12 +85,7 @@ export function runWorkloadProcess({
         "runner or expectations changed",
     )
     const packageRoot = join(consumer, "node_modules/valdres")
-    requireGate(
-        fileHash(join(packageRoot, "dist/index.js")) ===
-            artifact.productionEntrySha256,
-        "PROVENANCE-ENTRY-HASH",
-        "installed entry changed",
-    )
+    assertInstalledArtifact(packageRoot, artifact)
     const args = [
         runtime,
         ...(runtime === "node" && mode === "counter" ? ["--expose-gc"] : []),

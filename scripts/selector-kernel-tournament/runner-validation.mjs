@@ -1,3 +1,4 @@
+import { assertInstalledArtifact } from "./artifact.mjs"
 import { mkdtempSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
@@ -124,12 +125,7 @@ export function validateWorkloadInvocation(
             : `consumer-${runtime}-${arm}`,
         "node_modules/valdres",
     )
-    requireGate(
-        fileHash(join(consumer, "dist/index.js")) ===
-            artifact.productionEntrySha256,
-        "PROVENANCE-ENTRY-HASH",
-        "installed workload entry changed",
-    )
+    assertInstalledArtifact(consumer, artifact)
     validateProcess(process, {
         argv: [
             runtime,

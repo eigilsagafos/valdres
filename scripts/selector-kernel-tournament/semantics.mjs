@@ -1,3 +1,4 @@
+import { assertInstalledArtifact } from "./artifact.mjs"
 import { mkdirSync, writeFileSync, existsSync } from "node:fs"
 import { join, resolve } from "node:path"
 import {
@@ -77,6 +78,11 @@ export function runSemantics({
                 join(output, `${stem}.ndjson`),
                 ...(stage === "C" ? [caseIds.join(",")] : []),
             ]
+            for (const directory of [consumer, foreign])
+                assertInstalledArtifact(
+                    join(directory, "node_modules/valdres"),
+                    artifact,
+                )
             const processResult = captureCommand(args, ROOT, {
                 timeout: 600000,
             })

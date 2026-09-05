@@ -102,7 +102,10 @@ export function memoryProcessSummary(sample) {
         ),
         releasedResidualBytes = ordinaryMedian(
             sample.samples.map(s =>
-                Math.max(0, s.releasedHeaps.at(-1) - s.before),
+                // The frozen gate observes the FIRST settleAndCollect(),
+                // which already performs three full GCs. Later drains cannot
+                // rescue a failure at that original observation point.
+                Math.max(0, s.releasedHeaps[0] - s.before),
             ),
         ),
         retainedBytesPerUnit = retainedBytes / scenario.units,

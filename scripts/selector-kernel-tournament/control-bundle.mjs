@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { manifest, json, fileHash, requireGate } from "./inputs.mjs"
 import { initializeRun, EVIDENCE_ROOT } from "./run.mjs"

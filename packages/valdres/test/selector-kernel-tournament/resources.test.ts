@@ -74,6 +74,15 @@ test("released residual and every one of the original three samples remain obser
     expect(() => memoryProcessSummary(sample)).toThrow("MEMORY-SAMPLES")
 })
 
+test("the original first-drain release ceiling cannot be rescued by later collections", () => {
+    const sample = observations().find(row => row.runtime === "node").sample
+    for (const row of sample.samples)
+        row.releasedHeaps = [row.before + 300000, row.before, row.before]
+    const summary = memoryProcessSummary(sample)
+    expect(summary.releasedResidualBytes).toBe(300000)
+    expect(summary.absolutePass).toBe(false)
+})
+
 test("post-release leak detection compares retained residual, not heap changes below the pre-run baseline", () => {
     const sample = observations()[0].sample
     sample.samples[2].releasedHeaps = [999994, 999996, 999998]

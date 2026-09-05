@@ -1,3 +1,4 @@
+import { assertInstalledArtifact } from "./artifact.mjs"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { createHash } from "node:crypto"
@@ -359,12 +360,7 @@ export function validateSemanticEvidence(
             ],
         })
         for (const packageRoot of [consumer, foreign])
-            requireGate(
-                fileHash(join(packageRoot, "dist/index.js")) ===
-                    identity.productionEntrySha256,
-                "PROVENANCE-ENTRY-HASH",
-                "semantic entry changed",
-            )
+            assertInstalledArtifact(packageRoot, identity)
         const stdout = JSON.parse(result.stdout)
         strictKeys(
             stdout,

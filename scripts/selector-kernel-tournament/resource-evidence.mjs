@@ -1,3 +1,4 @@
+import { assertInstalledArtifact } from "./artifact.mjs"
 import { join } from "node:path"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -221,12 +222,7 @@ export function validateMemoryEvidence(root, records, { artifacts }) {
                 wrapper,
             ],
         })
-        requireGate(
-            fileHash(join(consumer, "dist/index.js")) ===
-                artifacts[record.arm].timed.productionEntrySha256,
-            "PROVENANCE-ENTRY-HASH",
-            "memory used wrong artifact",
-        )
+        assertInstalledArtifact(consumer, artifacts[record.arm].timed)
         same(
             JSON.parse(process.stdout),
             record.sample,

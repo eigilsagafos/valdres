@@ -437,6 +437,24 @@ export async function packArtifact({
 }
 const fileHashString = value => sha256(JSON.stringify(value))
 
+export function assertInstalledArtifact(packageRoot, metadata) {
+    for (const path of ["package.json", "dist/index.js"])
+        requireGate(
+            existsSync(join(packageRoot, path)),
+            "ARTIFACT-INSTALL-HASH",
+            `missing installed ${path}`,
+        )
+    requireGate(
+        fileHash(join(packageRoot, "package.json")) ===
+            metadata.packageManifestSha256 &&
+            fileHash(join(packageRoot, "dist/index.js")) ===
+                metadata.productionEntrySha256 &&
+            hashTree(join(packageRoot, "dist")) === metadata.distTreeSha256,
+        "ARTIFACT-INSTALL-HASH",
+        "installed package metadata, entry, or shared chunks changed",
+    )
+}
+
 export function installArtifact(tarball, metadata, output, mode = "timed") {
     const verified = inspectArtifact(tarball, metadata, mode)
     verified.cleanup()
@@ -463,11 +481,7 @@ export function installArtifact(tarball, metadata, output, mode = "timed") {
         output,
     )
     const installed = join(output, "node_modules/valdres")
-    requireGate(
-        hashTree(join(installed, "dist")) === metadata.distTreeSha256,
-        "ARTIFACT-INSTALL-HASH",
-        installed,
-    )
+    assertInstalledArtifact(installed, metadata)
     return output
 }
 export function smokeArtifact(artifactDirectory, runtime) {
@@ -483,6 +497,7 @@ export function smokeArtifact(artifactDirectory, runtime) {
         join(ROOT, "scripts/selector-kernel-tournament/packed-smoke.mjs"),
         join(target, "smoke.mjs"),
     )
+    assertInstalledArtifact(join(target, "node_modules/valdres"), metadata)
     const output = command([runtime, "smoke.mjs", metadata.mode], target)
     writeFileSync(join(artifactDirectory, `smoke-${runtime}.json`), output)
     const result = JSON.parse(output)

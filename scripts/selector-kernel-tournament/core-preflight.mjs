@@ -1,3 +1,4 @@
+import { assertInstalledArtifact } from "./artifact.mjs"
 import { join } from "node:path"
 import {
     ROOT,
@@ -58,6 +59,10 @@ export function runCorePreflight(root, artifactDirectory, directory) {
     )
     const rows = []
     for (const scenario of scenarios) {
+        assertInstalledArtifact(
+            join(consumer, "node_modules/valdres"),
+            artifact,
+        )
         const path = join(directory, scenario + ".process.json"),
             process = captureCommand(argv(consumer, scenario), ROOT)
         const evidence = writeEvidence(root, path, process)
@@ -108,6 +113,10 @@ export function validateCorePreflight(root, path, artifact) {
             fileHash(evidencePath(root, row.process)) === row.sha256,
             "CORE-PREFLIGHT-HASH",
             row.scenario,
+        )
+        assertInstalledArtifact(
+            join(root, value.directory, "consumer/node_modules/valdres"),
+            artifact,
         )
         const process = json(evidencePath(root, row.process))
         validateProcess(process, {
