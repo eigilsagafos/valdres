@@ -461,11 +461,7 @@ export function validateTimings(root, records, { stage, plan, artifacts }) {
             expected: expectations.rows.find(e => e.id === row.id),
             entrySha256: artifacts[record.arm].productionEntrySha256,
         })
-        requireGate(
-            record.durationNs === sample.durationNs,
-            "PROVENANCE-RESULT-ROW",
-            "duration differs from process output",
-        )
+        assertTimingDuration(record, sample)
         requireGate(
             fileHash(evidencePath(root, record.semanticPreflight)) ===
                 record.semanticPreflightSha256,
@@ -567,4 +563,12 @@ export function validateTimings(root, records, { stage, plan, artifacts }) {
     )
         result.performanceStatus = "fail"
     return result
+}
+
+export function assertTimingDuration(record, sample) {
+    requireGate(
+        record.durationNs === sample.durationNs,
+        "PROVENANCE-RESULT-ROW",
+        "duration differs from process output",
+    )
 }

@@ -1,47 +1,16 @@
 import { join } from "node:path"
-import { json, fileHash, requireGate, exactRows } from "./inputs.mjs"
+import { ROOT, json, fileHash, requireGate, exactRows } from "./inputs.mjs"
 import { verifySeal, evidencePath, strictKeys, same } from "./evidence.mjs"
 import { validateProcess } from "./process-evidence.mjs"
 import { verifyCompiledWorker } from "./runner-validation.mjs"
-export const RED_GATES = {
-    "false-negative-cycle": "C-GRAPH-001",
-    "false-positive-cycle": "C-GRAPH-001",
-    "offending-edge-installation": "A-GRAPH-001",
-    "wrong-causal-blame": "A-GRAPH-001",
-    "non-sticky-caught-fault": "C-CYCLE-005",
-    "notification-reorder-duplication": "A-SUB-001",
-    "scratch-hydration-publication-leak": "C-TXN-001",
-    "family-quarantine-bypass": "A-FAMILY-002",
-    "frozen-family-path": "PROVENANCE-PROTECTED-PATH",
-    "timed-instrumentation": "ARTIFACT-INSTRUMENTATION",
-    "provenance-mismatch": "PROVENANCE-RESULT-ROW",
-    "deterministic-20-percent-slowdown": "PERFORMANCE-REGRESSION",
-    "retained-memory-leak": "MEMORY-ABSOLUTE",
-    "root-bundle-leakage": "ARTIFACT-SOURCE-IMPORT",
-}
-export async function validateRedBundle(
-    root,
-    expectedSums,
-    { green, foundationSha },
-) {
-    verifySeal(root, expectedSums)
-    const proof = json(evidencePath(root, "red.json"))
-    strictKeys(
-        proof,
-        ["schemaVersion", "kind", "foundationSha", "green", "rows"],
-        "RED-SCHEMA",
-    )
-    requireGate(
-        proof.schemaVersion === 3 &&
-            proof.kind === "red-gate-proofs" &&
-            proof.foundationSha === foundationSha,
-        "RED-IDENTITY",
-        "wrong foundation",
-    )
-    same(proof.green, green, "RED-IDENTITY", "wrong green control")
+import { RED_CASES } from "./red-cases.mjs"
+export const RED_GATES = Object.fromEntries(
+    RED_CASES.map(r => [r.id, r.expectedGate]),
+)
+export function validateRedProcesses(root, proof) {
     exactRows(
-        proof.rows.map(r => r.id),
-        Object.keys(RED_GATES),
+        proof.rows.map(r => r.id + "/" + r.variant),
+        RED_CASES.map(r => r.id + "/" + r.variant),
         "RED-INVENTORY",
     )
     const worker = join(root, "red-worker.mjs")
@@ -49,30 +18,61 @@ export async function validateRedBundle(
         worker,
         "scripts/selector-kernel-tournament/red-worker.mjs",
     )
+    const used = new Set()
     for (const row of proof.rows) {
         strictKeys(
             row,
-            ["id", "expectedGate", "baseline", "mutation"],
+            ["id", "variant", "expectedGate", "baseline", "mutation"],
             "RED-SCHEMA",
         )
+        const wanted = RED_CASES.find(
+            r => r.id === row.id && r.variant === row.variant,
+        )
         requireGate(
-            row.expectedGate === RED_GATES[row.id],
+            row.expectedGate === wanted.expectedGate,
             "RED-EXPECTED-GATE",
             "wrong gate class",
         )
         for (const mode of ["baseline", "mutation"]) {
             const ref = row[mode]
             strictKeys(ref, ["process", "sha256"], "RED-SCHEMA")
+            requireGate(!used.has(ref.process), "RED-PROCESS", "reused process")
+            used.add(ref.process)
             requireGate(
                 fileHash(evidencePath(root, ref.process)) === ref.sha256,
                 "RED-PROCESS-HASH",
                 row.id,
             )
             const process = json(evidencePath(root, ref.process))
+            const directory = join(root, row.variant + "-" + mode)
             validateProcess(process, {
-                argv: ["bun", worker, row.id, green.path, mode],
+                argv: [
+                    "bun",
+                    worker,
+                    ROOT,
+                    row.id,
+                    row.variant,
+                    proof.control.path,
+                    mode,
+                    directory,
+                ],
                 success: mode === "baseline",
             })
+            const input = json(join(directory, "input.json"))
+            same(
+                input,
+                {
+                    schemaVersion: 3,
+                    foundationSha: proof.foundationSha,
+                    id: row.id,
+                    variant: row.variant,
+                    mode,
+                    controlRoot: proof.control.path,
+                    expectedGate: row.expectedGate,
+                },
+                "RED-IDENTITY",
+                "mutation inputs differ",
+            )
             if (mode === "mutation")
                 requireGate(
                     process.status === 1 &&
@@ -85,4 +85,27 @@ export async function validateRedBundle(
         }
     }
     return proof
+}
+export async function validateRedBundle(
+    root,
+    expectedSums,
+    { green, foundationSha },
+) {
+    verifySeal(root, expectedSums)
+    const proof = json(evidencePath(root, "red.json"))
+    strictKeys(
+        proof,
+        ["schemaVersion", "kind", "foundationSha", "control", "rows"],
+        "RED-SCHEMA",
+    )
+    requireGate(
+        proof.schemaVersion === 3 &&
+            proof.kind === "red-gate-proofs" &&
+            proof.foundationSha === foundationSha,
+        "RED-IDENTITY",
+        "wrong foundation or diagnostic format",
+    )
+    same(proof.control, green, "RED-IDENTITY", "wrong green control")
+    verifySeal(green.path, green.sha256sums)
+    return validateRedProcesses(root, proof)
 }
