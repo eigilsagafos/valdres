@@ -929,6 +929,14 @@ statistics, and verification dependency graph. A disposable pre-freeze integrati
 check uses the same ancestry, owned-file, shared-manifest, and input gates but
 cannot confer candidate readiness or substitute for the later main landing.
 
+Tournament self-tests execute in an isolated Bun child process behind lightweight
+entrypoints in the same test directory. Their parser/statistics dependencies must
+not remain in the ordinary runtime test process: frozen family leak checks
+snapshot that process's whole heap. Every child assertion, original per-test
+timeout, raw result, and case/file count is preserved; dispatcher counts are
+reported separately. Missing cases, skips, failures, crashes, and timeouts fail
+the dispatcher. The exact shared script union and family files remain unchanged.
+
 ### 3. C-stage spikes
 
 All three branches start at exactly `frozenFoundationSha`, never at the moving

@@ -3,7 +3,7 @@
     "id": "valdres-selector-kernel-tournament-v3",
     "spec": {
         "path": "docs/designs/selector-kernel-tournament.md",
-        "sha256": "f366b496857c1f20b7c4bbb991cbb47495162fcee327da8f8ed6f1a2c6bd0573"
+        "sha256": "6749e0e3cae0679b325b1c8bb790f5af529a255a6bfd5d1925c359e02504c66b"
     },
     "control": {
         "package": "valdres",
