@@ -239,7 +239,16 @@ export function decideSizes(control, candidate, baseline) {
                 unit,
                 status:
                     candidateBytes <= Math.ceil(controlBytes * 1.02) &&
-                    controlBytes <= Math.ceil(baseline[id][unit] * 1.02)
+                    controlBytes <= Math.ceil(baseline[id][unit] * 1.02) &&
+                    // These absolute candidate ceilings used to be enforced
+                    // by the checker's exit status before rows were recorded.
+                    // Preserve them even when the paired control has headroom.
+                    (!(
+                        id === "dist" ||
+                        id === "packed" ||
+                        id.startsWith("fixture:")
+                    ) ||
+                        candidateBytes <= Math.ceil(baseline[id][unit] * 1.02))
                         ? "pass"
                         : "fail",
                 controlBytes,

@@ -55,7 +55,7 @@ export function competingProcesses(stdout, observerPid) {
             r =>
                 !ancestors.has(r.pid) &&
                 /^(?:\S*\/)?(?:bun|node)(?:\s|$)/.test(r.args) &&
-                (/selector-kernel-tournament\/(?:control-bundle|red-bundle|bundle|calibration|workloads|semantics|resources|source-memory|verification|admission-probe|control-contract-probe)\.mjs(?:\s|$)/.test(
+                (/selector-kernel-tournament\/(?:control-bundle|red-bundle|bundle|calibration|workloads|semantics|resources|source-memory|size-continuation|verification|admission-probe|control-contract-probe)\.mjs(?:\s|$)/.test(
                     r.args,
                 ) ||
                     /(?:^|\/)(?:memory|semantic|workload|red)-worker\.mjs(?:\s|$)/.test(

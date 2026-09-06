@@ -35,6 +35,10 @@ import {
 import { validateWorkloadSample } from "./workload-validation.mjs"
 import { assertTimingDuration } from "./timing-evidence.mjs"
 import { decideTournament } from "../lib/paired-decision-tournament.ts"
+import { sizeFixture } from "../../packages/valdres/test/selector-kernel-tournament/size-fixture.mjs"
+import { validateSizeEvidence } from "./resource-evidence.mjs"
+import { decideSizes } from "./resource-validation.mjs"
+import { computeSelection } from "./report.mjs"
 import { validateSemanticEvidence } from "./semantic-validation.mjs"
 
 function buildWorker(output, name) {
@@ -86,6 +90,102 @@ export async function runRedCase({ id, variant, controlRoot, mode, output }) {
         controlRoot,
         expectedGate: row.expectedGate,
     })
+    if (["size-process-authenticity", "size-shipping-budget"].includes(id)) {
+        const root = join(output, "size-fixture")
+        mkdirSync(root)
+        const fixture = sizeFixture(
+            root,
+            id === "size-shipping-budget" && !mutation
+                ? "passing"
+                : "oversized",
+            true,
+        )
+        validateSizeEvidence(root, fixture.value, fixture)
+        const submitted = structuredClone(fixture.value)
+        if (id === "size-process-authenticity" && mutation) {
+            const ref = submitted.processes.find(r => r.arm === "candidate")
+            const process = json(join(root, ref.process))
+            if (variant === "size-forged-output") {
+                const original = submitted.candidate.packed.raw
+                submitted.candidate.packed.raw++
+                process.stdout = process.stdout.replace(
+                    `raw ${original}`,
+                    `raw ${original + 1}`,
+                )
+            } else if (variant === "size-unrelated-nonzero")
+                process.stderr += "\nError: unrelated failure\n"
+            else if (variant === "size-crashed-process") {
+                process.status = null
+                process.signal = "SIGSEGV"
+            } else if (variant === "size-missing-output") process.stdout = ""
+            else if (variant === "size-exit-result") process.status = 0
+            const recorded = writeEvidence(
+                root,
+                "submitted.process.json",
+                process,
+            )
+            ref.process = recorded.path
+            ref.sha256 = recorded.sha256
+        }
+        writeEvidence(root, "submitted-sizes.json", submitted)
+        validateSizeEvidence(root, submitted, fixture)
+        const sizes = decideSizes(
+            submitted.control,
+            submitted.candidate,
+            submitted.baseline,
+        )
+        // Test-only gate inputs isolate stage selection; these are never a
+        // candidate report or invented semantic/performance observations.
+        const gates = Object.fromEntries(
+            [
+                "provenance",
+                "contractC",
+                "contractA",
+                "familyCompatibility",
+                "performance",
+                "p95",
+                "memory",
+                "sourceMemory",
+                "size",
+                "shiftx",
+            ].map(key => [
+                key,
+                {
+                    status:
+                        key === "size" && sizes.some(r => r.status === "fail")
+                            ? "fail"
+                            : "pass",
+                },
+            ]),
+        )
+        const selections = Object.fromEntries(
+            ["C", "A", "shiftx", "integration"].map(stage => [
+                stage,
+                computeSelection(gates, stage),
+            ]),
+        )
+        writeEvidence(root, "stage-selection.json", {
+            kind: "test-only-stage-gate-inputs",
+            gates,
+            selections,
+            sizes,
+        })
+        requireGate(
+            selections.C.machineEligible,
+            "RED-SIZE-C",
+            "size alone cannot fail C",
+        )
+        if (id === "size-shipping-budget")
+            requireGate(
+                ["A", "shiftx", "integration"].every(
+                    stage => selections[stage].machineEligible,
+                ),
+                "SIZE-BUDGET",
+                "oversized artifact cannot qualify or promote",
+            )
+        requireGate(!mutation, "RED-MUTATION-SURVIVED", variant)
+        return { status: "pass", class: id, variant }
+    }
     if (id === "provenance-mismatch" && variant.startsWith("semantic-cache-")) {
         const identity = json(join(timedDirectory, "artifact.json"))
         const relative = "semantics-public/semantics.json"

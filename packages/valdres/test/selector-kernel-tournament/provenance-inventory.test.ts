@@ -17,6 +17,7 @@ if (isolatedTournamentFile()) {
         for (const argv of [
             "bun scripts/selector-kernel-tournament/control-bundle.mjs run",
             "bun scripts/selector-kernel-tournament/red-bundle.mjs run green output",
+            "bun scripts/selector-kernel-tournament/size-continuation.mjs input output digest",
             "node /shared/sha/beta36/1/run/timing-A/worker.mjs package-root manifest id timed",
             "node --expose-gc /shared/sha/beta36/1/run/memory/worker.mjs package-root",
             "node /shared/development/provenance-mismatch-baseline/workload-worker.mjs package-root",

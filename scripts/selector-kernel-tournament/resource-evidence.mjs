@@ -1,5 +1,5 @@
 import { recordedRoot } from "./recorded-root.mjs"
-import { assertInstalledArtifact } from "./artifact.mjs"
+import { assertInstalledArtifact, captureCommand } from "./artifact.mjs"
 import { join } from "node:path"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -95,6 +95,97 @@ export function parseSizeOutput(stdout) {
     )
     return result
 }
+// A budget violation is a measurement, not a failed measurement process. Bind
+// that distinction to the unchanged historical checker AND the exact tarball;
+// accepting exit 1 or merely recognizing a diagnostic string is insufficient.
+// This runs for successful processes too, including aggregate-pass/per-file-fail.
+export function validateSizeProcess(root, process, metadata, tarball) {
+    const argv = [
+        "bun",
+        join(root, "size-authority", manifest.stages.size.measurementScript),
+        tarball,
+    ]
+    validateProcess(process, { argv, cwd: recordedRoot(), success: false })
+    requireGate(
+        [0, 1].includes(process.status) &&
+            process.signal === null &&
+            process.error === null,
+        "SIZE-PROCESS-FAILED",
+        "only normal checker completion can supply size measurements",
+    )
+    const authenticate = () => {
+        for (const path of [
+            manifest.stages.size.measurementScript,
+            manifest.stages.size.baselineFile,
+        ])
+            requireGate(
+                fileHash(evidencePath(root, "size-authority/" + path)) ===
+                    sha256(frozenInputBytes(path)),
+                "SIZE-AUTHORITY",
+                path,
+            )
+        requireGate(
+            fileHash(tarball) === metadata.tarballSha256,
+            "SIZE-ARTIFACT-HASH",
+            "measurement artifact changed",
+        )
+    }
+    authenticate()
+    const measured = parseSizeOutput(process.stdout)
+    const normalized = normalizeSizes(measured)
+    const baseline = frozenInputJson(manifest.stages.size.baselineFile)
+    exactRows(
+        Object.keys(normalized),
+        Object.keys(normalizeSizes(baseline)),
+        "SIZE-METRICS",
+    )
+    // The historical checker compares aggregates and consumer fixtures. The
+    // tournament separately compares every dist file; those failures can occur
+    // with status zero and must remain visible in decideSizes().
+    const aggregateFailure = [
+        [measured.dist, baseline.dist],
+        [measured.packed, baseline.packed],
+        ...Object.keys(baseline.fixtures).map(name => [
+            measured.fixtures[name],
+            baseline.fixtures[name],
+        ]),
+    ].some(([actual, expected]) =>
+        ["raw", "gzip"].some(
+            unit => actual[unit] > Math.ceil(expected[unit] * 1.02),
+        ),
+    )
+    requireGate(
+        process.status === (aggregateFailure ? 1 : 0),
+        "SIZE-EXIT-RESULT",
+        "exit status disagrees with measured frozen ceilings",
+    )
+    // Reproduce all bytes, including stderr. This rejects forged numbers,
+    // partial output, arbitrary exceptions after printing measurements, and
+    // result/status pairs that are internally consistent but not authentic.
+    // ROOT is the verifier's authenticated checkout; the original cwd above is
+    // still checked against the recorded invocation authority.
+    const replay = captureCommand(argv, ROOT)
+    validateProcess(replay, { argv, cwd: ROOT, success: false })
+    requireGate(
+        replay.signal === null &&
+            replay.error === null &&
+            replay.status === (aggregateFailure ? 1 : 0),
+        "SIZE-PROCESS-FAILED",
+        "frozen measurement did not reproduce normally",
+    )
+    authenticate()
+    same(
+        {
+            status: process.status,
+            stdout: process.stdout,
+            stderr: process.stderr,
+        },
+        { status: replay.status, stdout: replay.stdout, stderr: replay.stderr },
+        "SIZE-PROCESS-REPLAY",
+        "output does not reproduce from the frozen checker and artifact",
+    )
+    return normalized
+}
 export function validateSizeEvidence(root, value, { artifacts, index }) {
     strictKeys(
         value,
@@ -150,21 +241,9 @@ export function validateSizeEvidence(root, value, { artifacts, index }) {
             "ARTIFACT-ROOT-REACHABILITY",
             "recorded root graph differs",
         )
-        validateProcess(process, {
-            cwd: recordedRoot(),
-            argv: [
-                "bun",
-                join(
-                    root,
-                    "size-authority",
-                    manifest.stages.size.measurementScript,
-                ),
-                tarball,
-            ],
-        })
         same(
             value[ref.arm],
-            normalizeSizes(parseSizeOutput(process.stdout)),
+            validateSizeProcess(root, process, metadata, tarball),
             "PROVENANCE-RESULT-ROW",
             "size summary differs from process",
         )

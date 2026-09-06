@@ -59,4 +59,18 @@ export const RED_CASES = [
     ["retained-memory-leak", "packed-paired", "MEMORY-ABSOLUTE"],
     ["retained-memory-leak", "source-absolute", "MEMORY-ABSOLUTE"],
     ["root-bundle-leakage", "root-bundle-leakage", "ARTIFACT-SOURCE-IMPORT"],
+    ["size-process-authenticity", "size-forged-output", "SIZE-PROCESS-REPLAY"],
+    [
+        "size-process-authenticity",
+        "size-unrelated-nonzero",
+        "SIZE-PROCESS-REPLAY",
+    ],
+    [
+        "size-process-authenticity",
+        "size-crashed-process",
+        "SIZE-PROCESS-FAILED",
+    ],
+    ["size-process-authenticity", "size-missing-output", "SIZE-METRICS"],
+    ["size-process-authenticity", "size-exit-result", "SIZE-EXIT-RESULT"],
+    ["size-shipping-budget", "size-promotion", "SIZE-BUDGET"],
 ].map(([id, variant, expectedGate]) => ({ id, variant, expectedGate }))
