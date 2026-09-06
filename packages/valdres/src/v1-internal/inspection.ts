@@ -49,21 +49,9 @@ import type {
     SelectorEvaluationProposal,
     SelectorEvaluationStrategy,
     SelectorEvaluationSession,
-    SelectorNewEdgeProofDiagnostics,
-    SelectorNewEdgeProofMemoDisableReason,
-    SelectorNewEdgeProofMemoSeedReason,
-    SelectorNewEdgeProofMemoSearchClassification,
-    SelectorNewEdgeProofMemoProvider,
-    SelectorTopologyDeltaReverseProofContext,
-    SelectorTopologyDeltaReverseSnapshotDiagnostics,
     SelectorTopologyDeltaReverseSnapshotOutcome,
 } from "./selector-evaluator/types"
-import {
-    evaluateSelector,
-    tryProveNoDependencyPathReverse,
-    type SelectorReverseProofMeasurement,
-    type SelectorReverseProofOutcome,
-} from "./selector-evaluator/evaluate"
+import { evaluateSelector } from "./selector-evaluator/evaluate"
 
 type StoreRecorderEvent =
     | readonly [
@@ -647,8 +635,6 @@ export interface InternalInspectionRecorder {
         evaluationGraphVersionStart: number,
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
-        getNewEdgeProofMemo?: SelectorNewEdgeProofMemoProvider<Node>,
-        topologyDeltaReverseProof?: SelectorTopologyDeltaReverseProofContext<Node>,
     ): readonly Node[] | undefined
     reference(
         target: object,
@@ -882,17 +868,6 @@ const COLLECTION_COUNTER_NAME_BY_CODE: Readonly<
 const NOOP = (): void => {}
 const DEPENDENCY_PATH_ROOT = Symbol("inspection dependency path root")
 
-const inspectReverseProofOutcome = (
-    outcome: SelectorReverseProofOutcome,
-): InspectionReverseProofOutcome =>
-    outcome === "proven-terminal"
-        ? "terminal"
-        : outcome === "proven-reverse"
-          ? "proven"
-          : outcome === "ineligible-active-frames"
-            ? "active-frames"
-            : outcome
-
 let nextRecordingId = 1
 
 class BoundedRing<Value> {
@@ -1080,127 +1055,6 @@ const addTopologyDeltaReverseSnapshotWork = (
 const freezeTopologyDeltaReverseSnapshotTotals = (
     totals: MutableTopologyDeltaReverseSnapshotTotals,
 ): InspectionTopologyDeltaReverseSnapshotTotals => Object.freeze({ ...totals })
-
-const createTopologyDeltaReverseSnapshotDiagnostics = (
-    record: (delta: TopologyDeltaReverseSnapshotWorkDelta) => void,
-): Readonly<{
-    sink: SelectorTopologyDeltaReverseSnapshotDiagnostics
-    finish(): MutableTopologyDeltaReverseSnapshotTotals | undefined
-}> => {
-    const totals = createMutableTopologyDeltaReverseSnapshotTotals()
-    const sink: SelectorTopologyDeltaReverseSnapshotDiagnostics = {
-        recordSnapshot(outcome, scannedFrames, activeFrames, prefixEdges) {
-            const delta = {
-                outcome,
-                scannedFrames,
-                activeFrames,
-                prefixEdges,
-            }
-            addTopologyDeltaReverseSnapshotWork(totals, delta)
-            record(delta)
-        },
-    }
-    return Object.freeze({
-        sink: Object.freeze(sink),
-        finish: () => (totals.attempts === 0 ? undefined : totals),
-    })
-}
-
-const createNewEdgeProofDiagnostics = (
-    record: (delta: NewEdgeProofMemoWorkDelta) => void,
-): Readonly<{
-    sink: SelectorNewEdgeProofDiagnostics
-    finish(): MutableNewEdgeProofMemoTotals | undefined
-}> => {
-    const totals = createMutableNewEdgeProofMemoTotals()
-    let active = false
-    const sink: SelectorNewEdgeProofDiagnostics = {
-        admissionSkipped() {
-            active = true
-            totals.admissionSkipped++
-            record({ admissionSkipped: 1 })
-        },
-        disabled() {
-            active = true
-            totals.disabled++
-            record({ disabled: 1 })
-        },
-        graphVersionReset() {
-            active = true
-            totals.graphVersionResets++
-            record({ graphVersionResets: 1 })
-        },
-        recordMapProbes(count) {
-            if (count === 0) return
-            active = true
-            totals.mapProbes += count
-            record({ mapProbes: count })
-        },
-        completeSearch(
-            classification: SelectorNewEdgeProofMemoSearchClassification,
-            seed?: SelectorNewEdgeProofMemoSeedReason,
-            disable?: SelectorNewEdgeProofMemoDisableReason,
-            mapProbes = 0,
-            prunedNodes = 0,
-            retainedNodes = 0,
-        ) {
-            active = true
-            if (classification === "observing") totals.observing++
-            else if (classification === "consulted-no-prune") {
-                totals.consultedNoPrune++
-            } else {
-                totals.consultedPruned++
-            }
-            totals.mapProbes += mapProbes
-            totals.prunedNodes += prunedNodes
-            totals.maxRetainedEntries = Math.max(
-                totals.maxRetainedEntries,
-                retainedNodes,
-            )
-            if (seed === "initial") totals.initialSeeds++
-            else if (seed === "activation-replacement") {
-                totals.activationReplacementSeeds++
-            } else if (seed === "secondary") totals.secondarySeeds++
-            else if (seed === "hit-derived") totals.hitDerivedSeeds++
-            if (disable === "miss-budget") totals.missBudgetDisables++
-            else if (disable === "over-cap-hit") {
-                totals.oversizedHitApproachDisables++
-            } else if (disable === "passive-probe-budget") {
-                totals.passiveProbeBudgetDisables++
-            }
-            record({
-                ...(classification === "observing"
-                    ? { observing: 1 }
-                    : classification === "consulted-no-prune"
-                      ? { consultedNoPrune: 1 }
-                      : { consultedPruned: 1 }),
-                mapProbes,
-                prunedNodes,
-                maxRetainedEntries: retainedNodes,
-                ...(seed === "initial"
-                    ? { initialSeeds: 1 }
-                    : seed === "activation-replacement"
-                      ? { activationReplacementSeeds: 1 }
-                      : seed === "secondary"
-                        ? { secondarySeeds: 1 }
-                        : seed === "hit-derived"
-                          ? { hitDerivedSeeds: 1 }
-                          : {}),
-                ...(disable === "miss-budget"
-                    ? { missBudgetDisables: 1 }
-                    : disable === "over-cap-hit"
-                      ? { oversizedHitApproachDisables: 1 }
-                      : disable === "passive-probe-budget"
-                        ? { passiveProbeBudgetDisables: 1 }
-                        : {}),
-            })
-        },
-    }
-    return Object.freeze({
-        sink: Object.freeze(sink),
-        finish: () => (active ? totals : undefined),
-    })
-}
 
 const createMutableTotals = (): MutableWorkTotals => ({
     selectorEvaluations: 0,
@@ -2300,8 +2154,6 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         evaluationGraphVersionStart: number,
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
-        getNewEdgeProofMemo?: SelectorNewEdgeProofMemoProvider<Node>,
-        topologyDeltaReverseProof?: SelectorTopologyDeltaReverseProofContext<Node>,
     ): readonly Node[] | undefined {
         const siteName =
             site === 0
@@ -2330,37 +2182,6 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 parentWasCold,
             },
         })
-        const reverseMeasurement: SelectorReverseProofMeasurement = {
-            nodeVisits: 0,
-            dependentProbes: 0,
-            liveDependents: 0,
-            maxFrontier: 0,
-        }
-        const reverseProof: SelectorReverseProofOutcome | undefined =
-            site === 1 || site === 2
-                ? tryProveNoDependencyPathReverse(
-                      start,
-                      target,
-                      host,
-                      session,
-                      reverseMeasurement,
-                      site === 1
-                          ? (getNewEdgeProofMemo?.reverseProofEnabled ?? true)
-                          : (topologyDeltaReverseProof?.reverseProofEnabled ??
-                                true),
-                      topologyDeltaReverseProof?.transientDependents,
-                  )
-                : undefined
-        if (reverseProof === "budget-exhausted") {
-            if (site === 1 && getNewEdgeProofMemo !== undefined) {
-                getNewEdgeProofMemo.reverseProofEnabled = false
-            } else if (topologyDeltaReverseProof !== undefined) {
-                topologyDeltaReverseProof.reverseProofEnabled = false
-            }
-        }
-        const reverseProvedNegative =
-            reverseProof === "proven-terminal" ||
-            reverseProof === "proven-reverse"
         let visits = 0
         let edges = 0
         let maxFrontier = 0
@@ -2369,9 +2190,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         let terminalPrunes = 0
         let path: readonly Node[] | undefined
 
-        if (!reverseProvedNegative) {
-            const newEdgeProofMemo = getNewEdgeProofMemo?.()
-            let consultMemo = newEdgeProofMemo?.beginSearch() ?? false
+        {
             const pending = [start]
             const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
                 [start, DEPENDENCY_PATH_ROOT],
@@ -2398,12 +2217,6 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 if (transient) {
                     transientExpansions++
                     if (transient.length === 0) continue
-                    if (consultMemo) {
-                        const proven =
-                            newEdgeProofMemo!.hasProvenNoPathMeasured(node)
-                        if (!newEdgeProofMemo!.enabled) consultMemo = false
-                        if (proven) continue
-                    }
                     edges += transient.length
                     for (const dependency of transient) {
                         if (parent.has(dependency.node)) continue
@@ -2423,12 +2236,6 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                     }
                     recordExpansions++
                     if (dependencies.length === 0) continue
-                    if (consultMemo) {
-                        const proven =
-                            newEdgeProofMemo!.hasProvenNoPathMeasured(node)
-                        if (!newEdgeProofMemo!.enabled) consultMemo = false
-                        if (proven) continue
-                    }
                     edges += dependencies.length
                     for (const dependency of dependencies) {
                         if (parent.has(dependency)) continue
@@ -2447,12 +2254,6 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 }
                 recordExpansions++
                 if (record.dependencies.length === 0) continue
-                if (consultMemo) {
-                    const proven =
-                        newEdgeProofMemo!.hasProvenNoPathMeasured(node)
-                    if (!newEdgeProofMemo!.enabled) consultMemo = false
-                    if (proven) continue
-                }
                 edges += record.dependencies.length
                 for (const dependency of record.dependencies) {
                     if (parent.has(dependency.node)) continue
@@ -2460,12 +2261,6 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                     pending.push(dependency.node)
                 }
                 if (pending.length > maxFrontier) maxFrontier = pending.length
-            }
-
-            if (path === undefined) {
-                newEdgeProofMemo?.completeNegative(parent)
-            } else {
-                newEdgeProofMemo?.completePositive()
             }
         }
 
@@ -2477,14 +2272,6 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 found: path === undefined ? 0 : 1,
                 site: siteName,
                 host: hostKind,
-                ...(reverseProof === undefined
-                    ? {}
-                    : {
-                          reverseProof: {
-                              outcome: inspectReverseProofOutcome(reverseProof),
-                              ...reverseMeasurement,
-                          },
-                      }),
             },
         })
         this.finishInterval(interval, {
@@ -2496,14 +2283,6 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 transientExpansions,
                 recordExpansions,
                 terminalPrunes,
-                ...(reverseProof === undefined
-                    ? {}
-                    : {
-                          reverseProof: {
-                              outcome: inspectReverseProofOutcome(reverseProof),
-                              ...reverseMeasurement,
-                          },
-                      }),
                 found: path !== undefined,
                 ...(path === undefined
                     ? {}
@@ -2980,29 +2759,6 @@ const createStoreTrace = (
             },
         })
         recorder.addWork({ selectorEvaluations: 1 })
-        const memoDiagnostics = createNewEdgeProofDiagnostics(delta =>
-            recorder.addWork({ cycle: { newEdgeProofMemo: delta } }),
-        )
-        const finishMemoDiagnostics = ():
-            | InspectionNewEdgeProofMemoTotals
-            | undefined => {
-            const totals = memoDiagnostics.finish()
-            if (totals === undefined) return undefined
-            return freezeNewEdgeProofMemoTotals(totals)
-        }
-        const snapshotDiagnostics =
-            createTopologyDeltaReverseSnapshotDiagnostics(delta =>
-                recorder.addWork({
-                    cycle: { topologyDeltaReverseSnapshot: delta },
-                }),
-            )
-        const finishSnapshotDiagnostics = ():
-            | InspectionTopologyDeltaReverseSnapshotTotals
-            | undefined => {
-            const totals = snapshotDiagnostics.finish()
-            if (totals === undefined) return undefined
-            return freezeTopologyDeltaReverseSnapshotTotals(totals)
-        }
         const cycleSearch: SelectorCycleSearch<Node, Token> = (
             start,
             target,
@@ -3010,8 +2766,6 @@ const createStoreTrace = (
             cycleSession,
             site,
             acceptedPrefixLength,
-            newEdgeProofMemo,
-            topologyDeltaReverseProof,
         ) =>
             recorder.findDependencyPath(
                 hostKind,
@@ -3025,8 +2779,6 @@ const createStoreTrace = (
                 graphVersionStart,
                 attributedPublicationStart,
                 previousDependencies === undefined,
-                newEdgeProofMemo,
-                topologyDeltaReverseProof,
             )
         try {
             const proposal = evaluateSelector(
@@ -3034,8 +2786,6 @@ const createStoreTrace = (
                 host,
                 session,
                 cycleSearch,
-                memoDiagnostics.sink,
-                snapshotDiagnostics.sink,
             )
             const proposedTopologyChanged =
                 previousDependencies === undefined ||
@@ -3066,8 +2816,6 @@ const createStoreTrace = (
                     ? { proposedTopologyChanges: 1 }
                     : { proposedTopologyIdentical: 1 },
             )
-            const newEdgeProofMemo = finishMemoDiagnostics()
-            const topologyDeltaReverseSnapshot = finishSnapshotDiagnostics()
             recorder.finishInterval(interval, {
                 result: "returned",
                 fields: {
@@ -3077,21 +2825,15 @@ const createStoreTrace = (
                     proposedEdgesAdded,
                     proposedEdgesRemoved,
                     graphVersionEnd: host.getSelectorGraphVersion(),
-                    newEdgeProofMemo,
-                    topologyDeltaReverseSnapshot,
                 },
             })
             return proposal
         } catch (error) {
-            const newEdgeProofMemo = finishMemoDiagnostics()
-            const topologyDeltaReverseSnapshot = finishSnapshotDiagnostics()
             recorder.finishInterval(interval, {
                 result: "threw",
                 fields: {
                     outcome: "threw",
                     graphVersionEnd: host.getSelectorGraphVersion(),
-                    newEdgeProofMemo,
-                    topologyDeltaReverseSnapshot,
                 },
             })
             throw error
