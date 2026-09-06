@@ -23,7 +23,7 @@ invocation paths are evidence; validators read their own protected frozen bytes.
 ## Implemented work order
 
 - F0: closed v3 manifest/report schemas, frozen hashes, source ceiling checks,
-  protected paths, and exactly one empty non-release Changeset.
+  protected paths, and empty non-release Changesets required by CI.
 - F1: isolated source archives, separate normal production/counter packs,
   authenticated private adapters/builders, full installed-tree/import checks.
 - F2: independent exhaustive 1–5-node graph closure, operation-boundary DAG
@@ -39,10 +39,11 @@ invocation paths are evidence; validators read their own protected frozen bytes.
   ceilings and package-size infrastructure, root-reachability checks.
 - F7: complete beta.36-vs-beta.36 control runner, raw noise diagnostics without
   an intended-win obligation, immutable passing/failing bundle seals.
-- F8: 14 failure classes with 22 explicit variants and 44 baseline/mutation
+- F8: 16 failure classes with 28 explicit variants and 56 baseline/mutation
   processes. Added variants exercise intermediate graph state, exported cycle
   identity, equality-recovery notification, both memory domains, and shared
-  semantic-cache reuse across artifact identities and observation modes.
+  semantic-cache reuse across artifact identities and observation modes,
+  authenticated size-process failures, and blocking size promotion gates.
 - F9: independent neutrality/statistics review artifacts and hashed dispositions,
   exact CI/test completeness checks, isolated publish dry-run and cleanup,
   final freeze, full verification, and landing handoff.
@@ -58,6 +59,32 @@ FIRST-release residual ceiling. All three later-drain observations are preserved
 as diagnostics. Cold packed artifacts do not use source retained-byte ceilings.
 At C, heap reports are diagnostic; qualification A and the control require both
 memory domains. Family compatibility and core-load qualification remain A gates.
+
+The C-size amendment starts at the exact reviewed predecessor
+`fc2d75b58eaed8e17f1c1fa5b0a54cecf80512bc`, whose recorded landing is
+`7197825c45780076346cf54f0bfc04bfea6b8e71`. Readiness admits this one additional
+merge-base only after revalidating the predecessor landing and its first-parent
+membership. The amended frozen SHA remains the exact second parent, owned bytes
+must match, and every already-landed tournament script must remain present once
+with its exact spelling. Unrelated upstream scripts and manifest fields remain
+intact. The C-size marker contains only empty YAML frontmatter; no release is
+requested.
+
+## Contract C size diagnostics
+
+Authentic size-budget failures complete resource collection and remain failed
+rows in the report. C selection requires provenance, C semantics, and the frozen
+performance signal; size remains blocking for A, ShiftX, integration, and control
+readiness. The exact historical checker and baseline are unchanged. Validation
+binds each process to its invocation, tarball hash, and authority bytes, checks
+normal exit/result consistency, then reproduces the complete stdout/stderr with
+the frozen checker. Signals, execution errors, malformed or forged output, and
+unrelated nonzero exits still fail provenance. The existing aggregate-status-zero
+but per-file-failure path remains intact. Aggregate candidate absolute ceilings
+remain enforced in the recorded rows as well as the paired budgets.
+
+All evidence predating a landed foundation amendment becomes diagnostic-only.
+A new frozen SHA requires fresh green, red, F9, and independent review bundles.
 
 ## Deterministic reproduction
 

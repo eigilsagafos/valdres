@@ -286,4 +286,134 @@ if (isolatedTournamentFile()) {
             rmSync(root, { recursive: true, force: true })
         }
     })
+    test("the exact landed predecessor admits an amendment but rejects moving-main lineage and script drift", async () => {
+        const { ROOT } = await import(
+            "../../../../scripts/selector-kernel-tournament/inputs.mjs"
+        )
+        const { AMENDMENT_BASE, AMENDMENT_BASE_LANDING } = await import(
+            "../../../../scripts/selector-kernel-tournament/readiness.mjs"
+        )
+        const root = mkdtempSync(join(tmpdir(), "tournament-amendment-merge-"))
+        const git = (...args: string[]) =>
+            execFileSync("git", args, {
+                cwd: root,
+                encoding: "utf8",
+                stdio: ["ignore", "pipe", "pipe"],
+            }).trim()
+        try {
+            git("clone", "--bare", "--shared", ROOT, ".")
+            const frozen = git(
+                "commit-tree",
+                git("rev-parse", AMENDMENT_BASE + "^{tree}"),
+                "-p",
+                AMENDMENT_BASE,
+                "-m",
+                "test-only amendment",
+            )
+            const tree = git("rev-parse", AMENDMENT_BASE_LANDING + "^{tree}")
+            const merge = (base: string, upstream: string, mergeTree = tree) =>
+                git(
+                    "commit-tree",
+                    mergeTree,
+                    "-p",
+                    upstream,
+                    "-p",
+                    base,
+                    "-m",
+                    "test-only landing",
+                )
+            const landing = merge(frozen, AMENDMENT_BASE_LANDING)
+            expect(() =>
+                verifyFoundationIntegration(
+                    {
+                        frozenFoundationSha: frozen,
+                        landingSha: landing,
+                        upstreamSha: AMENDMENT_BASE_LANDING,
+                    },
+                    { root },
+                ),
+            ).not.toThrow()
+            const mainBased = git(
+                "commit-tree",
+                tree,
+                "-p",
+                AMENDMENT_BASE_LANDING,
+                "-m",
+                "wrong substrate",
+            )
+            expect(() =>
+                verifyFoundationIntegration(
+                    {
+                        frozenFoundationSha: mainBased,
+                        landingSha: merge(mainBased, AMENDMENT_BASE_LANDING),
+                        upstreamSha: AMENDMENT_BASE_LANDING,
+                    },
+                    { root },
+                ),
+            ).toThrow("FOUNDATION-MERGE-TOPOLOGY")
+            const path = "packages/valdres/package.json"
+            const original = JSON.parse(
+                git("show", AMENDMENT_BASE_LANDING + ":" + path),
+            )
+            for (const change of [
+                (p: any) => {
+                    p.scripts["test:runtime"] +=
+                        " test/selector-kernel-tournament"
+                },
+                (p: any) => {
+                    p.scripts["test:runtime"] = p.scripts[
+                        "test:runtime"
+                    ].replace(
+                        "test/selector-kernel-tournament",
+                        "test/Selector-Kernel-Tournament",
+                    )
+                },
+                (p: any) => {
+                    p.scripts["test:runtime"] = p.scripts[
+                        "test:runtime"
+                    ].replace(" test/selector-kernel-tournament", "")
+                },
+                (p: any) => {
+                    delete p.scripts["test:selector-kernel-tournament"]
+                },
+                (p: any) => {
+                    p.scripts["test:selector-kernel-tournament"] += " --changed"
+                },
+            ]) {
+                const pkg = structuredClone(original)
+                change(pkg)
+                const file = join(root, "submission.json")
+                writeFileSync(file, JSON.stringify(pkg))
+                git("read-tree", tree)
+                const blob = git("hash-object", "-w", file)
+                git(
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    "100644," + blob + "," + path,
+                )
+                const changedTree = git("write-tree")
+                const upstream = git(
+                    "commit-tree",
+                    changedTree,
+                    "-p",
+                    AMENDMENT_BASE_LANDING,
+                    "-m",
+                    "upstream script drift",
+                )
+                expect(() =>
+                    verifyFoundationIntegration(
+                        {
+                            frozenFoundationSha: frozen,
+                            landingSha: merge(frozen, upstream, changedTree),
+                            upstreamSha: upstream,
+                        },
+                        { root },
+                    ),
+                ).toThrow("FOUNDATION-SCRIPT-DELTA")
+            }
+        } finally {
+            rmSync(root, { recursive: true, force: true })
+        }
+    }, 30000)
 }

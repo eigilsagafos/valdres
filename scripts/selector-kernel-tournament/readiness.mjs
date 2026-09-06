@@ -16,12 +16,17 @@ import {
     requireGate,
 } from "./inputs.mjs"
 import { evidencePath, verifySeal, strictKeys, same } from "./evidence.mjs"
+// Explicitly authorized predecessor for the C-size foundation amendment. A
+// moving-main commit is never an alternative frozen substrate.
+export const AMENDMENT_BASE = "fc2d75b58eaed8e17f1c1fa5b0a54cecf80512bc"
+export const AMENDMENT_BASE_LANDING = "7197825c45780076346cf54f0bfc04bfea6b8e71"
 // Ownership is defined by the frozen branch, never by upstream's diff.
 const alwaysOwned = p =>
     p.startsWith("scripts/selector-kernel-tournament/") ||
     p.startsWith("packages/valdres/test/selector-kernel-tournament/") ||
     p === "docs/designs/selector-kernel-tournament.md" ||
-    p === ".changeset/selector-kernel-foundation.md"
+    p === ".changeset/selector-kernel-foundation.md" ||
+    p === ".changeset/selector-kernel-foundation-c-size.md"
 export function foundationOwnedPaths(frozen, root = ROOT, spec = SPEC_COMMIT) {
     const changed = new Set(
         git(["diff", "--name-only", spec, frozen], root).split("\n"),
@@ -59,7 +64,12 @@ function scriptWords(value, label) {
     )
     return value.split(" ")
 }
-export function mergeFoundationScripts(before, frozen, upstream) {
+export function mergeFoundationScripts(
+    before,
+    frozen,
+    upstream,
+    alreadyLanded = false,
+) {
     const expected = { ...upstream }
     for (const key of new Set([
         ...Object.keys(before),
@@ -67,6 +77,12 @@ export function mergeFoundationScripts(before, frozen, upstream) {
     ])) {
         if (before[key] === frozen[key]) continue
         if (key !== "test:runtime") {
+            if (alreadyLanded)
+                requireGate(
+                    upstream[key] === frozen[key],
+                    "FOUNDATION-SCRIPT-DELTA",
+                    key + ": landed foundation script changed or missing",
+                )
             requireGate(
                 !(key in upstream) ||
                     upstream[key] === before[key] ||
@@ -115,12 +131,14 @@ export function mergeFoundationScripts(before, frozen, upstream) {
                 new Set(main).size === main.length &&
                 delta.every(
                     word =>
-                        !main.some(existing => existing.toLowerCase() === word),
+                        main.filter(existing => existing.toLowerCase() === word)
+                            .length === (alreadyLanded ? 1 : 0) &&
+                        (!alreadyLanded || main.includes(word)),
                 ),
             "FOUNDATION-SCRIPT-DELTA",
             "duplicate or non-additive upstream lane",
         )
-        expected[key] = [...main, ...delta].join(" ")
+        expected[key] = (alreadyLanded ? main : [...main, ...delta]).join(" ")
     }
     return expected
 }
@@ -168,11 +186,35 @@ export function verifyFoundationIntegration(
     requireAncestor(spec, frozen, root)
     requireAncestor(spec, upstream, root)
     requireAncestor(frozen, parents[1], root)
+    const mergeBase = git(["merge-base", frozen, upstream], root)
+    const amendment = mergeBase === AMENDMENT_BASE && frozen !== AMENDMENT_BASE
     requireGate(
-        git(["merge-base", frozen, upstream], root) === spec,
+        mergeBase === spec || amendment,
         "FOUNDATION-MERGE-TOPOLOGY",
-        "foundation and upstream must diverge exactly at the spec",
+        "foundation must diverge at the spec or the exact authorized frozen predecessor",
     )
+    if (amendment) {
+        requireAncestor(AMENDMENT_BASE_LANDING, upstream, root)
+        requireGate(
+            git(["rev-list", "--first-parent", upstream], root)
+                .split("\n")
+                .includes(AMENDMENT_BASE_LANDING),
+            "FOUNDATION-MERGE-TOPOLOGY",
+            "predecessor landing missing from upstream first-parent history",
+        )
+        const priorUpstream = git(
+            ["show", "-s", "--format=%P", AMENDMENT_BASE_LANDING],
+            root,
+        ).split(" ")[0]
+        verifyFoundationIntegration(
+            {
+                frozenFoundationSha: AMENDMENT_BASE,
+                landingSha: AMENDMENT_BASE_LANDING,
+                upstreamSha: priorUpstream,
+            },
+            { root, spec },
+        )
+    }
     verifyFoundationOwned(frozen, landing, { root, spec })
     for (const path of ["package.json", "packages/valdres/package.json"]) {
         const exists = commit =>
@@ -195,6 +237,7 @@ export function verifyFoundationIntegration(
                 original.scripts ?? {},
                 authority.scripts ?? {},
                 main.scripts ?? {},
+                amendment,
             ),
         }
         same(
