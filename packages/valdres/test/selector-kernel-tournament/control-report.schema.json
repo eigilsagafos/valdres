@@ -1,29 +1,7 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://valdres.dev/schemas/selector-kernel-candidate-report.v3.json",
-    "title": "Valdres selector-kernel candidate report v3",
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-        "schemaVersion",
-        "tournamentId",
-        "runId",
-        "candidate",
-        "foundation",
-        "control",
-        "comparisonBaselines",
-        "provenance",
-        "gates",
-        "semanticCases",
-        "workloads",
-        "counters",
-        "resources",
-        "complexity",
-        "hostHooks",
-        "reviews",
-        "artifacts",
-        "selection"
-    ],
+    "$id": "https://valdres.dev/schemas/selector-kernel-control-report.v3.json",
+    "title": "Frozen beta.36 control evidence; no candidate eligibility or selection",
     "$defs": {
         "sha256": {
             "type": "string",
@@ -754,6 +732,25 @@
             }
         }
     },
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "schemaVersion",
+        "tournamentId",
+        "kind",
+        "runId",
+        "foundation",
+        "control",
+        "provenance",
+        "gates",
+        "status",
+        "semanticCases",
+        "timings",
+        "calibration",
+        "counters",
+        "resources",
+        "artifacts"
+    ],
     "properties": {
         "schemaVersion": {
             "const": 3
@@ -761,58 +758,14 @@
         "tournamentId": {
             "const": "valdres-selector-kernel-tournament-v3"
         },
+        "kind": {
+            "const": "foundation-control"
+        },
         "runId": {
             "type": "string",
             "minLength": 1,
             "maxLength": 256,
             "pattern": "^[A-Za-z0-9._:-]+$"
-        },
-        "candidate": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "id",
-                "revision",
-                "stage",
-                "branch",
-                "intendedWorkloads",
-                "candidatePlanSha256",
-                "frozenDiffSha256"
-            ],
-            "properties": {
-                "id": {
-                    "enum": [
-                        "incumbent-lite",
-                        "reactive-currentness",
-                        "dynamic-topological"
-                    ]
-                },
-                "revision": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "stage": {
-                    "enum": ["C", "A", "shiftx", "integration"]
-                },
-                "branch": {
-                    "$ref": "#/$defs/nonEmptyString"
-                },
-                "intendedWorkloads": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 3,
-                    "items": {
-                        "$ref": "#/$defs/nonEmptyString"
-                    },
-                    "uniqueItems": true
-                },
-                "candidatePlanSha256": {
-                    "$ref": "#/$defs/sha256"
-                },
-                "frozenDiffSha256": {
-                    "$ref": "#/$defs/sha256"
-                }
-            }
         },
         "foundation": {
             "type": "object",
@@ -882,212 +835,13 @@
                 }
             }
         },
-        "comparisonBaselines": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["pre28Claim"],
-            "properties": {
-                "pre28Claim": {
-                    "oneOf": [
-                        {
-                            "type": "null"
-                        },
-                        {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "required": [
-                                "id",
-                                "package",
-                                "packageVersion",
-                                "packageSpec",
-                                "registryIntegrity",
-                                "registryShasum",
-                                "registryTarballSha256",
-                                "registryGitHead",
-                                "tarballSha256",
-                                "productionEntrySha256",
-                                "distTreeSha256"
-                            ],
-                            "properties": {
-                                "id": {
-                                    "const": "pre28-claim"
-                                },
-                                "package": {
-                                    "const": "valdres"
-                                },
-                                "packageVersion": {
-                                    "const": "0.2.0-pre.28"
-                                },
-                                "packageSpec": {
-                                    "const": "valdres@0.2.0-pre.28"
-                                },
-                                "registryIntegrity": {
-                                    "const": "sha512-hk8T44kL51xalj54HlizywZP4KnZa+u1mtkv8b5kHf4dh9sKBhyawxfHBac1o0S+MNBWuyEHDO+41CFeXQfyKw=="
-                                },
-                                "registryShasum": {
-                                    "const": "accd3f97eafab11ebb939547cbefd3f6c70c7fdf"
-                                },
-                                "registryTarballSha256": {
-                                    "const": "f57a69596dc0c6d767b289c1f50cf1743f224caf52cf0fd5c5b7d7d6e5faf469"
-                                },
-                                "registryGitHead": {
-                                    "const": "53245fd1a080cdb1131f5be9056adc546d05ead4"
-                                },
-                                "tarballSha256": {
-                                    "const": "f57a69596dc0c6d767b289c1f50cf1743f224caf52cf0fd5c5b7d7d6e5faf469"
-                                },
-                                "productionEntrySha256": {
-                                    "$ref": "#/$defs/sha256"
-                                },
-                                "distTreeSha256": {
-                                    "$ref": "#/$defs/sha256"
-                                }
-                            }
-                        }
-                    ]
-                }
-            }
-        },
         "provenance": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-                "status",
-                "candidateIdentity",
-                "cleanWorktree",
-                "build",
-                "runner",
-                "inputs",
-                "startedAt",
-                "endedAt",
-                "evidence"
-            ],
+            "required": ["evidence", "inputs"],
             "properties": {
-                "status": {
-                    "$ref": "#/$defs/status"
-                },
-                "candidateIdentity": {
-                    "$ref": "#/$defs/identity"
-                },
-                "cleanWorktree": {
-                    "const": true
-                },
-                "build": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                        "command",
-                        "bundler",
-                        "minifier",
-                        "flags",
-                        "exportConditions",
-                        "packageManifestSha256",
-                        "lockfileSha256"
-                    ],
-                    "properties": {
-                        "command": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "bundler": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "minifier": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "flags": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/$defs/nonEmptyString"
-                            },
-                            "uniqueItems": true
-                        },
-                        "exportConditions": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/$defs/nonEmptyString"
-                            },
-                            "uniqueItems": true
-                        },
-                        "packageManifestSha256": {
-                            "$ref": "#/$defs/sha256"
-                        },
-                        "lockfileSha256": {
-                            "$ref": "#/$defs/sha256"
-                        }
-                    }
-                },
-                "runner": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                        "platform",
-                        "architecture",
-                        "hardwareModel",
-                        "cpuModel",
-                        "logicalCores",
-                        "memoryBytes",
-                        "osVersion",
-                        "node",
-                        "v8",
-                        "bun",
-                        "javascriptCore",
-                        "browser",
-                        "powerSource",
-                        "thermalState"
-                    ],
-                    "properties": {
-                        "platform": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "architecture": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "hardwareModel": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "cpuModel": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "logicalCores": {
-                            "type": "integer",
-                            "minimum": 1
-                        },
-                        "memoryBytes": {
-                            "type": "integer",
-                            "minimum": 1
-                        },
-                        "osVersion": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "node": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "v8": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "bun": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "javascriptCore": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "browser": {
-                            "oneOf": [
-                                {
-                                    "$ref": "#/$defs/nonEmptyString"
-                                },
-                                {
-                                    "type": "null"
-                                }
-                            ]
-                        },
-                        "powerSource": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        },
-                        "thermalState": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        }
-                    }
+                "evidence": {
+                    "$ref": "#/$defs/nonEmptyString"
                 },
                 "inputs": {
                     "type": "object",
@@ -1132,17 +886,6 @@
                             "const": false
                         }
                     }
-                },
-                "startedAt": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "endedAt": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "evidence": {
-                    "$ref": "#/$defs/nonEmptyString"
                 }
             }
         },
@@ -1154,11 +897,8 @@
                 "contractC",
                 "contractA",
                 "familyCompatibility",
-                "performance",
-                "p95",
                 "memory",
                 "size",
-                "shiftx",
                 "sourceMemory"
             ],
             "properties": {
@@ -1174,25 +914,19 @@
                 "familyCompatibility": {
                     "$ref": "#/$defs/gate"
                 },
-                "performance": {
-                    "$ref": "#/$defs/gate"
-                },
-                "p95": {
-                    "$ref": "#/$defs/gate"
-                },
                 "memory": {
                     "$ref": "#/$defs/gate"
                 },
                 "size": {
                     "$ref": "#/$defs/gate"
                 },
-                "shiftx": {
-                    "$ref": "#/$defs/gate"
-                },
                 "sourceMemory": {
                     "$ref": "#/$defs/gate"
                 }
             }
+        },
+        "status": {
+            "enum": ["pass", "fail"]
         },
         "semanticCases": {
             "type": "array",
@@ -1216,10 +950,78 @@
                 }
             }
         },
-        "workloads": {
-            "type": "array",
-            "items": {
-                "$ref": "#/$defs/timingSummary"
+        "timings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["C", "A"],
+            "properties": {
+                "C": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/timingSummary"
+                    }
+                },
+                "A": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/timingSummary"
+                    }
+                }
+            }
+        },
+        "calibration": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["C", "A"],
+            "properties": {
+                "C": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "performanceStatus",
+                        "tailStatus",
+                        "intendedWinRequired",
+                        "intendedWinEstablished"
+                    ],
+                    "properties": {
+                        "performanceStatus": {
+                            "$ref": "#/$defs/status"
+                        },
+                        "tailStatus": {
+                            "$ref": "#/$defs/status"
+                        },
+                        "intendedWinRequired": {
+                            "const": false
+                        },
+                        "intendedWinEstablished": {
+                            "type": "null"
+                        }
+                    }
+                },
+                "A": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "performanceStatus",
+                        "tailStatus",
+                        "intendedWinRequired",
+                        "intendedWinEstablished"
+                    ],
+                    "properties": {
+                        "performanceStatus": {
+                            "$ref": "#/$defs/status"
+                        },
+                        "tailStatus": {
+                            "$ref": "#/$defs/status"
+                        },
+                        "intendedWinRequired": {
+                            "const": false
+                        },
+                        "intendedWinEstablished": {
+                            "type": "null"
+                        }
+                    }
+                }
             }
         },
         "counters": {
@@ -1233,7 +1035,39 @@
                 "rows": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/$defs/counterSummary"
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "runtime",
+                            "common",
+                            "candidateNamespace",
+                            "candidateSpecific",
+                            "evidence"
+                        ],
+                        "properties": {
+                            "id": {
+                                "$ref": "#/$defs/nonEmptyString"
+                            },
+                            "runtime": {
+                                "enum": ["bun", "node", "chrome"]
+                            },
+                            "common": {
+                                "$ref": "#/$defs/commonCounterSet"
+                            },
+                            "candidateNamespace": {
+                                "type": "null"
+                            },
+                            "candidateSpecific": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [],
+                                "properties": {}
+                            },
+                            "evidence": {
+                                "$ref": "#/$defs/nonEmptyString"
+                            }
+                        }
                     }
                 }
             }
@@ -1279,270 +1113,12 @@
                 }
             }
         },
-        "complexity": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "productionLinesAdded",
-                "productionLinesRemoved",
-                "persistentStateFields",
-                "algorithmicConstants",
-                "candidateTests",
-                "evidence"
-            ],
-            "properties": {
-                "productionLinesAdded": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "productionLinesRemoved": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "persistentStateFields": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/$defs/nonEmptyString"
-                    }
-                },
-                "algorithmicConstants": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": ["name", "value", "rationale"],
-                        "properties": {
-                            "name": {
-                                "$ref": "#/$defs/nonEmptyString"
-                            },
-                            "value": {},
-                            "rationale": {
-                                "$ref": "#/$defs/nonEmptyString"
-                            }
-                        }
-                    }
-                },
-                "candidateTests": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "evidence": {
-                    "$ref": "#/$defs/nonEmptyString"
-                }
-            }
-        },
-        "hostHooks": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                    "name",
-                    "owner",
-                    "phase",
-                    "lifetime",
-                    "effects",
-                    "timedPathFrequency",
-                    "whyRequired"
-                ],
-                "properties": {
-                    "name": {
-                        "$ref": "#/$defs/nonEmptyString"
-                    },
-                    "owner": {
-                        "$ref": "#/$defs/nonEmptyString"
-                    },
-                    "phase": {
-                        "$ref": "#/$defs/nonEmptyString"
-                    },
-                    "lifetime": {
-                        "$ref": "#/$defs/nonEmptyString"
-                    },
-                    "effects": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {
-                            "$ref": "#/$defs/nonEmptyString"
-                        }
-                    },
-                    "timedPathFrequency": {
-                        "$ref": "#/$defs/nonEmptyString"
-                    },
-                    "whyRequired": {
-                        "$ref": "#/$defs/nonEmptyString"
-                    }
-                }
-            }
-        },
-        "reviews": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["codex", "otherVendor", "dispositions"],
-            "properties": {
-                "codex": {
-                    "$ref": "#/$defs/artifact"
-                },
-                "otherVendor": {
-                    "$ref": "#/$defs/artifact"
-                },
-                "dispositions": {
-                    "$ref": "#/$defs/artifact"
-                }
-            }
-        },
         "artifacts": {
             "type": "array",
             "minItems": 1,
             "items": {
                 "$ref": "#/$defs/artifact"
             }
-        },
-        "selection": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "machineEligible",
-                "machineVerdict",
-                "reasons",
-                "humanDecision"
-            ],
-            "properties": {
-                "machineEligible": {
-                    "type": "boolean"
-                },
-                "machineVerdict": {
-                    "enum": [
-                        "eligible",
-                        "ineligible",
-                        "inconclusive",
-                        "not-complete"
-                    ]
-                },
-                "reasons": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/$defs/nonEmptyString"
-                    }
-                },
-                "humanDecision": {
-                    "oneOf": [
-                        {
-                            "type": "null"
-                        },
-                        {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "required": [
-                                "decision",
-                                "decidedBy",
-                                "decidedAt",
-                                "evidence"
-                            ],
-                            "properties": {
-                                "decision": {
-                                    "enum": [
-                                        "promote",
-                                        "reject",
-                                        "hold",
-                                        "no-winner"
-                                    ]
-                                },
-                                "decidedBy": {
-                                    "$ref": "#/$defs/nonEmptyString"
-                                },
-                                "decidedAt": {
-                                    "type": "string",
-                                    "format": "date-time"
-                                },
-                                "evidence": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "items": {
-                                        "$ref": "#/$defs/nonEmptyString"
-                                    }
-                                }
-                            }
-                        }
-                    ]
-                }
-            }
         }
-    },
-    "allOf": [
-        {
-            "if": {
-                "type": "object",
-                "required": ["candidate"],
-                "properties": {
-                    "candidate": {
-                        "type": "object",
-                        "required": ["stage"],
-                        "properties": {
-                            "stage": {
-                                "enum": ["A", "shiftx", "integration"]
-                            }
-                        }
-                    }
-                }
-            },
-            "then": {
-                "type": "object",
-                "properties": {
-                    "resources": {
-                        "type": "object",
-                        "properties": {
-                            "memory": {
-                                "type": "array",
-                                "minItems": 12,
-                                "maxItems": 12
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        {
-            "if": {
-                "type": "object",
-                "required": ["workloads"],
-                "properties": {
-                    "workloads": {
-                        "type": "array",
-                        "contains": {
-                            "type": "object",
-                            "required": ["baselineId"],
-                            "properties": {
-                                "baselineId": {
-                                    "const": "pre28-claim"
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            "then": {
-                "type": "object",
-                "properties": {
-                    "candidate": {
-                        "type": "object",
-                        "properties": {
-                            "stage": {
-                                "enum": ["shiftx", "integration"]
-                            }
-                        }
-                    },
-                    "comparisonBaselines": {
-                        "type": "object",
-                        "properties": {
-                            "pre28Claim": {
-                                "not": {
-                                    "type": "null"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    ]
+    }
 }

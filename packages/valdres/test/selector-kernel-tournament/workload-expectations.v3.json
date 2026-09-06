@@ -1,0 +1,239 @@
+{
+    "schemaVersion": 3,
+    "tournamentId": "valdres-selector-kernel-tournament-v3",
+    "rows": [
+        {
+            "id": "P-NEG-ATOM-2048",
+            "timer": "all twenty commits only",
+            "counts": {
+                "txn": 20,
+                "set": 2560,
+                "subscriberCallbacks": 0,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 2580
+            },
+            "checksum": "40cf705fe28faec047c42897d5b43dfe004261ab41b3ab10db3f4aeefdc78a96"
+        },
+        {
+            "id": "P-FANOUT-128",
+            "timer": "source commits after graph warmup",
+            "counts": {
+                "set": 20,
+                "callback": 2560,
+                "subscriberCallbacks": 2560,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 20
+            },
+            "checksum": "d19d64ea216b2161f207f1648d53ba760d3134666954835fc301bf912dd70b27"
+        },
+        {
+            "id": "P-FANOUT-512",
+            "timer": "source commits after graph warmup",
+            "counts": {
+                "set": 20,
+                "callback": 10240,
+                "subscriberCallbacks": 10240,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 20
+            },
+            "checksum": "403aef2d5eaf46fe1d56fc8b8e612d67284859ff3300bb4c5be5a582a585a27c"
+        },
+        {
+            "id": "P-FANOUT-2048",
+            "timer": "source commits after graph warmup",
+            "counts": {
+                "set": 20,
+                "callback": 40960,
+                "subscriberCallbacks": 40960,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 20
+            },
+            "checksum": "6dde8524ccaa1f53d12a568aed74e1e1f1e441cbfe01b76c430d58095b2c5f71"
+        },
+        {
+            "id": "P-REWIRE-SEPARATE-181-18",
+            "timer": "twenty genuine move commits",
+            "counts": {
+                "get": 20,
+                "set": 20,
+                "callback": 2382,
+                "subscriberCallbacks": 2382,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 40
+            },
+            "checksum": "217f55a3ef312ddcea423792367cecf8d10d01193ba88bfffc7674346c0ce2c8"
+        },
+        {
+            "id": "P-REWIRE-SEPARATE-800-2",
+            "timer": "twenty genuine move commits",
+            "counts": {
+                "get": 20,
+                "set": 20,
+                "callback": 94848,
+                "subscriberCallbacks": 94848,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 40
+            },
+            "checksum": "0a10242393682135e2d7361b9c1df87aa0d267c9e9cd0d4cd74b86c72b5b81d0"
+        },
+        {
+            "id": "P-REWIRE-TXN-181-90",
+            "timer": "one transaction only",
+            "counts": {
+                "txn": 1,
+                "get": 90,
+                "set": 90,
+                "callback": 546,
+                "subscriberCallbacks": 546,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 181
+            },
+            "checksum": "f516b99687aad1e1a5c64948b91ca4d532714914ef66bd15dd53641e48746c66"
+        },
+        {
+            "id": "P-REWIRE-TXN-800-400",
+            "timer": "one transaction only",
+            "counts": {
+                "txn": 1,
+                "get": 400,
+                "set": 400,
+                "callback": 2262,
+                "subscriberCallbacks": 2262,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 801
+            },
+            "checksum": "6606573a0cde284699b3dcacb6efcf7e787e6789ed3444a675613d7328b7e7d9"
+        },
+        {
+            "id": "P-GRAPH-FWD-WIDE-2048",
+            "timer": "twenty on/off new-edge toggles",
+            "counts": {
+                "set": 20,
+                "callback": 20,
+                "subscriberCallbacks": 20,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 20
+            },
+            "checksum": "cb0ce81651016d0a79198d1e9ff6eb9197a3c96c4d3cff12e5da420e3e0e6dfd"
+        },
+        {
+            "id": "P-GRAPH-REV-WIDE-2048",
+            "timer": "twenty on/off new-edge toggles",
+            "counts": {
+                "set": 20,
+                "callback": 40960,
+                "subscriberCallbacks": 40960,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 20
+            },
+            "checksum": "cc36961fd90ba4417a3a8020d23b9874f7d5572f09f8796b57dd9a91367ad5e3"
+        },
+        {
+            "id": "P-CORE-INITIAL-VIEW",
+            "timer": "existing fixture timer",
+            "counts": {
+                "renderReads": 150,
+                "notificationReads": 0,
+                "notifications": 0,
+                "subscriptions": 150,
+                "timedUnsubscriptions": 0,
+                "totalUnsubscriptions": 150,
+                "entityWrites": 0,
+                "metaWrites": 0
+            },
+            "checksum": "e82ecb39"
+        },
+        {
+            "id": "P-CORE-WRITES",
+            "timer": "existing fixture timer",
+            "counts": {
+                "renderReads": 43350,
+                "notificationReads": 5394,
+                "notifications": 5394,
+                "subscriptions": 43350,
+                "timedUnsubscriptions": 43200,
+                "totalUnsubscriptions": 43350,
+                "entityWrites": 900,
+                "metaWrites": 36
+            },
+            "checksum": "d83b21cc"
+        },
+        {
+            "id": "P-CORE-NO-WRITES",
+            "timer": "existing fixture timer",
+            "counts": {
+                "renderReads": 43350,
+                "notificationReads": 0,
+                "notifications": 0,
+                "subscriptions": 43350,
+                "timedUnsubscriptions": 43200,
+                "totalUnsubscriptions": 43350,
+                "entityWrites": 0,
+                "metaWrites": 0
+            },
+            "checksum": "d48af58b"
+        },
+        {
+            "id": "P-SCOPE-1000",
+            "timer": "one aggregated benchmark operation",
+            "counts": {
+                "set": 64,
+                "subscriberCallbacks": 0,
+                "consumed": 0,
+                "batch": 64,
+                "publicOperations": 64
+            },
+            "checksum": "e8b1ed331c4bd1124ec90ac627e115ed0e68c610902d8a701d5cab3b8690759e"
+        },
+        {
+            "id": "P-SUB-CHURN-100",
+            "timer": "one aggregated benchmark operation",
+            "counts": {
+                "sub": 1600,
+                "get": 1600,
+                "unsub": 1600,
+                "subscriberCallbacks": 0,
+                "consumed": 113600,
+                "batch": 8,
+                "publicOperations": 4800
+            },
+            "checksum": "591b45f4bcf27bbe9cc48250e24fb9cbe7b7c8f9ede1049855d89aaea40d499a"
+        },
+        {
+            "id": "P-SCRATCH-SET-READ",
+            "timer": "aggregated transaction operations",
+            "counts": {
+                "txn": 128,
+                "set": 128,
+                "get": 128,
+                "subscriberCallbacks": 0,
+                "consumed": 8384,
+                "batch": 128,
+                "publicOperations": 384
+            },
+            "checksum": "0033c37b31a18553b277e1a47816cff2a4e09d88bef36809583c3de01e467e0c"
+        },
+        {
+            "id": "P-HYDRATE-2048",
+            "timer": "twenty disposable hydration campaigns",
+            "counts": {
+                "hydrationRead": 40960,
+                "subscriberCallbacks": 0,
+                "consumed": 0,
+                "batch": 1,
+                "publicOperations": 40960
+            },
+            "checksum": "76afbef23d540fb8f94e5571c1e76f9afe94e8d8a1c90905e256cfab9a5d2cff"
+        }
+    ]
+}
