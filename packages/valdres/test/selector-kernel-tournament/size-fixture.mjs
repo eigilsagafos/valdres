@@ -13,6 +13,7 @@ import {
     frozenInputBytes,
     frozenInputJson,
     fileHash,
+    json,
 } from "../../../../scripts/selector-kernel-tournament/inputs.mjs"
 import { writeEvidence } from "../../../../scripts/selector-kernel-tournament/evidence.mjs"
 import {
@@ -20,17 +21,23 @@ import {
     parseSizeOutput,
 } from "../../../../scripts/selector-kernel-tournament/resource-evidence.mjs"
 import { packedRootReachability } from "../../../../scripts/selector-kernel-tournament/reachability.mjs"
-export function sizeFixture(root, variant = "passing") {
+import { collectSizes } from "../../../../scripts/selector-kernel-tournament/resources.mjs"
+export function sizeFixture(root, variant = "passing", collect = false) {
     const index = { artifacts: {} },
         artifacts = {},
         measurements = {},
         processes = [],
         reachability = {}
-    for (const path of [
-        manifest.stages.size.measurementScript,
-        manifest.stages.size.baselineFile,
-    ])
-        writeEvidence(root, "size-authority/" + path, frozenInputBytes(path))
+    if (!collect)
+        for (const path of [
+            manifest.stages.size.measurementScript,
+            manifest.stages.size.baselineFile,
+        ])
+            writeEvidence(
+                root,
+                "size-authority/" + path,
+                frozenInputBytes(path),
+            )
     for (const arm of ["control", "candidate"]) {
         const directory = join(root, "artifacts", arm),
             packageRoot = join(directory, "package")
@@ -86,6 +93,7 @@ export function sizeFixture(root, variant = "passing") {
         writeEvidence(root, `artifacts/${arm}/artifact.json`, metadata)
         artifacts[arm] = { timed: metadata }
         index.artifacts[arm] = { timed: `artifacts/${arm}/artifact.json` }
+        if (collect) continue
         const process = captureCommand(
             [
                 "bun",
@@ -102,6 +110,14 @@ export function sizeFixture(root, variant = "passing") {
         processes.push({ arm, process: ref.path, sha256: ref.sha256 })
         measurements[arm] = normalizeSizes(parseSizeOutput(process.stdout))
         reachability[arm] = packedRootReachability(tarball, metadata)
+    }
+    if (collect) {
+        collectSizes(root, {
+            controlDirectory: join(root, "artifacts/control"),
+            headDirectory: join(root, "artifacts/candidate"),
+            index,
+        })
+        return { value: json(join(root, "sizes.json")), artifacts, index }
     }
     const value = {
         schemaVersion: 3,

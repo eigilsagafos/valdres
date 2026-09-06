@@ -98,6 +98,7 @@ export async function runRedCase({ id, variant, controlRoot, mode, output }) {
             id === "size-shipping-budget" && !mutation
                 ? "passing"
                 : "oversized",
+            true,
         )
         validateSizeEvidence(root, fixture.value, fixture)
         const submitted = structuredClone(fixture.value)

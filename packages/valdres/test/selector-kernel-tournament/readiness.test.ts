@@ -351,6 +351,42 @@ if (isolatedTournamentFile()) {
                     { root },
                 ),
             ).toThrow("FOUNDATION-MERGE-TOPOLOGY")
+            // A single merge-base can hide an older moving-main merge behind
+            // the authorized predecessor. Both best common ancestors must fail.
+            const priorMain = git(
+                "show",
+                "-s",
+                "--format=%P",
+                AMENDMENT_BASE_LANDING,
+            ).split(" ")[0]
+            const contaminated = git(
+                "commit-tree",
+                git("rev-parse", AMENDMENT_BASE + "^{tree}"),
+                "-p",
+                AMENDMENT_BASE,
+                "-p",
+                priorMain,
+                "-m",
+                "hidden moving-main ancestry",
+            )
+            expect(
+                git(
+                    "merge-base",
+                    "--all",
+                    contaminated,
+                    AMENDMENT_BASE_LANDING,
+                ).split("\n"),
+            ).toHaveLength(2)
+            expect(() =>
+                verifyFoundationIntegration(
+                    {
+                        frozenFoundationSha: contaminated,
+                        landingSha: merge(contaminated, AMENDMENT_BASE_LANDING),
+                        upstreamSha: AMENDMENT_BASE_LANDING,
+                    },
+                    { root },
+                ),
+            ).toThrow("FOUNDATION-MERGE-TOPOLOGY")
             const path = "packages/valdres/package.json"
             const original = JSON.parse(
                 git("show", AMENDMENT_BASE_LANDING + ":" + path),

@@ -186,7 +186,7 @@ export function verifyFoundationIntegration(
     requireAncestor(spec, frozen, root)
     requireAncestor(spec, upstream, root)
     requireAncestor(frozen, parents[1], root)
-    const mergeBase = git(["merge-base", frozen, upstream], root)
+    const mergeBase = git(["merge-base", "--all", frozen, upstream], root)
     const amendment = mergeBase === AMENDMENT_BASE && frozen !== AMENDMENT_BASE
     requireGate(
         mergeBase === spec || amendment,
@@ -289,8 +289,10 @@ export function requireCandidateBase(candidate, readiness, root = ROOT) {
     const frozen = readiness.frozenFoundationSha
     requireAncestor(frozen, candidate, root)
     requireGate(
-        git(["merge-base", candidate, readiness.foundationMergeSha], root) ===
-            frozen,
+        git(
+            ["merge-base", "--all", candidate, readiness.foundationMergeSha],
+            root,
+        ) === frozen,
         "FOUNDATION-CANDIDATE-BASE",
         "candidate must start at the frozen authority, not the main landing",
     )

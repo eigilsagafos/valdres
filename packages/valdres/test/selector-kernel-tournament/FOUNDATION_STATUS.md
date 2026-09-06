@@ -66,7 +66,8 @@ The C-size amendment starts at the exact reviewed predecessor
 merge-base only after revalidating the predecessor landing and its first-parent
 membership. The amended frozen SHA remains the exact second parent, owned bytes
 must match, and every already-landed tournament script must remain present once
-with its exact spelling. Unrelated upstream scripts and manifest fields remain
+with its exact spelling. Multiple best merge bases fail closed, including
+a frozen branch contaminated by an older moving-main parent. Unrelated upstream scripts and manifest fields remain
 intact. The C-size marker contains only empty YAML frontmatter; no release is
 requested.
 
@@ -92,6 +93,8 @@ From a clean frozen checkout with pinned Bun/Node and installed dependencies:
 
 ```sh
 bun scripts/selector-kernel-tournament/inputs.mjs check
+# Diagnostic regression: unchanged sealed oversized input, never candidate readiness.
+bun scripts/selector-kernel-tournament/size-continuation.mjs SEALED_INPUT_ROOT NEW_OUTPUT_ROOT INPUT_SHA256SUMS_DIGEST
 bun scripts/selector-kernel-tournament/control-bundle.mjs run NEW_RUN_ID
 bun scripts/selector-kernel-tournament/red-bundle.mjs run GREEN_ROOT NEW_RED_ROOT
 bun scripts/selector-kernel-tournament/verification.mjs run NEW_VERIFICATION_ROOT REVIEWS_ROOT
