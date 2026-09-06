@@ -302,6 +302,8 @@ if (isolatedTournamentFile()) {
             }).trim()
         try {
             git("clone", "--bare", "--shared", ROOT, ".")
+            git("config", "user.email", "fixture@example.invalid")
+            git("config", "user.name", "Fixture")
             const frozen = git(
                 "commit-tree",
                 git("rev-parse", AMENDMENT_BASE + "^{tree}"),
