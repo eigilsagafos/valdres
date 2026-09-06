@@ -1,3 +1,8 @@
+import {
+    acceptTopologicalProposal,
+    rollbackTopologicalProposal,
+    clearTopologicalHost,
+} from "../dynamic-topological/order"
 import type {
     SelectorComparisonBaseline,
     SelectorDependencySnapshot,
@@ -383,6 +388,7 @@ export class StoreScopeNode
 
     dropRecords(): void {
         this.coordinator.runtimeDomain[COLLECTION_KERNEL]?.scope(this)
+        clearTopologicalHost(this)
         this.#liveAtomViews.forEach(record => {
             this.detachAtomView(record)
             record.inheritingChildren.clear()
@@ -457,6 +463,7 @@ export class StoreScopeNode
             proposal.outcome.kind === "control-error" &&
             !this.coordinator.postSourceApply
         ) {
+            rollbackTopologicalProposal(this, selector)
             throw proposal.outcome.error
         }
         return this.#installSelectorProposal(selector, proposal, session)
@@ -616,6 +623,7 @@ export class StoreScopeNode
         this.#selectorGraphVersion++
         session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(selector, record)
+        acceptTopologicalProposal(this, selector)
         this.#dirtySelectors.delete(selector)
         if (addedSelectorEdges !== undefined) {
             this.#appendObservedSelectorEdgeAdditions(addedSelectorEdges)

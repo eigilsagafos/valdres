@@ -3,7 +3,7 @@ import type {
     SelectorEvaluationStrategy,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
-import { evaluateSelector } from "../selector-evaluator/evaluate"
+import { evaluateSelector } from "../dynamic-topological/evaluate"
 import { SelectorEvaluationSession } from "../selector-evaluator/types"
 import {
     CallbackCapabilityError,

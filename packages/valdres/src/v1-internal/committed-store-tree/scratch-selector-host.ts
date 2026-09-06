@@ -1,3 +1,8 @@
+import {
+    acceptTopologicalProposal,
+    rollbackTopologicalProposal,
+    clearTopologicalHost,
+} from "../dynamic-topological/order"
 import type {
     SelectorComparisonBaseline,
     SelectorDefinition,
@@ -96,11 +101,13 @@ export class ScratchSelectorHost<Node extends object>
             throw new Error("Scratch selector generation is not contiguous")
         }
         this.#generation = generation
+        clearTopologicalHost(this)
         this.#selectorRecords.clear()
         this.#sourceRecords.clear()
     }
 
     revoke(): void {
+        clearTopologicalHost(this)
         this.#selectorRecords.clear()
         this.#sourceRecords.clear()
         this.#committedBaselines.clear()
@@ -130,6 +137,7 @@ export class ScratchSelectorHost<Node extends object>
             this.#evaluate(resolved.definition, this, session),
         )
         if (proposal.outcome.kind === "control-error") {
+            rollbackTopologicalProposal(this, node)
             throw proposal.outcome.error
         }
         const served = Object.freeze({
@@ -145,6 +153,7 @@ export class ScratchSelectorHost<Node extends object>
                 dependencies: proposal.dependencies,
             }),
         )
+        acceptTopologicalProposal(this, node)
         return served
     }
 
