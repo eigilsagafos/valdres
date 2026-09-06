@@ -37,7 +37,7 @@ import { validateProcess } from "./process-evidence.mjs"
 import { sourceMemoryCommand, assertSourceMemory } from "./source-memory.mjs"
 
 export const EXPECTED_TESTS = {
-    tournament: 85, // 84 child cases plus one separately reported dispatcher
+    tournament: 108, // 107 child cases plus one separately reported dispatcher
     "paired-statistics": 67,
     "frozen-family": 58,
     "source-memory-bun": 8,

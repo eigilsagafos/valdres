@@ -33,9 +33,9 @@ import {
 } from "./resource-validation.mjs"
 import {
     normalizeSizes,
-    parseSizeOutput,
     validateMemoryEvidence,
     validateSizeEvidence,
+    validateSizeProcess,
 } from "./resource-evidence.mjs"
 import { validateProcess } from "./process-evidence.mjs"
 import { packedRootReachability } from "./reachability.mjs"
@@ -262,12 +262,12 @@ export function collectSizes(root, { controlDirectory, headDirectory, index }) {
             ROOT,
         )
         const ref = writeEvidence(root, `size-${arm}.process.json`, process)
-        requireGate(
-            process.status === 0 && process.error === null,
-            "SIZE-ABSOLUTE",
-            process.stderr,
+        measurements[arm] = validateSizeProcess(
+            root,
+            process,
+            artifact,
+            join(directory, artifact.tarball),
         )
-        measurements[arm] = normalizeSizes(parseSizeOutput(process.stdout))
         processes.push({ arm, process: ref.path, sha256: ref.sha256 })
         artifacts[arm] = { timed: artifact }
         reachability[arm] = packedRootReachability(
