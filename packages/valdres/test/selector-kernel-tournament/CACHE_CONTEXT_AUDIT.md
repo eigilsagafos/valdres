@@ -103,7 +103,7 @@ the unchanged real harness under Bun and Node.
 
 ## Red inventory and frozen policy
 
-F8 contains 14 classes, 22 variants and 44 baseline/mutation outcomes. The two
+The cache-context amendment introduced 14 classes, 22 variants and 44 baseline/mutation outcomes. The two
 new provenance-mismatch variants, `semantic-cache-identity` and
 `semantic-cache-mode`, warm the shared cache with real fresh control evidence,
 record the warmup and submission, and require the mismatched submission to exit
