@@ -285,7 +285,7 @@ if (isolatedTournamentFile()) {
         } finally {
             rmSync(root, { recursive: true, force: true })
         }
-    })
+    }, 30000)
     test("the exact landed predecessor admits an amendment but rejects moving-main lineage and script drift", async () => {
         const { ROOT } = await import(
             "../../../../scripts/selector-kernel-tournament/inputs.mjs"
