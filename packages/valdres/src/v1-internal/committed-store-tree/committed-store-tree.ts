@@ -3,7 +3,7 @@ import type {
     SelectorEvaluationStrategy,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
-import { evaluateSelector } from "../selector-evaluator/evaluate"
+import { evaluateReactive } from "../reactive-currentness/evaluate"
 import { SelectorEvaluationSession } from "../selector-evaluator/types"
 import {
     CallbackCapabilityError,
@@ -659,7 +659,7 @@ class CommittedStoreTreeHost
                 ? undefined
                 : internalInstrumentationCounters.get(instrumentation)
         this.#trace = trace
-        this.evaluate = trace?.evaluate ?? evaluateSelector
+        this.evaluate = trace?.evaluate ?? evaluateReactive
         this.#rootScope = new StoreScopeNode(this)
         this.recordCounter("scopeNodesCreated")
     }
@@ -2372,6 +2372,9 @@ class CommittedStoreTreeHost
         if ((status & (PROPAGATION_SETTLED | PROPAGATION_SETTLING)) !== 0) {
             return
         }
+        // Reactive invalidation proves unrelated branches current without
+        // traversing their old dependency closure on every source settlement.
+        if (!scope.isSelectorUncertain(selector)) return
         this.#updatePropagationStatus(scope, selector, PROPAGATION_SETTLING)
         try {
             const graphVersionBeforeDependencies =
@@ -2406,6 +2409,7 @@ class CommittedStoreTreeHost
                     )
                 }
             }
+            scope.confirmSelectorCurrent(selector)
             this.#updatePropagationStatus(scope, selector, PROPAGATION_SETTLED)
         } finally {
             this.#updatePropagationStatus(

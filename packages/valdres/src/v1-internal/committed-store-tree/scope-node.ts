@@ -236,6 +236,7 @@ export class StoreScopeNode
         | undefined
     #reverseEdges = new WeakMap<AnyState, WeakHandleSet<AnySelector>>()
     #dirtySelectors = new WeakSet<AnySelector>()
+    #uncertainSelectors = new WeakSet<AnySelector>()
     #selectorGraphVersion = 0
     #selectorGraphObserverCount = 0
     #observedSelectorEdgeAdditions:
@@ -365,6 +366,14 @@ export class StoreScopeNode
         return this.#dirtySelectors.has(selector)
     }
 
+    isSelectorUncertain(selector: AnySelector): boolean {
+        return this.#uncertainSelectors.has(selector)
+    }
+
+    confirmSelectorCurrent(selector: AnySelector): void {
+        this.#uncertainSelectors.delete(selector)
+    }
+
     getCommittedSelectorDependencies(
         selector: AnySelector,
     ):
@@ -374,11 +383,24 @@ export class StoreScopeNode
     }
 
     markDependents(node: AnyState): void {
+        const pending: AnySelector[] = []
         this.#reverseEdges.get(node)?.forEach(selector => {
             if (this.coordinator.enqueueSelector(this, selector)) {
                 this.#dirtySelectors.add(selector)
+                pending.push(selector)
             }
         })
+        // Push uncertainty, not values. Only immediate changed dependencies
+        // dirty a body; downstream equality barriers resolve by pulling their
+        // old dependencies first. The transient frontier never owns a graph.
+        while (pending.length > 0) {
+            const selector = pending.pop()!
+            if (this.#uncertainSelectors.has(selector)) continue
+            this.#uncertainSelectors.add(selector)
+            this.#reverseEdges.get(selector)?.forEach(dependent => {
+                pending.push(dependent)
+            })
+        }
     }
 
     dropRecords(): void {
@@ -402,6 +424,7 @@ export class StoreScopeNode
         this.#selectorDependencyNodes = undefined
         this.#reverseEdges = new WeakMap()
         this.#dirtySelectors = new WeakSet()
+        this.#uncertainSelectors = new WeakSet()
         this.#selectorGraphVersion++
         this.#invalidateSelectorGraphObservation()
     }
@@ -617,6 +640,7 @@ export class StoreScopeNode
         session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(selector, record)
         this.#dirtySelectors.delete(selector)
+        this.#uncertainSelectors.delete(selector)
         if (addedSelectorEdges !== undefined) {
             this.#appendObservedSelectorEdgeAdditions(addedSelectorEdges)
         }

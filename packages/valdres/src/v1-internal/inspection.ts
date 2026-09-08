@@ -42,7 +42,6 @@ import {
 } from "./collection-inspection-protocol"
 import { COLLECTION_KERNEL } from "./committed-store-tree/runtime-domain"
 import type {
-    SelectorCycleSearch,
     SelectorCycleSearchSite,
     SelectorDefinition,
     SelectorEvaluationHost,
@@ -59,11 +58,11 @@ import type {
     SelectorTopologyDeltaReverseSnapshotOutcome,
 } from "./selector-evaluator/types"
 import {
-    evaluateSelector,
     tryProveNoDependencyPathReverse,
     type SelectorReverseProofMeasurement,
     type SelectorReverseProofOutcome,
 } from "./selector-evaluator/evaluate"
+import { evaluateReactive } from "./reactive-currentness/evaluate"
 
 type StoreRecorderEvent =
     | readonly [
@@ -2956,8 +2955,6 @@ const createStoreTrace = (
             typeof hostName === "string" ? hostName : undefined,
         )
         const graphVersionStart = host.getSelectorGraphVersion()
-        const attributedPublicationStart =
-            session.getSelectorGraphPublicationCount(host)
         const previousDependencies = host.getSelectorRecord(
             definition.node,
         )?.dependencies
@@ -3003,40 +3000,8 @@ const createStoreTrace = (
             if (totals === undefined) return undefined
             return freezeTopologyDeltaReverseSnapshotTotals(totals)
         }
-        const cycleSearch: SelectorCycleSearch<Node, Token> = (
-            start,
-            target,
-            cycleHost,
-            cycleSession,
-            site,
-            acceptedPrefixLength,
-            newEdgeProofMemo,
-            topologyDeltaReverseProof,
-        ) =>
-            recorder.findDependencyPath(
-                hostKind,
-                hostRef,
-                start,
-                target,
-                cycleHost,
-                cycleSession,
-                site,
-                acceptedPrefixLength,
-                graphVersionStart,
-                attributedPublicationStart,
-                previousDependencies === undefined,
-                newEdgeProofMemo,
-                topologyDeltaReverseProof,
-            )
         try {
-            const proposal = evaluateSelector(
-                definition,
-                host,
-                session,
-                cycleSearch,
-                memoDiagnostics.sink,
-                snapshotDiagnostics.sink,
-            )
+            const proposal = evaluateReactive(definition, host, session)
             const proposedTopologyChanged =
                 previousDependencies === undefined ||
                 previousDependencies.length !== proposal.dependencies.length ||
