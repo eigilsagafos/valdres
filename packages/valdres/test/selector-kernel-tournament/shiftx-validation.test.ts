@@ -55,7 +55,9 @@ if (isolatedTournamentFile()) {
         contractC: {
             bundle: {
                 path: "/recorded/contract-c",
-                sha256sums: hash(),
+                sha256sums:
+                    PRESERVED_RESEARCH_CANDIDATES["reactive-currentness"]
+                        .contractCSha256sums,
             },
             candidateIdentity: {
                 id: "reactive-currentness",
@@ -531,17 +533,21 @@ if (isolatedTournamentFile()) {
         "admits preserved candidate %s at its exact Contract C source identity",
         (candidateId, identity) => {
             const value = admission()
+            const { gitSha, diffSha256, contractCGitSha, contractCSha256sums } =
+                identity
             value.candidateId = candidateId
-            value.source = { ...identity }
-            value.replay.diffSha256 = identity.diffSha256
+            value.source = { gitSha, diffSha256 }
+            value.replay.diffSha256 = diffSha256
+            value.contractC.bundle.sha256sums = contractCSha256sums
             value.contractC.candidateIdentity = {
                 id: candidateId,
-                ...identity,
+                gitSha: contractCGitSha,
+                diffSha256,
             }
             expect(validateShiftxResearchAdmission(value)).toBe(value)
         },
     )
-    test("Contract C admission rejects a caller-authored pass summary that is not a canonical bundle", async () => {
+    test("Contract C admission rejects a caller-authored pass summary whose bundle seal is not preserved", async () => {
         const root = mkdtempSync(join(tmpdir(), "shiftx-research-contract-c-"))
         try {
             const value = admission()
@@ -571,7 +577,7 @@ if (isolatedTournamentFile()) {
                 sha256sums: sealEvidence(root),
             }
             await expect(validateRecordedContractC(value)).rejects.toThrow(
-                /PROVENANCE-DIRTY|INPUT-SCHEMA/,
+                "SHIFTX-RESEARCH-CONTRACT-C",
             )
         } finally {
             rmSync(root, { recursive: true, force: true })
@@ -581,6 +587,7 @@ if (isolatedTournamentFile()) {
         const mutations = [
             value => (value.candidateId = "unknown-candidate"),
             value => (value.contractC.provenanceStatus = "fail"),
+            value => (value.contractC.bundle.sha256sums = hash("0")),
             value => (value.contractC.publicSemantics[0].status = "fail"),
             value =>
                 (value.contractC.candidateIdentity.gitSha = "0".repeat(40)),

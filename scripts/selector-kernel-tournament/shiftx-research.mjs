@@ -10,30 +10,39 @@ import {
     sha256 as sha256Hex,
     git,
     ROOT,
+    schemaCheck,
 } from "./inputs.mjs"
-import { evidencePath, same, strictKeys } from "./evidence.mjs"
+import { evidencePath, same, strictKeys, verifySeal } from "./evidence.mjs"
 import { validateShiftx } from "./shiftx.mjs"
 import {
     artifactIdentity,
     validateArtifactEvidence,
 } from "./artifact-validation.mjs"
-import { validateReportBundle } from "./report.mjs"
 
 export const PRESERVED_RESEARCH_CANDIDATES = Object.freeze({
     "incumbent-lite": Object.freeze({
         gitSha: "8192de293f76022f27f06606614e71ab7bddf25b",
+        contractCGitSha: "8192de293f76022f27f06606614e71ab7bddf25b",
         diffSha256:
             "fbf9e5ba64d09412ecfed90a1bab1e56b502aa934e5c8aef14d23591ae0368c3",
+        contractCSha256sums:
+            "7aa4292f2bdef321d6f8e951114b71c1a1f7d0941196d85dce0605fcdb4058f5",
     }),
     "reactive-currentness": Object.freeze({
         gitSha: "2558104cbc4c87cac9ca38f13f65de23291db0d7",
+        contractCGitSha: "2558104cbc4c87cac9ca38f13f65de23291db0d7",
         diffSha256:
             "4ff405a93fe98e968126408bb36c80a3598c49fa8f72749b867b32729bb29bf0",
+        contractCSha256sums:
+            "0903dcccdd4ca6065aa96eb0e3d324fbefb408c2b6060f963ff0a26c5c86563b",
     }),
     "dynamic-topological": Object.freeze({
         gitSha: "38db343bbf1329cfbaaf80ad883df907e2810125",
+        contractCGitSha: "3d072f92ca9d2d0007a60cdd22bf916511766d86",
         diffSha256:
             "3f1de568e8e7d3c12858258918a7d1205ba041b35d2aa2d4827b15eb17c5e26d",
+        contractCSha256sums:
+            "f93010be543992775006150a03c6d3e48853e6a6d160de327c940476f7e00086",
     }),
 })
 
@@ -205,6 +214,11 @@ export function validateShiftxResearchAdmission(admission) {
         "SHIFTX-RESEARCH-CONTRACT-C",
     )
     validateBundleReference(admission.contractC.bundle)
+    requireGate(
+        admission.contractC.bundle.sha256sums === preserved.contractCSha256sums,
+        "SHIFTX-RESEARCH-CONTRACT-C",
+        "Contract C bundle seal is not preserved",
+    )
     strictKeys(
         admission.contractC.candidateIdentity,
         ["id", "gitSha", "diffSha256"],
@@ -213,7 +227,7 @@ export function validateShiftxResearchAdmission(admission) {
     requireGate(
         admission.contractC.candidateIdentity.id === admission.candidateId &&
             admission.contractC.candidateIdentity.gitSha ===
-                admission.source.gitSha &&
+                preserved.contractCGitSha &&
             admission.contractC.candidateIdentity.diffSha256 ===
                 admission.source.diffSha256 &&
             admission.contractC.provenanceStatus === "pass" &&
@@ -261,17 +275,16 @@ export function validateShiftxResearchAdmission(admission) {
 export async function validateRecordedContractC(admission) {
     validateShiftxResearchAdmission(admission)
     const reference = admission.contractC.bundle
-    const report = await validateReportBundle(
-        reference.path,
-        reference.sha256sums,
-    )
+    verifySeal(reference.path, reference.sha256sums)
+    const report = json(evidencePath(reference.path, "report.json"))
+    schemaCheck(report)
     requireGate(
         report.candidate?.id === admission.candidateId &&
             report.candidate.stage === "C" &&
             report.candidate.frozenDiffSha256 === admission.source.diffSha256 &&
             report.provenance?.status === "pass" &&
             report.provenance.candidateIdentity?.gitSha ===
-                admission.source.gitSha &&
+                admission.contractC.candidateIdentity.gitSha &&
             report.gates?.provenance?.status === "pass" &&
             report.gates.contractC?.status === "pass",
         "SHIFTX-RESEARCH-CONTRACT-C-REPORT",

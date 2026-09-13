@@ -8,8 +8,10 @@ recorded source revisions and diff hashes for `incumbent-lite`,
 `reactive-currentness`, and `dynamic-topological`. Contract C provenance and all
 public semantic cases must have passed under Bun and Node. Prior Contract C
 timing, p95, memory, and size outcomes are retained as diagnostics and do not
-control research admission. The wrapper verifies the referenced canonical
-Contract C bundle seal and recomputation before accepting those facts.
+control research admission. The wrapper verifies the candidate's exact preserved
+Contract C bundle seal and current canonical report schema before accepting
+those facts. It does not recompute historical evidence against a later
+foundation checkout.
 
 `runShiftxResearch` in `scripts/selector-kernel-tournament/shiftx-research.mjs`
 calls the existing `validateShiftx` implementation. Consequently the frozen
@@ -32,6 +34,10 @@ report boundary markers are always:
     "promotional": false
 }
 ```
+
+The pinned Contract C execution identity is recorded separately from the
+original source identity. They are equal for two candidates; dynamic-topological
+used an earlier clean replay commit with the same preserved candidate diff.
 
 Each replay is exactly one commit on the externally supplied common base. Git
 proves that replay identity and diff; because the evolved base does not accept
