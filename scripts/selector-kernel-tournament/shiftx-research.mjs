@@ -9,7 +9,6 @@ import {
     fileHash,
     sha256 as sha256Hex,
     git,
-    ROOT,
     schemaCheck,
 } from "./inputs.mjs"
 import { evidencePath, same, strictKeys, verifySeal } from "./evidence.mjs"
@@ -462,12 +461,6 @@ export function validateReplayIdentity(
                 ["status", "--porcelain=v1", "--untracked-files=all"],
                 candidateRoot,
             ) === "" &&
-            // Preserved source commits belong to the landed tooling repository;
-            // the replay worktree may be a separate clone containing only its base.
-            git(
-                ["cat-file", "-t", `${admission.source.gitSha}^{commit}`],
-                ROOT,
-            ) === "commit" &&
             git(
                 ["cat-file", "-t", `${admission.replay.baseGitSha}^{commit}`],
                 candidateRoot,
