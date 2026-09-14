@@ -1,5 +1,16 @@
 # valdres
 
+## 1.0.0-beta.37
+
+### Minor Changes
+
+- [#386](https://github.com/eigilsagafos/valdres/pull/386)
+  [`1629f17`](https://github.com/eigilsagafos/valdres/commit/1629f1739c7b4932165adcbb97961806f36cf409)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add keyed
+  `collection()` definitions with canonical row handles, ordered membership
+  state, `presence()` selectors, and direct or transactional row set, update,
+  reset, and delete operations.
+
 ## 1.0.0-beta.36
 
 ### Minor Changes
