@@ -1,5 +1,18 @@
 # valdres
 
+## 1.0.0-beta.38
+
+### Patch Changes
+
+- [#393](https://github.com/eigilsagafos/valdres/pull/393)
+  [`1f08bf1`](https://github.com/eigilsagafos/valdres/commit/1f08bf1edff99b7d825a76e2b91703a649c41fcd)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Reduce per-access
+  overhead on `family()`'s `encodeKey` hot path. An encoder frame no longer
+  allocates a `WeakSet` it can structurally never use, and the per-call
+  selector-session read-guard bookkeeping skips its array allocation when there
+  is no active selector session to guard against — the common case for a family
+  accessor called from ordinary application code.
+
 ## 1.0.0-beta.37
 
 ### Minor Changes
