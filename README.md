@@ -174,7 +174,7 @@ membership work, related counters, and propagation/notification totals.
 Summary/detail rings are bounded with explicit overflow. Exports are immutable
 and JSON-safe; collection keys, values, callbacks, errors, and live State handles
 are never recorded. Labels are metadata, not identity. The core inspection
-schema is version 6.
+schema is version 7.
 
 Inspection adds recording and timing work only to the Store created by
 `createInspectableStore`. The recorder stays outside the ordinary root entry and

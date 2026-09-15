@@ -212,6 +212,8 @@ describe("pinned Bun toolchain", () => {
             "all-exports",
             "collection",
             "inspect",
+            "query",
+            "query-development",
         ])
         expect(
             baseline.policy.coreRetainingFixtures.every((name: string) =>
