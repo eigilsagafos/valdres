@@ -9,7 +9,7 @@ import {
 import { query } from "../../src/query"
 
 type EntityRef = `entity:${number}`
-type Entity = { kind: "task" | "person"; title: string }
+type Entity = { kind: "task" | "person" | "document"; title: string }
 const define = (extract = (entity: Entity) => entity.kind) =>
     collection<EntityRef, Entity, EntityRef, { kind: Entity["kind"] }>({
         name: "entities",
@@ -156,14 +156,20 @@ test("seeded scoped transactions agree with the selector full-scan shim", () => 
         root.scope("a"),
         root.scope("b"),
         root.scope("a").scope("deep"),
+        root.scope("b").scope("deep"),
+        root.scope("c"),
     ]
     const rows = Array.from({ length: 18 }, (_, i) => entities(`entity:${i}`))
     const tasks = query(entities, { where: { kind: { eq: "task" } } })
-    const shim = selector(get =>
-        get(entities).filter(row => get(row)?.kind === "task"),
-    )
+    const kinds = ["task", "person", "document"] as const
+    const comparisons = kinds.map(kind => ({
+        native: query(entities, { where: { kind: { eq: kind } } }),
+        shim: selector(get =>
+            get(entities).filter(row => get(row)?.kind === kind),
+        ),
+    }))
     for (const scope of scopes) scope.get(tasks)
-    for (let turn = 0; turn < 500; turn++) {
+    for (let turn = 0; turn < 5000; turn++) {
         const abort = random(9) === 0
         try {
             root.txn(tx => {
@@ -185,7 +191,9 @@ test("seeded scoped transactions agree with the selector full-scan shim", () => 
                             target.set(
                                 row,
                                 entity(
-                                    random(2) ? "task" : "person",
+                                    (["task", "person", "document"] as const)[
+                                        random(3)
+                                    ]!,
                                     String(turn),
                                 ),
                             )
@@ -204,7 +212,8 @@ test("seeded scoped transactions agree with the selector full-scan shim", () => 
             if (!abort) throw error
         }
         for (const scope of scopes)
-            expect(scope.get(tasks)).toEqual(scope.get(shim))
+            for (const pair of comparisons)
+                expect(scope.get(pair.native)).toEqual(scope.get(pair.shim))
     }
     root.dispose()
 })
@@ -400,4 +409,49 @@ test("scratch equality reads invalidate after value-only set/update/reset in the
     })
     expect(s.get(tasks)).toBe(committed)
     s.dispose()
+})
+
+test("equivalent queries have weak canonical identity across scopes and transactions", () => {
+    const entities = define(),
+        s = store(),
+        child = s.scope("child")
+    const byKind = (kind: Entity["kind"]) =>
+        query(entities, { where: { kind: { eq: kind } } })
+    const tasks = byKind("task")
+    expect(byKind("task")).toBe(tasks)
+    expect(byKind("person")).not.toBe(tasks)
+    expect(query(define(), { where: { kind: { eq: "task" } } })).not.toBe(tasks)
+    const row = entities("entity:1")
+    s.set(row, entity())
+    child.set(row, entity("person"))
+    expect(s.get(byKind("task"))).toEqual([row])
+    expect(child.get(byKind("task"))).toEqual([])
+    s.txn(tx => {
+        expect(byKind("task")).toBe(tasks)
+        tx.set(row, entity("person"))
+        expect(tx.get(byKind("task"))).toEqual([])
+    })
+    child.dispose()
+    const replacement = s.scope("child")
+    expect(byKind("task")).toBe(tasks)
+    expect(replacement.get(tasks)).toEqual([])
+    replacement.set(row, entity())
+    expect(replacement.get(byKind("task"))).toEqual([row])
+    expect(s.get(tasks)).toEqual([])
+    s.dispose()
+    const next = store()
+    expect(next.get(byKind("task"))).toEqual([])
+    next.dispose()
+})
+
+test("query identity uses finite scalar equality and rejects unsupported keys", () => {
+    const values = collection<string, { key: number }, string, { key: number }>(
+        { indexes: { key: value => value.key } },
+    )
+    const lookup = (key: number) =>
+        query(values, { where: { key: { eq: key } } })
+    expect(lookup(-0)).toBe(lookup(0))
+    expect(lookup(1)).not.toBe(lookup(0))
+    for (const key of [NaN, Infinity, Symbol("key"), {}, undefined])
+        expect(() => lookup(key as number)).toThrow("finite scalar")
 })

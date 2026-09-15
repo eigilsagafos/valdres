@@ -1,3 +1,4 @@
+import { WeakTupleMemberCache } from "./v1-internal/weak-member-cache"
 import { v1Domain } from "./v1-internal/public-domain"
 import {
     assertDefinitionConstructionAllowed,
@@ -28,6 +29,7 @@ export interface QueryDefinition<Indexes> {
     readonly where: QueryWhere<Indexes>
 }
 const definitions = new WeakMap<object, RuntimeQueryDefinition>()
+const queries = new WeakMap<object, WeakTupleMemberCache<object>>()
 
 export const query = <
     Key extends CollectionKey,
@@ -76,15 +78,34 @@ export const query = <
     )
         throw new TypeError("query equality value must be a finite scalar")
     const extract = collectionIndexExtractor(v1Domain, collection, name)
-    const node = registerDefinitionHandle(v1Domain, {
-        kind: "collection" as const,
-    })
-    definitions.set(node, {
-        collection,
-        index: name,
-        value: value as CollectionKey,
-        extract,
-    })
+    let cache = queries.get(collection)
+    if (cache === undefined) {
+        cache = new WeakTupleMemberCache<object>(
+            args => {
+                const node = registerDefinitionHandle(v1Domain, {
+                    kind: "collection" as const,
+                })
+                definitions.set(node, args[0] as RuntimeQueryDefinition)
+                return node
+            },
+            () =>
+                new TypeError(
+                    "query cannot recursively construct the same lookup",
+                ),
+        )
+        queries.set(collection, cache)
+    }
+    const node = cache.getOrCreateTuple(
+        [name, value as CollectionKey],
+        [
+            {
+                collection,
+                index: name,
+                value: value === 0 ? 0 : (value as CollectionKey),
+                extract,
+            } satisfies RuntimeQueryDefinition,
+        ],
+    )
     ;(getCollectionKernel(v1Domain) as CollectionDraftKernel).installIndexes(
         host => createCollectionQueryRuntime(host, definitions),
     )

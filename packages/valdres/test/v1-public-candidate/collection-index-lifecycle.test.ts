@@ -100,3 +100,27 @@ test("unreferenced anonymous index scopes and query handles are collectable", as
     root.set(entities("one"), { kind: "task" })
     root.dispose()
 })
+
+test("canonical cache releases queries while collection and observed scope stay alive", async () => {
+    const entities = collection<
+        string,
+        { kind: string },
+        string,
+        { kind: string }
+    >({ indexes: { kind: value => value.kind } })
+    const root = store()
+    root.set(entities("one"), { kind: "task" })
+    const probe = (() => {
+        const lookup = query(entities, { where: { kind: { eq: "task" } } })
+        expect(query(entities, { where: { kind: { eq: "task" } } })).toBe(
+            lookup,
+        )
+        expect(root.get(lookup)).toEqual([entities("one")])
+        return new LeakDetector(lookup)
+    })()
+    await expectCollected(probe)
+    root.set(entities("two"), { kind: "task" })
+    const rematerialized = query(entities, { where: { kind: { eq: "task" } } })
+    expect(root.get(rematerialized)).toEqual([entities("one"), entities("two")])
+    root.dispose()
+})
