@@ -419,12 +419,17 @@ test("equivalent queries have weak canonical identity across scopes and transact
     const byKind = (kind: Entity["kind"]) =>
         query(entities, { where: { kind: { eq: kind } } })
     const tasks = byKind("task")
+    const count = selector(get => get(byKind("task")).length)
+    const seen: number[] = []
+    s.sub(count, () => seen.push(s.get(count)))
     expect(byKind("task")).toBe(tasks)
     expect(byKind("person")).not.toBe(tasks)
     expect(query(define(), { where: { kind: { eq: "task" } } })).not.toBe(tasks)
     const row = entities("entity:1")
     s.set(row, entity())
     child.set(row, entity("person"))
+    expect(s.get(count)).toBe(1)
+    expect(child.get(count)).toBe(0)
     expect(s.get(byKind("task"))).toEqual([row])
     expect(child.get(byKind("task"))).toEqual([])
     s.txn(tx => {
@@ -432,6 +437,7 @@ test("equivalent queries have weak canonical identity across scopes and transact
         tx.set(row, entity("person"))
         expect(tx.get(byKind("task"))).toEqual([])
     })
+    expect(seen).toEqual([1, 0])
     child.dispose()
     const replacement = s.scope("child")
     expect(byKind("task")).toBe(tasks)

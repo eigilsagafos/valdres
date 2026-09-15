@@ -10,9 +10,9 @@ description: Define keyed rows with reactive ordered membership
         Signature
     </div>
     <code className="text-sm font-mono text-accent-500">
-        collection&lt;Key extends CollectionKey, Value extends
-        CollectionValue&gt;(options?: CollectionOptions&lt;Key, Value, Key&gt;):
-        Collection&lt;Key, Value, Key&gt;
+        collection&lt;Key extends CollectionKey, Value extends CollectionValue,
+        Input = Key, Indexes = never&gt;(options: CollectionOptions&lt;Key,
+        Value, Input, Indexes&gt;): Collection&lt;Key, Value, Input, Indexes&gt;
     </code>
     <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
@@ -74,6 +74,18 @@ new handle for that key.
 
 Rows are Store-local state. One collection definition can be used with several
 Stores, but each Store has independent values and membership.
+
+## Options and type parameters
+
+`collection<Key, Value>()` still supports an omitted options object. The indexed
+form is `collection<Key, Value, Input, Indexes>(options)`: `Indexes` maps each
+index name to its scalar type, including ordinary named interfaces.
+
+| Option          | Meaning                                                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `name?: string` | Static inspection label.                                                                                                |
+| `encodeKey`     | Synchronous canonical key encoder; required for rich `Input`.                                                           |
+| `indexes`       | Required when `Indexes` is supplied: a map from each name to a synchronous `(value: Value) => Indexes[Name]` extractor. |
 
 ## Keys and `encodeKey`
 
@@ -207,5 +219,18 @@ those field changes.
 
 A failing extractor aborts the complete transaction, including atom writes.
 Queries respect scoped inheritance, local shadows, delete, reset, and disposal.
+Equivalent `query` calls for the same collection, index name, and scalar return
+the same State while it remains live. A helper such as
+`byKind(kind) => query(entities, { where: { kind: { eq: kind } } })` is safe to
+call repeatedly. The cache is weak: after the State has no owners it may be
+collected, and the next call can create a new State. Disposal releases
+scope-local results; it does not change the identity of a query State retained
+by the application. `-0` and `0` share identity; invalid scalar values such as
+`NaN`, symbols, and objects are rejected.
+
+Membership groups exist for every distinct indexed value after materialization.
+Ordered snapshots and reader records are allocated only for queried buckets.
+Unread buckets receive incremental membership edits without snapshot sorting.
+
 Transaction reads see staged writes through an isolated scratch scan. This slice
 supports one `eq` term; ordered/range and multi-value indexes remain deferred.

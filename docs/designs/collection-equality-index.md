@@ -13,9 +13,12 @@ import { query } from "valdres/query"
 
 type EntityRef = `entity:${string}`
 type Entity = { kind: "task" | "person" | "document"; title: string }
-type EntityIndexes = { kind: Entity["kind"] }
+interface EntityIndexes {
+    kind: Entity["kind"]
+}
 
 const entities = collection<EntityRef, Entity, EntityRef, EntityIndexes>({
+    name: "entities",
     indexes: { kind: entity => entity.kind },
 })
 const entityRefsByKindIndex = (kind: Entity["kind"]) =>
@@ -36,11 +39,14 @@ booleans, bigints, or null. Equality distinguishes primitive types and treats -0
 as 0. Undefined, NaN, infinity, symbols, objects and thenables are rejected.
 
 `query(collection, { where: { indexName: { eq: value } } })` returns a readable
-`State<readonly CollectionRow<Key, Value>[]>`. Keep the query definition when
-subscribing or repeatedly looking it up. Definitions are store-independent; each
-store/scope materializes its own index lazily. Different queries over the same
-index share its materialization and bucket snapshots. Query construction runs no
-extractor. `family()` continues to accept only atoms and selectors.
+`State<readonly CollectionRow<Key, Value>[]>`. Equivalent
+collection/index/scalar lookups share canonical identity while the query State
+remains live, using the existing weak tuple cache and SameValueZero scalar
+semantics. The cache neither owns query States permanently nor changes their
+identity at scope disposal. Definitions are store-independent; each store/scope
+materializes its own index lazily. Different queries over the same index share
+its materialization and bucket snapshots. Query construction runs no extractor.
+`family()` continues to accept only atoms and selectors.
 
 ## Commit and scope behavior
 
@@ -72,12 +78,13 @@ extractor. `family()` continues to accept only atoms and selectors.
 
 Initial materialization is O(N). Warm same-kind value updates perform O(D)
 extractor work for D effective changed rows per materialized scope/index. Bucket
-membership changes rebuild only affected buckets, costing O(B log B) for B rows
-in those buckets; immutable result publication necessarily costs O(B). Warm
-lookup reuses the bucket snapshot. Scope propagation additionally visits the
-materialized collection routes reached by changed scopes. Full membership reads
-and scratch reads may scan N; neither occurs in the committed index-only write
-path. Unmaterialized indexes run no extractor and allocate no index records.
+membership changes rebuild only affected buckets with live query readers,
+costing O(B log B) for B rows in those buckets; immutable result publication
+necessarily costs O(B). Warm lookup reuses the bucket snapshot. Scope
+propagation additionally visits the materialized collection routes reached by
+changed scopes. Full membership reads and scratch reads may scan N; neither
+occurs in the committed index-only write path. Unmaterialized indexes run no
+extractor and allocate no index records.
 
 `test/performance/collection-index.performance.test.ts` checks 1k/5k/20k:
 insert/update/delete each process one delta row, extraction counts are 1/1/0,
@@ -88,9 +95,10 @@ result reads and warm lookup. Timings are diagnostic; deterministic counts are
 the scaling gate. The workload has ten tasks and the remaining entities are
 documents; larger matching buckets naturally increase result-copy work.
 
-Numeric inspection counters expose materializations, initial rows, extractor
-calls, effective delta rows, rebuilt bucket rows and bucket publications. They
-retain no application keys or values.
+Inspection schema 7 exposes numeric counters for materializations, initial rows,
+extractor calls, effective delta rows, rebuilt bucket rows, publications, route
+visits, membership groups created, and reader buckets created. They retain no
+application keys or values.
 
 The `valdres/query` subpath owns the query engine. The root collection API does
 not import it. Package smoke tests cover shared domain identity across root and
@@ -129,38 +137,75 @@ rollback and complexity. Supported findings were addressed:
 
 The ordered-membership helper remains in the collection implementation; the
 standalone query engine and grammar remain absent from collection-only bundles.
-Package size checks report feature growth up to 15% as diagnostics; ordinary
-isolation, malformed packages, and larger growth remain failures. The historical
-COL-008 build hash is diagnostic; three identical current builds are still
-required. No historical baselines or sealed evidence bundles were regenerated.
+Hard package budgets and certified digests remain enforced. The query consumer
+has its own reviewed budget; production and development artifacts are measured.
+Only relevant feature budgets and the three-build certified digest are updated.
 
-## Final validation after collection names (#395)
+## Merge-readiness repairs
 
-Integrated `origin/main` at `48dab241`; the index semantics fixture also
-declares `name: "entities"`. TypeScript, tsgo, root typecheck, package
-validation including damaged-package self-tests, and packed
-Node/Bun/TypeScript/esbuild/React 18/19 consumers pass. Separate Bun runs pass
-232 collection/inspection/build tests, 288 kernel tests, and 25 subscription
-tests; Node passes 16 index tests. The combined run had 547 passes and one
-GC-sensitive subscription failure; its unchanged subscription file passes all 25
-tests in isolation.
+- Named interface index metadata uses a self-mapped scalar constraint.
+- The inspection schema is 7, including core, React, packed consumers and docs.
+- Lifecycle tests retain mandatory leak assertions, use the family suite's retry
+  pattern and a local 60-second timeout under conservative JSC GC.
+- Canonical query identities use the existing weak tuple cache; a retained scope
+  and collection do not permanently retain a discarded query State.
+- Membership groups are separate from reader buckets. Writes to a dominant
+  unread group update only changed memberships, without copying/sorting/freezing
+  a result. The first later read builds the ordered snapshot. Commit preparation
+  remains immutable until all extractors validate, preserving rollback.
+- Contracts now admit scalar equality extractors and the `valdres/query` entry.
+  Final-v1 compound grammar and operational APIs remain explicitly deferred.
+- Release classification is minor; hard package certification is restored.
 
-One diagnostic run at 20,000 entities (ten matching tasks), including a result
-read after each write:
+## Complexity evidence and consciously retained costs
 
-| Runtime / implementation | Initial (ms) | Insert (µs) | Update (µs) | Delete (µs) | Warm lookup (µs) |
-| ------------------------ | -----------: | ----------: | ----------: | ----------: | ---------------: |
-| bun / native             |        16.36 |       10.15 |        6.28 |        9.01 |            0.069 |
-| bun / selector-shim      |        33.37 |    26488.41 |    11350.43 |    24091.45 |            0.061 |
-| node / native            |        25.29 |       14.97 |        9.40 |       13.26 |            0.124 |
-| node / selector-shim     |        66.78 |    17197.12 |     6857.24 |    13974.96 |            0.224 |
+The deterministic 20,000-row dominant-unread test observes zero snapshot rows,
+zero reader-bucket allocations and zero publications for mutations in the unread
+19,990-row group. After that group is queried, its next membership change
+rebuilds 19,990 ordered rows, preserving the existing O(B log B) live-result
+contract.
 
-Across 100 insert/update/delete cycles, native extractor calls remain 200 at
-1k/5k/20k entities, versus 300,200 / 1,500,200 / 6,000,200 for the selector
-shim. Warm lookup already reuses snapshots in both implementations; incremental
-maintenance is the native benefit. Elapsed times are machine-sensitive.
+With 20,000 distinct scalars, initial materialization creates 20,000 membership
+groups but only one reader bucket and one snapshot row for the one queried
+value. A later unread value move processes one delta, creates one membership
+group, and creates zero reader buckets/snapshot rows. Retained membership
+remains O(N + K) for N rows and K distinct values: each value has a Set of
+matching row handles. This deliberately accepted cost enables incremental lookup
+across all scalar values; there is no per-unread-value reader, outcome, or
+ordered snapshot.
 
-Compressed production plus development distribution size is 88,402 bytes against
-the 80,164-byte prior budget (+8,238 bytes, 10.3%). The feature diagnostic
-allowance is 15%; immutable ordinary bundle isolation and oversized-package
-mutation failures remain enforced.
+The standalone `collection-index.memory-diagnostic.ts` measures this cost after
+GC. A local Bun run at 20,000 rows measured approximately 7.45 MB added heap
+with two distinct scalars and 8.83 MB with 20,000 distinct scalars. These
+advisory numbers include activated ordered membership, row-key mappings and
+membership groups; they are not a machine-independent memory threshold. Exact
+allocation and work counters are the regression gate.
+
+The differential test runs 5,000 transactions across six scopes and three
+buckets, with 90,000 committed comparisons and 5,000 scratch comparisons.
+Intentional rollback uses a distinct error identity, so failures cannot be
+mistaken for expected aborts.
+
+## Reviewed package certification
+
+Three byte-identical pinned-toolchain builds produced runtime digest
+`cb30c0966acdcecfaf5cd5ce480beb8a20dc4b08893feda76a4f9218c17507a8`. The hard
+digest assertion, exact feature budgets, immutable ordinary baselines, and
+damaged/oversized-package self-tests remain enforced.
+
+| Compressed bytes                       | Prior reviewed budget | Indexed implementation |
+| -------------------------------------- | --------------------: | ---------------------: |
+| Distribution, production + development |                80,164 |                 88,958 |
+| Packed package                         |               103,018 |                111,686 |
+| Collection consumer                    |                26,245 |                 27,514 |
+| All root exports                       |                27,325 |                 28,643 |
+| Inspection consumer                    |                26,047 |                 26,313 |
+| Query consumer, production             |           New fixture |                 29,429 |
+| Query consumer, development            |           New fixture |                 29,429 |
+
+The distribution increase includes both query entrypoints and shared incremental
+membership support. Collection-only bundles still exclude the query engine;
+ordinary Atom/Selector/Store/family/equality fixtures retain their original
+baselines and existing allowances. Production and development query fixtures
+execute the same indexed collection/readable query topology. The minor Changeset
+announces the new public API without changing package versions.

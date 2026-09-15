@@ -1,5 +1,5 @@
 ---
-"valdres": patch
+"valdres": minor
 ---
 
 Declare non-unique scalar equality indexes on collections and read matching rows
