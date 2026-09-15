@@ -12,6 +12,7 @@ type EntityRef = `entity:${number}`
 type Entity = { kind: "task" | "person"; title: string }
 const define = (extract = (entity: Entity) => entity.kind) =>
     collection<EntityRef, Entity, EntityRef, { kind: Entity["kind"] }>({
+        name: "entities",
         indexes: { kind: extract },
     })
 const entity = (kind: Entity["kind"] = "task", title = "title"): Entity => ({

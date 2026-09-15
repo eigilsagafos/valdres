@@ -37,6 +37,7 @@ interface CollectionDefinitionRecord {
     readonly indexes:
         | Readonly<Record<string, (value: unknown) => unknown>>
         | undefined
+    readonly name?: unknown
     readonly rows: WeakTupleMemberCache<object>
     readonly referencePresence: (
         target: Selector<boolean>,
@@ -164,28 +165,38 @@ const runCollectionEncoder = (
             ),
     )
 
+interface InspectedCollectionOptions {
+    readonly encodeKey?: (input: unknown) => unknown
+    readonly name?: unknown
+}
+
 const inspectCollectionOptions = (
     options: unknown,
-): ((input: unknown) => unknown) | undefined => {
-    if (options === undefined) return undefined
+): InspectedCollectionOptions => {
+    if (options === undefined) return {}
     if (typeof options !== "object" || options === null) {
         throw new TypeError("collection options must be an object")
     }
 
     for (const key of Reflect.ownKeys(options)) {
-        if (key !== "encodeKey" && key !== "indexes") {
+        if (key !== "encodeKey" && key !== "indexes" && key !== "name") {
             throw new TypeError("collection options contain an unknown option")
         }
     }
 
-    if (!Object.prototype.hasOwnProperty.call(options, "encodeKey")) {
-        return undefined
+    let encodeKey: ((input: unknown) => unknown) | undefined
+    if (Object.prototype.hasOwnProperty.call(options, "encodeKey")) {
+        const candidate = Reflect.get(options, "encodeKey") as unknown
+        if (typeof candidate !== "function") {
+            throw new TypeError("collection encodeKey must be a function")
+        }
+        encodeKey = candidate as (input: unknown) => unknown
     }
-    const encodeKey = Reflect.get(options, "encodeKey") as unknown
-    if (typeof encodeKey !== "function") {
-        throw new TypeError("collection encodeKey must be a function")
+    const name = Reflect.get(options, "name") as unknown
+    return {
+        ...(encodeKey === undefined ? {} : { encodeKey }),
+        ...(name === undefined ? {} : { name }),
     }
-    return encodeKey as (input: unknown) => unknown
 }
 
 const collectionRowRecursionError = (): TypeError =>
@@ -239,7 +250,7 @@ export function createCollectionDefinition(
     weakRuntime?: WeakMemberRuntime,
 ): Collection<CollectionKey, CollectionValue, unknown> {
     assertDefinitionConstructionAllowed(domain)
-    const encodeKey = inspectCollectionOptions(options)
+    const { encodeKey, name } = inspectCollectionOptions(options)
     let indexes:
         | Readonly<Record<string, (value: unknown) => unknown>>
         | undefined
@@ -309,6 +320,7 @@ export function createCollectionDefinition(
     definition = Object.freeze({
         collection,
         indexes,
+        ...(name === undefined ? {} : { name }),
         rows,
         referencePresence:
             weakRuntime === undefined
@@ -323,6 +335,12 @@ export function createCollectionDefinition(
                 registry.rows.get(row as object)?.definition.collection,
             lookupCollection: candidate =>
                 registry.collections.has(candidate as object),
+            lookupDiagnosticName: node => {
+                const rowDefinition = registry.rows.get(node)?.definition
+                return (
+                    rowDefinition?.name ?? registry.collections.get(node)?.name
+                )
+            },
             runGuarded: (session, operation) =>
                 runRuntimeGuardedCallback(records, session, operation),
             inspectThenable: inspectRuntimeThenable,

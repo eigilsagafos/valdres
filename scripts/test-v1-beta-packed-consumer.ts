@@ -133,6 +133,7 @@ import { query } from "valdres/query"
 import * as adapter from "valdres/adapter-internals/v1"
 import * as foreignCore from "valdres-copy"
 import * as foreignAdapter from "valdres-copy/adapter-internals/v1"
+import { createInspectableStore } from "valdres/inspect"
 
 assert.deepEqual(Object.keys(adapter).sort(), [
     "assertStore",
@@ -259,6 +260,25 @@ target.delete(firstSession)
 assert.deepEqual(target.get(sessions), [secondSession])
 target.set(firstSession, { id: "first", revision: 3 })
 assert.deepEqual(target.get(sessions), [secondSession, firstSession])
+
+const privateCollectionKey = "DO_NOT_EXPOSE_PACKED_COLLECTION_KEY"
+const privateCollectionValue = "DO_NOT_EXPOSE_PACKED_COLLECTION_VALUE"
+const namedSessions = core.collection({ name: "packed-sessions" })
+const namedSession = namedSessions(privateCollectionKey)
+const inspectedCore = createInspectableStore()
+const collectionCapture = inspectedCore.inspect.capture(
+    inspectedCore.store,
+    namedSessions,
+)
+const rowCapture = inspectedCore.inspect.capture(inspectedCore.store, namedSession)
+assert.equal(collectionCapture.state.name, "packed-sessions")
+assert.equal(rowCapture.state.name, "packed-sessions")
+assert.notEqual(collectionCapture.state.id, rowCapture.state.id)
+inspectedCore.store.set(namedSession, { secret: privateCollectionValue })
+const serializedInspection = JSON.stringify(inspectedCore.inspect.export())
+assert.equal(serializedInspection.includes(privateCollectionKey), false)
+assert.equal(serializedInspection.includes(privateCollectionValue), false)
+assert.equal(serializedInspection.includes("packed-sessions"), true)
 
 const isRuntimeMismatch = error =>
     error?.name === "RuntimeMismatchError" &&
@@ -797,12 +817,15 @@ export interface PackedSessionLookup {
     readonly tenant: string
     readonly id: string
 }
-export const packedSessions = collection<string, PackedSession>()
+export const packedSessions = collection<string, PackedSession>({
+    name: "packed sessions",
+})
 export const richPackedSessions = collection<
     string,
     PackedSession,
     PackedSessionLookup
 >({
+    name: "rich packed sessions",
     encodeKey: input => input.tenant + ":" + input.id,
 })
 export const packedSessionRow: CollectionRow<string, PackedSession> =
@@ -813,12 +836,13 @@ export const packedPresence: Selector<boolean> = presence(packedSessionRow)
 export const directCollectionOptions: CollectionOptions<
     string,
     PackedSession
-> = {}
+> = { name: "packed sessions" }
 export const richCollectionOptions: CollectionOptions<
     string,
     PackedSession,
     PackedSessionLookup
 > = {
+    name: "rich packed sessions",
     encodeKey: input => input.tenant + ":" + input.id,
 }
 export const defineDirectCollection = <

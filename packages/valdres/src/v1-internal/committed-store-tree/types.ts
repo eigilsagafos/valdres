@@ -74,6 +74,7 @@ interface CollectionOptionCarrier<
     Value extends CollectionValue,
     Input,
 > {
+    readonly name?: string
     readonly [privateCollectionOptionTypes]?: {
         readonly key: (key: Key) => Key
         readonly value: (value: Value) => Value

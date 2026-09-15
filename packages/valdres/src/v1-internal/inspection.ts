@@ -1641,7 +1641,13 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             if (referenceKind === undefined) {
                 throw new TypeError("Inspection capture requires a valid State")
             }
-            const definitionName = atom?.name ?? selector?.name
+            const collectionName =
+                referenceKind === "collection-row" ||
+                referenceKind === "collection"
+                    ? domain[COLLECTION_KERNEL]?.diagnosticName(stateTarget)
+                    : undefined
+            const definitionName =
+                atom?.name ?? selector?.name ?? collectionName
             stateReference = this.reference(
                 stateTarget,
                 referenceKind,
@@ -2203,6 +2209,19 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             return
         }
         const scope = this.reference(scopeTarget, "scope")
+        const collectionKernel = (scopeTarget as StoreScopeNode).coordinator
+            .runtimeDomain[COLLECTION_KERNEL]
+        const collectionReference = (
+            target: object,
+            kind: "collection-row" | "collection",
+        ): InspectionReference => {
+            const name = collectionKernel?.diagnosticName(target)
+            return this.reference(
+                target,
+                kind,
+                typeof name === "string" ? name : undefined,
+            )
+        }
 
         if (code >= COLLECTION_INTENT_SET && code <= COLLECTION_INTENT_DELETE) {
             if (collectionTarget === undefined) {
@@ -2221,8 +2240,11 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 fields: {
                     intent,
                     scope,
-                    row: this.reference(stateTarget, "collection-row"),
-                    collection: this.reference(collectionTarget, "collection"),
+                    row: collectionReference(stateTarget, "collection-row"),
+                    collection: collectionReference(
+                        collectionTarget,
+                        "collection",
+                    ),
                 },
             })
             return
@@ -2252,8 +2274,11 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                               ? "remove"
                               : "unchanged",
                     scope,
-                    row: this.reference(stateTarget, "collection-row"),
-                    collection: this.reference(collectionTarget, "collection"),
+                    row: collectionReference(stateTarget, "collection-row"),
+                    collection: collectionReference(
+                        collectionTarget,
+                        "collection",
+                    ),
                 },
             })
             return
@@ -2275,8 +2300,11 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                             ? "insert"
                             : "remove",
                     scope,
-                    row: this.reference(stateTarget, "collection-row"),
-                    collection: this.reference(collectionTarget, "collection"),
+                    row: collectionReference(stateTarget, "collection-row"),
+                    collection: collectionReference(
+                        collectionTarget,
+                        "collection",
+                    ),
                 },
             })
             return
@@ -2302,14 +2330,14 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 action: published ? "published" : "materialized",
                 source: rowSource ? "row" : "membership",
                 scope,
-                state: this.reference(
+                state: collectionReference(
                     stateTarget,
                     rowSource ? "collection-row" : "collection",
                 ),
                 ...(collectionTarget === undefined
                     ? {}
                     : {
-                          collection: this.reference(
+                          collection: collectionReference(
                               collectionTarget,
                               "collection",
                           ),

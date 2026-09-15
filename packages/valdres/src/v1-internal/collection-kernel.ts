@@ -82,6 +82,7 @@ export interface CollectionDraftBaseline {
 export interface CollectionKernelBindings {
     lookupRow(row: unknown): CollectionHandle | undefined
     lookupCollection(collection: unknown): boolean
+    lookupDiagnosticName(node: object): unknown
     runGuarded<Result>(
         session: ControlFaultSession,
         operation: () => Result,
@@ -2585,6 +2586,7 @@ export const createCollectionKernel = (
             indexes?.has(node) === true ||
             bindings.lookupRow(node) !== undefined ||
             bindings.lookupCollection(node),
+        diagnosticName: bindings.lookupDiagnosticName,
         read: (
             draftValue: object,
             scopeValue: object,

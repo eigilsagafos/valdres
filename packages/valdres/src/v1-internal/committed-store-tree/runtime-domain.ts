@@ -139,6 +139,8 @@ export type CollectionMutationKind = "set" | "update" | "reset" | "delete"
  * defined after Store construction is visible to every same-domain Store. */
 export interface OptionalCollectionVTable {
     has(node: AnyState): boolean
+    /** Static definition label for inspection references only. */
+    diagnosticName(node: object): unknown
     read(draft: object, scope: object, node: AnyState): SynchronousResult
     stage(
         draft: object,
