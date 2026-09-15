@@ -147,7 +147,7 @@ test("seeded scoped transactions agree with the selector full-scan shim", () => 
     let seed = 78123
     const random = (limit: number) => {
         seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
-        return seed % limit
+        return Math.floor((seed / 4294967296) * limit)
     }
     const entities = define(),
         root = store()
@@ -171,6 +171,7 @@ test("seeded scoped transactions agree with the selector full-scan shim", () => 
     for (const scope of scopes) scope.get(tasks)
     for (let turn = 0; turn < 5000; turn++) {
         const abort = random(9) === 0
+        const abortError = new Error("intentional rollback")
         try {
             root.txn(tx => {
                 for (
@@ -206,10 +207,10 @@ test("seeded scoped transactions agree with the selector full-scan shim", () => 
                         .get(entities)
                         .filter(row => target.get(row)?.kind === "task"),
                 )
-                if (abort) throw new Error("abort")
+                if (abort) throw abortError
             })
         } catch (error) {
-            if (!abort) throw error
+            if (error !== abortError) throw error
         }
         for (const scope of scopes)
             for (const pair of comparisons)
