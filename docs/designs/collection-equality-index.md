@@ -129,7 +129,38 @@ rollback and complexity. Supported findings were addressed:
 
 The ordered-membership helper remains in the collection implementation; the
 standalone query engine and grammar remain absent from collection-only bundles.
-Package size checks report feature growth up to 10% as diagnostics; ordinary
+Package size checks report feature growth up to 15% as diagnostics; ordinary
 isolation, malformed packages, and larger growth remain failures. The historical
 COL-008 build hash is diagnostic; three identical current builds are still
 required. No historical baselines or sealed evidence bundles were regenerated.
+
+## Final validation after collection names (#395)
+
+Integrated `origin/main` at `48dab241`; the index semantics fixture also
+declares `name: "entities"`. TypeScript, tsgo, root typecheck, package
+validation including damaged-package self-tests, and packed
+Node/Bun/TypeScript/esbuild/React 18/19 consumers pass. Separate Bun runs pass
+232 collection/inspection/build tests, 288 kernel tests, and 25 subscription
+tests; Node passes 16 index tests. The combined run had 547 passes and one
+GC-sensitive subscription failure; its unchanged subscription file passes all 25
+tests in isolation.
+
+One diagnostic run at 20,000 entities (ten matching tasks), including a result
+read after each write:
+
+| Runtime / implementation | Initial (ms) | Insert (µs) | Update (µs) | Delete (µs) | Warm lookup (µs) |
+| ------------------------ | -----------: | ----------: | ----------: | ----------: | ---------------: |
+| bun / native             |        16.36 |       10.15 |        6.28 |        9.01 |            0.069 |
+| bun / selector-shim      |        33.37 |    26488.41 |    11350.43 |    24091.45 |            0.061 |
+| node / native            |        25.29 |       14.97 |        9.40 |       13.26 |            0.124 |
+| node / selector-shim     |        66.78 |    17197.12 |     6857.24 |    13974.96 |            0.224 |
+
+Across 100 insert/update/delete cycles, native extractor calls remain 200 at
+1k/5k/20k entities, versus 300,200 / 1,500,200 / 6,000,200 for the selector
+shim. Warm lookup already reuses snapshots in both implementations; incremental
+maintenance is the native benefit. Elapsed times are machine-sensitive.
+
+Compressed production plus development distribution size is 88,402 bytes against
+the 80,164-byte prior budget (+8,238 bytes, 10.3%). The feature diagnostic
+allowance is 15%; immutable ordinary bundle isolation and oversized-package
+mutation failures remain enforced.

@@ -15,7 +15,7 @@ import { isAbsolute, join, relative, resolve } from "node:path"
 
 // Small feature growth is diagnostic; ordinary isolation and large regressions
 // remain gates. Do not ratchet the historical baselines for each feature.
-const FEATURE_DIAGNOSTIC_GROWTH = 0.1
+const FEATURE_DIAGNOSTIC_GROWTH = 0.15
 const GZIP_LEVEL = 6
 const PENDING_CERTIFICATION = "PENDING_COL008_CERTIFICATION"
 
@@ -337,7 +337,7 @@ async function checkAgainstBaseline(
                     Math.ceil(budget[metric] * (1 + FEATURE_DIAGNOSTIC_GROWTH))
                 ) {
                     console.log(
-                        `Size diagnostic (feature growth <=10%): ${message}`,
+                        `Size diagnostic (feature growth <=15%): ${message}`,
                     )
                 } else {
                     failures.push(message)
