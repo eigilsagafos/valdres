@@ -486,7 +486,7 @@ export interface InspectionRecorderFault {
 
 export interface InspectionExport {
     readonly schema: "valdres.inspect"
-    readonly schemaVersion: 6
+    readonly schemaVersion: 7
     readonly recordingId: string
     readonly summaries: readonly InspectionSummary[]
     readonly details: readonly InspectionDetail[]
@@ -2646,7 +2646,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const detailBounds = retainedBounds(details)
         return Object.freeze({
             schema: "valdres.inspect" as const,
-            schemaVersion: 6 as const,
+            schemaVersion: 7 as const,
             recordingId: this.#recordingId,
             summaries: Object.freeze(summaries),
             details: Object.freeze(details),
