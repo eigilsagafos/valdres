@@ -52,7 +52,7 @@ export type CollectionOptions<
     Key extends CollectionKey,
     Value extends CollectionValue,
     Input = Key,
-    Indexes extends Record<string, CollectionKey> = never,
+    Indexes extends { [Name in keyof Indexes]: CollectionKey } = never,
 > = InternalCollectionOptions<Key, Value, Input, Indexes>
 export type Store = CommittedStoreTree
 export type Transaction = RootTransaction
@@ -144,7 +144,7 @@ export function collection<
     Key extends CollectionKey,
     Value extends CollectionValue,
     Input,
-    Indexes extends Record<string, CollectionKey> = never,
+    Indexes extends { [Name in keyof Indexes]: CollectionKey } = never,
 >(
     options: CollectionOptions<Key, Value, Input, Indexes>,
 ): Collection<Key, Value, Input, Indexes>

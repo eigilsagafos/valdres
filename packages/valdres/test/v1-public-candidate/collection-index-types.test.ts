@@ -9,12 +9,12 @@ import {
 import { query } from "../../src/query"
 type EntityRef = `entity:${string}`
 type Entity = { kind: "task" | "person"; title: string }
-const entities = collection<
-    EntityRef,
-    Entity,
-    EntityRef,
-    { kind: Entity["kind"] }
->({ indexes: { kind: entity => entity.kind } })
+interface EntityIndexes {
+    kind: Entity["kind"]
+}
+const entities = collection<EntityRef, Entity, EntityRef, EntityIndexes>({
+    indexes: { kind: entity => entity.kind },
+})
 const tasks = query(entities, { where: { kind: { eq: "task" } } })
 const readable: State<readonly CollectionRow<EntityRef, Entity>[]> = tasks
 if (false) {
