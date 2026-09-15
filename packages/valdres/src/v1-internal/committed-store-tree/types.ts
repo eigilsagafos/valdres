@@ -73,12 +73,7 @@ interface CollectionOptionCarrier<
     Key extends CollectionKey,
     Value extends CollectionValue,
     Input,
-    Indexes,
 > {
-    /** Non-unique scalar equality extractors; evaluated only for present rows. */
-    readonly indexes?: {
-        readonly [Name in keyof Indexes]: (value: Value) => Indexes[Name]
-    }
     readonly [privateCollectionOptionTypes]?: {
         readonly key: (key: Key) => Key
         readonly value: (value: Value) => Value
@@ -92,7 +87,16 @@ export type CollectionOptions<
     Value extends CollectionValue,
     Input = Key,
     Indexes extends Record<string, CollectionKey> = never,
-> = CollectionOptionCarrier<Key, Value, Input, Indexes> &
+> = CollectionOptionCarrier<Key, Value, Input> &
+    ([Indexes] extends [never]
+        ? { readonly indexes?: never }
+        : {
+              readonly indexes: {
+                  readonly [Name in keyof Indexes]: (
+                      value: Value,
+                  ) => Indexes[Name]
+              }
+          }) &
     (
         | { readonly encodeKey: (input: Input) => Key }
         | ([Input] extends [Key] ? { readonly encodeKey?: never } : never)

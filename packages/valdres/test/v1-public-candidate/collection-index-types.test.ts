@@ -18,6 +18,10 @@ const entities = collection<
 const tasks = query(entities, { where: { kind: { eq: "task" } } })
 const readable: State<readonly CollectionRow<EntityRef, Entity>[]> = tasks
 if (false) {
+    // @ts-expect-error Typed index metadata requires the corresponding declaration.
+    collection<string, Entity, string, { kind: Entity["kind"] }>({})
+    // @ts-expect-error Rich inputs require encodeKey options.
+    collection<string, Entity, { id: string }>()
     // @ts-expect-error Index values retain their literal union.
     query(entities, { where: { kind: { eq: "invalid" } } })
     // @ts-expect-error Undeclared indexes are unavailable.
