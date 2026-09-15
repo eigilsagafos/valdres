@@ -177,6 +177,142 @@ describe("valdres/inspect collection structural diagnostics", () => {
         expect(inspect.export()).toEqual(before)
     })
 
+    test("uses one normalized static name for a collection and all of its row references", () => {
+        const staticName = "entityAtom/".repeat(30)
+        const normalizedName = staticName.slice(0, 256)
+        const directKey = "DO_NOT_EXPOSE_DIRECT_COLLECTION_KEY"
+        const secondKey = "DO_NOT_EXPOSE_SECOND_COLLECTION_KEY"
+        const richInput = {
+            tenant: "DO_NOT_EXPOSE_RICH_TENANT",
+            id: "DO_NOT_EXPOSE_RICH_ID",
+        }
+        const direct = collection<string, { secret: string }>({
+            name: staticName,
+        })
+        const rich = collection<string, { secret: string }, typeof richInput>({
+            name: "richEntityAtom",
+            encodeKey: input => `${input.tenant}:${input.id}`,
+        })
+        const firstRow = direct(directKey)
+        const secondRow = direct(secondKey)
+        const richRow = rich(richInput)
+        const { store, inspect } = createInspectableStore()
+
+        const collectionCapture = inspect.capture(store, direct)
+        const firstCapture = inspect.capture(store, firstRow)
+        const secondCapture = inspect.capture(store, secondRow)
+        const richCollectionCapture = inspect.capture(store, rich)
+        const richRowCapture = inspect.capture(store, richRow)
+
+        expect(collectionCapture.state).toEqual({
+            id: expect.any(Number),
+            kind: "collection",
+            name: normalizedName,
+        })
+        expect(firstCapture.state).toEqual({
+            id: expect.any(Number),
+            kind: "collection-row",
+            name: normalizedName,
+        })
+        expect(secondCapture.state).toEqual({
+            id: expect.any(Number),
+            kind: "collection-row",
+            name: normalizedName,
+        })
+        expect(firstCapture.state?.id).not.toBe(secondCapture.state?.id)
+        expect(firstCapture.state?.id).not.toBe(collectionCapture.state?.id)
+        expect(richCollectionCapture.state).toEqual({
+            id: expect.any(Number),
+            kind: "collection",
+            name: "richEntityAtom",
+        })
+        expect(richRowCapture.state).toEqual({
+            id: expect.any(Number),
+            kind: "collection-row",
+            name: "richEntityAtom",
+        })
+
+        store.set(firstRow, { secret: "DO_NOT_EXPOSE_FIRST_VALUE" })
+        store.set(secondRow, { secret: "DO_NOT_EXPOSE_SECOND_VALUE" })
+        store.set(richRow, { secret: "DO_NOT_EXPOSE_RICH_VALUE" })
+        const report = inspect.export()
+        expect(report.details).toContainEqual(
+            expect.objectContaining({
+                type: "collection-intent",
+                row: firstCapture.state,
+                collection: collectionCapture.state,
+            }),
+        )
+        expect(report.details).toContainEqual(
+            expect.objectContaining({
+                type: "collection-intent",
+                row: richRowCapture.state,
+                collection: richCollectionCapture.state,
+            }),
+        )
+
+        const serialized = JSON.stringify([
+            collectionCapture,
+            firstCapture,
+            secondCapture,
+            richCollectionCapture,
+            richRowCapture,
+            report,
+        ])
+        for (const secret of [
+            directKey,
+            secondKey,
+            richInput.tenant,
+            richInput.id,
+            "DO_NOT_EXPOSE_FIRST_VALUE",
+            "DO_NOT_EXPOSE_SECOND_VALUE",
+            "DO_NOT_EXPOSE_RICH_VALUE",
+        ]) {
+            expect(serialized).not.toContain(secret)
+        }
+    })
+
+    test("keeps unnamed collection inspection output free of name fields", () => {
+        const sessions = collection<string, number>()
+        const row = sessions("unnamed-secret-key")
+        const { store, inspect } = createInspectableStore()
+
+        store.set(row, 1)
+
+        expect(JSON.stringify(inspect.capture(store, sessions))).not.toContain(
+            '"name":',
+        )
+        expect(JSON.stringify(inspect.capture(store, row))).not.toContain(
+            '"name":',
+        )
+        expect(JSON.stringify(inspect.export())).not.toContain('"name":')
+    })
+
+    test("does not execute malformed collection names during inspection", () => {
+        let reads = 0
+        const hostileName = Object.defineProperty({}, "length", {
+            get: () => {
+                reads++
+                throw new Error("Collection names are not application data")
+            },
+        })
+        const sessions = collection<string, number>({
+            name: hostileName as unknown as string,
+        })
+        const row = sessions("secret-key")
+        const { store, inspect } = createInspectableStore()
+
+        expect(inspect.capture(store, sessions).state).toEqual({
+            id: expect.any(Number),
+            kind: "collection",
+        })
+        expect(inspect.capture(store, row).state).toEqual({
+            id: expect.any(Number),
+            kind: "collection-row",
+        })
+        expect(reads).toBe(0)
+    })
+
     test("records exact insert and value-update work on materialized coordinates", () => {
         const sessions = collection<string, number>()
         const row = sessions("a")

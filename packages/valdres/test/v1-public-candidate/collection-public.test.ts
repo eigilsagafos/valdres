@@ -80,12 +80,15 @@ describe("v1 public collections", () => {
     })
 
     test("constructs canonical and rich-input rows with stable readonly identities", () => {
-        const sessions = collection<string, Session>()
+        const sessions = collection<string, Session>({ name: "sessions" })
         const rich = collection<
             string,
             Session,
             { readonly tenant: string; readonly id: string }
-        >({ encodeKey: input => `${input.tenant}:${input.id}` })
+        >({
+            name: "tenant sessions",
+            encodeKey: input => `${input.tenant}:${input.id}`,
+        })
 
         expect(sessions("a")).toBe(sessions("a"))
         expect(rich({ tenant: "north", id: "a" })).toBe(
@@ -98,6 +101,8 @@ describe("v1 public collections", () => {
             kind: "collection-row",
             key: "a",
         })
+        expect(Reflect.get(sessions, "name")).toBe("collection")
+        expect("name" in sessions("a")).toBe(false)
     })
 
     test("reads, mutates, scopes, subscribes, and hydrates rows and membership", () => {

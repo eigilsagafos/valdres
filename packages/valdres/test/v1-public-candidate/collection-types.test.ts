@@ -154,15 +154,19 @@ test("exports invariant readonly collection arms through root State", () => {
 })
 
 test("keeps direct options ergonomic and rich-input encoding mandatory", () => {
-    const direct: CollectionOptions<string, Session> = {}
+    const direct: CollectionOptions<string, Session> = {
+        name: "sessions",
+    }
     const directEncoded: CollectionOptions<string, Session> = {
+        name: "encoded sessions",
         encodeKey: input => input,
     }
     const rich: CollectionOptions<string, Session, SessionLookup> = {
+        name: "tenant sessions",
         encodeKey: input => `${input.tenant}:${input.id}`,
     }
 
-    expect(direct).toEqual({})
+    expect(direct).toEqual({ name: "sessions" })
     expect(directEncoded.encodeKey?.("session")).toBe("session")
     expect(rich.encodeKey({ tenant: "north", id: "session" })).toBe(
         "north:session",
@@ -291,12 +295,19 @@ export interface SessionLookup {
 }
 
 export const sessions = collection<string, Session>()
+export const namedSessions = collection<string, Session>({
+    name: "sessions",
+})
 export const richSessions = collection<string, Session, SessionLookup>({
+    name: "tenant sessions",
     encodeKey: input => \`${"${input.tenant}:${input.id}"}\`,
 })
 export const sessionPresence = presence(sessions("present"))
-export const directOptions: CollectionOptions<string, Session> = {}
+export const directOptions: CollectionOptions<string, Session> = {
+    name: "sessions",
+}
 export const richOptions: CollectionOptions<string, Session, SessionLookup> = {
+    name: "tenant sessions",
     encodeKey: input => \`${"${input.tenant}:${input.id}"}\`,
 }
 export const defineDirect = <
@@ -350,6 +361,9 @@ export const defineRich = <
         )
         expect(consumerDeclaration).toContain(
             "sessions: Collection<string, Session, string, never>",
+        )
+        expect(consumerDeclaration).toContain(
+            "namedSessions: Collection<string, Session, string, never>",
         )
         expect(consumerDeclaration).toContain(
             "richSessions: Collection<string, Session, SessionLookup, never>",

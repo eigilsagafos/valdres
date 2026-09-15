@@ -96,6 +96,7 @@ const createFakeExtensionRuntime = (
             classifyCalls++
             return Object.is(node, handle)
         },
+        diagnosticName: () => undefined,
         read: (draftValue: object, _scope: object, node: object) => {
             if (!Object.is(node, handle)) {
                 throw new Error("Unexpected fake extension source")
@@ -486,6 +487,7 @@ describe("v1 optional collection draft kernel", () => {
         const bindings: CollectionKernelBindings = {
             lookupRow: row => rowCollections.get(row as object),
             lookupCollection: candidate => Object.is(candidate, collection),
+            lookupDiagnosticName: () => undefined,
             runGuarded: (_session, operation) => operation(),
             inspectThenable,
             containThenable,
@@ -866,6 +868,7 @@ describe("v1 optional collection draft kernel", () => {
             {
                 lookupRow: candidate => rowCollections.get(candidate as object),
                 lookupCollection: candidate => Object.is(candidate, collection),
+                lookupDiagnosticName: () => undefined,
                 runGuarded: (_session, operation) => operation(),
                 inspectThenable,
                 containThenable,
@@ -969,6 +972,7 @@ describe("v1 optional collection draft kernel", () => {
         const kernel = createCollectionKernel({
             lookupRow: candidate => rowCollections.get(candidate as object),
             lookupCollection: candidate => Object.is(candidate, collection),
+            lookupDiagnosticName: () => undefined,
             runGuarded: (_session, operation) => operation(),
             inspectThenable,
             containThenable,
