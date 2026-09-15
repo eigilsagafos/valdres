@@ -97,8 +97,8 @@ return a valid canonical key. Valdres retains the canonical key, not the rich
 input. The encoder is a guarded definition callback: it cannot perform Store
 work, construct State, or call family or collection accessors.
 
-`encodeKey` is the only collection option in this beta. Index definitions are
-not available yet, and an `indexes` or unknown option is rejected.
+Use `indexes` to declare scalar equality extractors, as shown below. Unknown
+collection options are rejected.
 
 ## Reading membership
 
@@ -171,3 +171,34 @@ commits none of its Atom or collection-row writes.
 - [presence](/valdres/presence) - derive whether one row is present
 - [store](/valdres/store) - mutate rows directly or atomically
 - [selector](/valdres/selector) - derive values from rows and membership
+
+## Scalar equality indexes
+
+Declare indexes with the collection and import queries separately:
+
+```ts
+import { collection, store } from "valdres"
+import { query } from "valdres/query"
+
+type Entity = { kind: "task" | "person"; title: string }
+const entities = collection<string, Entity, string, { kind: Entity["kind"] }>({
+    indexes: { kind: entity => entity.kind },
+})
+const tasks = query(entities, { where: { kind: { eq: "task" } } })
+const app = store()
+app.set(entities("one"), { kind: "task", title: "Write docs" })
+app.get(tasks) // readonly CollectionRow<string, Entity>[]
+```
+
+Indexes are non-unique. Extractors run only on present values and must return a
+synchronous scalar: a string, finite number, boolean, bigint, or null. The first
+read scans membership; subsequent commits maintain affected buckets from final
+row changes. Results preserve collection membership order and reuse their
+snapshot when the matching rows are unchanged. Updating a row's other fields
+therefore does not notify query subscribers; read individual rows to observe
+those field changes.
+
+A failing extractor aborts the complete transaction, including atom writes.
+Queries respect scoped inheritance, local shadows, delete, reset, and disposal.
+Transaction reads see staged writes through an isolated scratch scan. This slice
+supports one `eq` term; ordered/range and multi-value indexes remain deferred.

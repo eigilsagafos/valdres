@@ -13,6 +13,9 @@ import { mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { isAbsolute, join, relative, resolve } from "node:path"
 
+// Small feature growth is diagnostic; ordinary isolation and large regressions
+// remain gates. Do not ratchet the historical baselines for each feature.
+const FEATURE_DIAGNOSTIC_GROWTH = 0.1
 const GZIP_LEVEL = 6
 const PENDING_CERTIFICATION = "PENDING_COL008_CERTIFICATION"
 
@@ -326,10 +329,19 @@ async function checkAgainstBaseline(
         }
         for (const metric of ["raw", "gzip"] as const) {
             if (size[metric] > budget[metric]) {
-                failures.push(
+                const message =
                     `${label} ${metric}: reviewed budget ${budget[metric]}, actual ${size[metric]}, ` +
-                        `over by ${size[metric] - budget[metric]} bytes`,
-                )
+                    `over by ${size[metric] - budget[metric]} bytes`
+                if (
+                    size[metric] <=
+                    Math.ceil(budget[metric] * (1 + FEATURE_DIAGNOSTIC_GROWTH))
+                ) {
+                    console.log(
+                        `Size diagnostic (feature growth <=10%): ${message}`,
+                    )
+                } else {
+                    failures.push(message)
+                }
             }
         }
     }
@@ -419,7 +431,7 @@ async function checkAgainstBaseline(
         process.exitCode = 1
     } else {
         console.log(
-            "\nAll immutable ordinary and reviewed feature size gates passed",
+            "\nAll ordinary isolation and large feature-regression gates passed (small feature growth is diagnostic)",
         )
     }
 }

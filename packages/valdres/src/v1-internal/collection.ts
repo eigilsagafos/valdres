@@ -34,6 +34,9 @@ interface WeakCollectionReference<Value extends object> {
 
 interface CollectionDefinitionRecord {
     readonly collection: object
+    readonly indexes:
+        | Readonly<Record<string, (value: unknown) => unknown>>
+        | undefined
     readonly rows: WeakTupleMemberCache<object>
     readonly referencePresence: (
         target: Selector<boolean>,
@@ -170,12 +173,7 @@ const inspectCollectionOptions = (
     }
 
     for (const key of Reflect.ownKeys(options)) {
-        if (key === "indexes") {
-            throw new TypeError(
-                "collection indexes are not available in this beta",
-            )
-        }
-        if (key !== "encodeKey") {
+        if (key !== "encodeKey" && key !== "indexes") {
             throw new TypeError("collection options contain an unknown option")
         }
     }
@@ -242,6 +240,26 @@ export function createCollectionDefinition(
 ): Collection<CollectionKey, CollectionValue, unknown> {
     assertDefinitionConstructionAllowed(domain)
     const encodeKey = inspectCollectionOptions(options)
+    let indexes:
+        | Readonly<Record<string, (value: unknown) => unknown>>
+        | undefined
+    if (
+        options !== undefined &&
+        Object.prototype.hasOwnProperty.call(options, "indexes")
+    ) {
+        const input = Reflect.get(options as object, "indexes") as unknown
+        if (typeof input !== "object" || input === null || Array.isArray(input))
+            throw new TypeError("collection indexes must be an extractor map")
+        const entries = Reflect.ownKeys(input).map(key => {
+            const extract = Reflect.get(input, key) as unknown
+            if (typeof key !== "string" || typeof extract !== "function")
+                throw new TypeError(
+                    "collection indexes must be named scalar extractors",
+                )
+            return [key, extract as (value: unknown) => unknown] as const
+        })
+        if (entries.length) indexes = Object.freeze(Object.fromEntries(entries))
+    }
     const rowFactoryArguments: CollectionKey[] = []
     let definition: CollectionDefinitionRecord
 
@@ -290,6 +308,7 @@ export function createCollectionDefinition(
     )
     definition = Object.freeze({
         collection,
+        indexes,
         rows,
         referencePresence:
             weakRuntime === undefined
@@ -331,4 +350,58 @@ export const getCollectionPresence = <
     )
     record.presence = record.definition.referencePresence(presence)
     return presence
+}
+
+/** @internal Query registration stays in its separately reachable module. */
+export const collectionIndexExtractor = (
+    domain: InternalCommittedStoreTreeDomain,
+    collection: object,
+    name: string,
+): ((value: unknown) => CollectionKey) => {
+    const definition = definitionRegistries
+        ?.get(getDefinitionDomainIdentity(domain))
+        ?.collections.get(collection)
+    if (definition === undefined) {
+        classifyDefinitionHandleOwner(domain, collection)
+        throw new TypeError("query requires a same-domain Collection")
+    }
+    const extract =
+        definition.indexes !== undefined &&
+        Object.prototype.hasOwnProperty.call(definition.indexes, name)
+            ? definition.indexes[name]
+            : undefined
+    if (extract === undefined)
+        throw new TypeError("query requires a declared equality index")
+    return value =>
+        runDefinitionCallback(
+            domain,
+            "collection-encoder",
+            (input: unknown) => {
+                let result: unknown
+                try {
+                    result = extract(input)
+                } catch (error) {
+                    const inspected = inspectRuntimeThenable(error)
+                    if (inspected.kind === "thenable") {
+                        containRuntimeThenable(inspected)
+                        throw new TypeError(
+                            "Index extractors must return a synchronous scalar",
+                        )
+                    }
+                    if (inspected.kind === "inspection-error")
+                        throw inspected.error
+                    throw error
+                }
+                const inspected = inspectRuntimeThenable(result)
+                if (inspected.kind === "thenable") {
+                    containRuntimeThenable(inspected)
+                    throw new TypeError(
+                        "Index extractors must return a synchronous scalar",
+                    )
+                }
+                if (inspected.kind === "inspection-error") throw inspected.error
+                return canonicalizeCollectionKey(result)
+            },
+            [value],
+        )
 }

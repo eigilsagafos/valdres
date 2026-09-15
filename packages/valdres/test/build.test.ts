@@ -337,3 +337,36 @@ describe("v1 build output", () => {
         expect(await readdir(outdir)).toEqual(["index.d.ts"])
     })
 })
+
+test("collection-only bundles exclude the separately exported query engine", async () => {
+    const { build } = await import("esbuild")
+    const packageRoot = resolve(import.meta.dir, "..")
+    for (const useQuery of [false, true]) {
+        const result = await build({
+            stdin: {
+                contents: `import { collection } from './src/index.ts';
+                    ${useQuery ? "import { query } from './src/query.ts';" : ""}
+                    const entities = collection({ indexes: { kind: value => value.kind } });
+                    globalThis.entities = entities;
+                    ${useQuery ? "globalThis.tasks = query(entities, { where: { kind: { eq: 'task' } } });" : ""}`,
+                resolveDir: packageRoot,
+                loader: "ts",
+            },
+            bundle: true,
+            write: false,
+            format: "esm",
+            metafile: true,
+        })
+        const modules = Object.values(result.metafile!.outputs).flatMap(
+            output => Object.keys(output.inputs),
+        )
+        expect(modules.some(path => path.endsWith("collection-query.ts"))).toBe(
+            useQuery,
+        )
+        expect(
+            result.outputFiles[0]!.text.includes(
+                "query requires one equality term",
+            ),
+        ).toBe(useQuery)
+    }
+})

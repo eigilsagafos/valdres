@@ -802,12 +802,12 @@ describe("v1 collection definition identity", () => {
         }
     })
 
-    test("keeps the first-beta options surface closed", () => {
+    test("rejects malformed collection options", () => {
         const invalidOptions: readonly unknown[] = [
             null,
             1,
             { indexes: undefined },
-            { indexes: {} },
+            { indexes: { kind: "not an extractor" } },
             { unknown: true },
             { encodeKey: null },
         ]

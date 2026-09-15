@@ -1863,7 +1863,7 @@ describe("v1 persistent committed StoreTree host", () => {
         const exportedSources = collectStrings(manifest.exports)
             .filter(path => path.endsWith(".ts") || path.endsWith(".tsx"))
             .map(path => resolve(packageRoot, path))
-        expect(exportedSources).toHaveLength(4)
+        expect(exportedSources).toHaveLength(5)
 
         const runtimeEntrypoints = [".", "./adapter-internals/v1"].flatMap(
             subpath =>

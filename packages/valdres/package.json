@@ -17,7 +17,8 @@
         ".": "./src/index.ts",
         "./inspect": "./src/inspect.ts",
         "./equality": "./src/equality.ts",
-        "./adapter-internals/v1": "./src/adapter-internals/v1.ts"
+        "./adapter-internals/v1": "./src/adapter-internals/v1.ts",
+        "./query": "./src/query.ts"
     },
     "files": [
         "dist"
@@ -28,7 +29,7 @@
         "check:package": "bun run ../../scripts/check-valdres-package.ts --build",
         "typecheck:types": "bunx tsc -p tsconfig.types-test.json",
         "test": "bun run test:runtime && bun run test:build",
-        "test:runtime": "bun test --reporter=dots test/v1-model test/v1-selector-evaluator test/v1-committed-store-tree test/v1-public-candidate test/v1-inspect test/performance/collection.performance.test.ts test/selector-kernel-tournament",
+        "test:runtime": "bun test --reporter=dots test/v1-model test/v1-selector-evaluator test/v1-committed-store-tree test/v1-public-candidate test/v1-inspect test/performance/collection.performance.test.ts test/performance/collection-index.performance.test.ts test/selector-kernel-tournament",
         "test:build": "bun test --reporter=dots test/build.test.ts",
         "test:ci": "rm -f junit-runtime.xml junit-build.xml && bun run test:runtime -- --reporter=junit --reporter-outfile=junit-runtime.xml && bun run test:build -- --reporter=junit --reporter-outfile=junit-build.xml && test -s junit-runtime.xml && test -s junit-build.xml",
         "test:v1-model": "bunx tsc -p test/v1-model/tsconfig.json && bun test test/v1-model",
@@ -53,7 +54,9 @@
         "test:rewrite-guards:node": "npx vitest run --config vitest.rewrite-guards.config.ts",
         "test:memory:bun": "NODE_ENV=production bun test --timeout 120000 --concurrency 1 ./test/performance/*.memory.ts",
         "test:memory:node": "NODE_OPTIONS=--expose-gc NODE_ENV=production npx vitest run --config vitest.memory.config.ts",
-        "test:selector-kernel-tournament": "bun test --reporter=dots test/selector-kernel-tournament"
+        "test:selector-kernel-tournament": "bun test --reporter=dots test/selector-kernel-tournament",
+        "test:collection:index:timing": "NODE_ENV=production bun ./test/performance/collection-index.timing.ts",
+        "test:collection:index:node": "vitest run --config vitest.collection-index.config.ts"
     },
     "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",

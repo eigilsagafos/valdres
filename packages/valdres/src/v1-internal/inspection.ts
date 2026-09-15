@@ -1,4 +1,13 @@
 import {
+    COLLECTION_INDEX_MATERIALIZATIONS,
+    COLLECTION_INDEX_ROUTE_VISITS,
+    COLLECTION_INDEX_INITIAL_ROWS,
+    COLLECTION_INDEX_EXTRACTOR_CALLS,
+    COLLECTION_INDEX_DELTA_ROWS,
+    COLLECTION_INDEX_BUCKET_ROWS,
+    COLLECTION_INDEX_BUCKET_PUBLICATIONS,
+} from "./collection-inspection-protocol"
+import {
     createInternalStoreTreeInstrumentation,
     SubscriberNotificationError,
     type InternalStoreTreeInstrumentation,
@@ -263,6 +272,13 @@ export interface InspectionWorkTotals {
     readonly collectionEffectiveDeltasPrepared: number
     readonly collectionOwnerRetentionSetsCreated: number
     readonly collectionOwnerRetains: number
+    readonly collectionIndexRouteVisits: number
+    readonly collectionIndexMaterializations: number
+    readonly collectionIndexInitialRows: number
+    readonly collectionIndexExtractorCalls: number
+    readonly collectionIndexDeltaRows: number
+    readonly collectionIndexBucketRows: number
+    readonly collectionIndexBucketPublications: number
     readonly collectionOwnerReleases: number
     readonly cycle: InspectionCycleTotals
 }
@@ -769,6 +785,13 @@ interface MutableWorkTotals {
     collectionEffectiveDeltasPrepared: number
     collectionOwnerRetentionSetsCreated: number
     collectionOwnerRetains: number
+    collectionIndexRouteVisits: number
+    collectionIndexMaterializations: number
+    collectionIndexInitialRows: number
+    collectionIndexExtractorCalls: number
+    collectionIndexDeltaRows: number
+    collectionIndexBucketRows: number
+    collectionIndexBucketPublications: number
     collectionOwnerReleases: number
     cycle: MutableCycleTotals
 }
@@ -853,6 +876,13 @@ type CollectionInspectionCounterName =
     | "collectionEffectiveDeltasPrepared"
     | "collectionOwnerRetentionSetsCreated"
     | "collectionOwnerRetains"
+    | "collectionIndexRouteVisits"
+    | "collectionIndexMaterializations"
+    | "collectionIndexInitialRows"
+    | "collectionIndexExtractorCalls"
+    | "collectionIndexDeltaRows"
+    | "collectionIndexBucketRows"
+    | "collectionIndexBucketPublications"
     | "collectionOwnerReleases"
 
 const COLLECTION_COUNTER_NAME_BY_CODE: Readonly<
@@ -877,6 +907,13 @@ const COLLECTION_COUNTER_NAME_BY_CODE: Readonly<
     [COLLECTION_OWNER_RETENTION_SETS_CREATED]:
         "collectionOwnerRetentionSetsCreated",
     [COLLECTION_OWNER_RETAINS]: "collectionOwnerRetains",
+    [COLLECTION_INDEX_ROUTE_VISITS]: "collectionIndexRouteVisits",
+    [COLLECTION_INDEX_MATERIALIZATIONS]: "collectionIndexMaterializations",
+    [COLLECTION_INDEX_INITIAL_ROWS]: "collectionIndexInitialRows",
+    [COLLECTION_INDEX_EXTRACTOR_CALLS]: "collectionIndexExtractorCalls",
+    [COLLECTION_INDEX_DELTA_ROWS]: "collectionIndexDeltaRows",
+    [COLLECTION_INDEX_BUCKET_ROWS]: "collectionIndexBucketRows",
+    [COLLECTION_INDEX_BUCKET_PUBLICATIONS]: "collectionIndexBucketPublications",
     [COLLECTION_OWNER_RELEASES]: "collectionOwnerReleases",
 })
 const NOOP = (): void => {}
@@ -1223,6 +1260,13 @@ const createMutableTotals = (): MutableWorkTotals => ({
     collectionEffectiveDeltasPrepared: 0,
     collectionOwnerRetentionSetsCreated: 0,
     collectionOwnerRetains: 0,
+    collectionIndexRouteVisits: 0,
+    collectionIndexMaterializations: 0,
+    collectionIndexInitialRows: 0,
+    collectionIndexExtractorCalls: 0,
+    collectionIndexDeltaRows: 0,
+    collectionIndexBucketRows: 0,
+    collectionIndexBucketPublications: 0,
     collectionOwnerReleases: 0,
     cycle: {
         searches: 0,
@@ -1301,6 +1345,14 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
         collectionOwnerRetentionSetsCreated:
             totals.collectionOwnerRetentionSetsCreated,
         collectionOwnerRetains: totals.collectionOwnerRetains,
+        collectionIndexRouteVisits: totals.collectionIndexRouteVisits,
+        collectionIndexMaterializations: totals.collectionIndexMaterializations,
+        collectionIndexInitialRows: totals.collectionIndexInitialRows,
+        collectionIndexExtractorCalls: totals.collectionIndexExtractorCalls,
+        collectionIndexDeltaRows: totals.collectionIndexDeltaRows,
+        collectionIndexBucketRows: totals.collectionIndexBucketRows,
+        collectionIndexBucketPublications:
+            totals.collectionIndexBucketPublications,
         collectionOwnerReleases: totals.collectionOwnerReleases,
         cycle: Object.freeze({
             searches: totals.cycle.searches,
