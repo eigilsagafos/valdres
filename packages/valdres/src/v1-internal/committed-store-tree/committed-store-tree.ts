@@ -203,6 +203,13 @@ export type DefinitionCallbackPhase =
     | "family-encoder"
     | "collection-encoder"
 
+/** Shared placeholder when a definition callback has no active selector
+ * session to guard — the overwhelmingly common case for a family or
+ * collection accessor called from ordinary code rather than from inside a
+ * selector's `get`. Reusing this instead of mapping an empty array skips an
+ * allocation on every such call. */
+const EMPTY_READ_GUARDS: readonly never[] = Object.freeze([])
+
 /** @internal Definition-only callback quarantine for identity helpers. */
 export const runDefinitionCallback = <Result, Validated = Result>(
     domain: InternalCommittedStoreTreeDomain,
@@ -230,27 +237,39 @@ export const runDefinitionCallback = <Result, Validated = Result>(
         }
         selectorActivity = selectorActivity.parentSelectorActivity
     }
+    const allowDefinitions = phase === "factory"
     const previous = records[DEFINITION_CALLBACK_FRAME]
     records[DEFINITION_CALLBACK_FRAME] = {
         session,
-        definitions: new WeakSet(),
-        allowDefinitions: phase === "factory",
+        // A non-factory phase (encoder, family-encoder, collection-encoder)
+        // can never construct a State — see DefinitionCallbackFrame's
+        // `definitions` doc in runtime-domain.ts for the invariant this
+        // relies on. Skipping the allocation keeps the non-factory hot path
+        // (e.g. family's encodeKey, run on every access) free of a WeakSet
+        // it can structurally never use.
+        definitions: allowDefinitions ? new WeakSet() : undefined,
+        allowDefinitions,
         ...(createAccessorFault === undefined ? {} : { createAccessorFault }),
     }
-    const previousReadGuards = selectorSessions.map(selectorSession =>
-        Object.freeze({
-            selectorSession,
-            previous: selectorSession.setSuppliedReadGuard((): never => {
-                const activity = records.activity
-                return rejectGuardedSelectorRead(
-                    activity?.kind === "guarded-callback"
-                        ? activity.session
-                        : session,
-                    selectorSession,
-                )
-            }),
-        }),
-    )
+    const previousReadGuards =
+        selectorSessions.length === 0
+            ? EMPTY_READ_GUARDS
+            : selectorSessions.map(selectorSession =>
+                  Object.freeze({
+                      selectorSession,
+                      previous: selectorSession.setSuppliedReadGuard(
+                          (): never => {
+                              const activity = records.activity
+                              return rejectGuardedSelectorRead(
+                                  activity?.kind === "guarded-callback"
+                                      ? activity.session
+                                      : session,
+                                  selectorSession,
+                              )
+                          },
+                      ),
+                  }),
+              )
     try {
         return runGuardedCallback(records, session, () => {
             const result = Reflect.apply(callback, undefined, args)
@@ -334,7 +353,7 @@ export const assertDefinitionState = (
     ) {
         const frame = records[DEFINITION_CALLBACK_FRAME]
         if (
-            frame?.definitions.has(value) ||
+            frame?.definitions?.has(value) ||
             records[FAMILY_DEFINITIONS]?.has(value)
         ) {
             return value as DefinitionState

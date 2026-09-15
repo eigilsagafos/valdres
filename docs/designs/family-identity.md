@@ -89,3 +89,72 @@ Before release, replace one ShiftX identity shim with this API and verify the
 same graph shape, values, notifications, and transaction boundaries. The family
 beta must remain separate from the cold-drop performance beta so either change
 can be rolled back and measured independently.
+
+## beta.36 ShiftX adoption report and the encoder-frame allocation cut
+
+ShiftX benchmarked `family()` on beta.36 at their real call shapes (~510
+definitions reached as `atom(ref: string, context: string[])`, tens of
+thousands of accesses per gesture, 4x CPU throttle) against the hand-rolled
+`Map` shim it would replace. Identity semantics matched exactly; the finding
+was a performance adoption gap. `encodeKey`-based lookup cost ~33ms of
+`encodeKey` time plus ~18ms in `getOrCreateOne`, versus ~32ms total for their
+own encode + `Map.get`. The single-key and positional-tuple paths bypass the
+encoder quarantine on a cache hit and were not the problem.
+
+Root cause: every `encodeKey` invocation, hit or miss, runs through the
+definition-callback quarantine (`runDefinitionCallback`), which allocated a
+`WeakSet` and mapped an array of selector-session read guards on every call
+even though neither is ever populated outside factory construction or an
+active selector session.
+
+The fix removes exactly those two allocations, justified by the existing
+`allowDefinitions` invariant rather than by counting callers, because the
+frame is shared with `collection()`'s encoder phase:
+
+- `DefinitionCallbackFrame.definitions` is allocated only when
+  `allowDefinitions` is true (`phase === "factory"`). Every other phase is
+  rejected by `assertRuntimeDefinitionConstructionAllowed` before the single
+  call site that adds to the set (`registerRuntimeStateHandle`) is reached.
+- The read-guard bookkeeping reuses a shared frozen empty array when there is
+  no active selector session to guard.
+
+Selector-cycle detection, topology proofs, and `runGuardedCallback` are
+untouched; the residual encoder cost sits in the shared capability boundary
+and is out of scope for the family lane.
+
+Measured against clean `main` (post collection beta.37 staging) with the
+production dist on both engines, fresh process per run, rotating order, 24
+rounds each, with two untouched lanes (positional-tuple hit and a bare `Map`
+encode+get) as null controls, then cross-checked by a 60-round in-process
+interleave and a V8 minor-GC count per million calls:
+
+| lane | Bun/JSC fresh | Node/V8 fresh | Node in-process | V8 GCs per 1M calls |
+| --- | --- | --- | --- | --- |
+| `family(encodeKey)` hit | -3% (13/24) | -5 to -7% (18-19/24) | -4.6% ±0.5 (54/60) | 697 → 518 |
+| `collection(encodeKey)` hit | -5% (13/24) | -12% (17-19/24) | -7.9% ±0.6 (59/60) | n/a |
+| null lanes | ±4% | ±5% | ±2% | unchanged |
+
+Removing only the `WeakSet` recovers roughly half of the Node win and nothing
+measurable on Bun, so the shipped change keeps both allocation cuts. The win
+is modest and does not close ShiftX's gap on its own; it is the whole of what
+the family lane can do without touching the shared kernel.
+
+Size: the ordinary `family` fixture grows by 22 gzip bytes (18968 → 18990 on
+pinned Bun 1.4.0). Clean `main` already sat 7 bytes under that fixture's
+immutable 2% ceiling plus the COL-008 62-byte allowance, so this release
+raises the reviewed core-retaining allowance to 77, the new exact no-cushion
+maximum overage across the core-retaining fixtures, and moves the packed,
+`all-exports`, and `inspect` feature budgets to the measured values. The
+immutable ordinary baselines are not regenerated. Three byte-identical
+pinned-Bun builds certify the runtime digest.
+
+`test/performance/family.bench.ts` tracks the three `family()` hot paths
+against a hand-rolled `Map` reference via `compare()` so the reference side is
+excluded from the PR gate like every other benchmark's.
+
+A pre-built keys array to avoid per-call allocation was reviewed for the same
+report and not implemented: it is only semantically safe for the
+non-`encodeKey` shape, and the GC cost ShiftX observed there is most likely
+their own call-site allocation. `members()`/`subFamily()` enumeration stays
+out of scope for `family()` by design; ShiftX's enumerated families are
+collection()-shaped.

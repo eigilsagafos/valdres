@@ -226,8 +226,13 @@ describe("pinned Bun toolchain", () => {
 
         const digest = baseline.provenance.certifiedRuntimeBuildSha256
         expect(digest).toMatch(/^[0-9a-f]{64}$/)
+        // Reviewed policy edits only. 62 was COL-008's exact no-cushion maximum
+        // gzip overage above the immutable 2% ceilings. 77 is the same
+        // measurement after the family()/collection() encoder-frame
+        // allocation cut (family fixture 18990 - ceiling 18913), certified
+        // in docs/designs/family-identity.md.
         const allowance = baseline.policy.coreRetainingGzipAllowance
-        expect(allowance).toBe(62)
+        expect(allowance).toBe(77)
         for (const budget of [
             baseline.featureBudgets.dist,
             baseline.featureBudgets.packed,
