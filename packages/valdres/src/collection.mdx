@@ -28,14 +28,15 @@ description: Define keyed rows with reactive ordered membership
 
 `collection` defines keyed rows whose values and membership live in a Store. The
 returned collection is both callable and readable: call it to get a row handle,
-then read the collection itself to get its currently present rows.
+then read the collection itself to get its currently present rows. Give the
+collection a static `name` to identify it in inspection diagnostics:
 
 ```ts
 import { collection, presence, selector, store } from "valdres"
 
 type Session = { id: string; active: boolean }
 
-const sessions = collection<string, Session>()
+const sessions = collection<string, Session>({ name: "sessions" })
 const app = store()
 const first = sessions("session-1")
 
@@ -97,8 +98,14 @@ return a valid canonical key. Valdres retains the canonical key, not the rich
 input. The encoder is a guarded definition callback: it cannot perform Store
 work, construct State, or call family or collection accessors.
 
-`encodeKey` is the only collection option in this beta. Index definitions are
-not available yet, and an `indexes` or unknown option is rejected.
+`name` follows the same inspection-label normalization as Atom and Selector
+names. The collection and every row belonging to it use that one static name;
+inspection IDs distinguish individual rows. Keys, values, and rich `encodeKey`
+inputs are never added to diagnostic names or serialized inspection output.
+
+`name` and `encodeKey` are the only collection options in this beta. Index
+definitions are not available yet, and an `indexes` or unknown option is
+rejected.
 
 ## Reading membership
 
@@ -158,13 +165,13 @@ commits none of its Atom or collection-row writes.
 
 ## Public types
 
-| Type                                                   | Meaning                                                              |
-| ------------------------------------------------------ | -------------------------------------------------------------------- |
-| `CollectionKey`                                        | `string \| number \| bigint \| boolean \| null`                      |
-| `CollectionValue`                                      | Any non-`undefined` value; thenables are rejected when written       |
-| `CollectionRow<Key, Value>`                            | Readonly `State<Value \| undefined>` with `kind` and canonical `key` |
-| `Collection<Key, Value, Input = Key, Indexes = never>` | Callable readonly membership State                                   |
-| `CollectionOptions<Key, Value, Input = Key>`           | Definition options; rich `Input` requires `encodeKey`                |
+| Type                                                   | Meaning                                                                |
+| ------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `CollectionKey`                                        | `string \| number \| bigint \| boolean \| null`                        |
+| `CollectionValue`                                      | Any non-`undefined` value; thenables are rejected when written         |
+| `CollectionRow<Key, Value>`                            | Readonly `State<Value \| undefined>` with `kind` and canonical `key`   |
+| `Collection<Key, Value, Input = Key, Indexes = never>` | Callable readonly membership State                                     |
+| `CollectionOptions<Key, Value, Input = Key>`           | Definition options; optional `name`; rich `Input` requires `encodeKey` |
 
 ## See also
 

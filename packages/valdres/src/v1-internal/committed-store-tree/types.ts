@@ -74,6 +74,7 @@ interface CollectionOptionCarrier<
     Value extends CollectionValue,
     Input,
 > {
+    readonly name?: string
     /** Index definitions remain closed until their public contract is frozen. */
     readonly indexes?: never
     readonly [privateCollectionOptionTypes]?: {
