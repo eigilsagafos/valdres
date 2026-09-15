@@ -6,6 +6,8 @@ import {
     COLLECTION_INDEX_DELTA_ROWS,
     COLLECTION_INDEX_BUCKET_ROWS,
     COLLECTION_INDEX_BUCKET_PUBLICATIONS,
+    COLLECTION_INDEX_GROUPS_CREATED,
+    COLLECTION_INDEX_BUCKETS_CREATED,
 } from "./collection-inspection-protocol"
 import {
     createInternalStoreTreeInstrumentation,
@@ -279,6 +281,8 @@ export interface InspectionWorkTotals {
     readonly collectionIndexDeltaRows: number
     readonly collectionIndexBucketRows: number
     readonly collectionIndexBucketPublications: number
+    readonly collectionIndexGroupsCreated: number
+    readonly collectionIndexBucketsCreated: number
     readonly collectionOwnerReleases: number
     readonly cycle: InspectionCycleTotals
 }
@@ -792,6 +796,8 @@ interface MutableWorkTotals {
     collectionIndexDeltaRows: number
     collectionIndexBucketRows: number
     collectionIndexBucketPublications: number
+    collectionIndexGroupsCreated: number
+    collectionIndexBucketsCreated: number
     collectionOwnerReleases: number
     cycle: MutableCycleTotals
 }
@@ -883,6 +889,8 @@ type CollectionInspectionCounterName =
     | "collectionIndexDeltaRows"
     | "collectionIndexBucketRows"
     | "collectionIndexBucketPublications"
+    | "collectionIndexGroupsCreated"
+    | "collectionIndexBucketsCreated"
     | "collectionOwnerReleases"
 
 const COLLECTION_COUNTER_NAME_BY_CODE: Readonly<
@@ -914,6 +922,8 @@ const COLLECTION_COUNTER_NAME_BY_CODE: Readonly<
     [COLLECTION_INDEX_DELTA_ROWS]: "collectionIndexDeltaRows",
     [COLLECTION_INDEX_BUCKET_ROWS]: "collectionIndexBucketRows",
     [COLLECTION_INDEX_BUCKET_PUBLICATIONS]: "collectionIndexBucketPublications",
+    [COLLECTION_INDEX_GROUPS_CREATED]: "collectionIndexGroupsCreated",
+    [COLLECTION_INDEX_BUCKETS_CREATED]: "collectionIndexBucketsCreated",
     [COLLECTION_OWNER_RELEASES]: "collectionOwnerReleases",
 })
 const NOOP = (): void => {}
@@ -1267,6 +1277,8 @@ const createMutableTotals = (): MutableWorkTotals => ({
     collectionIndexDeltaRows: 0,
     collectionIndexBucketRows: 0,
     collectionIndexBucketPublications: 0,
+    collectionIndexGroupsCreated: 0,
+    collectionIndexBucketsCreated: 0,
     collectionOwnerReleases: 0,
     cycle: {
         searches: 0,
@@ -1353,6 +1365,8 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
         collectionIndexBucketRows: totals.collectionIndexBucketRows,
         collectionIndexBucketPublications:
             totals.collectionIndexBucketPublications,
+        collectionIndexGroupsCreated: totals.collectionIndexGroupsCreated,
+        collectionIndexBucketsCreated: totals.collectionIndexBucketsCreated,
         collectionOwnerReleases: totals.collectionOwnerReleases,
         cycle: Object.freeze({
             searches: totals.cycle.searches,

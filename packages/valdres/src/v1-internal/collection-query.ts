@@ -1,6 +1,8 @@
 import type { TreeDraft } from "./committed-store-tree/tree-transaction"
 import {
     COLLECTION_INDEX_MATERIALIZATIONS,
+    COLLECTION_INDEX_BUCKETS_CREATED,
+    COLLECTION_INDEX_GROUPS_CREATED,
     COLLECTION_INDEX_INITIAL_ROWS,
     COLLECTION_INDEX_EXTRACTOR_CALLS,
     COLLECTION_INDEX_DELTA_ROWS,
@@ -41,9 +43,9 @@ interface Bucket {
 interface IndexRecord {
     readonly definition: QueryDefinition
     readonly keys: WeakMap<object, CollectionKey>
-    readonly buckets: Map<CollectionKey, Bucket>
-    // Empty lookups are weak: arbitrary lookup values do not accumulate forever.
-    readonly empty: Map<CollectionKey, WeakRef<Bucket>>
+    // Membership exists for each present scalar; reader/snapshot state is lazy.
+    readonly groups: Map<CollectionKey, Set<object>>
+    readonly views: Map<CollectionKey, WeakRef<Bucket>>
 }
 const EMPTY = Object.freeze([]) as readonly object[]
 const serve = (
@@ -77,21 +79,44 @@ export const createCollectionQueryRuntime = (
         StoreScopeNode,
         WeakMap<object, { record: QueryRecord; bucket: Bucket }>
     >()
-    // One registry per runtime, with held values containing scalar keys only.
-    const emptyFinalizer = new FinalizationRegistry<{
-        map: IndexRecord["empty"]
+    // Held maps contain only weak views, never scope/index ownership.
+    const viewFinalizer = new FinalizationRegistry<{
+        map: IndexRecord["views"]
         key: CollectionKey
         ref: WeakRef<Bucket>
     }>(held => {
         if (held.map.get(held.key) === held.ref) held.map.delete(held.key)
     })
-    const bucketFor = (index: IndexRecord, key: CollectionKey): Bucket => {
-        let bucket = index.buckets.get(key) ?? index.empty.get(key)?.deref()
-        if (bucket !== undefined) return bucket
-        bucket = { rows: EMPTY, readers: new WeakHandleSet(() => {}) }
+    const bucketFor = (
+        scope: StoreScopeNode,
+        index: IndexRecord,
+        key: CollectionKey,
+    ): Bucket => {
+        const known = index.views.get(key)?.deref()
+        if (known !== undefined && !known.readers.isEmpty()) return known
+        if (known !== undefined) viewFinalizer.unregister(known)
+        const membership = host.membership(scope, index.definition.collection)
+        const rows = [...(index.groups.get(key) ?? [])].sort(
+            (a, b) =>
+                membership.entries.get(a)!.rank -
+                membership.entries.get(b)!.rank,
+        )
+        if (rows.length)
+            scope.coordinator.evaluate.recordExtension?.(
+                COLLECTION_INDEX_BUCKET_ROWS,
+                rows.length,
+            )
+        scope.coordinator.evaluate.recordExtension?.(
+            COLLECTION_INDEX_BUCKETS_CREATED,
+            1,
+        )
+        const bucket: Bucket = {
+            rows: rows.length ? Object.freeze(rows) : EMPTY,
+            readers: new WeakHandleSet(() => {}),
+        }
         const ref = new WeakRef(bucket)
-        index.empty.set(key, ref)
-        emptyFinalizer.register(bucket, { map: index.empty, key, ref }, bucket)
+        index.views.set(key, ref)
+        viewFinalizer.register(bucket, { map: index.views, key, ref }, bucket)
         return bucket
     }
     const materialize = (
@@ -106,6 +131,8 @@ export const createCollectionQueryRuntime = (
         const membership = host.membership(scope, definition.collection)
         scope.coordinator.evaluate.recordExtension?.(
             COLLECTION_INDEX_MATERIALIZATIONS,
+            COLLECTION_INDEX_BUCKETS_CREATED,
+            COLLECTION_INDEX_GROUPS_CREATED,
             1,
         )
         if (membership.entries.size)
@@ -114,7 +141,7 @@ export const createCollectionQueryRuntime = (
                 membership.entries.size,
             )
         const keys = new WeakMap<object, CollectionKey>()
-        const groups = new Map<CollectionKey, object[]>()
+        const groups = new Map<CollectionKey, Set<object>>()
         // Publish no index state until every extractor has passed validation.
         for (const row of membership.entries.keys()) {
             const value = host.value(scope, row)
@@ -125,20 +152,20 @@ export const createCollectionQueryRuntime = (
             const key = definition.extract(value)
             keys.set(row, key)
             let rows = groups.get(key)
-            if (rows === undefined) groups.set(key, (rows = []))
-            rows.push(row)
+            if (rows === undefined) groups.set(key, (rows = new Set()))
+            rows.add(row)
         }
         const index: IndexRecord = {
             definition,
             keys,
-            buckets: new Map(),
-            empty: new Map(),
+            groups,
+            views: new Map(),
         }
-        for (const [key, rows] of groups)
-            index.buckets.set(key, {
-                rows: Object.freeze(rows),
-                readers: new WeakHandleSet(() => {}),
-            })
+        if (groups.size)
+            scope.coordinator.evaluate.recordExtension?.(
+                COLLECTION_INDEX_GROUPS_CREATED,
+                groups.size,
+            )
         if (collections === undefined)
             scopes.set(scope, (collections = new Map()))
         let indexes = collections.get(definition.collection)
@@ -160,7 +187,7 @@ export const createCollectionQueryRuntime = (
             if (known !== undefined) return known.record.served
             const definition = definitions.get(node)!
             const index = materialize(scope, definition)
-            const bucket = bucketFor(index, definition.value)
+            const bucket = bucketFor(scope, index, definition.value)
             const record: QueryRecord = {
                 atom: node,
                 scope,
@@ -225,7 +252,7 @@ export const createCollectionQueryRuntime = (
                 for (const index of indexes.values()) {
                     const affected = new Map<
                         CollectionKey,
-                        { bucket: Bucket; rows: Set<object> }
+                        { remove: object[]; add: object[] }
                     >()
                     const ranks = new Map<object, number>()
                     const keys: {
@@ -234,16 +261,8 @@ export const createCollectionQueryRuntime = (
                     }[] = []
                     const touch = (key: CollectionKey) => {
                         let entry = affected.get(key)
-                        if (entry === undefined) {
-                            const bucket = bucketFor(index, key)
-                            affected.set(
-                                key,
-                                (entry = {
-                                    bucket,
-                                    rows: new Set(bucket.rows),
-                                }),
-                            )
-                        }
+                        if (entry === undefined)
+                            affected.set(key, (entry = { remove: [], add: [] }))
                         return entry
                     }
                     for (const change of delta.changes) {
@@ -274,61 +293,64 @@ export const createCollectionQueryRuntime = (
                         )
                             continue
                         if (oldKey !== undefined)
-                            touch(oldKey).rows.delete(change.row)
+                            touch(oldKey).remove.push(change.row)
                         if (key !== undefined) {
-                            touch(key).rows.add(change.row)
+                            touch(key).add.push(change.row)
                             ranks.set(change.row, change.rank!)
                         }
                     }
-                    const prepared = [...affected].map(
-                        ([key, { bucket, rows }]) => {
-                            if (rows.size)
-                                delta.scope.coordinator.evaluate.recordExtension?.(
-                                    COLLECTION_INDEX_BUCKET_ROWS,
-                                    rows.size,
-                                )
-                            const next = [...rows].sort(
-                                (a, b) =>
-                                    (ranks.get(a) ??
-                                        membership.entries.get(a)!.rank) -
-                                    (ranks.get(b) ??
-                                        membership.entries.get(b)!.rank),
+                    const prepared: {
+                        bucket: Bucket
+                        next: readonly object[]
+                    }[] = []
+                    for (const [key, change] of affected) {
+                        const bucket = index.views.get(key)?.deref()
+                        // No reader: stage only O(changed rows) membership edits.
+                        // Do not copy, sort, freeze, or allocate a query bucket.
+                        if (bucket === undefined || bucket.readers.isEmpty())
+                            continue
+                        const rows = new Set(index.groups.get(key))
+                        for (const row of change.remove) rows.delete(row)
+                        for (const row of change.add) rows.add(row)
+                        if (rows.size)
+                            delta.scope.coordinator.evaluate.recordExtension?.(
+                                COLLECTION_INDEX_BUCKET_ROWS,
+                                rows.size,
                             )
-                            return {
-                                key,
-                                bucket,
-                                next: sameRows(bucket.rows, next)
-                                    ? bucket.rows
-                                    : Object.freeze(next),
-                            }
-                        },
-                    )
+                        const next = [...rows].sort(
+                            (a, b) =>
+                                (ranks.get(a) ??
+                                    membership.entries.get(a)!.rank) -
+                                (ranks.get(b) ??
+                                    membership.entries.get(b)!.rank),
+                        )
+                        prepared.push({
+                            bucket,
+                            next: sameRows(bucket.rows, next)
+                                ? bucket.rows
+                                : Object.freeze(next),
+                        })
+                    }
                     updates.push(() => {
                         for (const { row, key } of keys) {
                             if (key === undefined) index.keys.delete(row)
                             else index.keys.set(row, key)
                         }
-                        for (const { key, bucket, next } of prepared) {
-                            // At most one finalizer registration per live bucket,
-                            // including repeated empty/nonempty transitions.
-                            emptyFinalizer.unregister(bucket)
-                            if (next.length) {
-                                index.buckets.set(key, bucket)
-                                index.empty.delete(key)
-                            } else {
-                                index.buckets.delete(key)
-                                const ref = new WeakRef(bucket)
-                                index.empty.set(key, ref)
-                                emptyFinalizer.register(
-                                    bucket,
-                                    {
-                                        map: index.empty,
-                                        key,
-                                        ref,
-                                    },
-                                    bucket,
+                        for (const [key, change] of affected) {
+                            let rows = index.groups.get(key)
+                            if (rows === undefined) {
+                                rows = new Set()
+                                index.groups.set(key, rows)
+                                delta.scope.coordinator.evaluate.recordExtension?.(
+                                    COLLECTION_INDEX_GROUPS_CREATED,
+                                    1,
                                 )
                             }
+                            for (const row of change.remove) rows.delete(row)
+                            for (const row of change.add) rows.add(row)
+                            if (rows.size === 0) index.groups.delete(key)
+                        }
+                        for (const { bucket, next } of prepared) {
                             if (next === bucket.rows) continue
                             delta.scope.coordinator.evaluate.recordExtension?.(
                                 COLLECTION_INDEX_BUCKET_PUBLICATIONS,
@@ -363,13 +385,13 @@ export const createCollectionQueryRuntime = (
                 for (const indexes of collections.values())
                     for (const index of indexes.values()) {
                         active.get(index.definition.collection)?.delete(index)
-                        index.buckets.clear()
-                        for (const ref of index.empty.values()) {
+                        index.groups.clear()
+                        for (const ref of index.views.values()) {
                             const bucket = ref.deref()
                             if (bucket !== undefined)
-                                emptyFinalizer.unregister(bucket)
+                                viewFinalizer.unregister(bucket)
                         }
-                        index.empty.clear()
+                        index.views.clear()
                     }
             scopes.delete(scope)
             readers.delete(scope)

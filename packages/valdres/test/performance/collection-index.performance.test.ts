@@ -161,3 +161,86 @@ test("scratch query scans do not create row draft coordinates for untouched rows
     expect(finish().coordinates).toBe(1)
     s.dispose()
 })
+
+test("dominant unread buckets avoid snapshot construction and publish only when read", () => {
+    const entities = collection<
+        string,
+        { kind: string },
+        string,
+        { kind: string }
+    >({ indexes: { kind: value => value.kind } })
+    const { store: s, inspect } = createInspectableStore({
+        capacity: { summaries: 32, details: 0 },
+    })
+    s.txn(tx => {
+        for (let i = 0; i < 20000; i++)
+            tx.set(entities(String(i)), { kind: i < 10 ? "task" : "document" })
+    })
+    const tasks = query(entities, { where: { kind: { eq: "task" } } })
+    const initial = s.get(tasks)
+    let notifications = 0
+    s.sub(tasks, () => notifications++)
+    inspect.reset()
+    const extra = entities("extra")
+    s.set(extra, { kind: "document" })
+    s.set(extra, { kind: "other" })
+    s.delete(entities("100"))
+    const writes = inspect
+        .export()
+        .summaries.filter(item => item.type === "operation")
+    for (const write of writes) {
+        expect(write.totals.collectionIndexDeltaRows).toBe(1)
+        expect(write.totals.collectionIndexBucketRows).toBe(0)
+        expect(write.totals.collectionIndexBucketPublications).toBe(0)
+        expect(write.totals.collectionIndexBucketsCreated).toBe(0)
+    }
+    expect(s.get(tasks)).toBe(initial)
+    expect(notifications).toBe(0)
+    const documents = query(entities, { where: { kind: { eq: "document" } } })
+    expect(s.get(documents)).toEqual(
+        s.get(entities).filter(row => s.get(row)?.kind === "document"),
+    )
+    inspect.reset()
+    s.set(extra, { kind: "document" })
+    const write = inspect
+        .export()
+        .summaries.find(item => item.type === "operation")!
+    expect(write.totals.collectionIndexBucketRows).toBe(19990)
+    expect(s.get(documents).at(-1)).toBe(extra)
+    s.dispose()
+})
+
+test("high-cardinality materialization allocates reader machinery only for queried scalars", () => {
+    const entities = collection<
+        string,
+        { kind: number },
+        string,
+        { kind: number }
+    >({ indexes: { kind: value => value.kind } })
+    const { store: s, inspect } = createInspectableStore({
+        capacity: { summaries: 16, details: 0 },
+    })
+    s.txn(tx => {
+        for (let i = 0; i < 20000; i++) tx.set(entities(String(i)), { kind: i })
+    })
+    inspect.reset()
+    const first = query(entities, { where: { kind: { eq: 0 } } })
+    inspect.span("materialize", () =>
+        expect(s.get(first)).toEqual([entities("0")]),
+    )
+    const read = inspect.export().summaries.find(item => item.type === "span")!
+    expect(read.totals.collectionIndexInitialRows).toBe(20000)
+    expect(read.totals.collectionIndexGroupsCreated).toBe(20000)
+    expect(read.totals.collectionIndexBucketsCreated).toBe(1)
+    expect(read.totals.collectionIndexBucketRows).toBe(1)
+    inspect.reset()
+    s.set(entities("19999"), { kind: 20000 })
+    const write = inspect
+        .export()
+        .summaries.find(item => item.type === "operation")!
+    expect(write.totals.collectionIndexDeltaRows).toBe(1)
+    expect(write.totals.collectionIndexGroupsCreated).toBe(1)
+    expect(write.totals.collectionIndexBucketsCreated).toBe(0)
+    expect(write.totals.collectionIndexBucketRows).toBe(0)
+    s.dispose()
+})
