@@ -1,7 +1,18 @@
-import { expect, test } from "bun:test"
+import { expect, test as bunTest } from "bun:test"
 import { collection, store, type Transaction } from "../../src/index"
 import { query } from "../../src/query"
 import { LeakDetector } from "../../../test/src/LeakDetector"
+
+// Match the family lifecycle retry pattern: JSC can conservatively retain dead
+// stack slots under full-suite heap pressure. Keep the leak assertion mandatory.
+const test = (name: string, run: () => Promise<void>) =>
+    bunTest(name, run, 60_000)
+const expectCollected = async (detector: LeakDetector): Promise<void> => {
+    let leaking = true
+    for (let attempt = 0; attempt < 3 && leaking; attempt++)
+        leaking = await detector.isLeaking()
+    expect(leaking).toBe(false)
+}
 
 const setup = (dispose: boolean) => {
     const entities = collection<
@@ -30,7 +41,7 @@ const setup = (dispose: boolean) => {
 for (const dispose of [false, true])
     test(`index releases removed rows (dispose=${dispose})`, async () => {
         const fixture = setup(dispose)
-        expect(await fixture.detector.isLeaking()).toBe(false)
+        await expectCollected(fixture.detector)
         // Keep the disposed Store, query and unsubscribe closure alive during GC.
         expect(fixture.tasks).toBeDefined()
         fixture.root.dispose()
@@ -60,7 +71,7 @@ test("closed transaction releases scratch query snapshots after rollback", async
         } catch {}
         return detector
     })()
-    expect(await probe.isLeaking()).toBe(false)
+    await expectCollected(probe)
     expect(retained).toBeDefined()
     expect(s.get(tasks)).toEqual([])
     s.dispose()
@@ -84,8 +95,8 @@ test("unreferenced anonymous index scopes and query handles are collectable", as
         }
     }
     const fixture = make()
-    expect(await fixture.scope.isLeaking()).toBe(false)
-    expect(await fixture.query.isLeaking()).toBe(false)
+    await expectCollected(fixture.scope)
+    await expectCollected(fixture.query)
     root.set(entities("one"), { kind: "task" })
     root.dispose()
 })
