@@ -463,35 +463,35 @@
             "id": "core.query-definition.facets",
             "kind": "option",
             "package": "valdres",
-            "subpath": ".",
+            "subpath": "./query",
             "name": "QueryDefinition.facets"
         },
         {
             "id": "core.query-definition.limit",
             "kind": "option",
             "package": "valdres",
-            "subpath": ".",
+            "subpath": "./query",
             "name": "QueryDefinition.limit"
         },
         {
             "id": "core.query-definition.offset",
             "kind": "option",
             "package": "valdres",
-            "subpath": ".",
+            "subpath": "./query",
             "name": "QueryDefinition.offset"
         },
         {
             "id": "core.query-definition.order-by",
             "kind": "option",
             "package": "valdres",
-            "subpath": ".",
+            "subpath": "./query",
             "name": "QueryDefinition.orderBy"
         },
         {
             "id": "core.query-definition.where",
             "kind": "option",
             "package": "valdres",
-            "subpath": ".",
+            "subpath": "./query",
             "name": "QueryDefinition.where"
         },
         {
@@ -696,7 +696,7 @@
             "id": "core.structural-query",
             "kind": "runtime-export",
             "package": "valdres",
-            "subpath": ".",
+            "subpath": "./query",
             "name": "query"
         },
         {

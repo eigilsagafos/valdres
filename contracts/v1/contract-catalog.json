@@ -24,7 +24,7 @@
         "collection.membership-order",
         "collection.operational-boundary",
         "collection.row-identity",
-        "collection.unindexed-foundation-beta",
+        "collection.scalar-equality-index",
         "collection.update-existing-only",
         "error.stable-name-and-code",
         "external.bounded-settlement",

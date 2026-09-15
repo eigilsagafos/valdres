@@ -539,7 +539,7 @@ const frozenLegacyProvenanceInventorySha256 =
 const frozenReviewedLegacyDispositionSha256 =
     "e59fc2432d3402205d77cf96095b4b57ca870044d9db6c64bc908752d8fa01f8"
 const frozenTargetCoordinateInventorySha256 =
-    "1f5233eb05b4eb5b4d825556c04868b253f6c26ec22074d8a2cdbe4c236085c9"
+    "5ea762989779077ec3e2367f69982cb1bcafe68cdbaf808590567bd4d58eeaea"
 const frozenReleaseTrackOwnershipSha256 =
     "387c925069e12648893d2805dfb0f83c3821477dd0238f76e6324701e856dab3"
 const frozenWorkspaceBaseline = Object.freeze({
@@ -785,23 +785,43 @@ const requiredFrozenPublicCoordinates = new Map([
     ],
     [
         "core.query-definition.facets",
-        { package: "valdres", subpath: ".", name: "QueryDefinition.facets" },
+        {
+            package: "valdres",
+            subpath: "./query",
+            name: "QueryDefinition.facets",
+        },
     ],
     [
         "core.query-definition.limit",
-        { package: "valdres", subpath: ".", name: "QueryDefinition.limit" },
+        {
+            package: "valdres",
+            subpath: "./query",
+            name: "QueryDefinition.limit",
+        },
     ],
     [
         "core.query-definition.offset",
-        { package: "valdres", subpath: ".", name: "QueryDefinition.offset" },
+        {
+            package: "valdres",
+            subpath: "./query",
+            name: "QueryDefinition.offset",
+        },
     ],
     [
         "core.query-definition.order-by",
-        { package: "valdres", subpath: ".", name: "QueryDefinition.orderBy" },
+        {
+            package: "valdres",
+            subpath: "./query",
+            name: "QueryDefinition.orderBy",
+        },
     ],
     [
         "core.query-definition.where",
-        { package: "valdres", subpath: ".", name: "QueryDefinition.where" },
+        {
+            package: "valdres",
+            subpath: "./query",
+            name: "QueryDefinition.where",
+        },
     ],
     [
         "core.server-snapshot-unavailable-error",
@@ -1469,17 +1489,17 @@ function assertCollectionContractAuthority(
     const indexes = requirePublic("core.collection-options.indexes")
     const state = requirePublic("core.type.state")
     assert(
-        collection.contractIds.includes(
-            "collection.unindexed-foundation-beta",
-        ) &&
-            collection.notes.includes("indexes?: never") &&
-            collection.notes.includes("final-v1 indexes coordinate") &&
-            indexes.target.status === "stable" &&
-            indexes.contractIds.includes(
-                "collection.unindexed-foundation-beta",
+        collection.contractIds.includes("collection.scalar-equality-index") &&
+            collection.notes.includes(
+                "definition-time scalar equality extractor map",
             ) &&
-            indexes.notes.includes("final-v1 target coordinate") &&
-            indexes.notes.includes("first beta exposes indexes?: never") &&
+            collection.notes.includes("non-unique and lazy") &&
+            indexes.target.status === "stable" &&
+            indexes.contractIds.includes("collection.scalar-equality-index") &&
+            indexes.notes.includes(
+                "without requiring a string index signature",
+            ) &&
+            indexes.notes.includes("effective deltas") &&
             state.contractIds.includes("collection.invariant-readable-state") &&
             state.notes.includes("private invariant value base") &&
             state.notes.includes(
@@ -1492,6 +1512,15 @@ function assertCollectionContractAuthority(
                 "cannot return collection rows or collection definitions",
             ),
         "collection staging or invariant public State/family boundary differs from the frozen contract",
+    )
+
+    const query = requirePublic("core.structural-query")
+    assert(
+        query.target.subpath === "./query" &&
+            query.notes.includes("readable State<readonly CollectionRow[]>") &&
+            query.notes.includes("weak canonical identity") &&
+            query.notes.includes("{ where: { index: { eq: scalar } } }"),
+        "scalar equality queries must retain standalone ownership, readable rows, and weak canonical identity",
     )
 
     const rowUpdate = callbackById.get("callback.collection-row-update")
@@ -1533,12 +1562,12 @@ function assertCollectionContractAuthority(
     )
     assert(
         indexExtractor !== undefined &&
-            indexExtractor.role.includes("Final-v1 target only") &&
-            indexExtractor.role.includes("unindexed foundation beta never") &&
+            indexExtractor.role.includes("finite scalar equality key") &&
+            indexExtractor.role.includes("effective present row value") &&
             indexExtractor.requiredContractIds.includes(
-                "collection.unindexed-foundation-beta",
+                "collection.scalar-equality-index",
             ),
-        "index extraction must remain planned for final v1 and rejected by the first collection beta",
+        "index extraction must retain the synchronous present-row scalar boundary",
     )
 }
 

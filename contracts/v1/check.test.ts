@@ -2307,13 +2307,28 @@ describe("v1 contract manifest validation", () => {
         )
     })
 
+    test("rejects drift in native scalar index and query identity contracts", () => {
+        const indexSet = mutableSet()
+        findPublicEntry(indexSet, "core.collection-options.indexes").notes =
+            "Arbitrary async keys"
+        expect(() => validateContractSet(indexSet)).toThrow(
+            /collection staging or invariant public State/,
+        )
+        const querySet = mutableSet()
+        findPublicEntry(querySet, "core.structural-query").notes =
+            "Fresh object on every call"
+        expect(() => validateContractSet(querySet)).toThrow(
+            /scalar equality queries must retain/,
+        )
+    })
+
     test("freezes standalone recursive-object structural queries", () => {
         const set = mutableSet()
         const query = findPublicEntry(set, "core.structural-query")
 
         expect(query.target).toEqual({
             package: "valdres",
-            subpath: ".",
+            subpath: "./query",
             name: "query",
             status: "stable",
         })
