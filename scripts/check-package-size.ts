@@ -13,9 +13,6 @@ import { mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { isAbsolute, join, relative, resolve } from "node:path"
 
-// Small feature growth is diagnostic; ordinary isolation and large regressions
-// remain gates. Do not ratchet the historical baselines for each feature.
-const FEATURE_DIAGNOSTIC_GROWTH = 0.15
 const GZIP_LEVEL = 6
 const PENDING_CERTIFICATION = "PENDING_COL008_CERTIFICATION"
 
@@ -160,11 +157,13 @@ try {
         "atom-selector-store": `export { atom, selector, store } from "valdres"`,
         family: `export { atom, family } from "valdres"`,
         collection: `export { collection, presence, store } from "valdres"`,
+        query: `import { collection, store } from "valdres"; import { query } from "valdres/query"; const entities = collection({ indexes: { kind: value => value.kind } }); export const tasks = query(entities, { where: { kind: { eq: "task" } } }); export const app = store();`,
         "all-exports": `export * from "valdres"`,
         inspect: `export * from "valdres/inspect"`,
         equality: `export { deepEqual } from "valdres/equality"`,
         "adapter-internals": `export * from "valdres/adapter-internals/v1"`,
     }
+    fixtureSources["query-development"] = fixtureSources.query!
     const fixtures: Record<string, Size> = {}
     for (const [name, source] of Object.entries(fixtureSources)) {
         const entry = join(consumerDir, `${name}.ts`)
@@ -172,7 +171,12 @@ try {
         const result = await Bun.build({
             entrypoints: [entry],
             minify: true,
-            define: { "process.env.NODE_ENV": JSON.stringify("production") },
+            conditions: name === "query-development" ? ["development"] : [],
+            define: {
+                "process.env.NODE_ENV": JSON.stringify(
+                    name === "query-development" ? "development" : "production",
+                ),
+            },
         })
         if (!result.success) {
             throw new Error(
@@ -329,19 +333,10 @@ async function checkAgainstBaseline(
         }
         for (const metric of ["raw", "gzip"] as const) {
             if (size[metric] > budget[metric]) {
-                const message =
+                failures.push(
                     `${label} ${metric}: reviewed budget ${budget[metric]}, actual ${size[metric]}, ` +
-                    `over by ${size[metric] - budget[metric]} bytes`
-                if (
-                    size[metric] <=
-                    Math.ceil(budget[metric] * (1 + FEATURE_DIAGNOSTIC_GROWTH))
-                ) {
-                    console.log(
-                        `Size diagnostic (feature growth <=15%): ${message}`,
-                    )
-                } else {
-                    failures.push(message)
-                }
+                        `over by ${size[metric] - budget[metric]} bytes`,
+                )
             }
         }
     }
@@ -431,7 +426,7 @@ async function checkAgainstBaseline(
         process.exitCode = 1
     } else {
         console.log(
-            "\nAll ordinary isolation and large feature-regression gates passed (small feature growth is diagnostic)",
+            "\nAll immutable ordinary and reviewed feature size gates passed",
         )
     }
 }

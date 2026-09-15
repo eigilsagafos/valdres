@@ -766,7 +766,7 @@ const capture: StateInspectionCapture =
     inspectableCore.inspect.capture(inspectableCore.store, count)
 const inspectionReport: InspectableReactExport =
     inspectedReact.inspect.export()
-const coreSchemaVersion: 6 = inspectionReport.core.schemaVersion
+const coreSchemaVersion: 7 = inspectionReport.core.schemaVersion
 const proofMemoTotals: InspectionNewEdgeProofMemoTotals =
     inspectionReport.core.summaries[0]!.totals.cycle.newEdgeProofMemo
 const reverseProofTotals: InspectionReverseProofTotals =
@@ -1089,11 +1089,11 @@ try {
         provenance?: { certifiedRuntimeBuildSha256?: string }
     }
     const reviewedDigest = sizeBudget.provenance?.certifiedRuntimeBuildSha256
-    if (certifiedRuntimeBuildSha256 !== reviewedDigest) {
-        console.log(
-            `Diagnostic: runtime differs from historical COL-008 build ${reviewedDigest}; current build ${certifiedRuntimeBuildSha256}`,
-        )
-    }
+    assert.equal(
+        certifiedRuntimeBuildSha256,
+        reviewedDigest,
+        "three stable runtime builds must match the reviewed certified digest",
+    )
 
     console.log(
         `\u2713 three byte-identical pinned-Bun runtime builds (${certifiedRuntimeBuildSha256})`,
