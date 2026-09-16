@@ -238,6 +238,7 @@ interface DraftLane {
     >
     readonly byRow: Map<CollectionRowHandle, DraftRowLane>
     readonly revisionByCollection: Map<CollectionHandle, number>
+    queryRevisionByCollection?: Map<CollectionHandle, number>
     readonly membershipMemo: Map<
         StoreScopeNode,
         Map<CollectionHandle, MembershipMemo>
@@ -992,6 +993,7 @@ export const createCollectionKernel = (
         }
         lane.byRow.clear()
         lane.revisionByCollection.clear()
+        lane.queryRevisionByCollection?.clear()
         for (const byCollection of lane.membershipMemo.values()) {
             byCollection.clear()
         }
@@ -1224,6 +1226,16 @@ export const createCollectionKernel = (
         if (placementChanged) {
             advanceMembershipRevision(lane, coordinate.collection)
         }
+        // Query results depend on row values as well as membership. Advance only
+        // queried collections, including ownership changes that affect descendants.
+        const queryRevision = lane.queryRevisionByCollection?.get(
+            coordinate.collection,
+        )
+        if (queryRevision !== undefined)
+            lane.queryRevisionByCollection!.set(
+                coordinate.collection,
+                queryRevision + 1,
+            )
         draft.markRow(sequence)
     }
 
@@ -2557,7 +2569,14 @@ export const createCollectionKernel = (
         ) =>
             indexes ??
             (indexes = create({
-                revision: draft => draft.generation,
+                revision: (draft, collection) => {
+                    const lane = laneFor(draft)
+                    const revisions = (lane.queryRevisionByCollection ??=
+                        new Map())
+                    const revision = revisions.get(collection) ?? 0
+                    revisions.set(collection, revision)
+                    return revision
+                },
                 membership: indexedMembership,
                 value: (scope, row) => {
                     const outcome = committedOutcome(scope, row)

@@ -60,15 +60,21 @@ test("closed transaction releases scratch query snapshots after rollback", async
     const probe = (() => {
         const row = entities("scratch")
         const detector = new LeakDetector(row)
+        const abort = new Error("intentional rollback")
+        let aborted = false
         try {
             s.txn(tx => {
                 retained = tx
                 tx.set(row, { kind: "task" })
                 const rows = tx.get(tasks)
                 expect(tx.get(tasks)).toBe(rows)
-                throw new Error("abort")
+                throw abort
             })
-        } catch {}
+        } catch (error) {
+            if (error !== abort) throw error
+            aborted = true
+        }
+        expect(aborted).toBe(true)
         return detector
     })()
     await expectCollected(probe)

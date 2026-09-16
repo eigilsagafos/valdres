@@ -131,8 +131,6 @@ export const createCollectionQueryRuntime = (
         const membership = host.membership(scope, definition.collection)
         scope.coordinator.evaluate.recordExtension?.(
             COLLECTION_INDEX_MATERIALIZATIONS,
-            COLLECTION_INDEX_BUCKETS_CREATED,
-            COLLECTION_INDEX_GROUPS_CREATED,
             1,
         )
         if (membership.entries.size)

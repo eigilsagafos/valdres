@@ -1,5 +1,5 @@
 import { expect, test } from "./test-compat"
-import { collection } from "../../src/index"
+import { atom, collection, store } from "../../src/index"
 import { query } from "../../src/query"
 import { createInspectableStore } from "../../src/inspect"
 
@@ -242,5 +242,94 @@ test("high-cardinality materialization allocates reader machinery only for queri
     expect(write.totals.collectionIndexGroupsCreated).toBe(1)
     expect(write.totals.collectionIndexBucketsCreated).toBe(0)
     expect(write.totals.collectionIndexBucketRows).toBe(0)
+    s.dispose()
+})
+
+test("positive materialization records exact independent nonzero totals", () => {
+    const entities = collection<
+        string,
+        { kind: string },
+        string,
+        { kind: string }
+    >({ indexes: { kind: value => value.kind } })
+    const { store: s, inspect } = createInspectableStore()
+    s.set(entities("one"), { kind: "task" })
+    const tasks = query(entities, { where: { kind: { eq: "task" } } })
+    inspect.reset()
+    inspect.span("materialize", () => s.get(tasks))
+    const totals = inspect
+        .export()
+        .summaries.find(item => item.type === "span")!.totals
+    expect({
+        materializations: totals.collectionIndexMaterializations,
+        groups: totals.collectionIndexGroupsCreated,
+        buckets: totals.collectionIndexBucketsCreated,
+        initial: totals.collectionIndexInitialRows,
+        extractions: totals.collectionIndexExtractorCalls,
+        snapshotRows: totals.collectionIndexBucketRows,
+    }).toEqual({
+        materializations: 1,
+        groups: 1,
+        buckets: 1,
+        initial: 1,
+        extractions: 1,
+        snapshotRows: 1,
+    })
+    s.dispose()
+})
+
+test("scratch queries ignore unrelated writes and invalidate on collection value changes", () => {
+    let calls = 0
+    const entities = collection<
+        string,
+        { kind: string },
+        string,
+        { kind: string }
+    >({
+        indexes: {
+            kind: value => {
+                calls++
+                return value.kind
+            },
+        },
+    })
+    const unrelated = atom(0),
+        other = collection<string, number>()
+    const s = store(),
+        child = s.scope("child")
+    s.txn(tx => {
+        for (let i = 0; i < 1000; i++)
+            tx.set(entities(String(i)), { kind: "task" })
+    })
+    const tasks = query(entities, { where: { kind: { eq: "task" } } })
+    const abort = new Error("intentional rollback")
+    expect(() =>
+        s.txn(tx => {
+            const snapshot = tx.get(tasks)
+            for (let i = 0; i < 10; i++) {
+                tx.set(unrelated, i + 1)
+                tx.set(other("row"), i)
+                expect(tx.get(tasks)).toBe(snapshot)
+            }
+            expect(calls).toBe(1000)
+            tx.update(entities("0"), () => ({ kind: "person" }))
+            expect(tx.get(tasks)).toHaveLength(999)
+            expect(calls).toBe(2000)
+            const local = tx.scope(child)
+            expect(local.get(tasks)).toHaveLength(999)
+            local.set(entities("0"), { kind: "task" })
+            expect(local.get(tasks)).toHaveLength(1000)
+            expect(tx.get(tasks)).toHaveLength(999)
+            local.reset(entities("0"))
+            expect(local.get(tasks)).toHaveLength(999)
+            tx.set(entities("0"), { kind: "task" })
+            expect(local.get(tasks)).toHaveLength(1000)
+            throw abort
+        }),
+    ).toThrow(abort)
+    expect(s.get(unrelated)).toBe(0)
+    expect(s.get(other)).toEqual([])
+    expect(s.get(tasks)).toHaveLength(1000)
+    expect(child.get(tasks)).toHaveLength(1000)
     s.dispose()
 })
