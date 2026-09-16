@@ -79,11 +79,15 @@ if (false) {
     // @ts-expect-error Optional declarations cannot describe a runtime index map.
     collection<string, Entity, string, OptionalIndexes>({ indexes: {} })
     // @ts-expect-error Symbol names are not runtime index names.
-    collection<string, Entity, string, SymbolIndexes>({ indexes: {} })
+    collection<string, Entity, string, SymbolIndexes>({
+        indexes: { [tag]: (_entity: Entity) => "task" as const },
+    })
     // @ts-expect-error A broad signature does not declare finite required names.
     collection<string, Entity, string, BroadIndexes>({ indexes: {} })
     // @ts-expect-error Numeric names are outside the string-named schema.
-    collection<string, Entity, string, { 0: string }>({ indexes: {} })
+    collection<string, Entity, string, { 0: string }>({
+        indexes: { 0: (entity: Entity) => entity.title },
+    })
     // @ts-expect-error A never value cannot hide a broad signature.
     collection<string, Entity, string, Record<string, never>>({ indexes: {} })
     // @ts-expect-error Template-pattern index signatures are not finite declarations.

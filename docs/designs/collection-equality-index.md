@@ -143,7 +143,8 @@ Only relevant feature budgets and the three-build certified digest are updated.
 
 ## Merge-readiness repairs
 
-- Named interface index metadata uses a self-mapped scalar constraint.
+- Named interface index metadata uses a finite, required string-key scalar
+  constraint.
 - The inspection schema is 7, including core, React, packed consumers and docs.
 - Lifecycle tests retain mandatory leak assertions, use the family suite's retry
   pattern and a local 60-second timeout under conservative JSC GC.
