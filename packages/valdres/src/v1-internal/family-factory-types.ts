@@ -21,9 +21,11 @@ export type FamilyFactoryTypeError<Message extends string> = {
 
 type IsAny<Value> = 0 extends 1 & Value ? true : false
 
-// When inference cannot run against the argument (an unannotated arrow, or a
-// non-function), Factory is fixed to its constraint: any parameters and an
-// any return. Diagnose that before reading anything off the signature.
+// When inference cannot run against the argument (an unannotated or defaulted
+// parameter makes the arrow context-sensitive; a non-function never matches),
+// Factory is fixed to its constraint: any parameters and an any return. An
+// explicit `(...args: any[]) => any` lands here too. Diagnose that before
+// reading anything off the signature.
 type IsUnresolvedFamilyFactory<Factory extends AnyFamilyFactory> =
     any[] extends Parameters<Factory> ? IsAny<ReturnType<Factory>> : false
 
@@ -33,7 +35,7 @@ export type CheckedFamilyFactory<
 > =
     IsUnresolvedFamilyFactory<Factory> extends true
         ? Factory &
-              FamilyFactoryTypeError<"family requires a factory function with annotated parameters">
+              FamilyFactoryTypeError<"family factory parameters must have concrete types, not any">
         : [ReturnType<Factory>] extends [FamilyState]
           ? Parameters<Factory> extends [unknown, ...unknown[]]
               ? Accepted
@@ -48,7 +50,7 @@ export type PrimitiveFamilyFactory<Factory extends AnyFamilyFactory> =
         Parameters<Factory> extends [FamilyKey, ...FamilyKey[]]
             ? Factory
             : Factory &
-                  FamilyFactoryTypeError<"structured family arguments require options.encodeKey">
+                  FamilyFactoryTypeError<"structured family arguments require a valid options.encodeKey">
     >
 
 export type NonEmptyFamilyFactory<Factory extends AnyFamilyFactory> =

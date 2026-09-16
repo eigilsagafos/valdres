@@ -14,20 +14,32 @@ import type { CompileResult } from "./family-diagnostics.compile"
 interface DiagnosticCase {
     readonly source: string
     readonly guidance: string | null
+    // A second fragment the same diagnostic must keep, e.g. the underlying
+    // assignability error from the other overload.
+    readonly retains?: string
 }
 
 const cases: readonly DiagnosticCase[] = [
     {
         source: "family((input: { readonly id: string }) => atom(input.id))",
-        guidance: "structured family arguments require options.encodeKey",
+        guidance:
+            "structured family arguments require a valid options.encodeKey",
     },
     {
         source: "family((first: string, second: { readonly id: string }) => atom(first + second.id))",
-        guidance: "structured family arguments require options.encodeKey",
+        guidance:
+            "structured family arguments require a valid options.encodeKey",
     },
     {
         source: "family((input: { readonly id: string }) => atom(input.id), {})",
-        guidance: "structured family arguments require options.encodeKey",
+        guidance:
+            "structured family arguments require a valid options.encodeKey",
+    },
+    {
+        source: "family((input: { readonly id: string }) => atom(input.id), { encodeKey: input => ({ id: input.id }) })",
+        guidance:
+            "structured family arguments require a valid options.encodeKey",
+        retains: "is not assignable to type 'WeakMemberKey'",
     },
     {
         source: "family(() => atom(0))",
@@ -51,13 +63,19 @@ const cases: readonly DiagnosticCase[] = [
     },
     {
         source: "family(key => atom(key))",
-        guidance:
-            "family requires a factory function with annotated parameters",
+        guidance: "family factory parameters must have concrete types, not any",
     },
     {
         source: "family(null)",
-        guidance:
-            "family requires a factory function with annotated parameters",
+        guidance: "family factory parameters must have concrete types, not any",
+    },
+    {
+        source: "family(looseFactory)",
+        guidance: "family factory parameters must have concrete types, not any",
+    },
+    {
+        source: 'family((key = "x") => atom(key))',
+        guidance: "family factory parameters must have concrete types, not any",
     },
     {
         source: "export const a = family((key: string) => atom(key))",
@@ -87,11 +105,23 @@ const cases: readonly DiagnosticCase[] = [
         source: 'export const g: [Atom<string>, Atom<string>, Selector<string>, Atom<string>] = [a("k"), b("k", 1), c("k"), d({ id: "k" })]',
         guidance: null,
     },
+    {
+        source: 'export const h = family((key: string, suffix?: number) => atom(`${key}${suffix ?? ""}`))',
+        guidance: null,
+    },
+    {
+        source: 'export const i: [Atom<string>, Atom<string>] = [h("k"), h("k", 2)]',
+        guidance: null,
+    },
 ]
 
 const directory = dirname(fileURLToPath(import.meta.url))
-const fixturePrelude =
-    'import { atom, family, selector, type Atom, type Selector } from "../../src/index"\n'
+const fixturePrelude = [
+    'import { atom, family, selector, type Atom, type Selector } from "../../src/index"',
+    "declare const looseFactory: (...args: any[]) => any",
+    "",
+].join("\n")
+const preludeLines = fixturePrelude.split("\n").length - 1
 const fixtureSource =
     fixturePrelude + cases.map(item => item.source).join("\n") + "\n"
 
@@ -111,7 +141,7 @@ describe("family diagnostics", () => {
     const { fixture, elsewhere } = compileFixture()
     const byCase = new Map<number, string[]>()
     for (const diagnostic of fixture) {
-        const index = diagnostic.line - 1
+        const index = diagnostic.line - preludeLines
         byCase.set(index, [...(byCase.get(index) ?? []), diagnostic.message])
     }
 
@@ -132,6 +162,9 @@ describe("family diagnostics", () => {
             expect(messages).toHaveLength(1)
             const [message] = messages
             expect(message).toContain(guidance)
+            if (item.retains !== undefined) {
+                expect(message).toContain(item.retains)
+            }
             expect(message).not.toContain("type 'never'")
         })
     }

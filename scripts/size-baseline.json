@@ -48,8 +48,8 @@
             "gzip": 80164
         },
         "packed": {
-            "raw": 389752,
-            "gzip": 103327
+            "raw": 389759,
+            "gzip": 103328
         },
         "fixtures": {
             "collection": {
