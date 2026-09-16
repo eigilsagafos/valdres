@@ -1,5 +1,34 @@
 # valdres
 
+## 1.0.0-beta.39
+
+### Minor Changes
+
+- [#395](https://github.com/eigilsagafos/valdres/pull/395)
+  [`48dab24`](https://github.com/eigilsagafos/valdres/commit/48dab2411ca1ae9759f529fdb251c6010169d2ed)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add optional static
+  diagnostic names to collections and their inspection row references.
+
+- [#397](https://github.com/eigilsagafos/valdres/pull/397)
+  [`270f00e`](https://github.com/eigilsagafos/valdres/commit/270f00e46f26aee66a724fcf6d6fdda09ddcf133)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Declare non-unique
+  scalar equality indexes on collections and read matching rows with `query`
+  from `valdres/query`. Indexes materialize lazily and update from effective
+  scoped row changes, preserving membership order, atomic rollback and stable
+  result snapshots.
+
+### Patch Changes
+
+- [#398](https://github.com/eigilsagafos/valdres/pull/398)
+  [`8bebc76`](https://github.com/eigilsagafos/valdres/commit/8bebc767b2cbb030c32129eca751f97301175cd4)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - `family()` now
+  reports actionable TypeScript diagnostics for invalid factories. A
+  structured-argument factory without `options.encodeKey` used to fail with "not
+  assignable to parameter of type 'never'"; the compiler output now names the
+  fix ("structured family arguments require a valid options.encodeKey"), and
+  zero-argument, non-State-returning, and loosely typed factories get their own
+  messages. Valid calls infer exactly as before.
+
 ## 1.0.0-beta.38
 
 ### Patch Changes
