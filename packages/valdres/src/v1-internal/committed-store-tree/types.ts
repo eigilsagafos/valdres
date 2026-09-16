@@ -24,10 +24,28 @@ export interface Selector<Value> extends StateBase<Value> {
     readonly kind: "selector"
 }
 
+/** @internal Readonly external definition; root publication awaits Gate 0. */
+export interface ExternalAtom<Value> extends StateBase<Value> {
+    readonly kind: "external"
+}
+
+/** @internal Structural producer, never branded or frozen by the runtime. */
+export interface ExternalSource<Value> {
+    readonly getSnapshot: () => Value
+    readonly getServerSnapshot?: () => Value
+    readonly subscribe: (invalidate: () => void) => () => void
+}
+
+/** @internal Proposed root type, pending contract approval. */
+export interface ExternalAtomOptions {
+    readonly name?: string
+}
+
 /** Any definition that can be read and subscribed through a Store. */
 export type State<Value> =
     | Atom<Value>
     | Selector<Value>
+    | ExternalAtom<Value>
     | ReadonlyState<Value, "collection-row">
     | ReadonlyState<Value, "collection">
 

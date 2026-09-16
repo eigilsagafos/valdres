@@ -5,6 +5,11 @@ import type {
 } from "../selector-evaluator/types"
 import { evaluateSelector } from "../selector-evaluator/evaluate"
 import { SelectorEvaluationSession } from "../selector-evaluator/types"
+import { defineExternalAtom } from "./external-atom"
+import type {
+    ExternalTreePlane,
+    ExternalOperationFailure,
+} from "./external-types"
 import {
     CallbackCapabilityError,
     COLLECTION_KERNEL,
@@ -79,6 +84,9 @@ import {
 import type {
     Atom,
     AtomOptions,
+    ExternalAtom,
+    ExternalSource,
+    ExternalAtomOptions,
     CommittedStoreTree,
     CommittedStoreTreeAdapter,
     CommittedStoreTreeDomain,
@@ -95,6 +103,11 @@ interface AtomApplyPlan {
     readonly scope: StoreScopeNode
     readonly intent: AtomIntent
     readonly ownershipChanged: boolean
+}
+
+interface PropagationSource {
+    readonly scope: StoreScopeNode
+    readonly atom: AnyState
 }
 
 interface CommitWorksets {
@@ -176,6 +189,13 @@ export interface InternalCommittedStoreTreeDomain
 export const getDefinitionDomainIdentity = (
     domain: InternalCommittedStoreTreeDomain,
 ): object => domain[definitionDomainRecords].ownerToken
+
+/** @internal No root export until lifecycle, settlement and Gate 0 are certified. */
+export const createInternalExternalAtom = <Value>(
+    domain: InternalCommittedStoreTreeDomain,
+    ...args: [source: ExternalSource<Value>, options?: ExternalAtomOptions]
+): ExternalAtom<Value> =>
+    defineExternalAtom(domain[definitionDomainRecords], args)
 
 /** @internal Installs one optional collection implementation after its
  * tree-shakeable factory has completed successfully. */
@@ -423,9 +443,23 @@ const STORE_TREE_COUNTER_INDEX: Readonly<Record<StoreTreeCounter, number>> =
         familyOwnerRetentionSetsCreated: 32,
         familyOwnerRetains: 33,
         familyOwnerReleases: 34,
+        liveSamples: 35,
+        serverSamples: 36,
+        transactionCaptures: 37,
+        externalClosureVisits: 38,
+        projectionPublications: 39,
+        lifecycleEdgeVisits: 40,
+        adapterSubscriptions: 41,
+        adapterCleanups: 42,
+        dirtyRounds: 43,
+        dirtySamples: 44,
+        thenableContainments: 45,
+        deliveryEntries: 46,
+        deliveryLimitHits: 47,
+        nonConvergenceTerminations: 48,
     })
 
-const STORE_TREE_COUNTER_COUNT = 35
+const STORE_TREE_COUNTER_COUNT = 49
 const internalInstrumentationCounters = new WeakMap<
     InternalStoreTreeInstrumentation,
     Uint32Array
@@ -491,6 +525,7 @@ const sameAtomOutcome = (
 const PROPAGATION_QUEUED = 1
 const PROPAGATION_SETTLING = 2
 const PROPAGATION_SETTLED = 4
+const PROPAGATION_EVALUATED = 8
 
 const createCommitWorksets = (onAllocation?: () => void): CommitWorksets => ({
     onAllocation,
@@ -643,6 +678,8 @@ class CommittedStoreTreeHost
     implements StoreScopeCoordinator, TreeTransactionHost
 {
     #fallbackRecords = new WeakMap<AnyAtom, DraftAtomOutcome>()
+    #external: ExternalTreePlane | undefined
+    #subscriberReading = false
     readonly #rootScope: StoreScopeNode
     #nextToken = 1
     #sourceEpoch = 0
@@ -691,6 +728,10 @@ class CommittedStoreTreeHost
         return this.#postSourceApply
     }
 
+    get allowControlPublication(): boolean {
+        return this.#postSourceApply && this.#external?.dormantPull !== true
+    }
+
     get instrumented(): boolean {
         return this.#counters !== undefined
     }
@@ -727,10 +768,14 @@ class CommittedStoreTreeHost
             throw new TypeError("StoreTree.get requires a valid State")
         }
         if (subscriberSession === undefined) {
-            const served = scope.serveKnownLocal(node, session)
+            const served =
+                this.#domain.externalAtoms === undefined
+                    ? scope.serveKnownLocal(node, session)
+                    : this.#readCommitted(scope, node, session)
             if (served.outcome.kind !== "value") throw served.outcome.error
             return served.outcome.value as Value
         }
+        this.#subscriberReading = true
         try {
             const served = scope.serveKnownLocal(node, session)
             if (served.outcome.kind !== "value") {
@@ -746,7 +791,68 @@ class CommittedStoreTreeHost
                 subscriberSession.latchControlFault(controlFault.error)
             }
             throw error
+        } finally {
+            this.#subscriberReading = false
         }
+    }
+
+    #readCommitted(
+        scope: StoreScopeNode,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ServedSelectorOutcome<OutcomeToken> {
+        if (
+            this.#domain.externalAtoms === undefined ||
+            (!scope.reachesExternal(node) &&
+                (!this.#domain.selectors.has(node) ||
+                    scope.getSelectorRecord(node) !== undefined))
+        ) {
+            return scope.serveKnownLocal(node, session)
+        }
+        return this.#externalPlane().read(scope, node, session)
+    }
+
+    #externalPlane(): ExternalTreePlane {
+        return (this.#external ??= this.#domain.externalRuntime!.createTree({
+            domain: this.#domain,
+            propagating: () => this.#postSourceApply,
+            subscriberRead: () => this.#subscriberReading,
+            token: () => this.createOutcomeToken(),
+            count: (counter, amount) => this.recordCounter(counter, amount),
+            advanceEpoch: () => {
+                this.#sourceEpoch++
+                this.recordCounter("sourceEpoch")
+                this.recordCounter("propagationSettlements")
+            },
+            reach: (scope, node) => {
+                this.reachSubscriptionTarget(scope, node)
+                scope.markDependents(node)
+            },
+            settleRead: prepare => {
+                this.#beginNotificationSettlement()
+                try {
+                    this.#propagateFromSources(undefined, undefined, prepare)
+                } finally {
+                    this.#clearNotificationSettlement()
+                }
+            },
+        }))
+    }
+
+    refreshExternalClosure(
+        scope: StoreScopeNode,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): void {
+        this.#external?.refresh(scope, node, session)
+    }
+
+    serveExternal(
+        scope: StoreScopeNode,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ServedSelectorOutcome<OutcomeToken> {
+        return this.#externalPlane().serve(scope, node, session)
     }
 
     sub<Value>(
@@ -769,6 +875,7 @@ class CommittedStoreTreeHost
             ownerStatus === "invalid" ||
             (!this.#domain.atoms.has(node) &&
                 !this.#domain.selectors.has(node) &&
+                !this.#domain.externalAtoms?.has(node) &&
                 !collectionSource(this.#domain, node))
         ) {
             throw new TypeError("StoreTree.sub requires a valid State")
@@ -778,11 +885,17 @@ class CommittedStoreTreeHost
         }
 
         const served =
-            scope.getMaterializedServedOutcome(node) ??
-            scope.serveKnownLocal(
-                node,
-                session ?? new SelectorEvaluationSession<AnyState>(),
-            )
+            this.#domain.externalAtoms === undefined
+                ? (scope.getMaterializedServedOutcome(node) ??
+                  scope.serveKnownLocal(
+                      node,
+                      session ?? new SelectorEvaluationSession<AnyState>(),
+                  ))
+                : this.#readCommitted(
+                      scope,
+                      node,
+                      session ?? new SelectorEvaluationSession<AnyState>(),
+                  )
         if (served.outcome.kind === "control-error") {
             throw served.outcome.error
         }
@@ -966,6 +1079,7 @@ class CommittedStoreTreeHost
         }
         if (Object.is(scope, this.#rootScope)) {
             this.#fallbackRecords = new WeakMap()
+            this.#external = undefined
         }
     }
 
@@ -1032,7 +1146,10 @@ class CommittedStoreTreeHost
         if (ownerStatus !== "invalid") {
             if (this.#domain.atoms.has(node)) {
                 coreKind = 0
-            } else if (this.#domain.selectors.has(node)) {
+            } else if (
+                this.#domain.selectors.has(node) ||
+                this.#domain.externalAtoms?.has(node)
+            ) {
                 coreKind = 1
             } else {
                 collectionKernel = collectionSource(this.#domain, node)
@@ -1106,6 +1223,11 @@ class CommittedStoreTreeHost
             return outcome.value as Value
         }
         if (!this.#domain.selectors.has(node)) {
+            if (this.#domain.externalAtoms?.has(node)) {
+                const outcome = this.#captureExternal(draft, node, session)
+                if (outcome.kind !== "value") throw outcome.error
+                return outcome.value as Value
+            }
             const collectionKernel = collectionSource(this.#domain, node)
             if (!collectionKernel) {
                 throw new TypeError("Transaction.get requires a readable State")
@@ -1268,6 +1390,7 @@ class CommittedStoreTreeHost
         this.recordCounter("scratchHostAllocations")
         return new ScratchSelectorHost<AnyState>(
             Object.freeze({
+                trackPath: hydration,
                 resolve: (
                     node: AnyState,
                     session: SelectorEvaluationSession<AnyState>,
@@ -1276,6 +1399,7 @@ class CommittedStoreTreeHost
                     source: AnyState,
                     kind: ScratchSourceKind,
                     session: SelectorEvaluationSession<AnyState>,
+                    path?: readonly AnyState[],
                 ) =>
                     this.#readDraftSourceOutcome(
                         draft,
@@ -1283,6 +1407,7 @@ class CommittedStoreTreeHost
                         source,
                         kind,
                         session,
+                        hydration ? path : undefined,
                     ),
                 baseline: hydration
                     ? () => undefined
@@ -1316,7 +1441,10 @@ class CommittedStoreTreeHost
             return Object.freeze({ kind: "selector", definition })
         }
         if (collectionSource(this.#domain, node)) {
-            return Object.freeze({ kind: "ext" })
+            return Object.freeze({ kind: "collection" })
+        }
+        if (this.#domain.externalAtoms?.has(node)) {
+            return Object.freeze({ kind: "external" })
         }
         throw new TypeError("Unknown scratch StoreTree State")
     }
@@ -1533,6 +1661,7 @@ class CommittedStoreTreeHost
         source: AnyState,
         kind: ScratchSourceKind,
         session: SelectorEvaluationSession<AnyState>,
+        serverPath?: readonly AnyState[],
     ): DraftAtomOutcome {
         if (kind === "atom") {
             return this.#readDraftAtomOutcome(
@@ -1542,7 +1671,43 @@ class CommittedStoreTreeHost
                 session,
             )
         }
+        if (kind === "external") {
+            if (serverPath !== undefined) {
+                this.recordCounter("serverSamples")
+                return this.#domain
+                    .externalAtoms!.get(source)!
+                    .sample(
+                        session,
+                        serverPath,
+                        this.instrumented
+                            ? () => this.recordCounter("thenableContainments")
+                            : undefined,
+                    )
+            }
+            return this.#captureExternal(draft, source, session)
+        }
         return this.#domain[COLLECTION_KERNEL]!.read(draft, scope, source)
+    }
+
+    #captureExternal(
+        draft: TreeDraft,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): DraftAtomOutcome {
+        return draft.captureExternal(node, () => {
+            this.recordCounter("liveSamples")
+            const outcome = this.#domain
+                .externalAtoms!.get(node)!
+                .sample(
+                    session,
+                    undefined,
+                    this.instrumented
+                        ? () => this.recordCounter("thenableContainments")
+                        : undefined,
+                )
+            this.recordCounter("transactionCaptures")
+            return outcome
+        })
     }
 
     #readDraftAtomResolution(
@@ -2178,14 +2343,17 @@ class CommittedStoreTreeHost
     }
 
     #propagateFromSources(
-        firstSource: AtomViewRecord | undefined,
-        remainingSources?: readonly AtomViewRecord[],
+        firstSource: PropagationSource | undefined,
+        remainingSources?: readonly PropagationSource[],
+        prepare?: () => void,
     ): void {
-        if (firstSource === undefined) {
+        if (firstSource === undefined && prepare === undefined) {
             this.#clearNotificationSettlement()
             return
         }
-        this.recordCounter("propagationSettlements")
+        if (firstSource !== undefined)
+            this.recordCounter("propagationSettlements")
+        const previousPull = this.#external?.beginPropagation()
         this.#propagationQueue = []
         this.#propagationStatusScope = undefined
         this.#propagationStatusSelector = undefined
@@ -2193,9 +2361,22 @@ class CommittedStoreTreeHost
         this.#propagationStatuses = undefined
         this.#propagationControlFault = undefined
         this.#postSourceApply = true
+        const epochBefore = this.#sourceEpoch
+        const failures: ExternalOperationFailure[] | undefined =
+            prepare === undefined ? undefined : []
         let authoritativeControlFault: unknown | undefined
         try {
-            firstSource.scope.markDependents(firstSource.atom)
+            try {
+                prepare?.()
+            } catch (cause) {
+                failures!.push({
+                    cause,
+                    phase: "sampling",
+                    committed: this.#sourceEpoch !== epochBefore,
+                    source: "external-read",
+                })
+            }
+            firstSource?.scope.markDependents(firstSource.atom)
             if (remainingSources !== undefined) {
                 for (const source of remainingSources) {
                     source.scope.markDependents(source.atom)
@@ -2205,7 +2386,17 @@ class CommittedStoreTreeHost
             while (cursor < this.#propagationQueue.length) {
                 const scope = this.#propagationQueue[cursor++] as StoreScopeNode
                 const selector = this.#propagationQueue[cursor++] as AnySelector
-                this.#settleSelector(scope, selector)
+                try {
+                    this.#settleSelector(scope, selector)
+                } catch (cause) {
+                    if (failures === undefined) throw cause
+                    failures.push({
+                        cause,
+                        phase: "settling",
+                        committed: this.#sourceEpoch !== epochBefore,
+                        source: "external-read",
+                    })
+                }
             }
         } finally {
             authoritativeControlFault = this.#propagationControlFault
@@ -2216,8 +2407,26 @@ class CommittedStoreTreeHost
             this.#propagationStatusSelector = undefined
             this.#propagationStatusBits = 0
             this.#propagationStatuses = undefined
+            this.#external?.endPropagation(previousPull)
         }
-        this.#deliverSubscriptionSnapshot(authoritativeControlFault)
+        if (failures === undefined) {
+            this.#deliverSubscriptionSnapshot(authoritativeControlFault)
+            return
+        }
+        try {
+            this.#deliverSubscriptionSnapshot(authoritativeControlFault)
+        } catch (error) {
+            for (const cause of error instanceof SubscriberNotificationError
+                ? error.causes
+                : [error])
+                failures.push({
+                    cause,
+                    phase: "notifying",
+                    committed: this.#sourceEpoch !== epochBefore,
+                    source: "external-read",
+                })
+        }
+        if (failures.length > 0) this.#domain.externalRuntime!.fail(failures)
     }
 
     #beginNotificationSettlement(): void {
@@ -2361,11 +2570,21 @@ class CommittedStoreTreeHost
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean {
         const queue = this.#propagationQueue
         if (queue === undefined) return false
+        let status = this.#getPropagationStatus(scope, selector)
         if (
-            (this.#getPropagationStatus(scope, selector) &
-                PROPAGATION_QUEUED) !==
-            0
+            this.#external !== undefined &&
+            (status & PROPAGATION_SETTLED) !== 0 &&
+            (status & PROPAGATION_EVALUATED) === 0
         ) {
+            this.#updatePropagationStatus(
+                scope,
+                selector,
+                0,
+                PROPAGATION_SETTLED | PROPAGATION_QUEUED,
+            )
+            status &= ~(PROPAGATION_SETTLED | PROPAGATION_QUEUED)
+        }
+        if ((status & PROPAGATION_QUEUED) !== 0) {
             return true
         }
         this.#updatePropagationStatus(scope, selector, PROPAGATION_QUEUED)
@@ -2379,6 +2598,8 @@ class CommittedStoreTreeHost
         session: SelectorEvaluationSession<AnyState>,
     ): void {
         if (this.#propagationQueue === undefined) return
+        if (this.#external?.dormantPull && !this.#external.changedPull) return
+        this.#external?.rethrowSelectorFault(scope, selector, session)
         this.#settleSelector(scope, selector, session)
     }
 
@@ -2410,6 +2631,12 @@ class CommittedStoreTreeHost
                 }
             }
             if (scope.isSelectorDirty(selector)) {
+                if (this.#external !== undefined)
+                    this.#updatePropagationStatus(
+                        scope,
+                        selector,
+                        PROPAGATION_EVALUATED,
+                    )
                 const graphStayedCurrent =
                     graphVersionBeforeDependencies ===
                     scope.getSelectorGraphVersion()
@@ -2426,6 +2653,16 @@ class CommittedStoreTreeHost
                 }
             }
             this.#updatePropagationStatus(scope, selector, PROPAGATION_SETTLED)
+        } catch (error) {
+            if (this.#external?.dormantPull) {
+                this.#external.recordSelectorFault(scope, selector, error)
+                this.#updatePropagationStatus(
+                    scope,
+                    selector,
+                    PROPAGATION_SETTLED,
+                )
+            }
+            throw error
         } finally {
             this.#updatePropagationStatus(
                 scope,
@@ -2727,6 +2964,7 @@ export const createCommittedStoreTreeDomain = (
         if (scope === undefined) {
             throw new TypeError("assertStore requires a valid Store")
         }
+        if (scope.status !== "live") throw new StoreDisposedError()
     }
 
     const adapter: CommittedStoreTreeAdapter = Object.freeze({

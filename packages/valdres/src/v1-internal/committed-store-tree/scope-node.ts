@@ -35,6 +35,20 @@ export type StoreScopeEvaluationStrategy = SelectorEvaluationStrategy & {
     readonly recordExtension?: StoreScopeExtensionRecorder
 }
 export type StoreTreeCounter =
+    | "liveSamples"
+    | "serverSamples"
+    | "transactionCaptures"
+    | "externalClosureVisits"
+    | "projectionPublications"
+    | "lifecycleEdgeVisits"
+    | "adapterSubscriptions"
+    | "adapterCleanups"
+    | "dirtyRounds"
+    | "dirtySamples"
+    | "thenableContainments"
+    | "deliveryEntries"
+    | "deliveryLimitHits"
+    | "nonConvergenceTerminations"
     | "sourceEpoch"
     | "routeVisits"
     | "deadRouteCompactions"
@@ -72,6 +86,7 @@ export type StoreTreeCounter =
     | "familyOwnerReleases"
 
 interface SelectorRecord {
+    readonly lifecycleInClosure: boolean
     readonly served: ServedSelectorOutcome<OutcomeToken>
     readonly dependencies: readonly SelectorDependencySnapshot<
         AnyState,
@@ -98,6 +113,7 @@ export interface AtomViewRecord {
 export interface StoreScopeCoordinator {
     readonly runtimeDomain: RuntimeDomainRecords
     readonly postSourceApply: boolean
+    readonly allowControlPublication: boolean
     readonly instrumented: boolean
     /** Inspector-owned evaluator metadata transports optional numeric codes
      * without changing the ordinary coordinator or runtime-domain shape. */
@@ -109,6 +125,16 @@ export interface StoreScopeCoordinator {
         atom: AnyAtom,
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken>
+    serveExternal(
+        scope: StoreScopeNode,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ServedSelectorOutcome<OutcomeToken>
+    refreshExternalClosure(
+        scope: StoreScopeNode,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): void
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean
     prepareSelectorRead(
         scope: StoreScopeNode,
@@ -373,6 +399,35 @@ export class StoreScopeNode
         return this.#selectorRecords.get(selector)?.dependencies
     }
 
+    reachesExternal(node: AnyState): boolean {
+        return (
+            this.#selectorRecords.get(node as AnySelector)
+                ?.lifecycleInClosure ??
+            this.coordinator.runtimeDomain.externalAtoms?.has(node) ??
+            false
+        )
+    }
+
+    #refreshClosureMarkers(selector: AnySelector): void {
+        const pending = [selector]
+        for (let index = 0; index < pending.length; index++) {
+            const current = pending[index]!
+            const record = this.#selectorRecords.get(current)
+            if (record === undefined) continue
+            const lifecycleInClosure = record.dependencies.some(dependency =>
+                this.reachesExternal(dependency.node),
+            )
+            if (lifecycleInClosure === record.lifecycleInClosure) continue
+            this.#selectorRecords.set(
+                current,
+                Object.freeze({ ...record, lifecycleInClosure }),
+            )
+            this.#reverseEdges
+                .get(current)
+                ?.forEach(parent => pending.push(parent))
+        }
+    }
+
     markDependents(node: AnyState): void {
         this.#reverseEdges.get(node)?.forEach(selector => {
             if (this.coordinator.enqueueSelector(this, selector)) {
@@ -434,6 +489,8 @@ export class StoreScopeNode
 
         const definition = domain.selectors.get(node)
         if (definition === undefined) {
+            if (domain.externalAtoms?.has(node))
+                return this.coordinator.serveExternal(this, node, session)
             const served = domain[COLLECTION_KERNEL]?.scope(this, node)
             if (served !== undefined) {
                 return served as ServedSelectorOutcome<OutcomeToken>
@@ -442,6 +499,13 @@ export class StoreScopeNode
         }
         const selector = node as AnySelector
         let current = this.#selectorRecords.get(selector)
+        if (
+            current?.lifecycleInClosure &&
+            !this.#dirtySelectors.has(selector)
+        ) {
+            this.coordinator.refreshExternalClosure(this, selector, session)
+            current = this.#selectorRecords.get(selector)
+        }
         if (current !== undefined && this.coordinator.postSourceApply) {
             this.coordinator.prepareSelectorRead(this, selector, session)
             current = this.#selectorRecords.get(selector)
@@ -455,7 +519,7 @@ export class StoreScopeNode
         )
         if (
             proposal.outcome.kind === "control-error" &&
-            !this.coordinator.postSourceApply
+            !this.coordinator.allowControlPublication
         ) {
             throw proposal.outcome.error
         }
@@ -589,6 +653,11 @@ export class StoreScopeNode
             outcome: proposal.outcome,
         })
         const record: SelectorRecord = Object.freeze({
+            lifecycleInClosure:
+                this.coordinator.runtimeDomain.externalAtoms !== undefined &&
+                proposal.dependencies.some(dependency =>
+                    this.reachesExternal(dependency.node),
+                ),
             served,
             dependencies: proposal.dependencies,
             lastSuccess:
@@ -616,6 +685,14 @@ export class StoreScopeNode
         this.#selectorGraphVersion++
         session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(selector, record)
+        if (
+            previous !== undefined &&
+            previous.lifecycleInClosure !== record.lifecycleInClosure
+        ) {
+            this.#reverseEdges
+                .get(selector)
+                ?.forEach(parent => this.#refreshClosureMarkers(parent))
+        }
         this.#dirtySelectors.delete(selector)
         if (addedSelectorEdges !== undefined) {
             this.#appendObservedSelectorEdgeAdditions(addedSelectorEdges)

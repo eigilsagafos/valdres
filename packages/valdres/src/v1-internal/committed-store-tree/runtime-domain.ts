@@ -1,8 +1,15 @@
+import type { ExternalRuntime } from "./external-types"
 import type {
     SelectorDefinition,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
-import type { Atom, Collection, CollectionRow, Selector } from "./types"
+import type {
+    Atom,
+    Collection,
+    CollectionRow,
+    ExternalAtom,
+    Selector,
+} from "./types"
 
 /** Definition kinds a family factory may construct or return. */
 export type DefinitionState = Atom<any> | Selector<any>
@@ -10,6 +17,7 @@ export type DefinitionState = Atom<any> | Selector<any>
  * definition admission deliberately remains Atom-or-Selector. */
 export type AnyState =
     | DefinitionState
+    | ExternalAtom<any>
     | CollectionRow<any, any>
     | Collection<any, any, any, any>
 export type AnyAtom = Atom<any>
@@ -29,6 +37,25 @@ export interface AtomDefinition {
     readonly name?: string
     readonly equal?: (previous: unknown, next: unknown) => boolean
 }
+
+export interface ExternalAtomDefinition {
+    readonly sample: (
+        session: ControlFaultSession,
+        serverPath?: readonly AnyState[],
+        onThenable?: () => void,
+    ) => SynchronousResult
+    readonly source: object
+    readonly getSnapshot: () => unknown
+    readonly getServerSnapshot?: () => unknown
+    readonly subscribe: (invalidate: () => void) => unknown
+    readonly name?: string
+}
+
+export type ExternalCallbackKind =
+    | "external-snapshot"
+    | "external-server-snapshot"
+    | "external-subscribe"
+    | "external-cleanup"
 
 export interface ControlFaultSession {
     latchControlFault(error: unknown): void
@@ -82,6 +109,12 @@ export type RuntimeActivity =
           selectorActivity?: SelectorRuntimeActivity
       }>
     | Readonly<{
+          kind: ExternalCallbackKind
+          session: ControlFaultSession
+          selectorActivity?: SelectorRuntimeActivity
+          generation?: object
+      }>
+    | Readonly<{
           kind: "subscriber"
           session: ControlFaultSession
       }>
@@ -96,6 +129,9 @@ export interface RuntimeDomainRecords {
     [REACQUIRABLE_ATOMS]?: WeakSet<object>
     readonly atoms: WeakMap<object, AtomDefinition>
     readonly selectors: WeakMap<object, SelectorDefinition<AnyState, any>>
+    /** Lazy registry keeps external-free domains on their existing path. */
+    externalAtoms?: WeakMap<object, ExternalAtomDefinition>
+    externalRuntime?: ExternalRuntime
     /** Exact same-domain Store facade recognition; values stay opaque here. */
     readonly stores: WeakMap<object, object>
     /** Exact same-domain Transaction cursor recognition; values stay opaque. */
@@ -406,7 +442,7 @@ export const runGuardedCallback = <Result>(
     const selectorActivity =
         previous?.kind === "selector"
             ? previous
-            : previous?.kind === "guarded-callback"
+            : previous !== undefined && "selectorActivity" in previous
               ? previous.selectorActivity
               : undefined
     const activity: RuntimeActivity =
@@ -459,7 +495,7 @@ export const runSelectorActivity = <Result>(
     const currentSelectorActivity =
         previous?.kind === "selector"
             ? previous
-            : previous?.kind === "guarded-callback"
+            : previous !== undefined && "selectorActivity" in previous
               ? previous.selectorActivity
               : undefined
     // Recursive selectors ordinarily share one session. Skip that duplicate
@@ -601,7 +637,10 @@ export const assertCursorOperationAllowed = (
     if (activity?.kind === "selector") {
         throw new SelectorCapabilityError("Transaction cursor operation")
     }
-    if (activity?.kind === "guarded-callback") {
+    if (
+        activity?.kind === "guarded-callback" ||
+        activity?.kind.startsWith("external-")
+    ) {
         throw new CallbackCapabilityError()
     }
     throw new TransactionPhaseError()

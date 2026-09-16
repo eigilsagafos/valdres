@@ -80,6 +80,8 @@ export class TreeDraft {
     #singleFallback: DraftAtomOutcome | undefined
     #fallbackMemo: Map<AnyAtom, DraftAtomOutcome> | undefined
     #scratchHosts: Map<StoreScopeNode, DraftScratchHost> | undefined
+    /** Tree-wide, independent of scope scratch hosts and draft generations. */
+    #externalCaptures: Map<AnyState, DraftAtomOutcome> | undefined
     #rowRelease: ((draft: TreeDraft) => void) | undefined
     #hasRowIntents = false
     generation = 0
@@ -460,6 +462,19 @@ export class TreeDraft {
         return this.#scratchHosts?.get(scope)
     }
 
+    captureExternal(
+        node: AnyState,
+        sample: () => DraftAtomOutcome,
+    ): DraftAtomOutcome {
+        const current = this.#externalCaptures?.get(node)
+        if (current !== undefined) return current
+        // A control fault escapes sampling before any memo can be installed.
+        const outcome = sample()
+        const captures = (this.#externalCaptures ??= this.#allocateMap())
+        captures.set(node, outcome)
+        return outcome
+    }
+
     installScratchHost(
         scope: StoreScopeNode,
         scratchHost: DraftScratchHost,
@@ -524,6 +539,8 @@ export class TreeDraft {
             this.#fallbackMemo = undefined
             this.#scratchHosts?.clear()
             this.#scratchHosts = undefined
+            this.#externalCaptures?.clear()
+            this.#externalCaptures = undefined
         } finally {
             releaseRows?.(this)
         }

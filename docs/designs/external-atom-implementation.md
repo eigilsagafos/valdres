@@ -70,7 +70,7 @@ that file and the Amsterdam roadmap will not be edited here.
    `SubscriberNotificationError` constructor, raw `cause`/frozen `causes`,
    `committed: true`, `phase: "notifying"`, and `source: "owned-mutation"`.
    For external notification settlements widen source to
-   `"external-startup" | "external-invalidation" | "external-drain"`.
+   `"external-read" | "external-startup" | "external-invalidation" | "external-drain"`.
    Preserve mismatch-first ordering *within* a settlement. Across an outer
    operation, its first failure stays primary; append later failures in
    occurrence order after all delivery, cleanup, and drain work.
@@ -82,7 +82,7 @@ that file and the Amsterdam roadmap will not be edited here.
    `source` mirror the primary record, not whether *anything* changed later.
    Phase domain: `"admitting" | "sampling" | "settling" | "notifying" |
    "cleanup" | "instrumenting"`. Source domain: `"owned-mutation" |
-   "external-startup" | "external-invalidation" | "external-drain" |
+   "external-read" | "external-startup" | "external-invalidation" | "external-drain" |
    "external-cleanup"`. No named metadata type export is needed. Fixed message:
    `An external source operation failed`.
 
@@ -93,6 +93,10 @@ that file and the Amsterdam roadmap will not be edited here.
    retains the exact original errors as causes. A lone arbitrary setup/cleanup
    throw uses the operation wrapper so application error objects are never
    mutated. Ordinary sampled snapshot errors are outcomes, not ledger entries.
+   The proposed `external-read` source also covers a dormant pull that publishes
+   one source before a later source fails; its earlier changes must still settle
+   and any subscriber failure remains secondary. This case was added during E1
+   review and remains part of the unapproved public recommendation.
    `InvalidExternalCleanupError / VALDRES_INVALID_EXTERNAL_CLEANUP` already
    exists in the contract and covers invalid setup cleanup and returned/thrown
    cleanup thenables. Ordinary synchronous cleanup return values are ignored
@@ -302,6 +306,69 @@ The next proposed branch is `feat/external-atom-pull`, based on this E0 commit.
 Gate 0 items 1–5 and the public family widening remain unapproved; all contract
 evidence statuses remain unchanged.
 
+## E1 internal checkpoint
+
+Branch: `feat/external-atom-pull`, stacked on E0 `ee32f87a`. The constructor is
+an internal helper only; root exports, public contract evidence, family admission,
+versions, changelogs, and changesets remain unchanged.
+
+The internal vertical slice adds definition identity/validation and callback
+quarantine, one weak projection map per StoreTree, sparse dormant closure refresh,
+transaction-root capture, and isolated server sampling. `ScratchSourceKind.ext`
+is now `collection`; the distinct `external` lane uses definition capabilities.
+The existing adapter `assertStore` now checks liveness, including cached React
+third-getter calls. The existing evaluator and propagation queue remain the only
+evaluation/settlement machinery.
+
+Files and ownership:
+
+- `external-atom.ts` owns the unexported constructor, source callback guards,
+  synchronous sample normalization, and provisional named errors.
+- `external-projection.ts` owns the optional plane created privately by one host.
+  It holds weak projections/routes and an operation-local sample/fault memo.
+  `external-types.ts` contains its internal bindings; the domain's optional
+  capability never stores projections or an enumerable host registry.
+- `runtime-domain.ts` adds the weak definition registry and explicit callback
+  activities. `types.ts` adds the internal readonly State arm.
+- `scope-node.ts` carries immutable closure markers and updates their ancestors
+  iteratively even for equal-valued topology changes.
+- `committed-store-tree.ts` routes pull work into the existing queue, completes
+  earlier publications after a later pull failure, and preserves failure order.
+- `tree-transaction.ts` owns captures across all scopes/generations;
+  `scratch-selector-host.ts` owns disposable dynamic server paths.
+- `external-pull.test.ts` and `external-observations.test.ts` cover the new slice.
+
+Focused evidence: 34 tests / 3,452 assertions, including 3,200 model/runtime
+dynamic observations, a 16,000-selector equal-topology chain, partial-publication
+failure completion, source ownership/quarantine, transaction capture/error retry,
+and server isolation/path/thenable behavior. Both packages and the committed-tree
+test project typecheck. Contract checks pass. A failed dynamic selector is retried
+once per later pull, never twice while completing the same partial publication.
+The broader targeted run passed 649 tests with one existing five-second
+declaration-test timeout; that exact declaration suite
+passed alone (3 tests, 28 assertions). No timeout was weakened.
+
+The first paired timing harness shared one polymorphic call site between two
+unrelated runtime copies. Reversing warmup order reversed its apparent Atom-read
+regression. Those numbers are **invalid for the performance gate**, and remain
+in `.context/external-atom` to document the rejected measurement. Corrected
+independent loop functions retain alternating timed pairs. Latest Bun candidate/
+baseline median ratios: Atom read 0.996, Selector read 1.083, write+notify 1.035,
+subscribe 0.888, transaction 1.010. Node ratios were 1.029 / 0.984 / 1.027 /
+0.993 / 1.028 before removal of a duplicate queue-status lookup. Each lane has
+nine paired samples after warmup; read lanes perform two million operations.
+These are E1 microbenchmarks, not final feature certification. Raw programs,
+outputs, and the exact detached base are preserved for reproduction.
+
+Package certification is still red. Moving external-only code out of eager core
+reduced the ordinary adapter fixture's measured gzip growth from 11.78% to 7.47%
+at that checkpoint; it still exceeds the immutable ordinary budget. No budget
+was increased. `test:v1-beta:packed` stops at the old certified build digest before
+consumer tests; it is not a passing packed run. Final exact-tarball sizes,
+reachability, provenance, and reviewed feature-cost policy remain E4 gates.
+Lifecycle/retained reads, provisional admission, attachment, drain bounds,
+cleanup, final error metadata, and public family widening remain later slices.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
@@ -309,7 +376,9 @@ evidence statuses remain unchanged.
 | Eng Review | `/plan-eng-review` | Architecture and test plan before edits | 1 | Internal model may proceed; public gate pending | existing evaluator reused; four implementation hazards already covered by brief |
 | Independent review | contract/recovery audit agents | Evidence and conflicting authority | 2 | Model regressions addressed; public gate pending | family admission conflict confirmed; model counterexamples reproduced and tested |
 
-VERDICT: E0 authorized; no production export or contract certification claim.
+VERDICT: E0 complete; E1 internal behavior implemented and tested, with package
+certification open. E2–E3 internal work authorized. No public export or final
+contract certification claim.
 
 **UNRESOLVED DECISIONS:**
 - Gate 0 items 1–5, including the operation-error wrapper and metadata shape.
