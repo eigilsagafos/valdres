@@ -89,6 +89,7 @@ export type StoreTreeCounter =
 
 interface SelectorRecord {
     readonly lifecycleInClosure: boolean
+    readonly dormantExternalInClosure: boolean
     readonly served: ServedSelectorOutcome<OutcomeToken>
     readonly dependencies: readonly SelectorDependencySnapshot<
         AnyState,
@@ -145,6 +146,7 @@ export interface StoreScopeCoordinator {
     ): void
     reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void
     reconcileExternalLifecycle(scope: StoreScopeNode, state: AnyState): void
+    isExternalActive(state: AnyState): boolean
     latchPropagationControlFault(error: unknown): void
     recordCounter(counter: StoreTreeCounter, amount?: number): void
 }
@@ -411,6 +413,37 @@ export class StoreScopeNode
         )
     }
 
+    reachesDormantExternal(node: AnyState): boolean {
+        return (
+            this.#selectorRecords.get(node as AnySelector)
+                ?.dormantExternalInClosure ??
+            (this.coordinator.runtimeDomain.externalAtoms?.has(node) === true &&
+                !this.coordinator.isExternalActive(node))
+        )
+    }
+
+    refreshExternalActivity(node: AnyState): void {
+        const pending: AnySelector[] = []
+        this.#reverseEdges.get(node)?.forEach(parent => pending.push(parent))
+        for (let index = 0; index < pending.length; index++) {
+            const current = pending[index]!,
+                record = this.#selectorRecords.get(current)
+            if (record === undefined) continue
+            const dormantExternalInClosure = record.dependencies.some(
+                dependency => this.reachesDormantExternal(dependency.node),
+            )
+            if (dormantExternalInClosure === record.dormantExternalInClosure)
+                continue
+            this.#selectorRecords.set(
+                current,
+                Object.freeze({ ...record, dormantExternalInClosure }),
+            )
+            this.#reverseEdges
+                .get(current)
+                ?.forEach(parent => pending.push(parent))
+        }
+    }
+
     #refreshClosureMarkers(selector: AnySelector): void {
         const pending = [selector]
         for (let index = 0; index < pending.length; index++) {
@@ -660,6 +693,11 @@ export class StoreScopeNode
             outcome: proposal.outcome,
         })
         const record: SelectorRecord = Object.freeze({
+            dormantExternalInClosure:
+                this.coordinator.runtimeDomain.externalAtoms !== undefined &&
+                proposal.dependencies.some(dependency =>
+                    this.reachesDormantExternal(dependency.node),
+                ),
             lifecycleInClosure:
                 this.coordinator.runtimeDomain.externalAtoms !== undefined &&
                 proposal.dependencies.some(dependency =>
@@ -692,6 +730,12 @@ export class StoreScopeNode
         this.#selectorGraphVersion++
         session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(selector, record)
+        if (
+            previous !== undefined &&
+            previous.dormantExternalInClosure !==
+                record.dormantExternalInClosure
+        )
+            this.refreshExternalActivity(selector)
         if (this.coordinator.runtimeDomain.externalAtoms !== undefined) {
             this.coordinator.reconcileExternalLifecycle(this, selector)
         }

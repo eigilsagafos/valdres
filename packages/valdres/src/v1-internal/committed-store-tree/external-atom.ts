@@ -3,6 +3,8 @@ import { ExternalProjectionPlane } from "./external-projection"
 import type { ExternalOperationFailure } from "./external-types"
 import {
     assertRuntimeDefinitionConstructionAllowed,
+    CallbackCapabilityError,
+    RuntimeMismatchError,
     containThenable,
     inspectThenable,
     makeStateHandle,
@@ -49,6 +51,37 @@ export class DormantExternalReadError extends Error {
     constructor() {
         super("Subscriber callbacks cannot sample dormant external sources")
         this.name = "DormantExternalReadError"
+        Object.freeze(this)
+    }
+}
+
+export class InvalidExternalCleanupError extends Error {
+    readonly code = "VALDRES_INVALID_EXTERNAL_CLEANUP"
+    constructor() {
+        super(
+            "External source subscribe must return a synchronous cleanup function",
+        )
+        this.name = "InvalidExternalCleanupError"
+        Object.freeze(this)
+    }
+}
+
+export class ExternalSourceNonConvergenceError extends Error {
+    readonly code = "VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE"
+    constructor() {
+        super(
+            "External sources did not settle within the synchronous work bound",
+        )
+        this.name = "ExternalSourceNonConvergenceError"
+        Object.freeze(this)
+    }
+}
+
+export class ExternalSourceDeliveryLimitError extends Error {
+    readonly code = "VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT"
+    constructor() {
+        super("External source delivery exceeded the synchronous work bound")
+        this.name = "ExternalSourceDeliveryLimitError"
         Object.freeze(this)
     }
 }
@@ -212,11 +245,30 @@ export function defineExternalAtom<Value>(
             ) => sampleExternal(domain, definition, session, path, onThenable),
         }),
     )
+    ensureExternalRuntime(domain)
+    return handle
+}
+
+// Keep the domain's long-lived factory outside a definition's closure scope.
+// Sharing that activation can retain its source even through an ephemeron map.
+function ensureExternalRuntime(domain: RuntimeDomainRecords): void {
+    if (domain.externalRuntime !== undefined) return
+    const delivery = { depth: 0, work: 0 }
+    const bounds = {
+        rounds: 64,
+        samples: 4096,
+        deliveryDepth: 32,
+        deliveryWork: 4096,
+    }
     domain.externalRuntime ??= Object.freeze({
+        bounds,
         createTree: (
             bindings: import("./external-types").ExternalTreeBindings,
-        ) => new ExternalProjectionPlane(bindings),
-        fail: (failures: readonly ExternalOperationFailure[]): never => {
+        ) => new ExternalProjectionPlane(bindings, delivery, bounds),
+        fail: (
+            failures: readonly ExternalOperationFailure[],
+            preserveMetadata = false,
+        ): never => {
             const seen = new Set<unknown>()
             const distinct = failures.filter(failure => {
                 if (failure.phase === "notifying") return true
@@ -224,12 +276,27 @@ export function defineExternalAtom<Value>(
                 seen.add(failure.cause)
                 return true
             })
-            if (distinct.length === 1 && distinct[0]!.phase !== "notifying")
-                throw distinct[0]!.cause
+            if (
+                !preserveMetadata &&
+                distinct.length === 1 &&
+                distinct[0]!.phase !== "notifying"
+            ) {
+                const failure = distinct[0]!
+                if (
+                    (failure.phase !== "admitting" &&
+                        failure.phase !== "cleanup") ||
+                    failure.cause instanceof RuntimeMismatchError ||
+                    failure.cause instanceof CallbackCapabilityError ||
+                    failure.cause instanceof InvalidExternalCleanupError ||
+                    failure.cause instanceof
+                        ExternalSourceNonConvergenceError ||
+                    failure.cause instanceof ExternalSourceDeliveryLimitError
+                )
+                    throw failure.cause
+            }
             throw new ExternalSourceOperationError(distinct)
         },
     })
-    return handle
 }
 
 export function sampleExternal(

@@ -141,8 +141,9 @@ interface SubscriptionTarget {
 }
 
 interface SubscriptionRegistration {
-    status: "provisional" | "active" | "rolled-back" | "removed"
+    status?: "provisional" | "active" | "rolled-back" | "removed"
     admissionToken?: OutcomeToken
+    admissionNotified?: boolean
     callback: SubscriberCallback | undefined
     target: SubscriptionTarget | undefined
     previous: SubscriptionRegistration | undefined
@@ -198,6 +199,24 @@ export const createInternalExternalAtom = <Value>(
     ...args: [source: ExternalSource<Value>, options?: ExternalAtomOptions]
 ): ExternalAtom<Value> =>
     defineExternalAtom(domain[definitionDomainRecords], args)
+
+/** @internal Smaller deterministic work bounds for adversarial fixtures. */
+export const configureInternalExternalBounds = (
+    domain: InternalCommittedStoreTreeDomain,
+    bounds: Partial<import("./external-types").ExternalBounds>,
+): void => {
+    const runtime = domain[definitionDomainRecords].externalRuntime
+    if (runtime === undefined)
+        throw new TypeError(
+            "Define an ExternalAtom before configuring its internal bounds",
+        )
+    for (const value of Object.values(bounds))
+        if (!Number.isInteger(value) || value < 1)
+            throw new TypeError(
+                "External work bounds must be positive integers",
+            )
+    Object.assign(runtime.bounds, bounds)
+}
 
 /** @internal Installs one optional collection implementation after its
  * tree-shakeable factory has completed successfully. */
@@ -772,10 +791,22 @@ class CommittedStoreTreeHost
             throw new TypeError("StoreTree.get requires a valid State")
         }
         if (subscriberSession === undefined) {
-            const served =
-                this.#domain.externalAtoms === undefined
-                    ? scope.serveKnownLocal(node, session)
-                    : this.#readCommitted(scope, node, session)
+            let served: ServedSelectorOutcome<OutcomeToken>
+            if (this.#domain.externalAtoms === undefined)
+                served = scope.serveKnownLocal(node, session)
+            else {
+                const plane = this.#externalPlane()
+                served =
+                    plane.operating || plane.current(scope, node)
+                        ? this.#readCommitted(scope, node, session)
+                        : plane.run("external-read", () =>
+                              this.#readCommitted(scope, node, session),
+                          )
+                served =
+                    scope.getMaterializedServedOutcome(node) ??
+                    plane.installed(node) ??
+                    served
+            }
             if (served.outcome.kind !== "value") throw served.outcome.error
             return served.outcome.value as Value
         }
@@ -824,6 +855,7 @@ class CommittedStoreTreeHost
             subscribed: (scope, node) =>
                 this.#subscriptionTargets?.get(scope)?.has(node) === true,
             token: () => this.createOutcomeToken(),
+            epoch: () => this.#sourceEpoch,
             count: (counter, amount) => this.recordCounter(counter, amount),
             advanceEpoch: () => {
                 this.#sourceEpoch++
@@ -856,6 +888,9 @@ class CommittedStoreTreeHost
     reconcileExternalLifecycle(scope: StoreScopeNode, node: AnyState): void {
         this.#external?.reconcile(scope, node)
     }
+    isExternalActive(node: AnyState): boolean {
+        return this.#external?.active(node) === true
+    }
 
     serveExternal(
         scope: StoreScopeNode,
@@ -869,6 +904,7 @@ class CommittedStoreTreeHost
         scope: StoreScopeNode,
         state: State<Value>,
         callback: () => void,
+        admitted?: (registration: SubscriptionRegistration) => void,
     ): () => void {
         const node = state as unknown as AnyState
         let session: SelectorEvaluationSession<AnyState> | undefined
@@ -892,6 +928,30 @@ class CommittedStoreTreeHost
         }
         if (typeof callback !== "function") {
             throw new TypeError("StoreTree.sub requires a callback function")
+        }
+        if (this.#domain.externalAtoms !== undefined) {
+            const plane = this.#externalPlane()
+            if (!plane.operating) {
+                let registration: SubscriptionRegistration | undefined
+                const stop = plane.run(
+                    "external-startup",
+                    () =>
+                        this.sub(scope, state, callback, value => {
+                            registration = value
+                        }),
+                    () => {
+                        if (registration === undefined) return
+                        this.removeSubscription(registration)
+                        registration.status = "rolled-back"
+                    },
+                )
+                if (registration?.status === "provisional") {
+                    registration.status = "active"
+                    delete registration.admissionToken
+                    delete registration.admissionNotified
+                }
+                return stop
+            }
         }
 
         const served =
@@ -944,10 +1004,6 @@ class CommittedStoreTreeHost
             }
         }
         const registration: SubscriptionRegistration = {
-            status: "provisional",
-            ...(this.#external === undefined
-                ? {}
-                : { admissionToken: served.token }),
             callback: callback as SubscriberCallback,
             target,
             previous: target.tail,
@@ -964,10 +1020,17 @@ class CommittedStoreTreeHost
             this.recordCounter("activeSubscriptions")
             this.recordCounter("unsubscribeClosuresCreated")
         }
+        if (this.#external === undefined) return createUnsubscribe(registration)
+        registration.status = "provisional"
+        registration.admissionToken = served.token
         try {
+            admitted?.(registration)
             this.#external?.retainRoot(scope, node)
-            registration.status = "active"
-            delete registration.admissionToken
+            this.#external?.startup()
+            if (admitted === undefined) {
+                registration.status = "active"
+                delete registration.admissionToken
+            }
             return createUnsubscribe(registration)
         } catch (error) {
             this.removeSubscription(registration)
@@ -980,6 +1043,10 @@ class CommittedStoreTreeHost
         const target = registration.target
         if (target === undefined) return
         assertUnsubscribeAllowed(this.#domain)
+        if (this.#external !== undefined && !this.#external.operating)
+            return this.#external.run("external-cleanup", () =>
+                this.removeSubscription(registration),
+            )
 
         const previous = registration.previous
         const next = registration.next
@@ -994,7 +1061,7 @@ class CommittedStoreTreeHost
             next.previous = previous
         }
         registration.callback = undefined
-        registration.status = "removed"
+        if (registration.status !== undefined) registration.status = "removed"
         registration.target = undefined
         registration.previous = undefined
         registration.next = undefined
@@ -1058,6 +1125,10 @@ class CommittedStoreTreeHost
     dispose(scope: StoreScopeNode): void {
         assertStoreOperationAllowed(this.#domain, "StoreTree.dispose")
         if (scope.status !== "live") return
+        if (this.#external !== undefined && !this.#external.operating)
+            return this.#external.run("external-cleanup", () =>
+                this.dispose(scope),
+            )
 
         const postorder: StoreScopeNode[] = []
         const pending: Readonly<{
@@ -1118,9 +1189,15 @@ class CommittedStoreTreeHost
         if (
             typeof callback !== "function" ||
             (name !== undefined && typeof name !== "string")
-        ) {
+        )
             throw new TypeError("StoreTree.txn requires a callback")
-        }
+        if (
+            this.#domain.externalAtoms !== undefined &&
+            !this.#externalPlane().operating
+        )
+            return this.#external!.run("owned-mutation", () =>
+                this.txn(scope, callback, name),
+            )
 
         const draft = this.#createDraft()
         const cursor = createRootTransactionCursor(this, draft, scope)
@@ -1306,6 +1383,14 @@ class CommittedStoreTreeHost
         if (invalid) {
             throw new TypeError(`${operation} requires a valid State`)
         }
+        if (
+            draft === undefined &&
+            this.#domain.externalAtoms !== undefined &&
+            !this.#externalPlane().operating
+        )
+            return this.#external!.run("owned-mutation", () =>
+                this.mutate(draft, scope, intent, target, input),
+            )
 
         const ownDraft = draft === undefined
         const activeDraft = draft ?? this.#createDraft()
@@ -1534,7 +1619,7 @@ class CommittedStoreTreeHost
             while (registration !== undefined) {
                 const next = registration.next
                 registration.callback = undefined
-                registration.status = "removed"
+                if (registration.status !== undefined) registration.status = "removed"
                 registration.target = undefined
                 registration.previous = undefined
                 registration.next = undefined
@@ -1861,6 +1946,7 @@ class CommittedStoreTreeHost
     }
 
     #commitDraft(draft: TreeDraft): void {
+        this.#external?.phase("preflight")
         let collectionPlan: CollectionCommitPlan | undefined
         if (draft.hasRows) {
             collectionPlan = this.#domain[COLLECTION_KERNEL]?.plan(draft)
@@ -1922,7 +2008,9 @@ class CommittedStoreTreeHost
                 remainingPlan.push(entry)
             })
         }
+        this.#external?.phase("instrumenting")
         this.#trace?.(1, draft, this.#domain.atoms)
+        this.#external?.phase("applying")
 
         // Apply every fallback publication and owned source before propagation.
         if (firstPlan !== undefined) {
@@ -2030,12 +2118,18 @@ class CommittedStoreTreeHost
                 this.#sourceEpoch += 1
                 this.recordCounter("sourceEpoch")
             }
-            this.#trace?.(
-                2,
-                firstChangedSource === undefined
-                    ? 0
-                    : 1 + (remainingChangedSources?.length ?? 0),
-            )
+            this.#external?.phase("instrumenting")
+            try {
+                this.#trace?.(
+                    2,
+                    firstChangedSource === undefined
+                        ? 0
+                        : 1 + (remainingChangedSources?.length ?? 0),
+                )
+            } catch (error) {
+                if (this.#external === undefined) throw error
+                this.#external.failure(error, "instrumenting")
+            }
             this.#propagateFromSources(
                 firstChangedSource,
                 remainingChangedSources,
@@ -2381,6 +2475,7 @@ class CommittedStoreTreeHost
         if (firstSource !== undefined)
             this.recordCounter("propagationSettlements")
         const previousPull = this.#external?.beginPropagation()
+        this.#external?.phase("propagating")
         this.#propagationQueue = []
         this.#propagationStatusScope = undefined
         this.#propagationStatusSelector = undefined
@@ -2410,7 +2505,20 @@ class CommittedStoreTreeHost
                 }
             }
             let cursor = 0
-            while (cursor < this.#propagationQueue.length) {
+            while (
+                cursor < this.#propagationQueue.length ||
+                this.#external?.pendingLifecycle
+            ) {
+                if (cursor >= this.#propagationQueue.length) {
+                    // Catch-up is another propagation wave within the same
+                    // atomic settlement and frozen notification snapshot.
+                    this.#propagationStatusScope = undefined
+                    this.#propagationStatusSelector = undefined
+                    this.#propagationStatusBits = 0
+                    this.#propagationStatuses = undefined
+                    this.#external!.settleLifecycle()
+                    continue
+                }
                 const scope = this.#propagationQueue[cursor++] as StoreScopeNode
                 const selector = this.#propagationQueue[cursor++] as AnySelector
                 try {
@@ -2440,8 +2548,15 @@ class CommittedStoreTreeHost
             this.#deliverSubscriptionSnapshot(authoritativeControlFault)
             return
         }
+        if (authoritativeControlFault !== undefined)
+            failures.push({
+                cause: authoritativeControlFault,
+                phase: "settling",
+                committed: this.#sourceEpoch !== epochBefore,
+                source: "external-read",
+            })
         try {
-            this.#deliverSubscriptionSnapshot(authoritativeControlFault)
+            this.#deliverSubscriptionSnapshot(undefined)
         } catch (error) {
             for (const cause of error instanceof SubscriberNotificationError
                 ? error.causes
@@ -2453,7 +2568,11 @@ class CommittedStoreTreeHost
                     source: "external-read",
                 })
         }
-        if (failures.length > 0) this.#domain.externalRuntime!.fail(failures)
+        if (failures.length > 0)
+            this.#domain.externalRuntime!.fail(
+                failures,
+                this.#external?.operating,
+            )
     }
 
     #beginNotificationSettlement(): void {
@@ -2499,6 +2618,7 @@ class CommittedStoreTreeHost
     #deliverSubscriptionSnapshot(
         authoritativeControlFault: unknown | undefined,
     ): void {
+        this.#external?.phase("notifying")
         const firstTarget = this.#notificationTarget
         if (firstTarget === undefined) {
             this.#clearNotificationSettlement()
@@ -2512,7 +2632,21 @@ class CommittedStoreTreeHost
         const capture = (target: SubscriptionTarget): void => {
             let registration = target.head
             while (registration !== undefined) {
-                const callback = registration.callback
+                let callback = registration.callback
+                if (registration.status === "provisional") {
+                    const token = target.scope.getMaterializedServedOutcome(
+                        target.state,
+                    )?.token
+                    if (
+                        this.#external?.admissionAllowed === false ||
+                        registration.admissionNotified ||
+                        (token !== undefined &&
+                            token === registration.admissionToken)
+                    )
+                        callback = undefined
+                    else if (callback !== undefined)
+                        registration.admissionNotified = true
+                }
                 if (
                     callback !== undefined &&
                     registration.status !== "rolled-back" &&

@@ -395,6 +395,103 @@ E3 must still exercise provisional eligibility under real startup failures and
 notifications, attach/detach, deferred cleanup, operation drain, and finite bounds.
 E1 package certification and Gate 0 public approval remain open.
 
+## E3 internal checkpoint
+
+Branch `feat/external-atom-settlement`, based on E2 `6d9aab71`. The same
+host-owned optional plane now owns generation tickets, ordered dirty projections,
+deferred lifecycle acquisition/release, and an outer operation phase/failure
+ledger. No second evaluator or commit pipeline was added. Source outcomes enter
+the existing propagation queue together. Attachment catch-up clears per-wave
+settlement status before propagating through the full DAG, while preserving one
+final notification snapshot. First admission is provisional through the complete
+outer drain; failed admission releases its otherwise unreachable registration.
+
+The source generation is revoked before cleanup. Its old invalidator retains
+only a cleared ticket. Last releases run after the full frozen callback snapshot
+and before dirty drain. Round/sample exhaustion installs recoverable error
+outcomes without detaching; cross-tree delivery limits leave the unentered target
+retry-required. A later invalidation retries it. Retained error outcomes do not
+poll. Failed dynamic attachment retains the existing subscriber and retries its
+unattached branch only on a later admitted operation. Capability/owner preflight
+runs before such frame admission. Pure immutable definition construction retains
+its existing allowance; invalidators reject in initializers, selectors,
+comparators, transactions, and source callbacks except the exact new startup
+ticket. Top-level reads unwrap the final installed target after drain.
+
+Selector records also carry an immutable dormant-closure marker. Attachment and
+detach update that metadata through weak reverse routes, so cached selectors
+whose sources are already active take constant work even when the selector itself
+has no subscription. This is metadata propagation, not another evaluation path.
+
+Files added in this slice: `external-settlement-contract.test.ts`,
+`external-settlement-model.test.ts`, `external-drain.test.ts`, and
+`external-retention.test.ts`. Kernel changes remain confined to the existing host,
+scope records, and the three internal external modules. Root exports and public
+catalog evidence remain unchanged. The two E1 pull cases that intentionally used
+subscriptions without attachment now assert retained-source isolation instead;
+the independent E0 protocol preserves its earlier partial-publication fixtures.
+
+Behavioral evidence:
+
+- Independent attach fixtures: 26 tests / 174 assertions.
+- Independent production/model driver: 27 tests / 29,799 assertions, 7,437
+  compared commands, including 24 seeds × 240 randomized steps. Exact read
+  outcomes, per-target callback order, samples, attachments, and cleanup counts
+  agree across roots, descendants, independent trees, errors, disposal, and stale
+  generations. The model is unchanged.
+- Drain/operation regressions: 15 tests / 84 assertions, including multi-level dynamic catch-up, invalid
+  command admission, final post-drain reads, constant-work active closures,
+  combined source publication, all-run cleanup, committed mismatch outcomes,
+  partial-round exhaustion, and later cross-tree retry.
+- GC found and fixed a real closure capture: the domain's factory shared its
+  activation with the first definition. A separate factory scope now permits the
+  dormant source/definition to collect. All three GC fixtures pass, including
+  stale invalidators/unsubscribe handles and deterministic disposal.
+- A first controlled subscription-churn measurement showed 1.525× Bun and 1.545×
+  Node cost. Feature expansion paused. Restricting provisional fields, property
+  deletion, and admission handling to the external plane restored the ordinary
+  registration shape. Corrected Bun median ratios (Atom read / Selector read /
+  write+notify / subscribe / transaction): 1.015 / 1.009 / 0.984 / 0.934 / 0.953.
+  Node: 0.974 / 1.006 / 1.003 / 1.043 / 1.018. Raw paired samples and executable
+  reproduction remain in `.context/external-atom/e3-performance-*`.
+
+Final command results (raw logs use the `e3-` prefix in that same directory):
+
+- `typecheck:v1-beta` and the committed-tree test TypeScript project pass.
+- `check:contracts-v1` passes (56 tests / 441 assertions). The first concurrent
+  attempt timed out in two unchanged frozen legacy inventory tests; an isolated
+  retry passed without altering the inventory, tests, or deadlines.
+- `test:v1-beta`: 728 pass / one isolated tournament-wrapper failure, 398,003
+  assertions. Its child failures are the same 5-second historical-byte and
+  30-second predecessor-lineage timeouts recorded on clean main. No timeout or
+  test was weakened. The three final cleanup-thenable cases pass separately.
+- React was skipped by that command's shell short circuit, so
+  `bun --filter 'valdres-react' test` ran separately: 41 tests / 1,817 assertions,
+  all passing. These are existing React tests, not ExternalAtom React certification.
+- `check:package`: all manifest, publint, attw, declaration-consumer, Node/Bun,
+  esbuild, Vite, and webpack checks pass; size fails. Ordinary adapter fixture:
+  72,720 raw / 19,097 gzip, versus immutable 64,767 / 16,835 (+12.28% / +13.44%).
+  Atom fixture: 72,749 / 19,128; selector fixture: 72,936 / 19,192.
+  Packed package: 448,954 raw / 118,835 gzip, versus 421,964 / 112,570.
+  Dist total: 318,350 / 93,086 versus 303,486 / 89,050. No ceiling or baseline
+  changed. This requires further extraction or an explicit reviewed feature-cost
+  policy in E4; it is not green certification.
+- `test:v1-beta:packed`: three builds agree on
+  `5595a4e2d176a21b6ecde1ffad7c2af74ea6349a0abf455c54a14d4d0107227a`,
+  but the reviewed digest remains
+  `dbb67fa96cc1d7667fb2903d24ae4ad12957e47f39df2a01e0deed20934ab509`.
+  The command stops before packed consumer tests. Its workspace remains at
+  `/var/folders/gp/mmw2g_j11fz61c5jmvzfgj9m0000gn/T/valdres-v1-beta-packed-XFbDie`.
+- `verify` exits 2 before checks: local Node 24.21.0 differs from pinned 24.16,
+  exactly as on clean main. No toolchain-drift override was used.
+
+Public error classes/metadata remain provisional: internal mixed failures use
+the proposed operation wrapper, and E4 must apply the approved lone-notification
+and named lifecycle metadata to the exported contracts together. Package budgets,
+packed provenance, public family admission, React external consumers, generated
+API evidence, docs, and the single changeset remain E4 work. No PR is authorized
+until Gate 0 approval and the relevant slice's certification are both complete.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
@@ -402,10 +499,11 @@ E1 package certification and Gate 0 public approval remain open.
 | Eng Review | `/plan-eng-review` | Architecture and test plan before edits | 1 | Internal model may proceed; public gate pending | existing evaluator reused; four implementation hazards already covered by brief |
 | Independent review | contract/recovery audit agents | Evidence and conflicting authority | 2 | Model regressions addressed; public gate pending | family admission conflict confirmed; model counterexamples reproduced and tested |
 
-VERDICT: E0 complete; E1 internal behavior implemented and tested, with package
-certification open. E2–E3 internal work authorized. No public export or final
-contract certification claim.
+VERDICT: E0–E3 internal behavior implemented and tested. Full delivery remains
+blocked at E4 public approval, with size and packed certification still open.
+No public constructor export, changeset, PR, or final certification claim.
 
 **UNRESOLVED DECISIONS:**
 - Gate 0 items 1–5, including the operation-error wrapper and metadata shape.
 - Narrow public family widening to include ExternalAtom.
+- E4 measured feature-cost policy versus further ordinary-core extraction.

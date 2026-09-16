@@ -1,20 +1,61 @@
-import type {
+import {
     SelectorEvaluationSession,
-    ServedSelectorOutcome,
+    type ServedSelectorOutcome,
 } from "../selector-evaluator/types"
-import type { AnyState } from "./runtime-domain"
+import {
+    CallbackCapabilityError,
+    SubscriberNotificationError,
+    containThenable,
+    inspectThenable,
+    type AnyState,
+} from "./runtime-domain"
 import {
     WeakHandleSet,
     type OutcomeToken,
     type StoreScopeNode,
 } from "./scope-node"
-import { DormantExternalReadError, sampleExternal } from "./external-atom"
-import type { ExternalTreeBindings, ExternalTreePlane } from "./external-types"
+import {
+    DormantExternalReadError,
+    ExternalSourceOperationError,
+    ExternalSourceNonConvergenceError,
+    ExternalSourceDeliveryLimitError,
+    InvalidExternalCleanupError,
+    runExternalCallback,
+    sampleExternal,
+} from "./external-atom"
+import type {
+    ExternalBounds,
+    ExternalOperationFailure,
+    ExternalOperationPhase,
+    ExternalTreeBindings,
+    ExternalTreePlane,
+} from "./external-types"
+interface Generation {
+    owner: ExternalProjectionPlane | undefined
+    projection: Projection | undefined
+    cleanup: (() => unknown) | undefined
+}
+// A departed callback retains only this cleared ticket, never its old tree.
+const invalidator = (generation: Generation) => () =>
+    generation.owner?.invalidate(generation)
+interface Operation {
+    source: ExternalOperationFailure["source"]
+    phase: ExternalOperationPhase
+    readonly epoch: number
+    readonly failures: ExternalOperationFailure[]
+    readonly originals: unknown[]
+    terminal: boolean
+    attachments: number
+}
 
 interface Projection {
+    readonly node: AnyState
     served: ServedSelectorOutcome<OutcomeToken>
     readonly scopes: WeakHandleSet<StoreScopeNode>
     retains: number
+    status: "dormant" | "attaching" | "active" | "detaching"
+    generation?: Generation
+    retryRequired?: boolean
 }
 interface RetainRecord {
     count: number
@@ -40,12 +81,514 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         WeakMap<AnyState, RetainRecord>
     >()
     #pull: Pull | undefined
+    #operation: Operation | undefined
+    readonly #attachments = new Set<Projection>()
+    readonly #releases = new Set<Projection>()
+    readonly #unattached = new Set<Projection>()
+    readonly #dirty = new Set<Generation>()
+    readonly #delivery: { depth: number; work: number }
+    readonly #bounds: ExternalBounds
 
-    constructor(bindings: ExternalTreeBindings) {
+    constructor(
+        bindings: ExternalTreeBindings,
+        delivery: { depth: number; work: number },
+        bounds: ExternalBounds,
+    ) {
         this.#bindings = bindings
+        this.#delivery = delivery
+        this.#bounds = bounds
+    }
+
+    run<Result>(
+        source: ExternalOperationFailure["source"],
+        operation: () => Result,
+        rollback?: () => void,
+    ): Result {
+        if (this.#operation !== undefined) return operation()
+        const frame: Operation = {
+            source,
+            phase:
+                source === "external-startup"
+                    ? "transitioningLifecycle"
+                    : source === "owned-mutation"
+                      ? "drafting"
+                      : source === "external-cleanup"
+                        ? "disposing"
+                        : "materializingRead",
+            epoch: this.#bindings.epoch(),
+            failures: [],
+            originals: [],
+            terminal: false,
+            attachments: 0,
+        }
+        this.#operation = frame
+        for (const projection of this.#unattached) {
+            if (projection.retains > 0 && projection.status === "dormant")
+                this.#attachments.add(projection)
+        }
+        let result!: Result
+        try {
+            try {
+                result = operation()
+            } catch (error) {
+                this.failure(error)
+            }
+            try {
+                this.startup()
+            } catch (error) {
+                this.failure(error)
+            }
+            this.#flushReleases()
+            this.#drain()
+            if (frame.failures.length > 0 && rollback !== undefined) {
+                try {
+                    rollback()
+                } catch (error) {
+                    this.failure(error, "cleanup")
+                }
+                this.#flushReleases()
+            }
+        } finally {
+            this.#operation = undefined
+        }
+        if (frame.failures.length > 0) {
+            // The external-free mutation contract retains its exact legacy wrapper.
+            if (
+                source === "owned-mutation" &&
+                frame.originals.length === 1 &&
+                frame.failures.every(
+                    failure => failure.source === "owned-mutation",
+                )
+            )
+                throw frame.originals[0]
+            this.#bindings.domain.externalRuntime!.fail(frame.failures)
+        }
+        return result
+    }
+
+    phase(phase: ExternalOperationPhase): void {
+        if (this.#operation !== undefined) this.#operation.phase = phase
+    }
+
+    failure(
+        error: unknown,
+        phase: ExternalOperationFailure["phase"] = this.#failurePhase(),
+    ): void {
+        const frame = this.#operation
+        if (frame === undefined) throw error
+        frame.originals.push(error)
+        if (error instanceof ExternalSourceOperationError) {
+            frame.failures.push(
+                ...error.failures.map(failure =>
+                    failure.source === "external-read"
+                        ? { ...failure, source: frame.source }
+                        : failure,
+                ),
+            )
+            return
+        }
+        for (const cause of error instanceof SubscriberNotificationError
+            ? error.causes
+            : [error]) {
+            frame.failures.push({
+                cause,
+                phase:
+                    error instanceof SubscriberNotificationError
+                        ? "notifying"
+                        : phase,
+                source: frame.source,
+                committed: this.#bindings.epoch() !== frame.epoch,
+            })
+        }
+    }
+
+    #failurePhase(): ExternalOperationFailure["phase"] {
+        switch (this.#operation?.phase) {
+            case "transitioningLifecycle":
+            case "drafting":
+            case "preflight":
+                return "admitting"
+            case "materializingRead":
+            case "samplingExternal":
+                return "sampling"
+            case "notifying":
+                return "notifying"
+            case "instrumenting":
+                return "instrumenting"
+            case "cleanup":
+            case "disposing":
+                return "cleanup"
+            default:
+                return "settling"
+        }
+    }
+
+    startup(): void {
+        if (this.#attachments.size === 0) return
+        const previous = this.#pull
+        this.#pull = this.#newPull(false)
+        this.#pull.epochAdvanced = false
+        try {
+            this.#bindings.settleRead(() => {})
+        } finally {
+            this.#pull = previous
+        }
+    }
+
+    settleLifecycle(): boolean {
+        if (this.#attachments.size === 0) return false
+        this.phase("transitioningLifecycle")
+        const pending = [...this.#attachments]
+        this.#attachments.clear()
+        for (const projection of pending) {
+            if (projection.retains === 0 || projection.status !== "dormant")
+                continue
+            if (this.#operation!.terminal) continue
+            if (this.#operation!.attachments++ >= this.#bounds.samples) {
+                this.#operation!.terminal = true
+                this.failure(
+                    new ExternalSourceNonConvergenceError(),
+                    "admitting",
+                )
+                continue
+            }
+            try {
+                this.#attach(projection)
+            } catch (error) {
+                this.failure(error, "admitting")
+            }
+        }
+        this.phase("propagating")
+        return true
+    }
+
+    #attach(projection: Projection): void {
+        const domain = this.#bindings.domain
+        const previousSource = this.#operation!.source
+        this.#operation!.source = "external-startup"
+        const definition = domain.externalAtoms!.get(projection.node)!
+        const generation: Generation = {
+            owner: this,
+            projection,
+            cleanup: undefined,
+        }
+        projection.generation = generation
+        projection.status = "attaching"
+        this.#bindings.count("adapterSubscriptions")
+        try {
+            runExternalCallback(
+                domain,
+                new SelectorEvaluationSession(),
+                "external-subscribe",
+                () => {
+                    let returned: unknown
+                    try {
+                        returned = Reflect.apply(
+                            definition.subscribe,
+                            definition.source,
+                            [invalidator(generation)],
+                        )
+                    } catch (error) {
+                        throw this.#completionError(error)
+                    }
+                    const inspected = inspectThenable(returned)
+                    if (inspected.kind === "inspection-error")
+                        throw inspected.error
+                    if (inspected.kind === "thenable") {
+                        this.#bindings.count("thenableContainments")
+                        containThenable(inspected)
+                        throw new InvalidExternalCleanupError()
+                    }
+                    if (typeof returned !== "function")
+                        throw new InvalidExternalCleanupError()
+                    generation.cleanup = returned as () => unknown
+                },
+                generation,
+            )
+            this.#dirty.delete(generation)
+            const sampled = this.#sample(
+                projection.node,
+                new SelectorEvaluationSession(),
+            )
+            this.#publish(projection.node, sampled)
+            projection.status = "active"
+            projection.scopes.forEach(scope => {
+                if (scope.status === "live")
+                    scope.refreshExternalActivity(projection.node)
+            })
+            this.#unattached.delete(projection)
+        } catch (error) {
+            this.failure(error, "admitting")
+            this.#cleanup(projection)
+            // Already recorded before cleanup, so later failures cannot reorder it.
+        } finally {
+            this.#operation!.source = previousSource
+        }
+    }
+
+    #revoke(projection: Projection): (() => unknown) | undefined {
+        const generation = projection.generation
+        if (generation === undefined) return
+        this.#dirty.delete(generation)
+        const cleanup = generation.cleanup
+        generation.owner = undefined
+        generation.projection = undefined
+        generation.cleanup = undefined
+        delete projection.generation
+        return cleanup
+    }
+
+    #completionError(thrown: unknown): unknown {
+        const inspected = inspectThenable(thrown)
+        if (inspected.kind === "inspection-error") return inspected.error
+        if (inspected.kind === "thenable") {
+            this.#bindings.count("thenableContainments")
+            containThenable(inspected)
+            return new InvalidExternalCleanupError()
+        }
+        return thrown
+    }
+
+    #cleanup(projection: Projection): void {
+        const previousPhase = this.#operation?.phase
+        this.phase("cleanup")
+        const cleanup = this.#revoke(projection)
+        projection.status = "detaching"
+        if (cleanup !== undefined) {
+            this.#bindings.count("adapterCleanups")
+            const previous = this.#operation!.source
+            this.#operation!.source = "external-cleanup"
+            try {
+                runExternalCallback(
+                    this.#bindings.domain,
+                    new SelectorEvaluationSession(),
+                    "external-cleanup",
+                    () => {
+                        let returned: unknown
+                        try {
+                            returned = cleanup()
+                        } catch (error) {
+                            throw this.#completionError(error)
+                        }
+                        const inspected = inspectThenable(returned)
+                        if (inspected.kind === "inspection-error")
+                            throw inspected.error
+                        if (inspected.kind === "thenable") {
+                            this.#bindings.count("thenableContainments")
+                            containThenable(inspected)
+                            throw new InvalidExternalCleanupError()
+                        }
+                    },
+                )
+            } catch (error) {
+                this.failure(error, "cleanup")
+            } finally {
+                this.#operation!.source = previous
+            }
+        }
+        projection.status = "dormant"
+        projection.scopes.forEach(scope => {
+            if (scope.status === "live")
+                scope.refreshExternalActivity(projection.node)
+        })
+        if (previousPhase !== undefined) this.phase(previousPhase)
+    }
+
+    #flushReleases(): void {
+        for (const projection of this.#releases) {
+            this.#releases.delete(projection)
+            if (projection.retains !== 0) continue
+            this.#unattached.delete(projection)
+            this.#attachments.delete(projection)
+            this.#cleanup(projection)
+        }
+    }
+
+    invalidate(generation: Generation): void {
+        const projection = generation.projection
+        if (generation.owner !== this || projection === undefined) return
+        const activity = this.#bindings.domain.activity
+        if (
+            activity?.kind === "external-subscribe" &&
+            activity.generation === generation
+        ) {
+            this.#dirty.add(generation)
+            return
+        }
+        if (activity !== undefined && activity.kind !== "subscriber") {
+            const error = new CallbackCapabilityError()
+            throw error
+        }
+        if (this.#operation?.terminal) return
+        if (this.#operation !== undefined) {
+            this.#dirty.add(generation)
+            return
+        }
+        const delivery = this.#delivery
+        if (delivery.depth === 0) delivery.work = 0
+        if (
+            delivery.depth >= this.#bounds.deliveryDepth ||
+            delivery.work >= this.#bounds.deliveryWork
+        ) {
+            projection.retryRequired = true
+            this.#bindings.count("deliveryLimitHits")
+            throw new ExternalSourceDeliveryLimitError()
+        }
+        delivery.depth++
+        delivery.work++
+        this.#bindings.count("deliveryEntries")
+        delete projection.retryRequired
+        try {
+            this.run("external-invalidation", () => {
+                this.#dirty.add(generation)
+            })
+        } finally {
+            delivery.depth--
+        }
+    }
+
+    #drain(): void {
+        let rounds = 0,
+            samples = 0
+        const frame = this.#operation!
+        while (this.#dirty.size > 0) {
+            if (
+                rounds >= this.#bounds.rounds ||
+                samples >= this.#bounds.samples
+            ) {
+                this.#exhaust([...this.#dirty])
+                return
+            }
+            const batch = [...this.#dirty]
+            this.#dirty.clear()
+            rounds++
+            this.#bindings.count("dirtyRounds")
+            frame.source =
+                rounds === 1 && frame.source === "external-invalidation"
+                    ? "external-invalidation"
+                    : "external-drain"
+            frame.phase = "drainingExternal"
+            const outcomes: [
+                Projection,
+                ServedSelectorOutcome<OutcomeToken>["outcome"],
+            ][] = []
+            const sampleFailures: unknown[] = []
+            let cursor = 0
+            for (; cursor < batch.length; cursor++) {
+                const generation = batch[cursor]!,
+                    projection = generation.projection
+                if (
+                    generation.owner !== this ||
+                    projection?.status !== "active"
+                )
+                    continue
+                if (samples >= this.#bounds.samples) break
+                samples++
+                this.#bindings.count("dirtySamples")
+                try {
+                    outcomes.push([
+                        projection,
+                        this.#sample(
+                            projection.node,
+                            new SelectorEvaluationSession(),
+                        ),
+                    ])
+                } catch (error) {
+                    outcomes.push([
+                        projection,
+                        Object.freeze({ kind: "control-error", error }),
+                    ])
+                    sampleFailures.push(error)
+                }
+            }
+            if (cursor < batch.length) {
+                const pending = [...batch.slice(cursor), ...this.#dirty]
+                this.#exhaust(pending, outcomes, sampleFailures)
+                return
+            }
+            this.#round(outcomes, sampleFailures)
+            this.#flushReleases()
+        }
+    }
+
+    #round(
+        outcomes: readonly (readonly [
+            Projection,
+            ServedSelectorOutcome<OutcomeToken>["outcome"],
+        ])[],
+        sampleFailures: readonly unknown[] = [],
+    ): void {
+        const previous = this.#pull
+        this.#pull = this.#newPull(false)
+        this.#pull.epochAdvanced = false
+        try {
+            this.#bindings.settleRead(() => {
+                for (const [projection, outcome] of outcomes)
+                    this.#publish(projection.node, outcome)
+                for (const error of sampleFailures)
+                    this.failure(error, "sampling")
+            })
+        } catch (error) {
+            this.failure(error)
+        } finally {
+            this.#pull = previous
+        }
+    }
+
+    #exhaust(
+        pending: readonly Generation[],
+        earlier: readonly [
+            Projection,
+            ServedSelectorOutcome<OutcomeToken>["outcome"],
+        ][] = [],
+        sampleFailures: readonly unknown[] = [],
+    ): void {
+        this.#operation!.terminal = true
+        const error = new ExternalSourceNonConvergenceError()
+        this.#bindings.count("nonConvergenceTerminations")
+        const outcomes: [
+            Projection,
+            ServedSelectorOutcome<OutcomeToken>["outcome"],
+        ][] = [...earlier]
+        for (const generation of new Set(pending)) {
+            if (
+                generation.owner === this &&
+                generation.projection?.status === "active"
+            )
+                outcomes.push([
+                    generation.projection,
+                    Object.freeze({ kind: "error", error }),
+                ])
+        }
+        this.#dirty.clear()
+        this.#round(outcomes, [...sampleFailures, error])
+        this.#flushReleases()
+        this.#dirty.clear()
     }
     get dormantPull(): boolean {
         return this.#pull?.dormant === true
+    }
+    get operating(): boolean {
+        return this.#operation !== undefined
+    }
+    get pendingLifecycle(): boolean {
+        return this.#attachments.size > 0
+    }
+    active(node: AnyState): boolean {
+        return this.#projections.get(node)?.status === "active"
+    }
+    get admissionAllowed(): boolean {
+        return this.#operation?.failures.length === 0
+    }
+    installed(node: AnyState): ServedSelectorOutcome<OutcomeToken> | undefined {
+        return this.#projections.get(node)?.served
+    }
+    current(scope: StoreScopeNode, node: AnyState): boolean {
+        return (
+            this.active(node) ||
+            (!scope.reachesDormantExternal(node) &&
+                scope.getMaterializedServedOutcome(node) !== undefined)
+        )
     }
     get changedPull(): boolean {
         return this.#pull?.epochAdvanced === true
@@ -90,8 +633,14 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             if (record.count++ !== 0) continue
             if (this.#bindings.domain.externalAtoms!.has(current)) {
                 const projection = this.#projections.get(current)!
-                if (projection.retains++ === 0)
+                if (projection.retains++ === 0) {
                     this.#bindings.count("lifecycleRetains")
+                    this.#releases.delete(projection)
+                    if (projection.status === "dormant") {
+                        this.#attachments.add(projection)
+                        this.#unattached.add(projection)
+                    }
+                }
                 continue
             }
             record.dependencies = this.#dependencies(scope, current)
@@ -110,8 +659,11 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             this.#bindings.count("lifecycleEdgeVisits")
             if (--record.count !== 0) continue
             if (this.#bindings.domain.externalAtoms!.has(current)) {
-                if (--this.#projections.get(current)!.retains === 0)
+                const projection = this.#projections.get(current)!
+                if (--projection.retains === 0) {
                     this.#bindings.count("lifecycleReleases")
+                    this.#releases.add(projection)
+                }
             } else {
                 for (const dependency of record.dependencies)
                     pending.push(dependency)
@@ -208,6 +760,8 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         node: AnyState,
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken> {
+        if (this.current(scope, node))
+            return scope.serveKnownLocal(node, session)
         this.#pull = this.#newPull(true)
         let served: ServedSelectorOutcome<OutcomeToken> | undefined
         try {
@@ -245,12 +799,20 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         session: SelectorEvaluationSession<AnyState>,
     ): void {
         if (!scope.reachesExternal(node)) return
-        this.#rejectSubscriberRead(session)
+        if (!scope.reachesDormantExternal(node)) return
         const pull = this.#pull
-        if (pull === undefined) return
-        let visited = pull.refreshed.get(scope)
+        // Subscriber reads still inspect a dormant closure before serving a
+        // clean cached selector, but do not publish or poll any source.
+        if (
+            pull === undefined &&
+            !this.#bindings.subscriberRead() &&
+            this.#bindings.domain.activity?.kind !== "subscriber"
+        )
+            return
+        let visited = pull?.refreshed.get(scope)
         if (visited === undefined)
-            pull.refreshed.set(scope, (visited = new WeakSet()))
+            pull?.refreshed.set(scope, (visited = new WeakSet()))
+        visited ??= new WeakSet()
         const pending = [node]
         while (pending.length > 0) {
             const current = pending.pop()!
@@ -275,6 +837,11 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         node: AnyState,
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken> {
+        const active = this.#projections.get(node)
+        if (active?.status === "active") {
+            active.scopes.add(scope)
+            return active.served
+        }
         this.#rejectSubscriberRead(session)
         if (this.#pull === undefined && this.#bindings.propagating())
             this.#pull = this.#newPull(false)
@@ -289,21 +856,43 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             throw error
         }
         this.#bindings.count("externalClosureVisits")
-        this.#bindings.count("liveSamples")
-        let outcome: import("./runtime-domain").SynchronousResult
+        let outcome: ServedSelectorOutcome<OutcomeToken>["outcome"]
         try {
-            outcome = sampleExternal(
+            outcome = this.#sample(node, session)
+        } catch (error) {
+            if (this.#pull !== undefined)
+                (this.#pull.faults ??= new Map()).set(node, error)
+            throw error
+        }
+        const served = this.#publish(node, outcome)
+        this.#projections.get(node)!.scopes.add(scope)
+        return served
+    }
+
+    #sample(
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ServedSelectorOutcome<OutcomeToken>["outcome"] {
+        this.#bindings.count("liveSamples")
+        const previous = this.#operation?.phase
+        this.phase("samplingExternal")
+        try {
+            return sampleExternal(
                 this.#bindings.domain,
                 this.#bindings.domain.externalAtoms!.get(node)!,
                 session,
                 undefined,
                 () => this.#bindings.count("thenableContainments"),
             )
-        } catch (error) {
-            if (this.#pull !== undefined)
-                (this.#pull.faults ??= new Map()).set(node, error)
-            throw error
+        } finally {
+            if (previous !== undefined) this.phase(previous)
         }
+    }
+
+    #publish(
+        node: AnyState,
+        outcome: ServedSelectorOutcome<OutcomeToken>["outcome"],
+    ): ServedSelectorOutcome<OutcomeToken> {
         let projection = this.#projections.get(node)
         const previous = projection?.served
         const same =
@@ -324,8 +913,10 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             })
             if (projection === undefined) {
                 projection = {
+                    node,
                     served,
                     retains: 0,
+                    status: "dormant",
                     scopes: new WeakHandleSet(() =>
                         this.#bindings.count("deadRouteCompactions"),
                     ),
@@ -338,7 +929,6 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                 this.#bindings.advanceEpoch()
             }
         }
-        projection!.scopes.add(scope)
         const served = projection!.served
         this.#pull?.samples.set(node, served)
         if (previous !== undefined && previous !== served) {

@@ -6,10 +6,7 @@ import {
     RuntimeMismatchError,
     SubscriberNotificationError,
 } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
-import {
-    DormantExternalReadError,
-    ExternalSourceOperationError,
-} from "../../src/v1-internal/committed-store-tree/external-atom"
+import { DormantExternalReadError } from "../../src/v1-internal/committed-store-tree/external-atom"
 import { ExternalReferenceModel } from "../v1-model/external-model"
 import { value as token } from "../v1-model/protocol"
 
@@ -73,7 +70,7 @@ describe("internal external pull", () => {
     })
 
     test.each([false, true])(
-        "a later control fault still settles earlier publications and preserves callback failures (callback=%s)",
+        "a dormant control fault does not poll a retained sibling or invoke its callback (callback=%s)",
         callbackFails => {
             const f = setup(),
                 foreign = createCommittedStoreTreeDomain()
@@ -102,7 +99,7 @@ describe("internal external pull", () => {
             const S = f.domain.selector(get => get(f.ext) + get(B))
             f.store.get(C)
             f.store.get(S)
-            f.store.sub(C, () => {
+            const stop = f.store.sub(C, () => {
                 calls++
                 if (callbackFails) throw callbackError
             })
@@ -116,26 +113,15 @@ describe("internal external pull", () => {
                 error = caught
             }
             expect(samples).toBe(before + 1)
-            expect(calls).toBe(1)
-            if (callbackFails) {
-                expect(error).toBeInstanceOf(ExternalSourceOperationError)
-                expect((error as ExternalSourceOperationError).causes).toEqual([
-                    mismatch,
-                    callbackError,
-                ])
-                expect(
-                    (error as ExternalSourceOperationError).failures.map(
-                        failure => [failure.phase, failure.committed],
-                    ),
-                ).toEqual([
-                    ["sampling", true],
-                    ["notifying", true],
-                ])
-            } else expect(error).toBe(mismatch)
+            expect(calls).toBe(0)
+            expect(error).toBe(mismatch)
             fail = false
+            expect(f.store.get(C)).toBe(0)
+            expect(f.store.get(S)).toBe(1)
+            stop()
             expect(f.store.get(C)).toBe(2)
             expect(f.store.get(S)).toBe(3)
-            expect(calls).toBe(1)
+            expect(calls).toBe(0)
         },
     )
 

@@ -9,6 +9,27 @@ import type {
     StoreTreeCounter,
 } from "./scope-node"
 
+export interface ExternalBounds {
+    rounds: number
+    samples: number
+    deliveryDepth: number
+    deliveryWork: number
+}
+export type ExternalOperationPhase =
+    | "materializingRead"
+    | "drafting"
+    | "preflight"
+    | "applying"
+    | "propagating"
+    | "transitioningLifecycle"
+    | "instrumenting"
+    | "notifying"
+    | "samplingExternal"
+    | "drainingExternal"
+    | "disposing"
+    | "cleanup"
+    | "terminal"
+
 /** A tree-owned optional plane. Every settlement still uses the core queue. */
 export interface ExternalTreeBindings {
     readonly domain: RuntimeDomainRecords
@@ -18,11 +39,27 @@ export interface ExternalTreeBindings {
     readonly token: () => OutcomeToken
     readonly count: (counter: StoreTreeCounter, amount?: number) => void
     readonly advanceEpoch: () => void
+    readonly epoch: () => number
     readonly reach: (scope: StoreScopeNode, node: AnyState) => void
     readonly settleRead: (prepare: () => void) => void
 }
 
 export interface ExternalTreePlane {
+    readonly operating: boolean
+    readonly admissionAllowed: boolean
+    readonly pendingLifecycle: boolean
+    active(node: AnyState): boolean
+    installed(node: AnyState): ServedSelectorOutcome<OutcomeToken> | undefined
+    current(scope: StoreScopeNode, node: AnyState): boolean
+    run<Result>(
+        source: ExternalOperationFailure["source"],
+        operation: () => Result,
+        rollback?: () => void,
+    ): Result
+    phase(phase: ExternalOperationPhase): void
+    failure(cause: unknown, phase?: ExternalOperationFailure["phase"]): void
+    settleLifecycle(): boolean
+    startup(): void
     readonly dormantPull: boolean
     readonly changedPull: boolean
     retainRoot(scope: StoreScopeNode, node: AnyState): void
@@ -58,8 +95,12 @@ export interface ExternalTreePlane {
 }
 
 export interface ExternalRuntime {
+    readonly bounds: ExternalBounds
     createTree(bindings: ExternalTreeBindings): ExternalTreePlane
-    fail(failures: readonly ExternalOperationFailure[]): never
+    fail(
+        failures: readonly ExternalOperationFailure[],
+        preserveMetadata?: boolean,
+    ): never
 }
 
 export interface ExternalOperationFailure {
