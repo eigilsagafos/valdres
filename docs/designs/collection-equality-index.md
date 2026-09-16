@@ -190,19 +190,19 @@ mistaken for expected aborts.
 ## Reviewed package certification
 
 Three byte-identical pinned-toolchain builds produced runtime digest
-`07764fc00a1430582771846a8dd029661dc13bdf5967ec12125e8c3e55bbe3f8`. The hard
+`dbb67fa96cc1d7667fb2903d24ae4ad12957e47f39df2a01e0deed20934ab509`. The hard
 digest assertion, exact feature budgets, immutable ordinary baselines, and
 damaged/oversized-package self-tests remain enforced.
 
 | Compressed bytes                       | Prior reviewed budget | Indexed implementation |
 | -------------------------------------- | --------------------: | ---------------------: |
-| Distribution, production + development |                80,164 |                 89,058 |
-| Packed package                         |               103,018 |                111,898 |
-| Collection consumer                    |                26,245 |                 27,575 |
-| All root exports                       |                27,325 |                 28,706 |
+| Distribution, production + development |                80,164 |                 89,050 |
+| Packed package                         |               103,018 |                112,570 |
+| Collection consumer                    |                26,245 |                 27,603 |
+| All root exports                       |                27,325 |                 28,740 |
 | Inspection consumer                    |                26,047 |                 26,313 |
-| Query consumer, production             |           New fixture |                 29,466 |
-| Query consumer, development            |           New fixture |                 29,466 |
+| Query consumer, production             |           New fixture |                 29,499 |
+| Query consumer, development            |           New fixture |                 29,499 |
 
 The distribution increase includes both query entrypoints and shared incremental
 membership support. Collection-only bundles still exclude the query engine;
@@ -226,3 +226,28 @@ is conservative across scopes of the same collection, but unrelated atom and
 collection writes no longer invalidate snapshots. The 1,000-row probe with ten
 unrelated atom writes/readbacks falls from 11,000 extractor calls to 1,000;
 scoped overrides, resets, value updates and rollback remain covered.
+
+## Integrated query API repairs
+
+The branch incorporates main's family factory diagnostic improvements (#398).
+The size-baseline conflict was resolved by measuring the combined package and
+recertifying three byte-identical builds, without changing ordinary baselines or
+adding either branch's size deltas. The budgets above include the final query
+declaration split.
+
+The standalone query entry is a re-export-only barrel. QueryWhere,
+QueryDefinition, and the query implementation each have a single-export file;
+none is added to the root entry. A star re-export avoids the pinned Bun
+bundler's named-entry re-export bug. Built production and development query
+entries are exercised in Bun and Node, alongside collection-only tree-shaking
+checks.
+
+The inferred const Definition is intersected with an exact definition check at
+each grammar level, following the query-construction spike. Predeclared values
+with visible extra top-level fields, index names, or operators now reject just
+as inline definitions do. Explicitly erasing those fields from a variable's type
+cannot be detected statically; runtime validation remains unchanged.
+
+The dedicated co-located query.mdx page and core navigation entry document the
+shipped equality slice. Collection docs retain declaration usage and link to the
+query page for query-specific behavior and costs.

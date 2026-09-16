@@ -197,6 +197,7 @@ commits none of its Atom or collection-row writes.
 - [presence](/valdres/presence) - derive whether one row is present
 - [store](/valdres/store) - mutate rows directly or atomically
 - [selector](/valdres/selector) - derive values from rows and membership
+- [query](/valdres/query) - read matching rows through declared indexes
 
 ## Scalar equality indexes
 
@@ -224,24 +225,6 @@ snapshot when the matching rows are unchanged. Updating a row's other fields
 therefore does not notify query subscribers; read individual rows to observe
 those field changes.
 
-A failing extractor aborts the complete transaction, including atom writes.
-Queries respect scoped inheritance, local shadows, delete, reset, and disposal.
-Equivalent `query` calls for the same collection, index name, and scalar return
-the same State while it remains live. A helper such as
-`byKind(kind) => query(entities, { where: { kind: { eq: kind } } })` is safe to
-call repeatedly. The cache is weak: after the State has no owners it may be
-collected, and the next call can create a new State. Disposal releases
-scope-local results; it does not change the identity of a query State retained
-by the application. `-0` and `0` share identity; invalid scalar values such as
-`NaN`, symbols, and objects are rejected.
-
-Membership groups exist for every distinct indexed value after materialization.
-Ordered snapshots and reader records are allocated only for queried buckets.
-Unread buckets receive incremental membership edits without snapshot sorting.
-
-Transaction reads see staged writes through an isolated scratch scan. Cached
-transaction results are invalidated by accepted writes to that collection,
-including value-only changes. Atom writes and writes to other collections do not
-invalidate them. A write in any scope of the same collection conservatively
-invalidates that collection’s transaction query snapshots. This slice supports
-one `eq` term; ordered/range and multi-value indexes remain deferred.
+See [query](/valdres/query) for the exact grammar, canonical State identity,
+scoped and transaction behavior, rollback, complexity, and retained-memory
+characteristics. This slice supports one scalar `eq` term.

@@ -6,7 +6,7 @@ import {
     type CollectionRow,
     type State,
 } from "../../src/index"
-import { query } from "../../src/query"
+import { query, type QueryDefinition, type QueryWhere } from "../../src/query"
 import {
     collection as v1Collection,
     type CollectionOptions as V1Options,
@@ -24,6 +24,14 @@ const entities = collection<EntityRef, Entity, EntityRef, EntityIndexes>({
 })
 const tasks = query(entities, { where: { kind: { eq: "task" } } })
 const readable: State<readonly CollectionRow<EntityRef, Entity>[]> = tasks
+const taskDefinition = { where: { kind: { eq: "task" as const } } }
+const declaredDefinition: QueryDefinition<EntityIndexes> = {
+    where: { kind: { eq: "person" } },
+}
+const declaredWhere: QueryWhere<EntityIndexes> = { kind: { eq: "task" } }
+const variableTasks: typeof tasks = query(entities, taskDefinition)
+const declaredPeople: typeof tasks = query(entities, declaredDefinition)
+const typedTasks: typeof tasks = query(entities, { where: declaredWhere })
 if (false) {
     // @ts-expect-error Typed index metadata requires the corresponding declaration.
     collection<string, Entity, string, { kind: Entity["kind"] }>({})
@@ -55,6 +63,9 @@ if (false) {
 test("indexed collection and query declarations retain their row types", () => {
     const s = store()
     expect(s.get(readable)).toEqual([])
+    expect(variableTasks).toBe(tasks)
+    expect(typedTasks).toBe(tasks)
+    expect(s.get(declaredPeople)).toEqual([])
     s.dispose()
 })
 
@@ -76,6 +87,41 @@ const v1Named = v1Collection<EntityRef, Entity, EntityRef, EntityIndexes>({
 query(aliased, { where: { title: { eq: "title" } } })
 query(v1Named, { where: { kind: { eq: "task" } } })
 if (false) {
+    // Each variable has valid literal scalar types, isolating its grammar error.
+    const topLevelExtra = { ...taskDefinition, limit: 1 }
+    // @ts-expect-error Predeclared definitions cannot add a top-level field.
+    query(entities, topLevelExtra)
+    const unknownIndex = { where: { missing: { eq: "task" as const } } }
+    // @ts-expect-error Predeclared definitions must name a declared index.
+    query(entities, unknownIndex)
+    const unknownOperator = { where: { kind: { gt: "task" as const } } }
+    // @ts-expect-error Predeclared definitions must use eq.
+    query(entities, unknownOperator)
+    const extraOperator = {
+        where: { kind: { eq: "task" as const, gt: "person" as const } },
+    }
+    // @ts-expect-error A valid eq cannot hide another operator in a variable.
+    query(entities, extraOperator)
+    const multipleIndexes = {
+        where: { kind: { eq: "task" as const }, title: { eq: "title" } },
+    }
+    // @ts-expect-error Both indexes exist, but only one term is supported.
+    query(aliased, multipleIndexes)
+    const extraIndex = {
+        where: { kind: { eq: "task" as const }, missing: { eq: "task" } },
+    }
+    // @ts-expect-error A valid index cannot hide an extra unknown index.
+    query(entities, extraIndex)
+    const nestedExtra = {
+        where: { kind: { eq: "task" as const, metadata: { label: "task" } } },
+    }
+    // @ts-expect-error Nested properties are checked even on predeclared terms.
+    query(entities, nestedExtra)
+    const invalidScalar = { where: { kind: { eq: "invalid" as const } } }
+    // @ts-expect-error Predeclared scalar values retain the index's literal union.
+    query(entities, invalidScalar)
+    // @ts-expect-error Inline definitions still reject top-level extras.
+    query(entities, { where: { kind: { eq: "task" } }, limit: 1 })
     // @ts-expect-error Optional declarations cannot describe a runtime index map.
     collection<string, Entity, string, OptionalIndexes>({ indexes: {} })
     // @ts-expect-error Symbol names are not runtime index names.

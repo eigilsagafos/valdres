@@ -55,6 +55,7 @@ const coreApiNames = [
     "selectorFamily",
     "index",
     "collection",
+    "query",
     "presence",
     "store",
 ]
