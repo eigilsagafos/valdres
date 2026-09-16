@@ -32,6 +32,11 @@ import {
     UndefinedCollectionValueError,
 } from "./v1-internal/collection-kernel"
 import { v1Domain } from "./v1-internal/public-domain"
+import type {
+    AnyFamilyFactory,
+    NonEmptyFamilyFactory,
+    PrimitiveFamilyFactory,
+} from "./v1-internal/family-factory-types"
 
 export type Atom<Value> = InternalAtom<Value>
 export type Selector<Value> = InternalSelector<Value>
@@ -75,14 +80,6 @@ export interface SelectorOptions<Value> {
     readonly name?: string
     readonly equal?: EqualFunc<Value>
 }
-
-type AnyFamilyFactory = (...args: any[]) => Atom<any> | Selector<any>
-
-type PrimitiveFamilyFactory<Factory extends AnyFamilyFactory> =
-    Parameters<Factory> extends [FamilyKey, ...FamilyKey[]] ? Factory : never
-
-type NonEmptyFamilyFactory<Factory extends AnyFamilyFactory> =
-    Parameters<Factory> extends [unknown, ...unknown[]] ? Factory : never
 
 interface FamilyOptions<Args extends any[]> {
     readonly encodeKey?: (...args: Args) => FamilyKey
