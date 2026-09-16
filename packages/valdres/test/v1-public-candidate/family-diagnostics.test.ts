@@ -1,14 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import ts from "typescript"
+import { spawnSync } from "node:child_process"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import type { CompileResult } from "./family-diagnostics.compile"
 
 // `family()` infers one Factory type parameter and rejects invalid factories
 // through conditional parameter types. The rejection has to read as guidance
 // in the compiler output, not as "not assignable to parameter of type 'never'",
-// so this suite compiles a fixture with the real TypeScript checker and reads
-// the diagnostics back. Every case is one source line, so the fixture line
-// number identifies the case.
+// so this suite compiles a fixture with the real TypeScript checker (in a
+// child process, see family-diagnostics.compile.ts) and reads the diagnostics
+// back. Every case is one source line, so the fixture line identifies the case.
 
 interface DiagnosticCase {
     readonly source: string
@@ -89,76 +90,29 @@ const cases: readonly DiagnosticCase[] = [
 ]
 
 const directory = dirname(fileURLToPath(import.meta.url))
-const fixturePath = join(directory, "family-diagnostics.fixture.virtual.ts")
 const fixturePrelude =
     'import { atom, family, selector, type Atom, type Selector } from "../../src/index"\n'
 const fixtureSource =
     fixturePrelude + cases.map(item => item.source).join("\n") + "\n"
 
-const readCompilerOptions = (): ts.CompilerOptions => {
-    const configPath = join(directory, "tsconfig.json")
-    const configFile = ts.readConfigFile(configPath, ts.sys.readFile)
-    if (configFile.error) {
-        throw new Error(
-            ts.flattenDiagnosticMessageText(configFile.error.messageText, "\n"),
-        )
-    }
-    const parsed = ts.parseJsonConfigFileContent(
-        configFile.config,
-        ts.sys,
-        directory,
-        undefined,
-        configPath,
+const compileFixture = (): CompileResult => {
+    const result = spawnSync(
+        process.execPath,
+        [join(directory, "family-diagnostics.compile.ts")],
+        { cwd: directory, input: fixtureSource, encoding: "utf8" },
     )
-    return { ...parsed.options, noEmit: true }
+    if (result.status !== 0) {
+        throw new Error(`fixture compile failed: ${result.stderr}`)
+    }
+    return JSON.parse(result.stdout) as CompileResult
 }
-
-const compileFixture = (): readonly ts.Diagnostic[] => {
-    const options = readCompilerOptions()
-    const host = ts.createCompilerHost(options, true)
-    const fileExists = host.fileExists
-    const readFile = host.readFile
-    const getSourceFile = host.getSourceFile
-    host.fileExists = fileName =>
-        fileName === fixturePath || fileExists(fileName)
-    host.readFile = fileName =>
-        fileName === fixturePath ? fixtureSource : readFile(fileName)
-    host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) =>
-        fileName === fixturePath
-            ? ts.createSourceFile(
-                  fileName,
-                  fixtureSource,
-                  languageVersion,
-                  true,
-              )
-            : getSourceFile(fileName, languageVersion, onError, shouldCreate)
-    const program = ts.createProgram([fixturePath], options, host)
-    return ts.getPreEmitDiagnostics(program)
-}
-
-const describeDiagnostic = (diagnostic: ts.Diagnostic): string =>
-    ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")
 
 describe("family diagnostics", () => {
-    const diagnostics = compileFixture()
+    const { fixture, elsewhere } = compileFixture()
     const byCase = new Map<number, string[]>()
-    const elsewhere: string[] = []
-    for (const diagnostic of diagnostics) {
-        if (
-            diagnostic.file?.fileName !== fixturePath ||
-            diagnostic.start === undefined
-        ) {
-            elsewhere.push(describeDiagnostic(diagnostic))
-            continue
-        }
-        const { line } = diagnostic.file.getLineAndCharacterOfPosition(
-            diagnostic.start,
-        )
-        const index = line - 1
-        byCase.set(index, [
-            ...(byCase.get(index) ?? []),
-            describeDiagnostic(diagnostic),
-        ])
+    for (const diagnostic of fixture) {
+        const index = diagnostic.line - 1
+        byCase.set(index, [...(byCase.get(index) ?? []), diagnostic.message])
     }
 
     test("the fixture only produces diagnostics on the fixture lines", () => {
