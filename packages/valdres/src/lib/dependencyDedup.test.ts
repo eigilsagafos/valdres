@@ -26,5 +26,5 @@ test("a dependency read twice does not mask a removed dependency", () => {
     expect(getStoreData(s).stateDependents.get(b) ?? new Set()).not.toContain(
         root,
     )
-    expect(getStoreData(s).liveDependentCount.get(b) ?? 0).toBe(0)
+    expect(getStoreData(s).graphNodes.get(b)?.live ?? 0).toBe(0)
 })

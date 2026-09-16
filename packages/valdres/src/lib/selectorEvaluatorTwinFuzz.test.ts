@@ -355,7 +355,7 @@ const graphSnapshot = (
             label(state),
             `deps=${edges(data.stateDependencies as any, state)}`,
             `dependents=${edges(data.stateDependents as any, state)}`,
-            `live=${data.liveDependentCount.get(state) ?? 0}`,
+            `live=${data.graphNodes.get(state)?.live ?? 0}`,
             `committed=${data.values.has(state)}`,
         ].join(" "),
     )
