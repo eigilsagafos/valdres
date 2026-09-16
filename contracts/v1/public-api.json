@@ -661,11 +661,11 @@
                 "collection.row-identity",
                 "collection.membership-order",
                 "collection.atomic-deltas",
-                "collection.unindexed-foundation-beta",
+                "collection.scalar-equality-index",
                 "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "The target is a callable/readable Collection<Key, Value, Input = Key, Indexes = never>. The first foundation beta admits encodeKey, spells indexes only as indexes?: never, rejects every own indexes key at runtime, and exports no index descriptor or collection.indexes property. The separately frozen final-v1 indexes coordinate remains planned."
+            "notes": "The callable/readable Collection<Key, Value, Input = Key, Indexes = never> admits name, encodeKey, and a definition-time scalar equality extractor map. Indexes are non-unique and lazy; there is no collection.indexes property or standalone index descriptor."
         },
         {
             "id": "core.collection-options.encode-key",
@@ -716,12 +716,12 @@
             },
             "contractIds": [
                 "collection.atomic-deltas",
-                "collection.unindexed-foundation-beta",
+                "collection.scalar-equality-index",
                 "options.closed-surface",
                 "transaction.no-user-code-final-preflight"
             ],
             "decisionStatus": "approved",
-            "notes": "This is a final-v1 target coordinate, not an accepted first-foundation-beta option. The first beta exposes indexes?: never, rejects every own indexes key, and ships no descriptor or collection.indexes property. A later indexed beta may replace that closed coordinate with the immutable definition-time map before materialization exists."
+            "notes": "The immutable definition-time scalar equality extractor map validates every declared property without requiring a string index signature. Extractors run synchronously only for present rows; first materialization scans membership once, and effective deltas maintain affected groups and live reader snapshots incrementally. Undeclared indexes allocate no index state."
         },
         {
             "id": "core.external-atom",
@@ -2253,7 +2253,7 @@
             "legacy": [],
             "target": {
                 "package": "valdres",
-                "subpath": ".",
+                "subpath": "./query",
                 "name": "QueryDefinition.facets",
                 "status": "stable"
             },
@@ -2272,7 +2272,7 @@
                 "query.single-collection-composite-result"
             ],
             "decisionStatus": "approved",
-            "notes": "Optional exact facet map; unrequested facets do no work and only requested typed keys appear in the result."
+            "notes": "Deferred final-v1 coordinate; not admitted by the current scalar equality slice. Optional exact facet map; unrequested facets do no work and only requested typed keys appear in the result."
         },
         {
             "id": "core.query-definition.limit",
@@ -2281,7 +2281,7 @@
             "legacy": [],
             "target": {
                 "package": "valdres",
-                "subpath": ".",
+                "subpath": "./query",
                 "name": "QueryDefinition.limit",
                 "status": "stable"
             },
@@ -2299,7 +2299,7 @@
                 "query.recursive-object-definition"
             ],
             "decisionStatus": "approved",
-            "notes": "Optional nonnegative integer window length; total remains the pre-window match count."
+            "notes": "Deferred final-v1 coordinate; not admitted by the current scalar equality slice. Optional nonnegative integer window length; total remains the pre-window match count."
         },
         {
             "id": "core.query-definition.offset",
@@ -2308,7 +2308,7 @@
             "legacy": [],
             "target": {
                 "package": "valdres",
-                "subpath": ".",
+                "subpath": "./query",
                 "name": "QueryDefinition.offset",
                 "status": "stable"
             },
@@ -2326,7 +2326,7 @@
                 "query.recursive-object-definition"
             ],
             "decisionStatus": "approved",
-            "notes": "Optional nonnegative integer window offset applied after filtering and ordering."
+            "notes": "Deferred final-v1 coordinate; not admitted by the current scalar equality slice. Optional nonnegative integer window offset applied after filtering and ordering."
         },
         {
             "id": "core.query-definition.order-by",
@@ -2335,7 +2335,7 @@
             "legacy": [],
             "target": {
                 "package": "valdres",
-                "subpath": ".",
+                "subpath": "./query",
                 "name": "QueryDefinition.orderBy",
                 "status": "stable"
             },
@@ -2353,7 +2353,7 @@
                 "query.recursive-object-definition"
             ],
             "decisionStatus": "approved",
-            "notes": "Optional deterministic ordered-index term or readonly term list; no arbitrary comparator callback."
+            "notes": "Deferred final-v1 coordinate; not admitted by the current scalar equality slice. Optional deterministic ordered-index term or readonly term list; no arbitrary comparator callback."
         },
         {
             "id": "core.query-definition.where",
@@ -2362,7 +2362,7 @@
             "legacy": [],
             "target": {
                 "package": "valdres",
-                "subpath": ".",
+                "subpath": "./query",
                 "name": "QueryDefinition.where",
                 "status": "stable"
             },
@@ -2380,7 +2380,7 @@
                 "query.recursive-object-definition"
             ],
             "decisionStatus": "approved",
-            "notes": "Optional recursive object definition with implicit conjunction and explicit $all, $any, and $not groups."
+            "notes": "Required single scalar eq leaf in the current slice; recursive conjunction and $all/$any/$not groups remain deferred final-v1 targets."
         },
         {
             "id": "core.structural-query",
@@ -2389,7 +2389,7 @@
             "legacy": [],
             "target": {
                 "package": "valdres",
-                "subpath": ".",
+                "subpath": "./query",
                 "name": "query",
                 "status": "stable"
             },
@@ -2397,19 +2397,19 @@
                 "mode": "add",
                 "replacementIds": [],
                 "semver": "new",
-                "codemod": "Define a single-collection structural query with query(collection, { where, orderBy, offset, limit, facets }); use $all, $any, and $not for explicit Boolean groups.",
+                "codemod": "Use query(collection, { where: { index: { eq: scalar } } }) from valdres/query; equivalent lookups share weak canonical identity.",
                 "typeError": "Unknown indexes, operators, option keys, value domains, order fields, and facet fields reject recursively.",
                 "firstPartyOwner": "collection",
                 "evidenceStatus": "planned"
             },
             "contractIds": [
                 "query.recursive-object-definition",
-                "query.single-collection-composite-result",
-                "query.ready-only-indexed-read",
+                "collection.scalar-equality-index",
+                "collection.invariant-readable-state",
                 "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "QueryDefinition contains exactly where, orderBy, offset, limit, and facets. The stable primitive is standalone and uses the zero-operator-import recursive object grammar with implicit conjunction and explicit $all/$any/$not; a fluent builder remains reserved for experimental multi-collection search."
+            "notes": "The current scalar equality slice exports query from valdres/query and requires exactly { where: { index: { eq: scalar } } }. It returns readable State<readonly CollectionRow[]> in membership order. Equivalent collection/index/scalar queries share weak canonical identity while retained; -0 and 0 coincide. No permanent strong query cache exists. The recursive object grammar remains the final-v1 direction; compound groups, ordering, pagination and facets remain deferred."
         },
         {
             "id": "core.transaction-closed-error",
@@ -2807,10 +2807,10 @@
                 "collection.invariant-readable-state",
                 "collection.membership-order",
                 "collection.row-identity",
-                "collection.unindexed-foundation-beta"
+                "collection.scalar-equality-index"
             ],
             "decisionStatus": "approved",
-            "notes": "Collection<Key, Value, Input = Key, Indexes = never> is callable from Input to CollectionRow<Key, Value> and readable as a stable readonly membership array. The private phantom makes all four coordinates real and keeps declaration emit nameable; Input stays third and future inferred index metadata stays fourth."
+            "notes": "Collection<Key, Value, Input = Key, Indexes = never> is callable from Input to CollectionRow<Key, Value> and readable as a stable readonly membership array. The private phantom makes all four coordinates real and keeps declaration emit nameable; Input stays third and declared index metadata stays fourth."
         },
         {
             "id": "core.type.collection-key",
@@ -2851,18 +2851,18 @@
                 "mode": "add",
                 "replacementIds": [],
                 "semver": "new",
-                "codemod": "Use CollectionOptions<Key, Value, Input = Key>; provide encodeKey when Input is richer than Key.",
-                "typeError": "A rich Input without encodeKey, an unknown option, or any first-beta indexes value rejects.",
+                "codemod": "Use CollectionOptions<Key, Value, Input = Key, Indexes = never>; provide encodeKey for rich Input and synchronous scalar extractors for declared Indexes.",
+                "typeError": "A rich Input without encodeKey, unknown options, invalid index schemas or extractor values reject; querying an undeclared index rejects.",
                 "firstPartyOwner": "collection",
                 "evidenceStatus": "planned"
             },
             "contractIds": [
                 "collection.row-identity",
-                "collection.unindexed-foundation-beta",
+                "collection.scalar-equality-index",
                 "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "CollectionOptions<Key, Value, Input = Key> requires encodeKey exactly when Input is not assignable to Key. The first foundation beta keeps the final-v1 indexes coordinate closed as indexes?: never and rejects any own indexes key at runtime."
+            "notes": "CollectionOptions<Key, Value, Input = Key, Indexes = never> requires encodeKey exactly when Input is not assignable to Key. Finite required string-named interface index metadata is accepted through a scalar constraint. Optional, symbol/numeric-named, broad index-signature, and invalid scalar schemas reject. Declared metadata requires its extractor map; absent metadata keeps indexes?: never. The name option remains diagnostic metadata."
         },
         {
             "id": "core.type.collection-row",

@@ -157,11 +157,13 @@ try {
         "atom-selector-store": `export { atom, selector, store } from "valdres"`,
         family: `export { atom, family } from "valdres"`,
         collection: `export { collection, presence, store } from "valdres"`,
+        query: `import { collection, store } from "valdres"; import { query } from "valdres/query"; const entities = collection({ indexes: { kind: value => value.kind } }); export const tasks = query(entities, { where: { kind: { eq: "task" } } }); export const app = store();`,
         "all-exports": `export * from "valdres"`,
         inspect: `export * from "valdres/inspect"`,
         equality: `export { deepEqual } from "valdres/equality"`,
         "adapter-internals": `export * from "valdres/adapter-internals/v1"`,
     }
+    fixtureSources["query-development"] = fixtureSources.query!
     const fixtures: Record<string, Size> = {}
     for (const [name, source] of Object.entries(fixtureSources)) {
         const entry = join(consumerDir, `${name}.ts`)
@@ -169,7 +171,12 @@ try {
         const result = await Bun.build({
             entrypoints: [entry],
             minify: true,
-            define: { "process.env.NODE_ENV": JSON.stringify("production") },
+            conditions: name === "query-development" ? ["development"] : [],
+            define: {
+                "process.env.NODE_ENV": JSON.stringify(
+                    name === "query-development" ? "development" : "production",
+                ),
+            },
         })
         if (!result.success) {
             throw new Error(

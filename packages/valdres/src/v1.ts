@@ -1,3 +1,4 @@
+import type { CollectionIndexSchema } from "./v1-internal/committed-store-tree/types"
 import {
     assertDefinitionFamilyCallAllowed,
     assertDefinitionState,
@@ -57,7 +58,8 @@ export type CollectionOptions<
     Key extends CollectionKey,
     Value extends CollectionValue,
     Input = Key,
-> = InternalCollectionOptions<Key, Value, Input>
+    Indexes extends CollectionIndexSchema<Indexes> = never,
+> = InternalCollectionOptions<Key, Value, Input, Indexes>
 export type Store = CommittedStoreTree
 export type Transaction = RootTransaction
 export type FamilyKey = InternalFamilyKey
@@ -140,7 +142,10 @@ export function collection<
     Key extends CollectionKey,
     Value extends CollectionValue,
     Input,
->(options: CollectionOptions<Key, Value, Input>): Collection<Key, Value, Input>
+    Indexes extends CollectionIndexSchema<Indexes> = never,
+>(
+    options: CollectionOptions<Key, Value, Input, Indexes>,
+): Collection<Key, Value, Input, Indexes>
 export function collection(
     options?: unknown,
 ): Collection<CollectionKey, CollectionValue, any> {

@@ -2,12 +2,9 @@
  * Compile-only spelling authority for the collection foundation and the later
  * stable standalone collection operations.
  *
- * The two surfaces are intentionally staged. The first collection beta ships
- * the root callable/readable collection with `indexes?: never`; it exports no
- * index descriptor, rejects every index value at compile time, and rejects
- * every own indexes key at runtime. The standalone
- * materialization, scan, and artifact operations below remain target-v1
- * coordinates rather than first-beta runtime exports.
+ * The current slice admits definition-time scalar equality indexes and weakly
+ * canonical standalone query States. The broader materialization, scan, and
+ * artifact operations below remain deferred target-v1 coordinates.
  */
 
 declare const stateValueBrand: unique symbol
@@ -93,9 +90,7 @@ interface CollectionOptionCarrierCandidate<
     Value extends CollectionValueCandidate,
     Input,
 > {
-    // First-beta rejection coordinate. Target-v1 index metadata remains the
-    // fourth Collection generic, but no descriptor is admitted in this slice.
-    readonly indexes?: never
+    readonly name?: string
     readonly [collectionOptionTypesBrand]?: {
         readonly key: (key: Key) => Key
         readonly value: (value: Value) => Value
@@ -103,16 +98,37 @@ interface CollectionOptionCarrierCandidate<
     }
 }
 
+type RequiredStringIndexNamesCandidate<Indexes> = {
+    [Name in keyof Indexes]-?: Name extends string
+        ? {} extends Pick<Indexes, Name>
+            ? never
+            : Name
+        : never
+}[keyof Indexes]
+type CollectionIndexSchemaCandidate<Indexes> = {
+    [Name in keyof Indexes]-?: CollectionKeyCandidate
+} & (keyof Indexes extends RequiredStringIndexNamesCandidate<Indexes>
+    ? unknown
+    : never)
+
 type CollectionOptionsCandidate<
     Key extends CollectionKeyCandidate,
     Value extends CollectionValueCandidate,
     Input = Key,
+    Indexes extends CollectionIndexSchemaCandidate<Indexes> = never,
 > = CollectionOptionCarrierCandidate<Key, Value, Input> &
+    ([Indexes] extends [never]
+        ? { readonly indexes?: never }
+        : {
+              readonly indexes: {
+                  readonly [Name in keyof Indexes]: (
+                      value: Value,
+                  ) => Indexes[Name]
+              }
+          }) &
     (
         | { readonly encodeKey: (input: Input) => Key }
-        | ([Input] extends [Key]
-              ? { readonly encodeKey?: never }
-              : never)
+        | ([Input] extends [Key] ? { readonly encodeKey?: never } : never)
     )
 
 declare function collectionCandidate<
@@ -126,9 +142,10 @@ declare function collectionCandidate<
     Key extends CollectionKeyCandidate,
     Value extends CollectionValueCandidate,
     Input,
+    Indexes extends CollectionIndexSchemaCandidate<Indexes> = never,
 >(
-    options: CollectionOptionsCandidate<Key, Value, Input>,
-): CollectionCandidate<Key, Value, Input>
+    options: CollectionOptionsCandidate<Key, Value, Input, Indexes>,
+): CollectionCandidate<Key, Value, Input, Indexes>
 
 declare function presenceCandidate<
     Key extends CollectionKeyCandidate,
@@ -138,11 +155,11 @@ declare function presenceCandidate<
 interface StoreCandidate {
     readonly [storeBrand]: true
     get<Value>(state: StateCandidate<Value>): Value
-    sub<Value>(
-        state: StateCandidate<Value>,
-        callback: () => void,
-    ): () => void
-    set<Key extends CollectionKeyCandidate, Value extends CollectionValueCandidate>(
+    sub<Value>(state: StateCandidate<Value>, callback: () => void): () => void
+    set<
+        Key extends CollectionKeyCandidate,
+        Value extends CollectionValueCandidate,
+    >(
         row: CollectionRowCandidate<Key, Value>,
         value: Value,
     ): void
@@ -161,18 +178,25 @@ interface StoreCandidate {
     reset<
         Key extends CollectionKeyCandidate,
         Value extends CollectionValueCandidate,
-    >(row: CollectionRowCandidate<Key, Value>): void
+    >(
+        row: CollectionRowCandidate<Key, Value>,
+    ): void
     reset<Value>(atom: AtomCandidate<Value>): void
     delete<
         Key extends CollectionKeyCandidate,
         Value extends CollectionValueCandidate,
-    >(row: CollectionRowCandidate<Key, Value>): void
+    >(
+        row: CollectionRowCandidate<Key, Value>,
+    ): void
 }
 
 interface TransactionCandidate {
     readonly [transactionBrand]: true
     get<Value>(state: StateCandidate<Value>): Value
-    set<Key extends CollectionKeyCandidate, Value extends CollectionValueCandidate>(
+    set<
+        Key extends CollectionKeyCandidate,
+        Value extends CollectionValueCandidate,
+    >(
         row: CollectionRowCandidate<Key, Value>,
         value: Value,
     ): void
@@ -191,12 +215,16 @@ interface TransactionCandidate {
     reset<
         Key extends CollectionKeyCandidate,
         Value extends CollectionValueCandidate,
-    >(row: CollectionRowCandidate<Key, Value>): void
+    >(
+        row: CollectionRowCandidate<Key, Value>,
+    ): void
     reset<Value>(atom: AtomCandidate<Value>): void
     delete<
         Key extends CollectionKeyCandidate,
         Value extends CollectionValueCandidate,
-    >(row: CollectionRowCandidate<Key, Value>): void
+    >(
+        row: CollectionRowCandidate<Key, Value>,
+    ): void
 }
 
 interface SessionCandidate {
@@ -212,10 +240,9 @@ declare const transaction: TransactionCandidate
 declare const countAtom: AtomCandidate<number>
 
 const sessions = collectionCandidate<string, SessionCandidate>()
-const sessionsWithDirectEncoder = collectionCandidate<
-    string,
-    SessionCandidate
->({ encodeKey: input => input })
+const sessionsWithDirectEncoder = collectionCandidate<string, SessionCandidate>(
+    { encodeKey: input => input },
+)
 const richSessions = collectionCandidate<
     string,
     SessionCandidate,
@@ -290,9 +317,9 @@ admitFamilyState(sessions)
 
 // @ts-expect-error rich lookup input requires encodeKey
 collectionCandidate<string, SessionCandidate, SessionLookupCandidate>({})
-// @ts-expect-error first collection beta rejects every indexes descriptor
+// @ts-expect-error untyped collection rejects index declarations
 collectionCandidate<string, SessionCandidate>({ indexes: { byUser: true } })
-// @ts-expect-error the first-beta CollectionOptions bag is closed
+// @ts-expect-error CollectionOptions rejects unknown options
 collectionCandidate<string, SessionCandidate>({ storage: "global" })
 // @ts-expect-error undefined is the reserved row-absence value
 collectionCandidate<string, SessionCandidate | undefined>()
@@ -443,3 +470,34 @@ operations.progress(materialization)
 artifacts.importArtifact(transaction, index, artifact)
 // @ts-expect-error export consumes a materialization handle, not an index definition
 artifacts.exportArtifact(index)
+
+// Executable public type compatibility, not only a parallel candidate spelling.
+import {
+    collection as publicCollection,
+    type State,
+    type CollectionRow,
+} from "../../packages/valdres/src/index"
+import { query as publicQuery } from "../../packages/valdres/src/query"
+interface Entity {
+    kind: "task" | "person"
+}
+interface EntityIndexes {
+    kind: Entity["kind"]
+}
+const indexed = publicCollection<string, Entity, string, EntityIndexes>({
+    name: "entities",
+    indexes: { kind: entity => entity.kind },
+})
+const tasks: State<readonly CollectionRow<string, Entity>[]> = publicQuery(
+    indexed,
+    { where: { kind: { eq: "task" } } },
+)
+// @ts-expect-error Declared index values must be scalar.
+publicCollection<string, Entity, string, { kind: object }>({
+    indexes: { kind: (entity: Entity) => entity },
+})
+// @ts-expect-error Scalar query literals retain their declared union.
+publicQuery(indexed, { where: { kind: { eq: "unknown" } } })
+// @ts-expect-error Compound operations remain outside the current slice.
+publicQuery(indexed, { where: { kind: { eq: "task" } }, limit: 10 })
+void tasks

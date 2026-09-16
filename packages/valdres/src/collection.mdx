@@ -10,9 +10,14 @@ description: Define keyed rows with reactive ordered membership
         Signature
     </div>
     <code className="text-sm font-mono text-accent-500">
-        collection&lt;Key extends CollectionKey, Value extends
-        CollectionValue&gt;(options?: CollectionOptions&lt;Key, Value, Key&gt;):
-        Collection&lt;Key, Value, Key&gt;
+        collection&lt;Key, Value&gt;(options?: CollectionOptions&lt;Key,
+        Value&gt;): Collection&lt;Key, Value&gt;
+    </code>
+    <br />
+    <code className="text-sm font-mono text-accent-500">
+        collection&lt;Key, Value, Input, Indexes&gt;(options:
+        CollectionOptions&lt;Key, Value, Input, Indexes&gt;): Collection&lt;Key,
+        Value, Input, Indexes&gt;
     </code>
     <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
@@ -75,6 +80,20 @@ new handle for that key.
 Rows are Store-local state. One collection definition can be used with several
 Stores, but each Store has independent values and membership.
 
+## Options and type parameters
+
+`collection<Key, Value>()` still supports an omitted options object. The indexed
+form is `collection<Key, Value, Input, Indexes>(options)`: `Indexes` maps each
+index name to its scalar type, including ordinary named interfaces. Names must
+be required finite string properties; optional names, numeric/symbol names, and
+index signatures are rejected.
+
+| Option          | Meaning                                                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `name?: string` | Static inspection label.                                                                                                |
+| `encodeKey`     | Synchronous canonical key encoder; required for rich `Input`.                                                           |
+| `indexes`       | Required when `Indexes` is supplied: a map from each name to a synchronous `(value: Value) => Indexes[Name]` extractor. |
+
 ## Keys and `encodeKey`
 
 Direct keys may be strings, finite numbers, bigints, booleans, or `null`.
@@ -103,8 +122,8 @@ names. The collection and every row belonging to it use that one static name;
 inspection IDs distinguish individual rows. Keys, values, and rich `encodeKey`
 inputs are never added to diagnostic names or serialized inspection output.
 
-`name` and `encodeKey` are the only collection options in this beta. Index
-definitions are not available yet, and an `indexes` or unknown option is
+Use `indexes` to declare scalar equality extractors, as shown below. `name`,
+`encodeKey`, and `indexes` are the supported options; unknown options are
 rejected.
 
 ## Reading membership
@@ -165,16 +184,47 @@ commits none of its Atom or collection-row writes.
 
 ## Public types
 
-| Type                                                   | Meaning                                                                |
-| ------------------------------------------------------ | ---------------------------------------------------------------------- |
-| `CollectionKey`                                        | `string \| number \| bigint \| boolean \| null`                        |
-| `CollectionValue`                                      | Any non-`undefined` value; thenables are rejected when written         |
-| `CollectionRow<Key, Value>`                            | Readonly `State<Value \| undefined>` with `kind` and canonical `key`   |
-| `Collection<Key, Value, Input = Key, Indexes = never>` | Callable readonly membership State                                     |
-| `CollectionOptions<Key, Value, Input = Key>`           | Definition options; optional `name`; rich `Input` requires `encodeKey` |
+| Type                                                          | Meaning                                                                |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `CollectionKey`                                               | `string \| number \| bigint \| boolean \| null`                        |
+| `CollectionValue`                                             | Any non-`undefined` value; thenables are rejected when written         |
+| `CollectionRow<Key, Value>`                                   | Readonly `State<Value \| undefined>` with `kind` and canonical `key`   |
+| `Collection<Key, Value, Input = Key, Indexes = never>`        | Callable readonly membership State                                     |
+| `CollectionOptions<Key, Value, Input = Key, Indexes = never>` | Definition options; optional `name`; rich `Input` requires `encodeKey` |
 
 ## See also
 
 - [presence](/valdres/presence) - derive whether one row is present
 - [store](/valdres/store) - mutate rows directly or atomically
 - [selector](/valdres/selector) - derive values from rows and membership
+- [query](/valdres/query) - read matching rows through declared indexes
+
+## Scalar equality indexes
+
+Declare indexes with the collection and import queries separately:
+
+```ts
+import { collection, store } from "valdres"
+import { query } from "valdres/query"
+
+type Entity = { kind: "task" | "person"; title: string }
+const entities = collection<string, Entity, string, { kind: Entity["kind"] }>({
+    indexes: { kind: entity => entity.kind },
+})
+const tasks = query(entities, { where: { kind: { eq: "task" } } })
+const app = store()
+app.set(entities("one"), { kind: "task", title: "Write docs" })
+app.get(tasks) // readonly CollectionRow<string, Entity>[]
+```
+
+Indexes are non-unique. Extractors run only on present values and must return a
+synchronous scalar: a string, finite number, boolean, bigint, or null. The first
+read scans membership; subsequent commits maintain affected buckets from final
+row changes. Results preserve collection membership order and reuse their
+snapshot when the matching rows are unchanged. Updating a row's other fields
+therefore does not notify query subscribers; read individual rows to observe
+those field changes.
+
+See [query](/valdres/query) for the exact grammar, canonical State identity,
+scoped and transaction behavior, rollback, complexity, and retained-memory
+characteristics. This slice supports one scalar `eq` term.

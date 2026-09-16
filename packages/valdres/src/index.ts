@@ -1,12 +1,18 @@
+import type { CollectionIndexSchema } from "./v1-internal/committed-store-tree/types"
 import * as v1 from "./v1"
 
 interface CollectionFactory {
     <Key extends CollectionKey, Value extends CollectionValue>(
         options?: CollectionOptions<Key, Value, Key>,
     ): Collection<Key, Value, Key>
-    <Key extends CollectionKey, Value extends CollectionValue, Input>(
-        options: CollectionOptions<Key, Value, Input>,
-    ): Collection<Key, Value, Input>
+    <
+        Key extends CollectionKey,
+        Value extends CollectionValue,
+        Input,
+        Indexes extends CollectionIndexSchema<Indexes> = never,
+    >(
+        options: CollectionOptions<Key, Value, Input, Indexes>,
+    ): Collection<Key, Value, Input, Indexes>
 }
 
 interface PresenceFactory {
@@ -75,7 +81,8 @@ export type CollectionOptions<
     Key extends CollectionKey,
     Value extends CollectionValue,
     Input = Key,
-> = v1.CollectionOptions<Key, Value, Input>
+    Indexes extends CollectionIndexSchema<Indexes> = never,
+> = v1.CollectionOptions<Key, Value, Input, Indexes>
 export type CollectionRow<
     Key extends CollectionKey,
     Value extends CollectionValue,

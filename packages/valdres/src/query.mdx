@@ -1,0 +1,148 @@
+---
+title: query
+description:
+    Read matching collection rows through a declared scalar equality index
+---
+
+# query
+
+Import `query` from the opt-in `valdres/query` entry. Declare indexes with
+[`collection`](/valdres/collection), then create a readable State for one scalar
+equality lookup:
+
+```ts
+import { collection, selector, store } from "valdres"
+import { query } from "valdres/query"
+
+type EntityRef = `entity:${string}`
+type Entity = { kind: "task" | "person"; title: string }
+interface EntityIndexes {
+    kind: Entity["kind"]
+}
+
+const entities = collection<EntityRef, Entity, EntityRef, EntityIndexes>({
+    name: "entities",
+    indexes: { kind: entity => entity.kind },
+})
+const tasks = query(entities, { where: { kind: { eq: "task" } } })
+const app = store()
+app.set(entities("entity:1"), { kind: "task", title: "Write docs" })
+
+app.get(tasks) // readonly CollectionRow<EntityRef, Entity>[]
+
+const taskTitles = selector(get => get(tasks).map(row => get(row)!.title))
+app.get(taskTitles) // ["Write docs"]
+```
+
+> **Adapter compatibility:** This API belongs to the synchronous v1 core,
+> certified with `valdres-react` and framework-free `valdres`. The legacy Vue,
+> Svelte, Solid, and Angular adapters are not compatible with this beta.
+
+## Grammar and types
+
+`query(collection, definition)` accepts exactly
+`{ where: { indexName: { eq: scalar } } }`. The index must be declared on that
+collection. Equality values use the index's declared scalar type. Extra fields
+are rejected at the definition, index-map, and operator levels, including in
+predeclared variables whose types retain those fields.
+
+```ts
+const definition = { where: { kind: { eq: "task" as const } } }
+query(entities, definition)
+```
+
+| Export                     | Meaning                                                                                                                 |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `query`                    | Returns `State<readonly CollectionRow<Key, Value>[]>`. Read with `get`, subscribe with `sub`, or consume in a selector. |
+| `QueryDefinition<Indexes>` | The definition object with its required `where` field.                                                                  |
+| `QueryWhere<Indexes>`      | Exactly one declared index with an `eq` term.                                                                           |
+
+All three exports belong to `valdres/query`; none is exported from the root
+entry. The result contains row handles, not copied values, and does not narrow
+the collection's `Value` type. Mutate rows through Store or Transaction methods.
+
+Indexes are non-unique. Extractors run only for present rows and must return a
+synchronous string, finite number, boolean, bigint, or null. `0` and `-0`
+compare equally. Invalid definitions, undeclared indexes, and invalid scalar
+values are also rejected at runtime, including when TypeScript is bypassed.
+
+## Identity, order, and updates
+
+Equivalent calls for the same collection, index name, and scalar return the same
+State while it remains live:
+
+```ts
+const byKind = (kind: Entity["kind"]) =>
+    query(entities, { where: { kind: { eq: kind } } })
+
+byKind("task") === byKind("task") // true
+```
+
+The cache is weak. Once nothing retains a query State, it may be collected and a
+later call can create a new State. `family()` remains an independent API.
+
+Results are frozen arrays in collection membership order. Updating a row while
+it stays present preserves its position; deleting and reinserting it follows the
+collection's normal membership-order rules. Matching row identities and their
+order determine snapshot equality. Unchanged results reuse the same array and do
+not notify query subscribers.
+
+Changing only a task's title therefore does not notify `tasks` subscribers. Read
+the rows themselves, as `taskTitles` does above, to observe field changes.
+Changing a row's kind updates the affected query memberships automatically.
+
+## Scopes, transactions, and rollback
+
+One query State can be read in several Stores or scopes. Each read uses that
+scope's effective collection, including inherited rows, local shadows, local
+deletions, and `reset` operations that reveal parent values. Disposing a scope
+releases its index state; a retained query State keeps its identity.
+
+The first committed read materializes the index for that collection and scope.
+It scans existing membership once. Later commits maintain buckets from effective
+row changes, coalescing multiple writes in one transaction. If an extractor
+fails during commit validation, the complete transaction aborts, including its
+atom writes. Failed first materialization publishes no partial index. Declaring
+an unread index does not eagerly evaluate its extractor.
+
+Transaction reads see staged changes through isolated scratch results. Aborting
+the transaction discards those results and preserves committed state. Repeated
+reads reuse the scratch result until a write to the same collection occurs,
+including a value-only write. Atom writes and writes to other collections do not
+invalidate it. Writes in any scope of the same collection conservatively
+invalidate that collection's scratch results.
+
+## Cost and retained memory
+
+Let `N` be the number of present rows, `K` the number of distinct indexed
+values, and `B` the size of an affected queried bucket. Costs assume bounded
+extractor work per row.
+
+| Operation                                      | Work                                                                                                                              |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| First committed index read in a scope          | O(N) extraction and grouping, plus O(B log B) ordering for the queried bucket.                                                    |
+| Steady committed writes                        | Changed effective rows per materialized index, plus O(B log B) for each affected live bucket snapshot. No full membership rescan. |
+| Repeated read of an unchanged live query       | Reuse the existing snapshot.                                                                                                      |
+| First read of another bucket                   | Order that bucket's rows; no index-wide re-extraction.                                                                            |
+| Scratch read after a relevant collection write | O(N) membership scan; transaction-local incremental indexing is deferred.                                                         |
+
+Each materialized scope/index retains O(N + K) membership storage. Ordered
+snapshots and reader records are allocated only for queried buckets and held
+through weak reader ownership. Unread buckets receive membership edits without
+snapshot sorting. Scope disposal releases its materialized indexes.
+
+Collections without materialized indexes do not maintain index buckets. The
+separate entry keeps the query engine out of collection-only/root consumers that
+do not import it.
+
+## Deferred capabilities
+
+This slice supports one scalar `eq` term. Multi-value/tag indexes, unique
+constraints, ordered/range indexes, compound conditions, facets, pagination,
+joins, and full-text or multi-collection search are not supported.
+
+## See also
+
+- [collection](/valdres/collection) — declare indexes and manipulate rows
+- [store](/valdres/store) — transactions, subscriptions, and scopes
+- [selector](/valdres/selector) — derive values from matching rows

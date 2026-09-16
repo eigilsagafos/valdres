@@ -346,12 +346,9 @@
         {
             "id": "callback.collection-index-extractor",
             "apiEntryId": "core.collection-options.indexes",
-            "role": "Final-v1 target only: derive canonical structural index keys from one proposed present row value. The unindexed foundation beta never admits or invokes this callback.",
-            "phase": "future-v1-guarded-delta-derivation-before-preflight",
-            "suppliedCapabilities": [
-                "canonical row value",
-                "canonical row key"
-            ],
+            "role": "Derive one finite scalar equality key synchronously from each effective present row value. Initial materialization scans present rows once; committed maintenance visits effective deltas.",
+            "phase": "guarded-delta-derivation-before-preflight",
+            "suppliedCapabilities": ["canonical row value"],
             "allowedExternalWork": ["pure synchronous key extraction"],
             "rejectedCapturedOperations": [
                 "Store read",
@@ -367,7 +364,7 @@
             "resultBoundary": "Only validated inert canonical deltas cross into final no-user-code preflight/apply.",
             "requiredContractIds": [
                 "collection.atomic-deltas",
-                "collection.unindexed-foundation-beta",
+                "collection.scalar-equality-index",
                 "transaction.no-user-code-final-preflight",
                 "error.stable-name-and-code"
             ],

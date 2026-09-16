@@ -281,7 +281,7 @@ describe("v1 public collections", () => {
             InvalidCollectionKeyError,
         )
         expect(() =>
-            Reflect.apply(collection, undefined, [{ indexes: {} }]),
+            Reflect.apply(collection, undefined, [{ indexes: { kind: null } }]),
         ).toThrow(TypeError)
         expect(() =>
             Reflect.apply(collection, undefined, [{ unknown: true }]),

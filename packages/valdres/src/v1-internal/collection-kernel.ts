@@ -1,3 +1,9 @@
+import { OrderedMembership } from "./ordered-membership"
+import type {
+    CollectionIndexHost,
+    CollectionIndexRuntime,
+    IndexScopeDelta,
+} from "./collection-index-protocol"
 import type {
     AnyState,
     CollectionCommitPlan,
@@ -9,6 +15,7 @@ import type {
 } from "./committed-store-tree/runtime-domain"
 import {
     COLLECTION_EFFECTIVE_DELTAS_PREPARED,
+    COLLECTION_INDEX_ROUTE_VISITS,
     COLLECTION_EFFECTIVE_INSERT,
     COLLECTION_EFFECTIVE_REMOVE,
     COLLECTION_EFFECTIVE_UPDATE,
@@ -110,6 +117,9 @@ interface RowViewRecord {
 }
 
 interface MembershipRecord {
+    ordered?: OrderedMembership | undefined
+    indexedChildren?: WeakHandleSet<MembershipRecord>
+    snapshotDirty?: boolean
     readonly scope: StoreScopeNode
     readonly atom: CollectionHandle
     served: Readonly<{ token: OutcomeToken; outcome: SynchronousResult }>
@@ -149,6 +159,7 @@ interface MembershipPlanNode {
     membershipChangedFromBefore: boolean | undefined
     membershipChanges?: Map<CollectionRowHandle, MembershipPresenceTimeline>
     installed: MembershipRecord | undefined
+    orderedPatch?: { removals: object[]; births: object[] }
     affected: boolean
     containsAffected: boolean
 }
@@ -165,6 +176,10 @@ interface ScopedCollectionCommitPlan extends CollectionCommitPlan {
     readonly membershipInstalls: readonly MembershipPlanNode[]
     readonly membershipSettlements: readonly MembershipSettlementPlan[]
     readonly sources: readonly CollectionCommitSource[]
+    readonly indexPlan:
+        | { publish(): readonly CollectionCommitSource[] }
+        | undefined
+    readonly orderedNodes: readonly MembershipPlanNode[] | undefined
 }
 
 interface PresenceEvent {
@@ -223,6 +238,7 @@ interface DraftLane {
     >
     readonly byRow: Map<CollectionRowHandle, DraftRowLane>
     readonly revisionByCollection: Map<CollectionHandle, number>
+    queryRevisionByCollection?: Map<CollectionHandle, number>
     readonly membershipMemo: Map<
         StoreScopeNode,
         Map<CollectionHandle, MembershipMemo>
@@ -258,6 +274,9 @@ export interface CollectionDraftInspection {
 }
 
 export interface CollectionDraftKernel extends OptionalCollectionVTable {
+    installIndexes(
+        create: (host: CollectionIndexHost) => CollectionIndexRuntime,
+    ): CollectionIndexRuntime
     stageSet(
         draft: TreeDraft,
         scope: StoreScopeNode,
@@ -432,6 +451,7 @@ export const createCollectionKernel = (
     bindings: CollectionKernelBindings,
     readBaselineOverride?: CollectionBaselineReader,
 ): CollectionDraftKernel => {
+    let indexes: CollectionIndexRuntime | undefined
     const lanes = new WeakMap<TreeDraft, DraftLane>()
     const scopeSidecars = new WeakMap<StoreScopeNode, CollectionScopeSidecar>()
     let membershipRebuildTraceForTest: object[] | undefined
@@ -765,10 +785,43 @@ export const createCollectionKernel = (
 
     const membershipRows = (
         record: MembershipRecord,
-    ): readonly CollectionRowHandle[] =>
-        record.served.outcome.kind === "value"
+    ): readonly CollectionRowHandle[] => {
+        if (record.snapshotDirty) {
+            const rows = Object.freeze([...record.ordered!.entries.keys()])
+            recordCounter(
+                record.scope,
+                COLLECTION_MEMBERSHIP_ROWS_SCANNED,
+                rows.length,
+            )
+            recordCounter(record.scope, COLLECTION_MEMBERSHIP_ARRAY_ALLOCATIONS)
+            record.served = servedMembership(
+                record.scope,
+                rows,
+                record.served.token,
+            )
+            record.snapshotDirty = false
+        }
+        return record.served.outcome.kind === "value"
             ? (record.served.outcome.value as readonly CollectionRowHandle[])
             : EMPTY_ROWS
+    }
+
+    const indexedMembership = (
+        scope: StoreScopeNode,
+        collection: object,
+    ): OrderedMembership => {
+        const record = materializeMembership(scope, collection)
+        let current: MembershipRecord | undefined = record
+        while (current !== undefined && current.ordered === undefined) {
+            current.ordered = new OrderedMembership(membershipRows(current))
+            const parent: MembershipRecord | undefined = current.inheritedFrom
+            if (parent !== undefined) {
+                ;(parent.indexedChildren ??= new WeakHandleSet()).add(current)
+            }
+            current = parent
+        }
+        return record.ordered!
+    }
 
     const copyMembershipRows = (
         scope: StoreScopeNode,
@@ -844,6 +897,7 @@ export const createCollectionKernel = (
         const inheritedFrom = record.inheritedFrom
         if (inheritedFrom === undefined) return
         inheritedFrom.inheritingChildren.delete(record)
+        inheritedFrom.indexedChildren?.delete(record)
         record.inheritedFrom = undefined
         record.scope.coordinator.recordCounter("routeRemoves")
     }
@@ -908,6 +962,7 @@ export const createCollectionKernel = (
 
     const releaseDraft = (draftValue: object): void => {
         const draft = draftValue as TreeDraft
+        indexes?.release(draft)
         const lane = lanes.get(draft)
         if (lane === undefined) return
         lanes.delete(draft)
@@ -938,6 +993,7 @@ export const createCollectionKernel = (
         }
         lane.byRow.clear()
         lane.revisionByCollection.clear()
+        lane.queryRevisionByCollection?.clear()
         for (const byCollection of lane.membershipMemo.values()) {
             byCollection.clear()
         }
@@ -1170,6 +1226,16 @@ export const createCollectionKernel = (
         if (placementChanged) {
             advanceMembershipRevision(lane, coordinate.collection)
         }
+        // Query results depend on row values as well as membership. Advance only
+        // queried collections, including ownership changes that affect descendants.
+        const queryRevision = lane.queryRevisionByCollection?.get(
+            coordinate.collection,
+        )
+        if (queryRevision !== undefined)
+            lane.queryRevisionByCollection!.set(
+                coordinate.collection,
+                queryRevision + 1,
+            )
         draft.markRow(sequence)
     }
 
@@ -1483,6 +1549,7 @@ export const createCollectionKernel = (
             throw new Error("Collection row draft lane is missing")
         }
 
+        let orderedNodes: MembershipPlanNode[] | undefined
         const rows: RowApplyPlan[] = []
         const rowSettlements: RowSettlementPlan[] = []
         const membershipInstalls: MembershipPlanNode[] = []
@@ -1565,13 +1632,22 @@ export const createCollectionKernel = (
                     atom: existing.atom,
                     existing,
                     parent,
-                    beforeRows: membershipRows(existing),
+                    beforeRows:
+                        existing.ordered === undefined
+                            ? membershipRows(existing)
+                            : EMPTY_ROWS,
                     plannedChildren: [],
                     finalRows: undefined,
                     membershipChangedFromBefore: undefined,
                     installed: undefined,
                     affected: false,
                     containsAffected: false,
+                }
+                if (existing.ordered !== undefined) {
+                    let snapshot: readonly CollectionRowHandle[] | undefined
+                    Object.defineProperty(node, "beforeRows", {
+                        get: () => (snapshot ??= membershipRows(existing)),
+                    })
                 }
                 rememberNode(node)
                 parent = node
@@ -1669,6 +1745,8 @@ export const createCollectionKernel = (
             node: MembershipPlanNode,
             row: CollectionRowHandle,
         ): boolean => {
+            if (node.existing?.ordered !== undefined)
+                return node.existing.ordered.entries.has(row)
             let rows = baselineRowsByNode.get(node)
             if (rows === undefined) {
                 if (node.beforeRows.length) {
@@ -1838,6 +1916,29 @@ export const createCollectionKernel = (
             node: MembershipPlanNode,
         ): readonly CollectionRowHandle[] => {
             if (node.finalRows !== undefined) return node.finalRows
+            if (node.existing?.ordered !== undefined) {
+                const placements = placementsFor(node)
+                const removals: object[] = []
+                const births: { row: object; birth: number }[] = []
+                for (const [row, placement] of placements) {
+                    if (
+                        placement.baselinePresent &&
+                        placement.birth !== BASELINE_BIRTH
+                    )
+                        removals.push(row)
+                    if (typeof placement.birth === "number")
+                        births.push({ row, birth: placement.birth })
+                }
+                births.sort((a, b) => a.birth - b.birth)
+                const born = births.map(item => item.row)
+                node.membershipChangedFromBefore =
+                    node.existing.ordered.changes(removals, born)
+                node.orderedPatch = { removals, births: born }
+                ;(orderedNodes ??= []).push(node)
+                node.membershipChanges = placements
+                // The ordered patch is applied only after all preflight callbacks pass.
+                return EMPTY_ROWS
+            }
             if (node.existing !== undefined) {
                 membershipRebuildTraceForTest?.push(node.existing)
             }
@@ -2086,7 +2187,9 @@ export const createCollectionKernel = (
                     const finalRows = finalRowsFor(node)
                     if (
                         node.existing !== undefined &&
-                        !Object.is(finalRows, node.beforeRows)
+                        (node.orderedPatch !== undefined
+                            ? node.membershipChangedFromBefore
+                            : !Object.is(finalRows, node.beforeRows))
                     ) {
                         membershipSettlements.push(
                             Object.freeze({
@@ -2132,8 +2235,82 @@ export const createCollectionKernel = (
             node.finalRows = node.beforeRows
             node.membershipChangedFromBefore = false
         }
+        let indexPlan: ScopedCollectionCommitPlan["indexPlan"]
+        if (
+            indexes !== undefined &&
+            lane.planOrder.some(coordinate =>
+                indexes!.active(coordinate.collection),
+            )
+        ) {
+            const changed = new Map<MembershipRecord, Set<object>>()
+            for (const coordinate of lane.planOrder) {
+                if (!indexes.active(coordinate.collection)) continue
+                const root = scopeSidecars
+                    .get(coordinate.scope)
+                    ?.memberships?.get(coordinate.collection)
+                if (root === undefined) continue
+                const pending = [root]
+                while (pending.length) {
+                    const record = pending.pop()!
+                    // Index activation marks the entire ancestry path. An
+                    // unmarked membership subtree cannot contain an index.
+                    if (record.ordered === undefined) continue
+                    recordCounter(record.scope, COLLECTION_INDEX_ROUTE_VISITS)
+                    let rows = changed.get(record)
+                    if (rows === undefined)
+                        changed.set(record, (rows = new Set()))
+                    rows.add(coordinate.row)
+                    record.indexedChildren?.forEach(child =>
+                        pending.push(child),
+                    )
+                }
+            }
+            const deltas: IndexScopeDelta[] = []
+            for (const [record, rows] of changed) {
+                if (record.ordered === undefined) continue
+                const node = nodeForRecord(record)
+                const placements = placementsFor(node)
+                const changes = []
+                for (const row of rows) {
+                    const before = committedOutcome(record.scope, row)
+                    const after = draftOutcome(
+                        lane,
+                        record.scope,
+                        row,
+                        record.atom,
+                    )
+                    const birth = placements.get(row)?.birth
+                    if (sameOutcome(before, after) && typeof birth !== "number")
+                        continue
+                    changes.push({
+                        row,
+                        before:
+                            before.kind === "present"
+                                ? before.value
+                                : undefined,
+                        after:
+                            after.kind === "present" ? after.value : undefined,
+                        rank:
+                            after.kind === "absent"
+                                ? undefined
+                                : typeof birth === "number"
+                                  ? record.ordered.nextRank + birth
+                                  : record.ordered.entries.get(row)?.rank,
+                    })
+                }
+                if (changes.length)
+                    deltas.push({
+                        scope: record.scope,
+                        collection: record.atom,
+                        changes,
+                    })
+            }
+            indexPlan = indexes.prepare(deltas)
+        }
         const plan: ScopedCollectionCommitPlan = {
             commit: commitPlan,
+            indexPlan,
+            orderedNodes,
             rows: Object.freeze(rows),
             rowSettlements: Object.freeze(rowSettlements),
             membershipInstalls: Object.freeze(membershipInstalls),
@@ -2246,6 +2423,22 @@ export const createCollectionKernel = (
                 node.parent !== undefined && node.finalRows === node.beforeRows,
             )
         }
+        for (const node of plan.orderedNodes ?? []) {
+            const record = node.existing!
+            const patch = node.orderedPatch!
+            if (!node.membershipChangedFromBefore) continue
+            for (const row of patch.removals) record.ordered!.remove(row)
+            for (const row of patch.births) record.ordered!.append(row)
+            record.snapshotDirty = true
+            // The old immutable array may pin deleted rows even when nobody
+            // reads collection membership again. Readers already hold their
+            // own snapshots; discard the record's stale copy immediately.
+            record.served = servedMembership(
+                record.scope,
+                EMPTY_ROWS,
+                record.served.token,
+            )
+        }
         if (plan.membershipSettlements.length) return true
         for (const node of plan.membershipInstalls) {
             if (node.membershipChangedFromBefore) return true
@@ -2299,7 +2492,14 @@ export const createCollectionKernel = (
         }
         for (const settlement of plan.membershipSettlements) {
             const { record, rows } = settlement
-            record.served = servedMembership(record.scope, rows)
+            record.served = servedMembership(
+                record.scope,
+                record.ordered === undefined
+                    ? rows
+                    : record.served.outcome.kind === "value"
+                      ? (record.served.outcome.value as readonly object[])
+                      : EMPTY_ROWS,
+            )
             recordCounter(record.scope, COLLECTION_MEMBERSHIP_SOURCES_CHANGED)
             recordDetail(
                 record.scope,
@@ -2311,6 +2511,8 @@ export const createCollectionKernel = (
                 record.atom as AnyState,
             )
         }
+        const indexSources = plan.indexPlan?.publish()
+        if (indexSources?.length) return [...plan.sources, ...indexSources]
         return plan.sources.length ? plan.sources : undefined
     }
 
@@ -2325,6 +2527,7 @@ export const createCollectionKernel = (
 
     const disposeScope = (scopeValue: object): void => {
         const scope = scopeValue as StoreScopeNode
+        indexes?.dispose(scope)
         const sidecar = scopeSidecars.get(scope)
         if (sidecar === undefined) return
         sidecar.liveRowViews?.forEach(record => {
@@ -2334,6 +2537,10 @@ export const createCollectionKernel = (
         sidecar.liveMemberships?.forEach(record => {
             detachMembership(record)
             record.inheritingChildren.clear()
+            record.indexedChildren?.clear()
+            record.ordered?.entries.clear()
+            record.ordered = undefined
+            record.snapshotDirty = false
             record.served = servedMembership(
                 record.scope,
                 EMPTY_ROWS,
@@ -2357,7 +2564,45 @@ export const createCollectionKernel = (
     }
 
     const kernel: CollectionDraftKernel = Object.freeze({
+        installIndexes: (
+            create: (host: CollectionIndexHost) => CollectionIndexRuntime,
+        ) =>
+            indexes ??
+            (indexes = create({
+                revision: (draft, collection) => {
+                    const lane = laneFor(draft)
+                    const revisions = (lane.queryRevisionByCollection ??=
+                        new Map())
+                    const revision = revisions.get(collection) ?? 0
+                    revisions.set(collection, revision)
+                    return revision
+                },
+                membership: indexedMembership,
+                value: (scope, row) => {
+                    const outcome = committedOutcome(scope, row)
+                    return outcome.kind === "present"
+                        ? outcome.value
+                        : undefined
+                },
+                draftRows: readDraftCollection,
+                draftValue: (draft, scope, row) => {
+                    const lane = laneFor(draft)
+                    let current: StoreScopeNode | undefined = scope
+                    while (current !== undefined) {
+                        const coordinate = lane.byScope.get(current)?.get(row)
+                        const local =
+                            coordinate === undefined
+                                ? committedLocal(current, row)
+                                : currentLocal(coordinate)
+                        if (local.kind === "present") return local.value
+                        if (local.kind === "absent") return undefined
+                        current = current.parent
+                    }
+                    return undefined
+                },
+            })),
         has: (node: AnyState): boolean =>
+            indexes?.has(node) === true ||
             bindings.lookupRow(node) !== undefined ||
             bindings.lookupCollection(node),
         diagnosticName: bindings.lookupDiagnosticName,
@@ -2368,6 +2613,11 @@ export const createCollectionKernel = (
         ): SynchronousResult => {
             const draft = draftValue as TreeDraft
             const scope = scopeValue as StoreScopeNode
+            if (indexes?.has(node))
+                return {
+                    kind: "value",
+                    value: indexes.read(draft, scope, node),
+                }
             if (bindings.lookupRow(node) !== undefined) {
                 return Object.freeze({
                     kind: "value",
@@ -2407,13 +2657,19 @@ export const createCollectionKernel = (
                 disposeScope(scopeValue)
                 return undefined
             }
+            if (indexes?.has(node))
+                return indexes.scope(scopeValue as StoreScopeNode, node)
             if (bindings.lookupRow(node) !== undefined) {
                 return materializeRowView(scopeValue as StoreScopeNode, node)
                     .served
             }
             if (!bindings.lookupCollection(node)) return undefined
-            return materializeMembership(scopeValue as StoreScopeNode, node)
-                .served
+            const record = materializeMembership(
+                scopeValue as StoreScopeNode,
+                node,
+            )
+            membershipRows(record)
+            return record.served
         },
         plan: planCommit,
         stageSet,

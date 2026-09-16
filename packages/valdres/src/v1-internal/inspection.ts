@@ -1,4 +1,15 @@
 import {
+    COLLECTION_INDEX_MATERIALIZATIONS,
+    COLLECTION_INDEX_ROUTE_VISITS,
+    COLLECTION_INDEX_INITIAL_ROWS,
+    COLLECTION_INDEX_EXTRACTOR_CALLS,
+    COLLECTION_INDEX_DELTA_ROWS,
+    COLLECTION_INDEX_BUCKET_ROWS,
+    COLLECTION_INDEX_BUCKET_PUBLICATIONS,
+    COLLECTION_INDEX_GROUPS_CREATED,
+    COLLECTION_INDEX_BUCKETS_CREATED,
+} from "./collection-inspection-protocol"
+import {
     createInternalStoreTreeInstrumentation,
     SubscriberNotificationError,
     type InternalStoreTreeInstrumentation,
@@ -263,6 +274,15 @@ export interface InspectionWorkTotals {
     readonly collectionEffectiveDeltasPrepared: number
     readonly collectionOwnerRetentionSetsCreated: number
     readonly collectionOwnerRetains: number
+    readonly collectionIndexRouteVisits: number
+    readonly collectionIndexMaterializations: number
+    readonly collectionIndexInitialRows: number
+    readonly collectionIndexExtractorCalls: number
+    readonly collectionIndexDeltaRows: number
+    readonly collectionIndexBucketRows: number
+    readonly collectionIndexBucketPublications: number
+    readonly collectionIndexGroupsCreated: number
+    readonly collectionIndexBucketsCreated: number
     readonly collectionOwnerReleases: number
     readonly cycle: InspectionCycleTotals
 }
@@ -470,7 +490,7 @@ export interface InspectionRecorderFault {
 
 export interface InspectionExport {
     readonly schema: "valdres.inspect"
-    readonly schemaVersion: 6
+    readonly schemaVersion: 7
     readonly recordingId: string
     readonly summaries: readonly InspectionSummary[]
     readonly details: readonly InspectionDetail[]
@@ -769,6 +789,15 @@ interface MutableWorkTotals {
     collectionEffectiveDeltasPrepared: number
     collectionOwnerRetentionSetsCreated: number
     collectionOwnerRetains: number
+    collectionIndexRouteVisits: number
+    collectionIndexMaterializations: number
+    collectionIndexInitialRows: number
+    collectionIndexExtractorCalls: number
+    collectionIndexDeltaRows: number
+    collectionIndexBucketRows: number
+    collectionIndexBucketPublications: number
+    collectionIndexGroupsCreated: number
+    collectionIndexBucketsCreated: number
     collectionOwnerReleases: number
     cycle: MutableCycleTotals
 }
@@ -853,6 +882,15 @@ type CollectionInspectionCounterName =
     | "collectionEffectiveDeltasPrepared"
     | "collectionOwnerRetentionSetsCreated"
     | "collectionOwnerRetains"
+    | "collectionIndexRouteVisits"
+    | "collectionIndexMaterializations"
+    | "collectionIndexInitialRows"
+    | "collectionIndexExtractorCalls"
+    | "collectionIndexDeltaRows"
+    | "collectionIndexBucketRows"
+    | "collectionIndexBucketPublications"
+    | "collectionIndexGroupsCreated"
+    | "collectionIndexBucketsCreated"
     | "collectionOwnerReleases"
 
 const COLLECTION_COUNTER_NAME_BY_CODE: Readonly<
@@ -877,6 +915,15 @@ const COLLECTION_COUNTER_NAME_BY_CODE: Readonly<
     [COLLECTION_OWNER_RETENTION_SETS_CREATED]:
         "collectionOwnerRetentionSetsCreated",
     [COLLECTION_OWNER_RETAINS]: "collectionOwnerRetains",
+    [COLLECTION_INDEX_ROUTE_VISITS]: "collectionIndexRouteVisits",
+    [COLLECTION_INDEX_MATERIALIZATIONS]: "collectionIndexMaterializations",
+    [COLLECTION_INDEX_INITIAL_ROWS]: "collectionIndexInitialRows",
+    [COLLECTION_INDEX_EXTRACTOR_CALLS]: "collectionIndexExtractorCalls",
+    [COLLECTION_INDEX_DELTA_ROWS]: "collectionIndexDeltaRows",
+    [COLLECTION_INDEX_BUCKET_ROWS]: "collectionIndexBucketRows",
+    [COLLECTION_INDEX_BUCKET_PUBLICATIONS]: "collectionIndexBucketPublications",
+    [COLLECTION_INDEX_GROUPS_CREATED]: "collectionIndexGroupsCreated",
+    [COLLECTION_INDEX_BUCKETS_CREATED]: "collectionIndexBucketsCreated",
     [COLLECTION_OWNER_RELEASES]: "collectionOwnerReleases",
 })
 const NOOP = (): void => {}
@@ -1223,6 +1270,15 @@ const createMutableTotals = (): MutableWorkTotals => ({
     collectionEffectiveDeltasPrepared: 0,
     collectionOwnerRetentionSetsCreated: 0,
     collectionOwnerRetains: 0,
+    collectionIndexRouteVisits: 0,
+    collectionIndexMaterializations: 0,
+    collectionIndexInitialRows: 0,
+    collectionIndexExtractorCalls: 0,
+    collectionIndexDeltaRows: 0,
+    collectionIndexBucketRows: 0,
+    collectionIndexBucketPublications: 0,
+    collectionIndexGroupsCreated: 0,
+    collectionIndexBucketsCreated: 0,
     collectionOwnerReleases: 0,
     cycle: {
         searches: 0,
@@ -1301,6 +1357,16 @@ const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
         collectionOwnerRetentionSetsCreated:
             totals.collectionOwnerRetentionSetsCreated,
         collectionOwnerRetains: totals.collectionOwnerRetains,
+        collectionIndexRouteVisits: totals.collectionIndexRouteVisits,
+        collectionIndexMaterializations: totals.collectionIndexMaterializations,
+        collectionIndexInitialRows: totals.collectionIndexInitialRows,
+        collectionIndexExtractorCalls: totals.collectionIndexExtractorCalls,
+        collectionIndexDeltaRows: totals.collectionIndexDeltaRows,
+        collectionIndexBucketRows: totals.collectionIndexBucketRows,
+        collectionIndexBucketPublications:
+            totals.collectionIndexBucketPublications,
+        collectionIndexGroupsCreated: totals.collectionIndexGroupsCreated,
+        collectionIndexBucketsCreated: totals.collectionIndexBucketsCreated,
         collectionOwnerReleases: totals.collectionOwnerReleases,
         cycle: Object.freeze({
             searches: totals.cycle.searches,
@@ -2594,7 +2660,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const detailBounds = retainedBounds(details)
         return Object.freeze({
             schema: "valdres.inspect" as const,
-            schemaVersion: 6 as const,
+            schemaVersion: 7 as const,
             recordingId: this.#recordingId,
             summaries: Object.freeze(summaries),
             details: Object.freeze(details),

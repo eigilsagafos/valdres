@@ -129,6 +129,7 @@ const runtimeBuildEvidence = async (): Promise<RuntimeBuildEvidence> => {
 const coreProbe = String.raw`
 import { strict as assert } from "node:assert"
 import * as core from "valdres"
+import { query } from "valdres/query"
 import * as adapter from "valdres/adapter-internals/v1"
 import * as foreignCore from "valdres-copy"
 import * as foreignAdapter from "valdres-copy/adapter-internals/v1"
@@ -140,6 +141,25 @@ assert.deepEqual(Object.keys(adapter).sort(), [
     "readHydrationSnapshot",
     "subscribe",
 ])
+
+const indexedEntities = core.collection({ indexes: { kind: value => value.kind } })
+const indexedStore = core.store()
+const indexedTasks = query(indexedEntities, { where: { kind: { eq: "task" } } })
+assert.deepEqual(indexedStore.get(indexedTasks), [])
+const indexedRow = indexedEntities("one")
+indexedStore.set(indexedRow, { kind: "task" })
+assert.deepEqual(indexedStore.get(indexedTasks), [indexedRow])
+const indexedBefore = indexedStore.get(indexedTasks)
+indexedStore.set(indexedRow, { kind: "task", title: "updated" })
+assert.equal(indexedStore.get(indexedTasks), indexedBefore)
+const indexedChild = indexedStore.scope("indexed-child")
+assert.deepEqual(indexedChild.get(indexedTasks), [indexedRow])
+indexedChild.delete(indexedRow)
+assert.deepEqual(indexedChild.get(indexedTasks), [])
+indexedChild.reset(indexedRow)
+assert.deepEqual(indexedChild.get(indexedTasks), [indexedRow])
+assert.throws(() => query(foreignCore.collection(), { where: { kind: { eq: "task" } } }), core.RuntimeMismatchError)
+indexedStore.dispose()
 
 const count = core.atom(2)
 const doubled = core.selector(get => get(count) * 2)
@@ -565,7 +585,7 @@ assert.equal(inspectedValue, 2)
 const inspectionReport = inspectedReact.inspect.export()
 assert.equal(inspectionReport.schema, "valdres.react.inspect")
 assert.equal(inspectionReport.schemaVersion, 1)
-assert.equal(inspectionReport.core.schemaVersion, 6)
+assert.equal(inspectionReport.core.schemaVersion, 7)
 assert.equal(inspectionReport.core.recordingId, inspectionReport.react.coreRecordingId)
 assert.equal(inspectionReport.react.totals.subscriberCallbacks, 1)
 assert.equal(inspectionReport.react.totals.commitTimeGroups, 1)
@@ -727,6 +747,16 @@ import {
     type StateInspectionCapture,
 } from "valdres/inspect"
 
+import { query } from "valdres/query"
+interface PackedEntityIndexes { kind: "task" | "person" }
+const indexedEntities = collection<string, { kind: "task" | "person" }, string, PackedEntityIndexes>({
+    indexes: { kind: entity => entity.kind },
+})
+const indexedTasks: State<readonly CollectionRow<string, { kind: "task" | "person" }>[]> =
+    query(indexedEntities, { where: { kind: { eq: "task" } } })
+const indexedRows = store().get(indexedTasks)
+void indexedRows
+
 const count = atom(0)
 const doubled = selector(get => get(count) * 2)
 const target: Store = store()
@@ -746,7 +776,7 @@ const capture: StateInspectionCapture =
     inspectableCore.inspect.capture(inspectableCore.store, count)
 const inspectionReport: InspectableReactExport =
     inspectedReact.inspect.export()
-const coreSchemaVersion: 6 = inspectionReport.core.schemaVersion
+const coreSchemaVersion: 7 = inspectionReport.core.schemaVersion
 const proofMemoTotals: InspectionNewEdgeProofMemoTotals =
     inspectionReport.core.summaries[0]!.totals.cycle.newEdgeProofMemo
 const reverseProofTotals: InspectionReverseProofTotals =
@@ -1069,13 +1099,12 @@ try {
         provenance?: { certifiedRuntimeBuildSha256?: string }
     }
     const reviewedDigest = sizeBudget.provenance?.certifiedRuntimeBuildSha256
-    if (reviewedDigest !== "PENDING_COL008_CERTIFICATION") {
-        assert.equal(
-            certifiedRuntimeBuildSha256,
-            reviewedDigest,
-            "runtime build differs from the reviewed COL-008 certification digest",
-        )
-    }
+    assert.equal(
+        certifiedRuntimeBuildSha256,
+        reviewedDigest,
+        "three stable runtime builds must match the reviewed certified digest",
+    )
+
     console.log(
         `\u2713 three byte-identical pinned-Bun runtime builds (${certifiedRuntimeBuildSha256})`,
     )

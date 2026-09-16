@@ -69,6 +69,40 @@ afterAll(async () => {
 })
 
 describe("v1 build output", () => {
+    test("loads the query barrel from both split graphs in Bun and Node", async () => {
+        const dist = await builtDist()
+        for (const directory of [dist, join(dist, "development")]) {
+            const rootUrl = pathToFileURL(join(directory, "index.js")).href
+            const queryUrl = pathToFileURL(join(directory, "query.js")).href
+            const script = `
+                const root = await import(${JSON.stringify(rootUrl)})
+                const entry = await import(${JSON.stringify(queryUrl)})
+                const entities = root.collection({ indexes: { kind: value => value.kind } })
+                const tasks = entry.query(entities, { where: { kind: { eq: "task" } } })
+                const target = root.store()
+                target.set(entities("one"), { kind: "task" })
+                console.log(JSON.stringify({
+                    exports: Object.keys(entry),
+                    rootHasQuery: Object.hasOwn(root, "query"),
+                    keys: target.get(tasks).map(row => row.key),
+                }))
+                target.dispose()
+            `
+            for (const runtime of ["bun", "node"]) {
+                const result = run(
+                    [runtime, "--input-type=module", "--eval", script],
+                    import.meta.dir,
+                )
+                expect(result.exitCode, result.stderr).toBe(0)
+                expect(JSON.parse(result.stdout)).toEqual({
+                    exports: ["query"],
+                    rootHasQuery: false,
+                    keys: ["one"],
+                })
+            }
+        }
+    })
+
     test("keeps root, inspect, and adapter on one shared domain without the legacy global guard", async () => {
         const dist = await builtDist()
         const files = await readdir(dist, { recursive: true })
@@ -336,4 +370,37 @@ describe("v1 build output", () => {
 
         expect(await readdir(outdir)).toEqual(["index.d.ts"])
     })
+})
+
+test("collection-only bundles exclude the separately exported query engine", async () => {
+    const { build } = await import("esbuild")
+    const packageRoot = resolve(import.meta.dir, "..")
+    for (const useQuery of [false, true]) {
+        const result = await build({
+            stdin: {
+                contents: `import { collection } from './src/index.ts';
+                    ${useQuery ? "import { query } from './src/query.ts';" : ""}
+                    const entities = collection({ indexes: { kind: value => value.kind } });
+                    globalThis.entities = entities;
+                    ${useQuery ? "globalThis.tasks = query(entities, { where: { kind: { eq: 'task' } } });" : ""}`,
+                resolveDir: packageRoot,
+                loader: "ts",
+            },
+            bundle: true,
+            write: false,
+            format: "esm",
+            metafile: true,
+        })
+        const modules = Object.values(result.metafile!.outputs).flatMap(
+            output => Object.keys(output.inputs),
+        )
+        expect(modules.some(path => path.endsWith("collection-query.ts"))).toBe(
+            useQuery,
+        )
+        expect(
+            result.outputFiles[0]!.text.includes(
+                "query requires one equality term",
+            ),
+        ).toBe(useQuery)
+    }
 })

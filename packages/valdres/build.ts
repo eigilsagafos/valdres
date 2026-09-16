@@ -6,6 +6,7 @@ export const buildOptions = {
         "./src/index.ts",
         "./src/inspect.ts",
         "./src/equality.ts",
+        "./src/query.ts",
         "./src/adapter-internals/v1.ts",
     ],
     outdir: "./dist",

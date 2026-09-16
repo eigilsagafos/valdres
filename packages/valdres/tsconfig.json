@@ -4,7 +4,8 @@
         "src/index.ts",
         "src/inspect.ts",
         "src/equality.ts",
-        "src/adapter-internals/v1.ts"
+        "src/adapter-internals/v1.ts",
+        "src/query.ts"
     ],
     "exclude": [],
     "compilerOptions": {
