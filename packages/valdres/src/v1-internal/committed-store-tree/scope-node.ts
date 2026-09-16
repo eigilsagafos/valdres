@@ -41,6 +41,8 @@ export type StoreTreeCounter =
     | "externalClosureVisits"
     | "projectionPublications"
     | "lifecycleEdgeVisits"
+    | "lifecycleRetains"
+    | "lifecycleReleases"
     | "adapterSubscriptions"
     | "adapterCleanups"
     | "dirtyRounds"
@@ -142,6 +144,7 @@ export interface StoreScopeCoordinator {
         session: SelectorEvaluationSession<AnyState>,
     ): void
     reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void
+    reconcileExternalLifecycle(scope: StoreScopeNode, state: AnyState): void
     latchPropagationControlFault(error: unknown): void
     recordCounter(counter: StoreTreeCounter, amount?: number): void
 }
@@ -417,11 +420,15 @@ export class StoreScopeNode
             const lifecycleInClosure = record.dependencies.some(dependency =>
                 this.reachesExternal(dependency.node),
             )
-            if (lifecycleInClosure === record.lifecycleInClosure) continue
+            if (lifecycleInClosure === record.lifecycleInClosure) {
+                this.coordinator.reconcileExternalLifecycle(this, current)
+                continue
+            }
             this.#selectorRecords.set(
                 current,
                 Object.freeze({ ...record, lifecycleInClosure }),
             )
+            this.coordinator.reconcileExternalLifecycle(this, current)
             this.#reverseEdges
                 .get(current)
                 ?.forEach(parent => pending.push(parent))
@@ -685,6 +692,9 @@ export class StoreScopeNode
         this.#selectorGraphVersion++
         session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(selector, record)
+        if (this.coordinator.runtimeDomain.externalAtoms !== undefined) {
+            this.coordinator.reconcileExternalLifecycle(this, selector)
+        }
         if (
             previous !== undefined &&
             previous.lifecycleInClosure !== record.lifecycleInClosure

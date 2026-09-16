@@ -369,6 +369,32 @@ reachability, provenance, and reviewed feature-cost policy remain E4 gates.
 Lifecycle/retained reads, provisional admission, attachment, drain bounds,
 cleanup, final error metadata, and public family widening remain later slices.
 
+## E2 internal checkpoint
+
+Branch `feat/external-atom-lifecycle`, based on E1 `d4586dc5`. The optional
+host-owned plane now keeps separate weak scope/state retain records. Root
+ownership belongs to each subscribed target; incoming lifecycle edges count
+shared branches, whose dependencies are traversed only on 0/1 transitions.
+Selector publications reconcile replacement branches before old releases.
+Immediate-parent reconciliation handles unchanged external markers, and existing
+subscriptions are discovered lazily when a first external definition appears.
+Scope disposal releases saved retained edges. Zero-count records are removed.
+Registrations now distinguish provisional, active, rolled-back, and removed
+eligibility. Adapter callbacks remain unwired in this slice, so logical retention
+does not yet suppress dormant polling.
+
+Evidence: 43 focused tests / 3,484 assertions; broader committed-tree/model
+selection 404 tests / 203,185 assertions; committed-tree test TypeScript project
+passes. Nine lifecycle fixtures cover diamonds, registration multiplicity,
+cross-scope aggregation, equal topology, late external definitions, child/root
+disposal, failed admission, zero external-free traversal, and a warmed 16,000-edge
+closure. Independent recovery review confirmed the ownership design and supplied
+the late-definition and unchanged-parent-marker counterexamples.
+
+E3 must still exercise provisional eligibility under real startup failures and
+notifications, attach/detach, deferred cleanup, operation drain, and finite bounds.
+E1 package certification and Gate 0 public approval remain open.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |

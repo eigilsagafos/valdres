@@ -141,6 +141,8 @@ interface SubscriptionTarget {
 }
 
 interface SubscriptionRegistration {
+    status: "provisional" | "active" | "rolled-back" | "removed"
+    admissionToken?: OutcomeToken
     callback: SubscriberCallback | undefined
     target: SubscriptionTarget | undefined
     previous: SubscriptionRegistration | undefined
@@ -457,9 +459,11 @@ const STORE_TREE_COUNTER_INDEX: Readonly<Record<StoreTreeCounter, number>> =
         deliveryEntries: 46,
         deliveryLimitHits: 47,
         nonConvergenceTerminations: 48,
+        lifecycleRetains: 49,
+        lifecycleReleases: 50,
     })
 
-const STORE_TREE_COUNTER_COUNT = 49
+const STORE_TREE_COUNTER_COUNT = 51
 const internalInstrumentationCounters = new WeakMap<
     InternalStoreTreeInstrumentation,
     Uint32Array
@@ -817,6 +821,8 @@ class CommittedStoreTreeHost
             domain: this.#domain,
             propagating: () => this.#postSourceApply,
             subscriberRead: () => this.#subscriberReading,
+            subscribed: (scope, node) =>
+                this.#subscriptionTargets?.get(scope)?.has(node) === true,
             token: () => this.createOutcomeToken(),
             count: (counter, amount) => this.recordCounter(counter, amount),
             advanceEpoch: () => {
@@ -845,6 +851,10 @@ class CommittedStoreTreeHost
         session: SelectorEvaluationSession<AnyState>,
     ): void {
         this.#external?.refresh(scope, node, session)
+    }
+
+    reconcileExternalLifecycle(scope: StoreScopeNode, node: AnyState): void {
+        this.#external?.reconcile(scope, node)
     }
 
     serveExternal(
@@ -934,6 +944,10 @@ class CommittedStoreTreeHost
             }
         }
         const registration: SubscriptionRegistration = {
+            status: "provisional",
+            ...(this.#external === undefined
+                ? {}
+                : { admissionToken: served.token }),
             callback: callback as SubscriberCallback,
             target,
             previous: target.tail,
@@ -950,7 +964,16 @@ class CommittedStoreTreeHost
             this.recordCounter("activeSubscriptions")
             this.recordCounter("unsubscribeClosuresCreated")
         }
-        return createUnsubscribe(registration)
+        try {
+            this.#external?.retainRoot(scope, node)
+            registration.status = "active"
+            delete registration.admissionToken
+            return createUnsubscribe(registration)
+        } catch (error) {
+            this.removeSubscription(registration)
+            registration.status = "rolled-back"
+            throw error
+        }
     }
 
     removeSubscription(registration: SubscriptionRegistration): void {
@@ -971,6 +994,7 @@ class CommittedStoreTreeHost
             next.previous = previous
         }
         registration.callback = undefined
+        registration.status = "removed"
         registration.target = undefined
         registration.previous = undefined
         registration.next = undefined
@@ -996,6 +1020,7 @@ class CommittedStoreTreeHost
             }
         }
         if (targets?.size === 0) this.#subscriptionTargets = undefined
+        this.#external?.releaseRoot(target.scope, target.state)
     }
 
     scope(
@@ -1509,6 +1534,7 @@ class CommittedStoreTreeHost
             while (registration !== undefined) {
                 const next = registration.next
                 registration.callback = undefined
+                registration.status = "removed"
                 registration.target = undefined
                 registration.previous = undefined
                 registration.next = undefined
@@ -1517,6 +1543,7 @@ class CommittedStoreTreeHost
             }
             target.head = undefined
             target.tail = undefined
+            this.#external?.releaseRoot(scope, target.state)
         }
         targets!.delete(scope)
         if (targets!.size === 0) this.#subscriptionTargets = undefined
@@ -2486,7 +2513,11 @@ class CommittedStoreTreeHost
             let registration = target.head
             while (registration !== undefined) {
                 const callback = registration.callback
-                if (callback !== undefined) {
+                if (
+                    callback !== undefined &&
+                    registration.status !== "rolled-back" &&
+                    registration.status !== "removed"
+                ) {
                     if (firstCallback === undefined) {
                         firstCallback = callback
                     } else if (snapshot === undefined) {

@@ -14,6 +14,7 @@ export interface ExternalTreeBindings {
     readonly domain: RuntimeDomainRecords
     readonly propagating: () => boolean
     readonly subscriberRead: () => boolean
+    readonly subscribed: (scope: StoreScopeNode, node: AnyState) => boolean
     readonly token: () => OutcomeToken
     readonly count: (counter: StoreTreeCounter, amount?: number) => void
     readonly advanceEpoch: () => void
@@ -24,6 +25,9 @@ export interface ExternalTreeBindings {
 export interface ExternalTreePlane {
     readonly dormantPull: boolean
     readonly changedPull: boolean
+    retainRoot(scope: StoreScopeNode, node: AnyState): void
+    releaseRoot(scope: StoreScopeNode, node: AnyState): void
+    reconcile(scope: StoreScopeNode, node: AnyState): void
     read(
         scope: StoreScopeNode,
         node: AnyState,

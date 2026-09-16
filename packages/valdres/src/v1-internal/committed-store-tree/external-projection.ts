@@ -14,6 +14,12 @@ import type { ExternalTreeBindings, ExternalTreePlane } from "./external-types"
 interface Projection {
     served: ServedSelectorOutcome<OutcomeToken>
     readonly scopes: WeakHandleSet<StoreScopeNode>
+    retains: number
+}
+interface RetainRecord {
+    count: number
+    root: boolean
+    dependencies: Set<AnyState>
 }
 interface Pull {
     readonly samples: Map<AnyState, ServedSelectorOutcome<OutcomeToken>>
@@ -29,6 +35,10 @@ interface Pull {
 export class ExternalProjectionPlane implements ExternalTreePlane {
     readonly #bindings: ExternalTreeBindings
     readonly #projections = new WeakMap<AnyState, Projection>()
+    readonly #retains = new WeakMap<
+        StoreScopeNode,
+        WeakMap<AnyState, RetainRecord>
+    >()
     #pull: Pull | undefined
 
     constructor(bindings: ExternalTreeBindings) {
@@ -39,6 +49,116 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     }
     get changedPull(): boolean {
         return this.#pull?.epochAdvanced === true
+    }
+
+    #records(scope: StoreScopeNode): WeakMap<AnyState, RetainRecord> {
+        let records = this.#retains.get(scope)
+        if (records === undefined)
+            this.#retains.set(scope, (records = new WeakMap()))
+        return records
+    }
+
+    #dependencies(scope: StoreScopeNode, node: AnyState): Set<AnyState> {
+        const result = new Set<AnyState>()
+        for (const dependency of scope.getCommittedSelectorDependencies(
+            node as never,
+        ) ?? []) {
+            if (scope.reachesExternal(dependency.node))
+                result.add(dependency.node)
+        }
+        return result
+    }
+
+    // Count incoming lifecycle edges, independently of selector graph/cache ownership.
+    // Only the first edge traverses a shared branch. Both walks are iterative.
+    #retain(scope: StoreScopeNode, node: AnyState): void {
+        const records = this.#records(scope)
+        const pending = [node]
+        while (pending.length > 0) {
+            const current = pending.pop()!
+            this.#bindings.count("lifecycleEdgeVisits")
+            let record = records.get(current)
+            if (record === undefined)
+                records.set(
+                    current,
+                    (record = {
+                        count: 0,
+                        root: false,
+                        dependencies: new Set(),
+                    }),
+                )
+            if (record.count++ !== 0) continue
+            if (this.#bindings.domain.externalAtoms!.has(current)) {
+                const projection = this.#projections.get(current)!
+                if (projection.retains++ === 0)
+                    this.#bindings.count("lifecycleRetains")
+                continue
+            }
+            record.dependencies = this.#dependencies(scope, current)
+            for (const dependency of record.dependencies)
+                pending.push(dependency)
+        }
+    }
+
+    #release(scope: StoreScopeNode, node: AnyState): void {
+        const records = this.#retains.get(scope)
+        const pending = [node]
+        while (pending.length > 0) {
+            const current = pending.pop()!
+            const record = records?.get(current)
+            if (record === undefined || record.count === 0) continue
+            this.#bindings.count("lifecycleEdgeVisits")
+            if (--record.count !== 0) continue
+            if (this.#bindings.domain.externalAtoms!.has(current)) {
+                if (--this.#projections.get(current)!.retains === 0)
+                    this.#bindings.count("lifecycleReleases")
+            } else {
+                for (const dependency of record.dependencies)
+                    pending.push(dependency)
+                record.dependencies.clear()
+            }
+            records!.delete(current)
+        }
+    }
+
+    retainRoot(scope: StoreScopeNode, node: AnyState): void {
+        if (!scope.reachesExternal(node)) return
+        if (this.#retains.get(scope)?.get(node)?.root) return
+        this.#retain(scope, node)
+        this.#retains.get(scope)!.get(node)!.root = true
+    }
+
+    releaseRoot(scope: StoreScopeNode, node: AnyState): void {
+        const record = this.#retains.get(scope)?.get(node)
+        if (!record?.root) return
+        record.root = false
+        this.#release(scope, node)
+    }
+
+    reconcile(scope: StoreScopeNode, node: AnyState): void {
+        if (
+            this.#bindings.subscribed(scope, node) &&
+            scope.reachesExternal(node)
+        ) {
+            this.retainRoot(scope, node)
+        } else this.releaseRoot(scope, node)
+        const record = this.#retains.get(scope)?.get(node)
+        if (
+            record === undefined ||
+            this.#bindings.domain.externalAtoms!.has(node)
+        )
+            return
+        const next = this.#dependencies(scope, node)
+        // Acquire replacement branches before releasing previous branches, even
+        // when the selector's comparison preserves its outcome token.
+        for (const dependency of next) {
+            if (!record.dependencies.has(dependency))
+                this.#retain(scope, dependency)
+        }
+        for (const dependency of record.dependencies) {
+            if (!next.has(dependency)) this.#release(scope, dependency)
+        }
+        record.dependencies = next
     }
 
     #newPull(dormant: boolean): Pull {
@@ -205,6 +325,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             if (projection === undefined) {
                 projection = {
                     served,
+                    retains: 0,
                     scopes: new WeakHandleSet(() =>
                         this.#bindings.count("deadRouteCompactions"),
                     ),
