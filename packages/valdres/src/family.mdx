@@ -50,6 +50,10 @@ stepProgress({ id: "step-1", title: "Draft" }) ===
     stepProgress({ id: "step-1", title: "Review" }) // true
 ```
 
+Omitting `encodeKey` for a structured factory, or returning a non-primitive
+from it, fails to compile, and the diagnostic names the fix: `structured
+family arguments require a valid options.encodeKey`.
+
 ## Parameters
 
 | Parameter | Type | Description |
