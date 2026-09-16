@@ -2851,8 +2851,8 @@
                 "mode": "add",
                 "replacementIds": [],
                 "semver": "new",
-                "codemod": "Use CollectionOptions<Key, Value, Input = Key>; provide encodeKey when Input is richer than Key.",
-                "typeError": "A rich Input without encodeKey, an unknown option, or any first-beta indexes value rejects.",
+                "codemod": "Use CollectionOptions<Key, Value, Input = Key, Indexes = never>; provide encodeKey for rich Input and synchronous scalar extractors for declared Indexes.",
+                "typeError": "A rich Input without encodeKey, unknown options, invalid index schemas or extractor values reject; querying an undeclared index rejects.",
                 "firstPartyOwner": "collection",
                 "evidenceStatus": "planned"
             },
@@ -2862,7 +2862,7 @@
                 "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "CollectionOptions<Key, Value, Input = Key, Indexes = never> requires encodeKey exactly when Input is not assignable to Key. Named interface index metadata is accepted through a self-mapped scalar constraint. Declared metadata requires its extractor map; absent metadata keeps indexes?: never. The name option remains diagnostic metadata."
+            "notes": "CollectionOptions<Key, Value, Input = Key, Indexes = never> requires encodeKey exactly when Input is not assignable to Key. Finite required string-named interface index metadata is accepted through a scalar constraint. Optional, symbol/numeric-named, broad index-signature, and invalid scalar schemas reject. Declared metadata requires its extractor map; absent metadata keeps indexes?: never. The name option remains diagnostic metadata."
         },
         {
             "id": "core.type.collection-row",

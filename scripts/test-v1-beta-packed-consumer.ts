@@ -747,6 +747,16 @@ import {
     type StateInspectionCapture,
 } from "valdres/inspect"
 
+import { query } from "valdres/query"
+interface PackedEntityIndexes { kind: "task" | "person" }
+const indexedEntities = collection<string, { kind: "task" | "person" }, string, PackedEntityIndexes>({
+    indexes: { kind: entity => entity.kind },
+})
+const indexedTasks: State<readonly CollectionRow<string, { kind: "task" | "person" }>[]> =
+    query(indexedEntities, { where: { kind: { eq: "task" } } })
+const indexedRows = store().get(indexedTasks)
+void indexedRows
+
 const count = atom(0)
 const doubled = selector(get => get(count) * 2)
 const target: Store = store()

@@ -10,9 +10,14 @@ description: Define keyed rows with reactive ordered membership
         Signature
     </div>
     <code className="text-sm font-mono text-accent-500">
-        collection&lt;Key extends CollectionKey, Value extends CollectionValue,
-        Input = Key, Indexes = never&gt;(options: CollectionOptions&lt;Key,
-        Value, Input, Indexes&gt;): Collection&lt;Key, Value, Input, Indexes&gt;
+        collection&lt;Key, Value&gt;(options?: CollectionOptions&lt;Key,
+        Value&gt;): Collection&lt;Key, Value&gt;
+    </code>
+    <br />
+    <code className="text-sm font-mono text-accent-500">
+        collection&lt;Key, Value, Input, Indexes&gt;(options:
+        CollectionOptions&lt;Key, Value, Input, Indexes&gt;): Collection&lt;Key,
+        Value, Input, Indexes&gt;
     </code>
     <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
@@ -79,7 +84,9 @@ Stores, but each Store has independent values and membership.
 
 `collection<Key, Value>()` still supports an omitted options object. The indexed
 form is `collection<Key, Value, Input, Indexes>(options)`: `Indexes` maps each
-index name to its scalar type, including ordinary named interfaces.
+index name to its scalar type, including ordinary named interfaces. Names must
+be required finite string properties; optional names, numeric/symbol names, and
+index signatures are rejected.
 
 | Option          | Meaning                                                                                                                 |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -177,13 +184,13 @@ commits none of its Atom or collection-row writes.
 
 ## Public types
 
-| Type                                                   | Meaning                                                                |
-| ------------------------------------------------------ | ---------------------------------------------------------------------- |
-| `CollectionKey`                                        | `string \| number \| bigint \| boolean \| null`                        |
-| `CollectionValue`                                      | Any non-`undefined` value; thenables are rejected when written         |
-| `CollectionRow<Key, Value>`                            | Readonly `State<Value \| undefined>` with `kind` and canonical `key`   |
-| `Collection<Key, Value, Input = Key, Indexes = never>` | Callable readonly membership State                                     |
-| `CollectionOptions<Key, Value, Input = Key>`           | Definition options; optional `name`; rich `Input` requires `encodeKey` |
+| Type                                                          | Meaning                                                                |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `CollectionKey`                                               | `string \| number \| bigint \| boolean \| null`                        |
+| `CollectionValue`                                             | Any non-`undefined` value; thenables are rejected when written         |
+| `CollectionRow<Key, Value>`                                   | Readonly `State<Value \| undefined>` with `kind` and canonical `key`   |
+| `Collection<Key, Value, Input = Key, Indexes = never>`        | Callable readonly membership State                                     |
+| `CollectionOptions<Key, Value, Input = Key, Indexes = never>` | Definition options; optional `name`; rich `Input` requires `encodeKey` |
 
 ## See also
 
@@ -232,5 +239,9 @@ Membership groups exist for every distinct indexed value after materialization.
 Ordered snapshots and reader records are allocated only for queried buckets.
 Unread buckets receive incremental membership edits without snapshot sorting.
 
-Transaction reads see staged writes through an isolated scratch scan. This slice
-supports one `eq` term; ordered/range and multi-value indexes remain deferred.
+Transaction reads see staged writes through an isolated scratch scan. Cached
+transaction results are invalidated by accepted writes to that collection,
+including value-only changes. Atom writes and writes to other collections do not
+invalidate them. A write in any scope of the same collection conservatively
+invalidates that collection’s transaction query snapshots. This slice supports
+one `eq` term; ordered/range and multi-value indexes remain deferred.

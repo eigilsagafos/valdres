@@ -116,9 +116,9 @@ application migration or production timing.
 One read-only Opus review (`claude-opus-5`) checked correctness, scope behavior,
 rollback and complexity. Supported findings were addressed:
 
-- Scratch memo invalidation now uses the transaction generation, including
-  value-only writes. A regression reads before and after set/update/reset in one
-  transaction.
+- Scratch memo invalidation uses a lazy per-collection value revision, including
+  value-only writes, without reacting to unrelated atom/collection writes. A
+  regression reads before and after set/update/reset in one transaction.
 - Unindexed membership nodes retain ordinary data fields. Ordered nodes lazily
   memoize their baseline once; new scope nodes do not recursively chase getters.
 - Index propagation uses a separate weak route set containing only activated
@@ -189,19 +189,19 @@ mistaken for expected aborts.
 ## Reviewed package certification
 
 Three byte-identical pinned-toolchain builds produced runtime digest
-`cb30c0966acdcecfaf5cd5ce480beb8a20dc4b08893feda76a4f9218c17507a8`. The hard
+`07764fc00a1430582771846a8dd029661dc13bdf5967ec12125e8c3e55bbe3f8`. The hard
 digest assertion, exact feature budgets, immutable ordinary baselines, and
 damaged/oversized-package self-tests remain enforced.
 
 | Compressed bytes                       | Prior reviewed budget | Indexed implementation |
 | -------------------------------------- | --------------------: | ---------------------: |
-| Distribution, production + development |                80,164 |                 88,958 |
-| Packed package                         |               103,018 |                111,686 |
-| Collection consumer                    |                26,245 |                 27,514 |
-| All root exports                       |                27,325 |                 28,643 |
+| Distribution, production + development |                80,164 |                 89,058 |
+| Packed package                         |               103,018 |                111,898 |
+| Collection consumer                    |                26,245 |                 27,575 |
+| All root exports                       |                27,325 |                 28,706 |
 | Inspection consumer                    |                26,047 |                 26,313 |
-| Query consumer, production             |           New fixture |                 29,429 |
-| Query consumer, development            |           New fixture |                 29,429 |
+| Query consumer, production             |           New fixture |                 29,466 |
+| Query consumer, development            |           New fixture |                 29,466 |
 
 The distribution increase includes both query entrypoints and shared incremental
 membership support. Collection-only bundles still exclude the query engine;
@@ -209,3 +209,19 @@ ordinary Atom/Selector/Store/family/equality fixtures retain their original
 baselines and existing allowances. Production and development query fixtures
 execute the same indexed collection/readable query topology. The minor Changeset
 announces the new public API without changing package versions.
+
+## Targeted correctness repairs
+
+Materialization now records exactly one event; independent positive assertions
+cover initial rows, extractors, groups, reader buckets and snapshot rows. Schema
+7 is unchanged. Index schemas require finite, required string names with scalar
+values, including named interfaces; optional keys, numeric/symbol names and
+index signatures reject. The rollback lifecycle test rethrows any error other
+than its own abort sentinel, including failed assertions.
+
+Scratch memo revisions are allocated lazily per queried collection and advance
+on every accepted row intent, including value-only and ownership changes. This
+is conservative across scopes of the same collection, but unrelated atom and
+collection writes no longer invalidate snapshots. The 1,000-row probe with ten
+unrelated atom writes/readbacks falls from 11,000 extractor calls to 1,000;
+scoped overrides, resets, value updates and rollback remain covered.

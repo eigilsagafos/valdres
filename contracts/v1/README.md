@@ -262,16 +262,17 @@ structural query.
 other status-field name or shape; that vocabulary remains a production API
 decision.
 
-This is a spelling and ownership freeze, not a production implementation or a
-freeze of every signature detail. `collection-operations.type-test.ts` proves
-only those call relationships. Query construction is now frozen separately as
-the root `query(collection, recursiveObjectDefinition)` form. Materialization
-priority is the exact two-literal union above; scheduler callbacks and public
-retry/cancel controls are absent from the stable option bag. Status field
-vocabulary, artifact representation/codec/schema/security, persistence, and
-artifact execution timing remain unresolved. The executable collection-
-operations and query-construction spikes remain semantic evidence; they are not
-exported runtime code.
+The materialization, scan, and artifact operations above remain spelling and
+ownership targets, not exported runtime APIs. The implemented query slice is
+`query(collection, { where: { indexName: { eq: scalar } } })` from
+`valdres/query`. It returns a readable State of matching collection rows and
+supports declared non-unique scalar equality indexes. Equivalent live queries
+share weak canonical identity. The executable query-construction spike supplied
+API evidence; the scalar equality implementation is now exported runtime code.
+
+The current slice admits one equality term. Materialization priority, status
+vocabulary, artifact representation and execution remain deferred and do not add
+options to this query API.
 
 ## Phase 1 test-disposition ledger
 
