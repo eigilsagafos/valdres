@@ -1,3 +1,4 @@
+import type { CollectionIndexSchema } from "./v1-internal/committed-store-tree/types"
 import * as v1 from "./v1"
 
 interface CollectionFactory {
@@ -8,7 +9,7 @@ interface CollectionFactory {
         Key extends CollectionKey,
         Value extends CollectionValue,
         Input,
-        Indexes extends { [Name in keyof Indexes]: CollectionKey } = never,
+        Indexes extends CollectionIndexSchema<Indexes> = never,
     >(
         options: CollectionOptions<Key, Value, Input, Indexes>,
     ): Collection<Key, Value, Input, Indexes>
@@ -80,7 +81,7 @@ export type CollectionOptions<
     Key extends CollectionKey,
     Value extends CollectionValue,
     Input = Key,
-    Indexes extends { [Name in keyof Indexes]: CollectionKey } = never,
+    Indexes extends CollectionIndexSchema<Indexes> = never,
 > = v1.CollectionOptions<Key, Value, Input, Indexes>
 export type CollectionRow<
     Key extends CollectionKey,

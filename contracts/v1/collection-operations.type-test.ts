@@ -98,11 +98,24 @@ interface CollectionOptionCarrierCandidate<
     }
 }
 
+type RequiredStringIndexNamesCandidate<Indexes> = {
+    [Name in keyof Indexes]-?: Name extends string
+        ? {} extends Pick<Indexes, Name>
+            ? never
+            : Name
+        : never
+}[keyof Indexes]
+type CollectionIndexSchemaCandidate<Indexes> = {
+    [Name in keyof Indexes]-?: CollectionKeyCandidate
+} & (keyof Indexes extends RequiredStringIndexNamesCandidate<Indexes>
+    ? unknown
+    : never)
+
 type CollectionOptionsCandidate<
     Key extends CollectionKeyCandidate,
     Value extends CollectionValueCandidate,
     Input = Key,
-    Indexes extends { [Name in keyof Indexes]: CollectionKeyCandidate } = never,
+    Indexes extends CollectionIndexSchemaCandidate<Indexes> = never,
 > = CollectionOptionCarrierCandidate<Key, Value, Input> &
     ([Indexes] extends [never]
         ? { readonly indexes?: never }
@@ -129,7 +142,7 @@ declare function collectionCandidate<
     Key extends CollectionKeyCandidate,
     Value extends CollectionValueCandidate,
     Input,
-    Indexes extends { [Name in keyof Indexes]: CollectionKeyCandidate } = never,
+    Indexes extends CollectionIndexSchemaCandidate<Indexes> = never,
 >(
     options: CollectionOptionsCandidate<Key, Value, Input, Indexes>,
 ): CollectionCandidate<Key, Value, Input, Indexes>

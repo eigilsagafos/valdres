@@ -82,12 +82,26 @@ interface CollectionOptionCarrier<
     }
 }
 
+/** Names must be required literal strings, not optional keys or index signatures. */
+type RequiredStringIndexNames<Indexes> = {
+    [Name in keyof Indexes]-?: Name extends string
+        ? {} extends Pick<Indexes, Name>
+            ? never
+            : Name
+        : never
+}[keyof Indexes]
+
+/** @internal Shared constraint for the finite, required scalar extractor map. */
+export type CollectionIndexSchema<Indexes> = {
+    [Name in keyof Indexes]-?: CollectionKey
+} & (keyof Indexes extends RequiredStringIndexNames<Indexes> ? unknown : never)
+
 /** Definition-time options for canonical or rich-input Collection keys. */
 export type CollectionOptions<
     Key extends CollectionKey,
     Value extends CollectionValue,
     Input = Key,
-    Indexes extends { [Name in keyof Indexes]: CollectionKey } = never,
+    Indexes extends CollectionIndexSchema<Indexes> = never,
 > = CollectionOptionCarrier<Key, Value, Input> &
     ([Indexes] extends [never]
         ? { readonly indexes?: never }
