@@ -8,6 +8,7 @@ import {
     type ExternalCommand,
     type ExternalCommandResult,
     type ExternalFailure,
+    type ExternalIdentitySpace,
     type ExternalLifecycle,
     type ExternalModelBounds,
     type ExternalNodeSpec,
@@ -93,11 +94,14 @@ type CallbackMode =
     | "subscriber"
     | undefined
 class Fault {
-    constructor(readonly identity: string) {}
+    constructor(
+        readonly identity: string,
+        readonly space: ExternalIdentitySpace = "control",
+    ) {}
 }
 class RecordedFault extends Fault {
     constructor(readonly failures: readonly ExternalFailure[]) {
-        super(failures[0]!.identity)
+        super(failures[0]!.identity, failures[0]!.space)
     }
 }
 class CombinedFault {
@@ -105,10 +109,10 @@ class CombinedFault {
 }
 const val = (input: ValueToken): ExternalOutcome =>
     Object.freeze({ kind: "value", value: input })
-const err = (identity: string): ExternalOutcome =>
-    Object.freeze({ kind: "error", identity })
+const err = (identity: string, space: ExternalIdentitySpace): ExternalOutcome =>
+    Object.freeze({ kind: "error", identity, space })
 const control = (identity: string): ExternalOutcome =>
-    Object.freeze({ kind: "control", identity })
+    Object.freeze({ kind: "control", identity, space: "control" })
 
 export function sameExternalOutcome(
     a: ExternalOutcome,
@@ -119,6 +123,7 @@ export function sameExternalOutcome(
         : a.kind !== "value" &&
               b.kind !== "value" &&
               a.kind === b.kind &&
+              a.space === b.space &&
               a.identity === b.identity
 }
 
@@ -317,7 +322,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                                 host,
                             )
                             if (initial.kind === "control")
-                                throw new Fault(initial.identity)
+                                throw new Fault(initial.identity, initial.space)
                             // The initial read settles before provisional admission.
                             this.#settle(tree)
                             const subscription: Subscription = {
@@ -453,6 +458,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                         tree: "tree" in command ? command.tree : "hub",
                         failure: Object.freeze({
                             identity,
+                            space: this.#faultSpace(thrown),
                             phase: "idle",
                             committed: false,
                         }),
@@ -595,7 +601,8 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                 }
                 this.#publish(tree, projection, sample)
             }
-            const current = projection.outcome ?? err("unread-projection")
+            const current =
+                projection.outcome ?? err("unread-projection", "model-error")
             if (current.kind === "control") host.fatal = current
             return current
         }
@@ -686,7 +693,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                         break
                     }
                     if (current.value.kind !== "number") {
-                        outcome = err("expected-number")
+                        outcome = err("expected-number", "model-error")
                         break
                     }
                     total += current.value.value
@@ -892,7 +899,8 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                 projection.source,
                 "live",
             )
-            if (sampled.kind === "control") throw new Fault(sampled.identity)
+            if (sampled.kind === "control")
+                throw new Fault(sampled.identity, sampled.space)
             this.#publish(tree, projection, sampled)
             this.#transition(tree, projection, "active")
         } catch (failure) {
@@ -1145,7 +1153,11 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                 )
                 outcomes.push({ projection, outcome })
                 if (outcome.kind === "control")
-                    this.#failure(tree, new Fault(outcome.identity), true)
+                    this.#failure(
+                        tree,
+                        new Fault(outcome.identity, outcome.space),
+                        true,
+                    )
             }
             for (const { projection, outcome } of outcomes)
                 this.#publish(tree, projection, outcome)
@@ -1165,7 +1177,10 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         tree.terminal = true
         tree.phase = "terminal"
         this.work.nonConvergenceTerminations++
-        const outcome = err(`non-convergence:${this.#nextError++}`)
+        const outcome = err(
+            `non-convergence:${this.#nextError++}`,
+            "non-convergence",
+        )
         for (const generation of new Set(pending))
             if (generation.live && generation.projection.status === "active")
                 this.#publish(tree, generation.projection, outcome)
@@ -1174,6 +1189,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
             tree,
             new Fault(
                 outcome.kind === "value" ? "unreachable" : outcome.identity,
+                "non-convergence",
             ),
             true,
         )
@@ -1205,12 +1221,23 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                     mode === "server"
                         ? source.spec.serverSnapshot!
                         : source.snapshot
-                if (snapshot.kind !== "thenable") return snapshot
+                if (snapshot.kind === "value") return snapshot
+                if (snapshot.kind !== "thenable")
+                    return Object.freeze({
+                        ...snapshot,
+                        space: "source" as const,
+                    })
                 this.work.thenableContainments++
-                return err(`invalid-snapshot:${this.#nextError++}`)
+                return err(
+                    `invalid-snapshot:${this.#nextError++}`,
+                    "invalid-snapshot",
+                )
             })
         } catch (failure) {
-            outcome = err(this.#faultIdentity(failure))
+            outcome = err(
+                this.#faultIdentity(failure),
+                this.#faultSpace(failure),
+            )
         }
         this.trace.push({
             kind: "sample",
@@ -1260,7 +1287,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                     this.#unsubscribe(action.subscription)
                     break
                 case "fail":
-                    throw new Fault(action.identity)
+                    throw new Fault(action.identity, "source")
                 case "read": {
                     if (this.#callback !== "subscriber")
                         throw new Fault("callback-capability")
@@ -1272,7 +1299,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                         this.#host("live"),
                     )
                     if (result.kind !== "value")
-                        throw new Fault(result.identity)
+                        throw new Fault(result.identity, result.space)
                     break
                 }
             }
@@ -1311,6 +1338,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         }
         const failure = Object.freeze({
             identity: this.#faultIdentity(thrown),
+            space: this.#faultSpace(thrown),
             phase: tree.phase,
             committed,
         })
@@ -1323,6 +1351,11 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         return thrown instanceof Fault
             ? thrown.identity
             : `model-error:${String(thrown)}`
+    }
+    #faultSpace(thrown: unknown): ExternalIdentitySpace {
+        if (thrown instanceof CombinedFault)
+            return this.#faultSpace(thrown.failures[0])
+        return thrown instanceof Fault ? thrown.space : "model-error"
     }
     #flattenFailures(thrown: unknown): unknown[] {
         return thrown instanceof CombinedFault

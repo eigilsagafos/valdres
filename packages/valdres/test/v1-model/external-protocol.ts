@@ -1,12 +1,24 @@
 import type { ValueToken } from "./protocol"
 
 /** Test-only symbolic vocabulary. No spelling below approves a public error. */
+export type ExternalIdentitySpace =
+    | "source"
+    | "invalid-snapshot"
+    | "non-convergence"
+    | "control"
+    | "model-error"
+
 export type ExternalOutcome =
     | Readonly<{ kind: "value"; value: ValueToken }>
-    | Readonly<{ kind: "error" | "control"; identity: string }>
+    | Readonly<{
+          kind: "error" | "control"
+          identity: string
+          space: ExternalIdentitySpace
+      }>
 
 export type ExternalSample =
-    | ExternalOutcome
+    | Readonly<{ kind: "value"; value: ValueToken }>
+    | Readonly<{ kind: "error" | "control"; identity: string }>
     | Readonly<{ kind: "thenable"; identity: string; thrown?: boolean }>
 
 export type ExternalExpression =
@@ -121,6 +133,7 @@ export type ExternalWorkCounter = (typeof externalWorkCounters)[number]
 
 export interface ExternalFailure {
     readonly identity: string
+    readonly space: ExternalIdentitySpace
     readonly phase: ExternalPhase
     readonly committed: boolean
 }

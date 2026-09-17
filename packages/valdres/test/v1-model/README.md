@@ -107,3 +107,9 @@ Run:
 ```sh
 bun run --cwd packages/valdres test:v1-model
 ```
+
+External error/control outcomes and failure records carry a `space` tag alongside
+their readable `identity`. Source, generated invalid-snapshot, non-convergence,
+control, and model-error spaces are disjoint; equality compares both fields.
+Source samples are normalized into the source space, so matching display text
+cannot suppress a model-generated publication. Tags survive JSON replay.

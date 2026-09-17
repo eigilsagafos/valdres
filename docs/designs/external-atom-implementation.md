@@ -229,7 +229,7 @@ React prior art confirms immutable stable snapshots and a separate server getter
 [React useSyncExternalStore reference](https://react.dev/reference/react/useSyncExternalStore).
 This supports the adapter seam; repository contracts remain semantic authority.
 
-## Stack and implementation tasks
+## Historical implementation slices and landing topology
 
 | Slice | Proposed branch | Base | Completion gate |
 | --- | --- | --- | --- |
@@ -239,10 +239,15 @@ This supports the adapter seam; repository contracts remain semantic authority.
 | E3 | `feat/external-atom-settlement` | E2 tip | attach/drain/cleanup, quarantine, finite bounds |
 | E4 | `feat/external-atom-public` | E3 tip | approved contracts, root API, React/packed/GC/perf/docs/changeset |
 
-Merge order, once approved and green: E0 → E1 → E2 → E3 → E4. No PR is opened
-before owner approval and slice evidence; no slice is merged by this lane.
+The rows above are implementation slices, not separate landing PRs. The final
+landing topology is exactly two PRs: `implement-external-atom` → `main`, followed
+by `feat/external-atom-public` → the corrected model branch (retarget to `main`
+after the model lands). E1–E4, including the E3.5 repair/extraction slice, stay
+together in the implementation PR. No PR is opened, pushed, or merged by this lane.
 Sequential implementation ownership of the StoreTree kernel. Independent agents
 review contracts and recovery/test evidence only; they do not edit the kernel.
+
+At this model-only checkpoint, the later runtime tasks belong to the second PR.
 
 - [x] T1: implement independent external model and replayable trace protocol.
 - [ ] T2: implement pull/capture/hydration using existing host seams.

@@ -321,11 +321,13 @@ describe("external projection reference model", () => {
         expect(instance.execute(read()).outcome).toEqual({
             kind: "error",
             identity: "offline",
+            space: "source",
         })
         instance.execute(write(5))
         expect(instance.execute(read()).outcome).toEqual({
             kind: "error",
             identity: "offline",
+            space: "source",
         })
         instance.execute(emit)
         expect(instance.execute(read()).outcome).toEqual(number(5))
@@ -430,7 +432,9 @@ describe("external projection reference model", () => {
                 ],
             })
             expect(result.reads?.[1]).toEqual(
-                kind === "error" ? { kind, identity: "failure" } : number(4),
+                kind === "error"
+                    ? { kind, identity: "failure", space: "source" }
+                    : number(4),
             )
             expect(instance.work.liveSamples).toBe(kind === "error" ? 1 : 2)
             expect(instance.work.transactionCaptures).toBe(1)
@@ -454,6 +458,7 @@ describe("external projection reference model", () => {
         expect(instance.execute(read()).outcome).toEqual({
             kind: "error",
             identity: "offline",
+            space: "source",
         })
     })
 
@@ -734,6 +739,7 @@ describe("external projection reference model", () => {
         expect(instance.execute(read("caught")).outcome).toEqual({
             kind: "control",
             identity: "mismatch",
+            space: "source",
         })
         expect(instance.work.projectionPublications).toBe(publications)
         expect(instance.inspect("tree", "ext")?.outcome).toEqual(number(0))
@@ -792,6 +798,7 @@ describe("external projection reference model", () => {
         expect(instance.execute(read("caught")).outcome).toEqual({
             kind: "control",
             identity: "mismatch",
+            space: "source",
         })
     })
 
@@ -1142,6 +1149,7 @@ describe("external projection reference model", () => {
             expect(result.outcome).toEqual({
                 kind: "error",
                 identity: "callback-capability",
+                space: "control",
             })
             expect(instance.inspect("tree", "right")?.outcome).toEqual(
                 number(0),
