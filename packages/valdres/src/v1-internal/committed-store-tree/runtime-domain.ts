@@ -59,11 +59,29 @@ export type ExternalCallbackKind =
     | "external-subscribe"
     | "external-cleanup"
 
+/** Object.is equality for committed value/error outcomes, including controls. */
+export const sameOutcome = (
+    previous: {
+        readonly kind: string
+        readonly value?: unknown
+        readonly error?: unknown
+    },
+    next: {
+        readonly kind: string
+        readonly value?: unknown
+        readonly error?: unknown
+    },
+): boolean =>
+    previous.kind === next.kind &&
+    (previous.kind === "value"
+        ? Object.is(previous.value, next.value)
+        : Object.is(previous.error, next.error))
+
 export interface ControlFaultSession {
     latchControlFault(error: unknown): void
     getControlFault():
         | Readonly<{ kind: "none" }>
-        | Readonly<{ kind: "fault"; error: unknown }>
+        | Readonly<{ kind: "fault"; error: unknown; origin?: object }>
 }
 
 export interface DefinitionCallbackFrame {
@@ -128,7 +146,12 @@ export interface RuntimeDomainRecords {
     /** Synchronous construction frame; restored before public work resumes. */
     [DEFINITION_CALLBACK_FRAME]?: DefinitionCallbackFrame
     /** Keyed definition helpers may opt exact Atoms into override retention. */
-    [REACQUIRABLE_ATOMS]?: WeakSet<object>
+    [REACQUIRABLE_ATOMS]?: WeakSet<object> & {
+        apply(
+            scope: import("./scope-node").StoreScopeNode,
+            intent: import("./tree-transaction").AtomIntent,
+        ): void
+    }
     readonly atoms: WeakMap<object, AtomDefinition>
     readonly selectors: WeakMap<object, SelectorDefinition<AnyState, any>>
     /** Lazy registry keeps external-free domains on their existing path. */
@@ -463,14 +486,13 @@ export const runGuardedCallback = <Result>(
                   selectorActivity,
               })
     try {
-        const result = runInRuntimeActivity(domain, activity, operation)
-        const controlFault = session.getControlFault()
-        if (controlFault.kind === "fault") throw controlFault.error
-        return result
-    } catch (error) {
-        const controlFault = session.getControlFault()
-        if (controlFault.kind === "fault") throw controlFault.error
-        throw error
+        return runInRuntimeActivity(domain, activity, operation)
+    } finally {
+        const fault = session.getControlFault()
+        if (fault.kind === "fault") {
+            domain.externalRuntime?.guard(fault.error)
+            throw fault.error
+        }
     }
 }
 
@@ -480,18 +502,14 @@ export const runSubscriberActivity = <Result>(
     operation: () => Result,
 ): Result => {
     try {
-        const result = runInRuntimeActivity(
+        return runInRuntimeActivity(
             domain,
             Object.freeze({ kind: "subscriber", session }),
             operation,
         )
+    } finally {
         const controlFault = session.getControlFault()
         if (controlFault.kind === "fault") throw controlFault.error
-        return result
-    } catch (error) {
-        const controlFault = session.getControlFault()
-        if (controlFault.kind === "fault") throw controlFault.error
-        throw error
     }
 }
 
@@ -543,19 +561,24 @@ export const runTransactionResultActivity = <Result>(
     operation: () => Result,
 ): Result => {
     try {
-        const result = runInRuntimeActivity(
+        return runInRuntimeActivity(
             domain,
             Object.freeze({ kind: "transaction-result", session }),
             operation,
         )
+    } finally {
         const controlFault = session.getControlFault()
         if (controlFault.kind === "fault") throw controlFault.error
-        return result
-    } catch (error) {
-        const controlFault = session.getControlFault()
-        if (controlFault.kind === "fault") throw controlFault.error
-        throw error
     }
+}
+
+/** Report an emitted guard only to an optional, currently active callback extent. */
+export const rejectCallbackOperation = (
+    domain: RuntimeDomainRecords,
+): never => {
+    const error = new CallbackCapabilityError()
+    domain.externalRuntime?.guard(error)
+    throw error
 }
 
 export const assertStoreOperationAllowed = (
@@ -573,26 +596,15 @@ export const assertStoreOperationAllowed = (
     ) {
         throw new TransactionPhaseError()
     }
-    throw new CallbackCapabilityError()
+    rejectCallbackOperation(domain)
 }
 
 export const assertStoreReadAllowed = (
     domain: RuntimeDomainRecords,
     operation: string,
 ): ControlFaultSession | undefined => {
-    const activity = domain.activity
-    if (activity === undefined) return undefined
-    if (activity.kind === "subscriber") return activity.session
-    if (activity.kind === "selector") {
-        throw new SelectorCapabilityError(operation)
-    }
-    if (
-        activity.kind === "transaction" ||
-        activity.kind === "transaction-result"
-    ) {
-        throw new TransactionPhaseError()
-    }
-    throw new CallbackCapabilityError()
+    if (domain.activity?.kind === "subscriber") return domain.activity.session
+    assertStoreOperationAllowed(domain, operation)
 }
 
 /** Reject a selector-supplied read borrowed by a nested guarded callback. */
@@ -616,18 +628,7 @@ export const rejectGuardedSelectorRead = (
 export const assertUnsubscribeAllowed = (
     domain: RuntimeDomainRecords,
 ): void => {
-    const activity = domain.activity
-    if (activity === undefined || activity.kind === "subscriber") return
-    if (activity.kind === "selector") {
-        throw new SelectorCapabilityError("Store unsubscribe")
-    }
-    if (
-        activity.kind === "transaction" ||
-        activity.kind === "transaction-result"
-    ) {
-        throw new TransactionPhaseError()
-    }
-    throw new CallbackCapabilityError()
+    assertStoreReadAllowed(domain, "Store unsubscribe")
 }
 
 export const assertCursorOperationAllowed = (
@@ -650,7 +651,7 @@ export const assertCursorOperationAllowed = (
         activity?.kind === "guarded-callback" ||
         activity?.kind.startsWith("external-")
     ) {
-        throw new CallbackCapabilityError()
+        rejectCallbackOperation(domain)
     }
     throw new TransactionPhaseError()
 }
@@ -693,6 +694,7 @@ export const classifyOwner = (
             !Object.is(ownerDescriptor.value, domain.ownerToken)
         ) {
             const error = new RuntimeMismatchError()
+            domain.externalRuntime?.guard(error)
             currentFaultSession(domain, session).latchControlFault(error)
             throw error
         }

@@ -49,14 +49,20 @@ function applicationWrapper(kind: "notification" | "operation") {
     const causes = [new Error("first"), new Error("second")]
     return kind === "notification"
         ? new SubscriberNotificationError(causes, "external-invalidation")
-        : new ExternalSourceOperationError(
-              causes.map(cause => ({
-                  cause,
+        : new ExternalSourceOperationError([
+              {
+                  cause: causes[0],
                   committed: true,
                   phase: "notifying",
                   source: "external-drain",
-              })),
-          )
+              },
+              {
+                  cause: causes[1],
+                  committed: true,
+                  phase: "notifying",
+                  source: "external-drain",
+              },
+          ])
 }
 
 describe("external failure occurrence ledger", () => {

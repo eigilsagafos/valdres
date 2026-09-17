@@ -1029,6 +1029,7 @@ import {
     atom,
     collection,
     externalAtom,
+    ExternalSourceOperationError,
     family,
     presence,
     selector,
@@ -1048,6 +1049,16 @@ import {
     type State,
     type Store,
 } from "valdres"
+export type ExternalFailures = ConstructorParameters<typeof ExternalSourceOperationError>[0]
+export const externalFailures: ExternalFailures = [
+    { cause: new Error("application"), phase: "admitting", source: "external-startup", committed: false },
+] as const
+export const externalOperationError: ExternalSourceOperationError = new ExternalSourceOperationError(externalFailures)
+// @ts-expect-error Operation failures must be nonempty.
+new ExternalSourceOperationError([])
+// @ts-expect-error A possibly-empty array cannot satisfy the public constructor.
+new ExternalSourceOperationError([] as readonly ExternalFailures[number][])
+
 import {
     Provider,
     useAtom,

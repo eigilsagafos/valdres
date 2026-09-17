@@ -8,7 +8,6 @@ import { ExternalProjectionPlane } from "./external-projection"
 import type { ExternalOperationFailure } from "./external-types"
 import {
     assertRuntimeDefinitionConstructionAllowed,
-    CallbackCapabilityError,
     RuntimeMismatchError,
     SubscriberNotificationError,
     containThenable,
@@ -164,11 +163,22 @@ export class ExternalSourceOperationError extends Error {
     readonly committed: boolean
     readonly phase: ExternalOperationFailure["phase"]
     readonly source: ExternalOperationFailure["source"]
-    constructor(failures: readonly ExternalOperationFailure[]) {
+    constructor(
+        failures: readonly [
+            ExternalOperationFailure,
+            ...ExternalOperationFailure[],
+        ],
+    ) {
+        if (failures.length === 0)
+            throw new TypeError(
+                "ExternalSourceOperationError requires at least one failure",
+            )
         super("An external source operation failed")
         this.name = "ExternalSourceOperationError"
         this.failures = Object.freeze(
-            failures.map(failure => Object.freeze({ ...failure })),
+            failures.map(({ cause, committed, phase, source }) =>
+                Object.freeze({ cause, committed, phase, source }),
+            ),
         )
         this.causes = Object.freeze(failures.map(failure => failure.cause))
         this.cause = this.causes[0]
@@ -179,6 +189,13 @@ export class ExternalSourceOperationError extends Error {
     }
 }
 
+// An extent ends when its callback returns. Replaying its error later grants
+// no provenance, and handled nonsticky guards remain handled.
+const callbackOccurrences = new WeakMap<
+    RuntimeDomainRecords,
+    Map<unknown, object>
+>()
+
 /** Unlike a general guarded callback, source callbacks also close every
  * active selector's supplied read function for the callback's full extent. */
 export function runExternalCallback<Result>(
@@ -187,8 +204,13 @@ export function runExternalCallback<Result>(
     kind: ExternalCallbackKind | "guarded-callback",
     callback: () => Result,
     generation?: object,
+    onControl?: (origin: object) => void,
 ): Result {
     const previous = domain.activity
+    const inherited = callbackOccurrences.get(domain)
+    const occurrences =
+        onControl === undefined ? inherited : new Map<unknown, object>()
+    if (onControl !== undefined) callbackOccurrences.set(domain, occurrences!)
     const selectorActivity =
         previous?.kind === "selector"
             ? previous
@@ -229,7 +251,22 @@ export function runExternalCallback<Result>(
                 }
             },
         )
+    } catch (error) {
+        const fault = session.getControlFault()
+        const origin =
+            fault.kind === "fault"
+                ? (fault.origin ?? {})
+                : occurrences?.get(error)
+        if (origin !== undefined) {
+            occurrences?.set(error, origin)
+            onControl?.(origin)
+        }
+        throw error
     } finally {
+        if (onControl !== undefined) {
+            if (inherited === undefined) callbackOccurrences.delete(domain)
+            else callbackOccurrences.set(domain, inherited)
+        }
         for (let index = guards.length - 1; index >= 0; index--) {
             const guard = guards[index]!
             guard.session.setSuppliedReadGuard(guard.previous)
@@ -333,6 +370,9 @@ function ensureExternalRuntime(domain: RuntimeDomainRecords): void {
         import("./external-types").ExternalRuntime
     >({
         bounds,
+        guard: error => {
+            callbackOccurrences.get(domain)?.set(error, {})
+        },
         createTree: (host: import("./external-types").ExternalTreeHost) =>
             new ExternalProjectionPlane(host, delivery, bounds),
         read: (draft, node, session, serverPath, count) => {
@@ -376,9 +416,15 @@ function ensureExternalRuntime(domain: RuntimeDomainRecords): void {
         fail: (
             failures: readonly ExternalOperationFailure[],
             preserveMetadata = false,
+            internal: readonly boolean[] = [],
         ): never => {
+            if (failures.length === 0)
+                throw new TypeError(
+                    "ExternalSourceOperationError requires at least one failure",
+                )
             if (
                 failures.length > 1 &&
+                internal[0] &&
                 failures[0]!.cause instanceof RuntimeMismatchError &&
                 failures.every(
                     failure => failure.source === "owned-mutation",
@@ -401,16 +447,16 @@ function ensureExternalRuntime(domain: RuntimeDomainRecords): void {
                 if (
                     (failure.phase !== "admitting" &&
                         failure.phase !== "cleanup") ||
-                    failure.cause instanceof RuntimeMismatchError ||
-                    failure.cause instanceof CallbackCapabilityError ||
-                    failure.cause instanceof InvalidExternalCleanupError ||
-                    failure.cause instanceof
-                        ExternalSourceNonConvergenceError ||
-                    failure.cause instanceof ExternalSourceDeliveryLimitError
+                    internal[0]
                 )
                     throw failure.cause
             }
-            throw new ExternalSourceOperationError(failures)
+            throw new ExternalSourceOperationError(
+                failures as readonly [
+                    ExternalOperationFailure,
+                    ...ExternalOperationFailure[],
+                ],
+            )
         },
     })
 }

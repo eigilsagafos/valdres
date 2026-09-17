@@ -1,5 +1,9 @@
 import { ExternalInspectionEvent } from "./external-inspection-protocol"
-import { ExternalOperationPhase } from "./external-types"
+import {
+    ExternalOperationPhase,
+    HostOperationKind,
+    HostOperationCursor,
+} from "./external-types"
 import { StoreTreeCounterId } from "./counter-ids"
 import type { SubscriptionRegistration } from "./committed-store-tree"
 import {
@@ -7,9 +11,10 @@ import {
     type ServedSelectorOutcome,
 } from "../selector-evaluator/types"
 import {
-    CallbackCapabilityError,
+    rejectCallbackOperation,
     SubscriberNotificationError,
     containThenable,
+    sameOutcome,
     inspectThenable,
     type AnyState,
 } from "./runtime-domain"
@@ -47,9 +52,12 @@ const invalidator = (generation: Generation) => () =>
     generation.owner?.invalidate(generation)
 interface Operation {
     source: ExternalOperationFailure["source"]
+    readonly initialSource: ExternalOperationFailure["source"]
+    registration?: SubscriptionRegistration
     phase: ExternalOperationPhase
     readonly epoch: number
     readonly failures: ExternalOperationFailure[]
+    readonly internal: boolean[]
     readonly originals: unknown[]
     readonly controlOrigins: Set<object>
     terminal: boolean
@@ -179,20 +187,6 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         record: SelectorRecord,
         session: SelectorEvaluationSession<AnyState>,
     ): SelectorRecord {
-        const outcome = record.served.outcome
-        if (outcome.kind === "control-error") {
-            const fault = session.getControlFault()
-            record = {
-                ...record,
-                served: Object.freeze({
-                    ...record.served,
-                    outcome: Object.freeze({
-                        ...outcome,
-                        origin: fault.kind === "fault" ? fault.origin : {},
-                    }),
-                }),
-            }
-        }
         return Object.freeze({
             ...record,
             lifecycleInClosure: record.dependencies.some(dependency =>
@@ -264,24 +258,6 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         }
     }
 
-    get(
-        scope: StoreScopeNode,
-        node: AnyState,
-        session: SelectorEvaluationSession<AnyState>,
-    ): ServedSelectorOutcome<OutcomeToken> {
-        const served =
-            this.operating || this.current(scope, node)
-                ? this.observe(scope, node, session)
-                : this.run("external-read", () =>
-                      this.observe(scope, node, session),
-                  )
-        return (
-            scope.getMaterializedServedOutcome(node) ??
-            this.installed(node) ??
-            served
-        )
-    }
-
     observe(
         scope: StoreScopeNode,
         node: AnyState,
@@ -296,53 +272,13 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         return this.read(scope, node, session)
     }
 
-    subscribe(
-        operation: (
-            admitted: (registration: SubscriptionRegistration) => void,
-        ) => () => void,
-    ): () => void {
-        let registration: SubscriptionRegistration | undefined
-        const stop = this.run(
-            "external-startup",
-            () =>
-                operation(value => {
-                    registration = value
-                }),
-            () => {
-                if (registration === undefined) return
-                registration.target?.host?.removeSubscription(registration)
-                registration.status = "rolled-back"
-            },
-        )
-        if (registration?.status === "provisional") {
-            registration.status = "active"
-            delete registration.admissionToken
-            delete registration.admissionNotified
-        }
-        return stop
-    }
-
-    admit(
-        registration: SubscriptionRegistration,
-        token: OutcomeToken,
-        admitted?: (registration: SubscriptionRegistration) => void,
-    ): void {
+    admit(registration: SubscriptionRegistration, token: OutcomeToken): void {
         registration.status = "provisional"
         registration.admissionToken = token
-        try {
-            admitted?.(registration)
-            const target = registration.target!
-            this.retainRoot(target.scope, target.state)
-            this.startup()
-            if (admitted === undefined) {
-                registration.status = "active"
-                delete registration.admissionToken
-            }
-        } catch (error) {
-            registration.target?.host?.removeSubscription(registration)
-            registration.status = "rolled-back"
-            throw error
-        }
+        this.#operation!.registration = registration
+        const target = registration.target!
+        this.retainRoot(target.scope, target.state)
+        this.startup()
     }
 
     notificationCallback(
@@ -371,41 +307,92 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         return callback
     }
 
-    run<Result>(
+    beginHost(
+        cursor: number,
+        epoch: number,
+        faults?: readonly Extract<
+            ServedSelectorOutcome<OutcomeToken>["outcome"],
+            { kind: "control-error" }
+        >[],
+    ): void {
+        const kind = cursor & HostOperationCursor.kindMask
+        const phase = cursor >> HostOperationCursor.phaseShift
+        this.begin(
+            kind === HostOperationKind.read
+                ? "external-read"
+                : kind === HostOperationKind.subscribe
+                  ? "external-startup"
+                  : "owned-mutation",
+            epoch,
+            phase === 0 ? undefined : phase - 1,
+            faults,
+        )
+    }
+
+    begin(
         source: ExternalOperationFailure["source"],
-        operation: () => Result,
-        rollback?: () => void,
-    ): Result {
-        if (this.#operation !== undefined) return operation()
-        const frame: Operation = {
+        epoch: number,
+        phase?: ExternalOperationPhase,
+        faults?: readonly Extract<
+            ServedSelectorOutcome<OutcomeToken>["outcome"],
+            { kind: "control-error" }
+        >[],
+    ): void {
+        this.#operation = {
             source,
+            initialSource: source,
             phase:
-                source === "external-startup"
-                    ? ExternalOperationPhase.transitioningLifecycle
-                    : source === "owned-mutation"
-                      ? ExternalOperationPhase.drafting
-                      : source === "external-cleanup"
-                        ? ExternalOperationPhase.disposing
-                        : ExternalOperationPhase.materializingRead,
-            epoch: this.#bindings.epoch(),
+                phase ??
+                (source === "owned-mutation"
+                    ? ExternalOperationPhase.drafting
+                    : source === "external-cleanup"
+                      ? ExternalOperationPhase.disposing
+                      : ExternalOperationPhase.materializingRead),
+            epoch,
             failures: [],
+            internal: [],
             originals: [],
             controlOrigins: new Set(),
             terminal: false,
             attachments: 0,
         }
-        this.#operation = frame
+        if (faults !== undefined)
+            for (const fault of faults)
+                this.failure(fault.error, "settling", fault.origin)
+        // Also covers first installation midway through a host evaluation.
+        this.#pull = this.#newPull(
+            source === "external-read" || source === "external-startup",
+        )
         for (const projection of this.#unattached) {
             if (projection.retains > 0 && projection.status === "dormant")
                 this.#attachments.add(projection)
         }
+    }
+
+    cleanup<Result>(operation: () => Result): Result {
+        return this.run("external-cleanup", operation)
+    }
+
+    run<Result>(
+        source: ExternalOperationFailure["source"],
+        operation: () => Result,
+    ): Result {
+        if (!this.idle) return operation()
+        this.begin(source, this.#bindings.epoch())
         let result!: Result
         try {
-            try {
-                result = operation()
-            } catch (error) {
-                this.failure(error)
-            }
+            result = operation()
+        } catch (error) {
+            this.failure(error)
+        } finally {
+            this.finish()
+        }
+        return result
+    }
+
+    finish(): void {
+        const frame = this.#operation!
+        try {
             try {
                 this.startup()
             } catch (error) {
@@ -413,30 +400,43 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             }
             this.#flushReleases()
             this.#drain()
-            if (frame.failures.length > 0 && rollback !== undefined) {
-                try {
-                    rollback()
-                } catch (error) {
-                    this.failure(error, "cleanup")
+            const registration = frame.registration
+            if (registration !== undefined) {
+                if (frame.failures.length > 0) {
+                    try {
+                        registration.target?.host?.removeSubscription(
+                            registration,
+                        )
+                    } catch (error) {
+                        this.failure(error, "cleanup")
+                    }
+                    registration.status = "rolled-back"
+                    this.#flushReleases()
+                } else {
+                    registration.status = "active"
+                    delete registration.admissionToken
+                    delete registration.admissionNotified
                 }
-                this.#flushReleases()
             }
         } finally {
             this.#operation = undefined
+            this.#pull = undefined
         }
         if (frame.failures.length > 0) {
-            // The external-free mutation contract retains its exact legacy wrapper.
             if (
-                source === "owned-mutation" &&
+                frame.initialSource === "owned-mutation" &&
                 frame.originals.length === 1 &&
                 frame.failures.every(
                     failure => failure.source === "owned-mutation",
                 )
             )
                 throw frame.originals[0]
-            this.#bindings.domain.externalRuntime!.fail(frame.failures)
+            this.#bindings.domain.externalRuntime!.fail(
+                frame.failures,
+                false,
+                frame.internal,
+            )
         }
-        return result
     }
 
     phase(phase: ExternalOperationPhase): void {
@@ -458,6 +458,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             frame.controlOrigins.add(origin)
         }
         frame.originals.push(error)
+        frame.internal.push(origin !== undefined)
         frame.failures.push({
             cause: error,
             phase: phase ?? this.#failurePhase(),
@@ -472,13 +473,15 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         const frame = this.#operation
         if (frame === undefined) return error
         frame.originals.push(error)
-        for (const cause of error.causes)
+        for (const cause of error.causes) {
+            frame.internal.push(false)
             frame.failures.push({
                 cause,
                 phase: "notifying",
                 source: frame.source,
                 committed: this.#bindings.epoch() !== frame.epoch,
             })
+        }
         return new RecordedExternalFailure()
     }
 
@@ -548,6 +551,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                         this.#failureMetadata("admitting"),
                     ),
                     "admitting",
+                    {},
                 )
                 continue
             }
@@ -575,10 +579,12 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         projection.status = "attaching"
         this.#bindings.count(StoreTreeCounterId.adapterSubscriptions)
         this.#event(ExternalInspectionEvent.attach, projection.node)
+        const session = new SelectorEvaluationSession<AnyState>()
+        let origin: object | undefined
         try {
             runExternalCallback(
                 domain,
-                new SelectorEvaluationSession(),
+                session,
                 "external-subscribe",
                 () => {
                     let returned: unknown
@@ -599,33 +605,19 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                             StoreTreeCounterId.thenableContainments,
                         )
                         containThenable(inspected)
-                        throw new InvalidExternalCleanupError(
-                            this.#failureMetadata(
-                                this.#operation?.phase ===
-                                    ExternalOperationPhase.cleanup
-                                    ? "cleanup"
-                                    : "admitting",
-                            ),
-                        )
+                        throw this.#invalidCleanup()
                     }
                     if (typeof returned !== "function")
-                        throw new InvalidExternalCleanupError(
-                            this.#failureMetadata(
-                                this.#operation?.phase ===
-                                    ExternalOperationPhase.cleanup
-                                    ? "cleanup"
-                                    : "admitting",
-                            ),
-                        )
+                        throw this.#invalidCleanup()
                     generation.cleanup = returned as () => unknown
                 },
                 generation,
+                token => {
+                    origin = token
+                },
             )
             this.#dirty.delete(generation)
-            const sampled = this.#sample(
-                projection.node,
-                new SelectorEvaluationSession(),
-            )
+            const sampled = this.#sample(projection.node, session)
             this.#publish(projection.node, sampled)
             projection.status = "active"
             projection.scopes.forEach(scope => {
@@ -634,7 +626,12 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             })
             this.#unattached.delete(projection)
         } catch (error) {
-            this.failure(error, "admitting")
+            const fault = session.getControlFault()
+            this.failure(
+                error,
+                "admitting",
+                fault.kind === "fault" ? fault.origin : origin,
+            )
             this.#cleanup(projection)
             // Already recorded before cleanup, so later failures cannot reorder it.
         } finally {
@@ -654,19 +651,25 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         return cleanup
     }
 
+    #invalidCleanup(): InvalidExternalCleanupError {
+        const error = new InvalidExternalCleanupError(
+            this.#failureMetadata(
+                this.#operation?.phase === ExternalOperationPhase.cleanup
+                    ? "cleanup"
+                    : "admitting",
+            ),
+        )
+        this.#bindings.domain.externalRuntime!.guard(error)
+        return error
+    }
+
     #completionError(thrown: unknown): unknown {
         const inspected = inspectThenable(thrown)
         if (inspected.kind === "inspection-error") return inspected.error
         if (inspected.kind === "thenable") {
             this.#bindings.count(StoreTreeCounterId.thenableContainments)
             containThenable(inspected)
-            return new InvalidExternalCleanupError(
-                this.#failureMetadata(
-                    this.#operation?.phase === ExternalOperationPhase.cleanup
-                        ? "cleanup"
-                        : "admitting",
-                ),
-            )
+            return this.#invalidCleanup()
         }
         return thrown
     }
@@ -681,6 +684,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             this.#event(ExternalInspectionEvent.detach, projection.node)
             const previous = this.#operation!.source
             this.#operation!.source = "external-cleanup"
+            let origin: object | undefined
             try {
                 runExternalCallback(
                     this.#bindings.domain,
@@ -701,19 +705,16 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                                 StoreTreeCounterId.thenableContainments,
                             )
                             containThenable(inspected)
-                            throw new InvalidExternalCleanupError(
-                                this.#failureMetadata(
-                                    this.#operation?.phase ===
-                                        ExternalOperationPhase.cleanup
-                                        ? "cleanup"
-                                        : "admitting",
-                                ),
-                            )
+                            throw this.#invalidCleanup()
                         }
+                    },
+                    undefined,
+                    token => {
+                        origin = token
                     },
                 )
             } catch (error) {
-                this.failure(error, "cleanup")
+                this.failure(error, "cleanup", origin)
             } finally {
                 this.#operation!.source = previous
             }
@@ -748,8 +749,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             return
         }
         if (activity !== undefined && activity.kind !== "subscriber") {
-            const error = new CallbackCapabilityError()
-            throw error
+            rejectCallbackOperation(this.#bindings.domain)
         }
         if (this.#operation?.terminal) return
         if (this.#operation !== undefined) {
@@ -933,9 +933,6 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     get idle(): boolean {
         return this.#operation === undefined
     }
-    get operating(): boolean {
-        return this.#operation !== undefined
-    }
     get pendingLifecycle(): boolean {
         return this.#attachments.size > 0
     }
@@ -945,8 +942,14 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     get admissionAllowed(): boolean {
         return this.#operation?.failures.length === 0
     }
-    installed(node: AnyState): ServedSelectorOutcome<OutcomeToken> | undefined {
-        return this.#projections.get(node)?.served
+    installed(
+        scope: StoreScopeNode,
+        node: AnyState,
+    ): ServedSelectorOutcome<OutcomeToken> | undefined {
+        return (
+            scope.getMaterializedServedOutcome(node) ??
+            this.#projections.get(node)?.served
+        )
     }
     current(scope: StoreScopeNode, node: AnyState): boolean {
         return (
@@ -954,9 +957,6 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             (!this.reachesDormant(scope, node) &&
                 scope.getMaterializedServedOutcome(node) !== undefined)
         )
-    }
-    get changedPull(): boolean {
-        return this.#pull?.epochAdvanced === true
     }
 
     #records(scope: StoreScopeNode): WeakMap<AnyState, RetainRecord> {
@@ -1100,21 +1100,23 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         scope: StoreScopeNode,
         node: AnyState,
         error: unknown,
-    ): void {
-        if (!this.#pull?.dormant) return
+    ): boolean {
+        if (!this.#pull?.dormant) return false
         const byScope = (this.#pull.selectorFaults ??= new WeakMap())
         let faults = byScope.get(scope)
         if (faults === undefined) byScope.set(scope, (faults = new Map()))
         faults.set(node, error)
+        return true
     }
 
-    rethrowSelectorFault(
+    skipSelectorRead(
         scope: StoreScopeNode,
         node: AnyState,
         session: SelectorEvaluationSession<AnyState>,
-    ): void {
+    ): boolean {
+        if (this.#pull?.dormant && !this.#pull.epochAdvanced) return true
         const faults = this.#pull?.selectorFaults?.get(scope)
-        if (!faults?.has(node)) return
+        if (!faults?.has(node)) return false
         const error = faults.get(node)
         session.latchControlFault(error)
         throw error
@@ -1268,16 +1270,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         let projection = this.#projections.get(node)
         const previous = projection?.served
         const same =
-            previous?.outcome.kind === outcome.kind &&
-            (outcome.kind === "value"
-                ? Object.is(
-                      (previous.outcome as { value: unknown }).value,
-                      outcome.value,
-                  )
-                : Object.is(
-                      (previous.outcome as { error: unknown }).error,
-                      outcome.error,
-                  ))
+            previous !== undefined && sameOutcome(previous.outcome, outcome)
         if (!same) {
             const served = Object.freeze({
                 token: this.#bindings.token(),

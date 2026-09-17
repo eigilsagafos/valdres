@@ -1376,8 +1376,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 selector,
                 host.createOutcomeToken(),
                 {
+                    ...controlFault,
                     kind: "control-error",
-                    error: controlFault.error,
                 },
                 dependencies,
             )
@@ -1419,8 +1419,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 selector,
                 host.createOutcomeToken(),
                 {
+                    ...postResultControlFault,
                     kind: "control-error",
-                    error: postResultControlFault.error,
                 },
                 dependencies,
             )
@@ -1472,8 +1472,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                     selector,
                     host.createOutcomeToken(),
                     {
+                        ...comparatorControlFault,
                         kind: "control-error",
-                        error: comparatorControlFault.error,
                     },
                     dependencies,
                 )
@@ -1520,8 +1520,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                     selector,
                     host.createOutcomeToken(),
                     {
+                        ...postComparatorControlFault,
                         kind: "control-error",
-                        error: postComparatorControlFault.error,
                     },
                     dependencies,
                 )

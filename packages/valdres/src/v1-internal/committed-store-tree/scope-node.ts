@@ -252,7 +252,9 @@ export class StoreScopeNode
     readonly children: WeakHandleSet<StoreScopeNode>
     readonly namedChildren = new Map<string, StoreScopeNode>()
     atomOverrides = new WeakMap<AnyAtom, unknown>();
-    [REACQUIRABLE_ATOMS] = undefined as Set<AnyAtom> | undefined
+    declare [REACQUIRABLE_ATOMS]:
+        | (Set<AnyAtom> & { release(coordinator: StoreScopeCoordinator): void })
+        | undefined
 
     #atomViews = new WeakMap<AnyAtom, AtomViewRecord>()
     readonly #liveAtomViews: WeakHandleSet<AtomViewRecord>
@@ -316,8 +318,8 @@ export class StoreScopeNode
     getMaterializedServedOutcome(
         state: AnyState,
     ): ServedSelectorOutcome<OutcomeToken> | undefined {
-        const atomView = this.#atomViews.get(state as AnyAtom)
-        if (atomView !== undefined) return atomView.served
+        if (state.kind !== "selector")
+            return this.#atomViews.get(state as AnyAtom)?.served
         const selector = state as AnySelector
         const selectorRecord = this.#selectorRecords.get(selector)
         return selectorRecord !== undefined &&
@@ -425,13 +427,7 @@ export class StoreScopeNode
         })
         this.#liveAtomViews.clear()
         this.atomOverrides = new WeakMap()
-        const retainedFamilyAtoms = this[REACQUIRABLE_ATOMS]?.size ?? 0
-        if (retainedFamilyAtoms > 0) {
-            this.coordinator.recordCounter(
-                StoreTreeCounterId.familyOwnerReleases,
-                retainedFamilyAtoms,
-            )
-        }
+        this[REACQUIRABLE_ATOMS]?.release(this.coordinator)
         this[REACQUIRABLE_ATOMS] = undefined
         this.#atomViews = new WeakMap()
         this.#selectorRecords = new WeakMap()

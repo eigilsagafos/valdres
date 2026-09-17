@@ -5610,6 +5610,7 @@ describe("v1 selector evaluator faults and revocation", () => {
         expect(served.outcome).toEqual({
             kind: "control-error",
             error: mismatch,
+            origin: expect.any(Object),
         })
         expect(
             host.records.get("derived")?.dependencies.map(({ node }) => node),

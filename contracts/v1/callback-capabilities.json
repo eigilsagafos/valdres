@@ -483,7 +483,7 @@
                 "arbitrary same-domain publication"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A throw rolls back provisional admission; a missing, non-function, or thenable cleanup throws InvalidExternalCleanupError. Runtime delivery limits are owned outside this callback boundary. Direct InvalidExternalCleanupError has frozen phase admitting, source external-startup, and committed equal to publication state at failure. Arbitrary setup throws and setup/cleanup aggregation use ExternalSourceOperationError; every failure occurrence is retained without deduplication by error identity.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A throw rolls back provisional admission; a missing, non-function, or thenable cleanup throws InvalidExternalCleanupError. Runtime delivery limits are owned outside this callback boundary. Runtime-generated direct InvalidExternalCleanupError has frozen phase admitting, source external-startup, and committed equal to publication state at failure. Arbitrary setup throws, including application-created public error instances and later rethrows of captured runtime errors, and setup/cleanup aggregation use ExternalSourceOperationError; every failure occurrence is retained without deduplication by error identity.",
             "thenableRule": "subscribe itself is synchronous and must return a cleanup function; a thenable setup or cleanup result throws InvalidExternalCleanupError and is never awaited.",
             "resultBoundary": "After a valid cleanup is returned, core performs the mandatory second sample and one admission settlement before sub returns.",
             "requiredContractIds": [
@@ -513,7 +513,7 @@
                 "publication through the revoked invalidator"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Invalid synchronous cleanup results throw InvalidExternalCleanupError with frozen phase cleanup, source external-cleanup, and committed equal to publication state at failure. Cleanup remains revoke-first and all-run. Arbitrary cleanup throws and mixed-phase aggregation use ExternalSourceOperationError after idle or terminal, preserving every occurrence in order, including repeated error identities; application errors remain untouched. Pure notification failures retain SubscriberNotificationError.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Invalid synchronous cleanup results throw InvalidExternalCleanupError with frozen phase cleanup, source external-cleanup, and committed equal to publication state at failure. Cleanup remains revoke-first and all-run. Arbitrary cleanup throws, including application-created public error instances and later rethrows of captured runtime errors, and mixed-phase aggregation use ExternalSourceOperationError after idle or terminal, preserving every occurrence in order, including repeated error identities; application errors remain untouched. Pure notification failures retain SubscriberNotificationError.",
             "thenableRule": "A returned or thrown thenable becomes InvalidExternalCleanupError, is never awaited, and cannot add disposeAsync.",
             "resultBoundary": "The generation is revoked before invocation and remains revoked regardless of cleanup outcome.",
             "requiredContractIds": [

@@ -185,7 +185,8 @@ class DirectSourceDriver {
             )
         } catch (error) {
             for (const [identity, known] of this.errors)
-                if (error === known) return { kind: "error", identity }
+                if (error === known)
+                    return { kind: "error", space: "source", identity }
             throw error
         }
     }

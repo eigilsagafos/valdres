@@ -20,6 +20,18 @@ export interface ExternalBounds {
     deliveryDepth: number
     deliveryWork: number
 }
+export const enum HostOperationKind {
+    read = 1,
+    subscribe,
+    mutation,
+}
+// Low two bits are the outer host kind; upper bits encode phase + 1 (zero
+// retains the kind's initial phase). The host carries no optional-plane record.
+export const enum HostOperationCursor {
+    kindMask = 3,
+    phaseShift = 2,
+}
+
 export const enum ExternalOperationPhase {
     materializingRead,
     drafting,
@@ -82,44 +94,46 @@ export interface ExternalTreePlane {
         previous: SelectorRecord | undefined,
         record: SelectorRecord,
     ): void
-    get(
-        scope: StoreScopeNode,
-        node: AnyState,
-        session: SelectorEvaluationSession<AnyState>,
-    ): ServedSelectorOutcome<OutcomeToken>
     observe(
         scope: StoreScopeNode,
         node: AnyState,
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken>
-    subscribe(
-        operation: (
-            admitted: (registration: SubscriptionRegistration) => void,
-        ) => () => void,
-    ): () => void
-    admit(
-        registration: SubscriptionRegistration,
-        token: OutcomeToken,
-        admitted?: (registration: SubscriptionRegistration) => void,
+    beginHost(
+        cursor: number,
+        epoch: number,
+        faults?: readonly Extract<
+            ServedSelectorOutcome<OutcomeToken>["outcome"],
+            { kind: "control-error" }
+        >[],
     ): void
+    begin(
+        source: ExternalOperationFailure["source"],
+        epoch: number,
+        phase?: ExternalOperationPhase,
+        faults?: readonly Extract<
+            ServedSelectorOutcome<OutcomeToken>["outcome"],
+            { kind: "control-error" }
+        >[],
+    ): void
+    finish(): void
+    admit(registration: SubscriptionRegistration, token: OutcomeToken): void
     notificationCallback(
         registration: SubscriptionRegistration,
     ): (() => unknown) | undefined
     notificationFailure(
         error: import("./runtime-domain").SubscriberNotificationError,
     ): unknown
-    readonly operating: boolean
     readonly idle: boolean
     readonly admissionAllowed: boolean
     readonly pendingLifecycle: boolean
     active(node: AnyState): boolean
-    installed(node: AnyState): ServedSelectorOutcome<OutcomeToken> | undefined
+    installed(
+        scope: StoreScopeNode,
+        node: AnyState,
+    ): ServedSelectorOutcome<OutcomeToken> | undefined
     current(scope: StoreScopeNode, node: AnyState): boolean
-    run<Result>(
-        source: ExternalOperationFailure["source"],
-        operation: () => Result,
-        rollback?: () => void,
-    ): Result
+    cleanup<Result>(operation: () => Result): Result
     phase(phase: ExternalOperationPhase): void
     failure(
         cause: unknown,
@@ -129,7 +143,6 @@ export interface ExternalTreePlane {
     settleLifecycle(): boolean
     startup(): void
     readonly dormantPull: boolean
-    readonly changedPull: boolean
     retainRoot(scope: StoreScopeNode, node: AnyState): void
     releaseRoot(scope: StoreScopeNode, node: AnyState): void
     reconcile(scope: StoreScopeNode, node: AnyState): void
@@ -154,16 +167,17 @@ export interface ExternalTreePlane {
         scope: StoreScopeNode,
         node: AnyState,
         error: unknown,
-    ): void
-    rethrowSelectorFault(
+    ): boolean
+    skipSelectorRead(
         scope: StoreScopeNode,
         node: AnyState,
         session: SelectorEvaluationSession<AnyState>,
-    ): void
+    ): boolean
 }
 
 export interface ExternalRuntime {
     readonly bounds: ExternalBounds
+    guard(error: unknown): void
     createTree(host: ExternalTreeHost): ExternalTreePlane
     read(
         draft: TreeDraft,
@@ -175,6 +189,7 @@ export interface ExternalRuntime {
     fail(
         failures: readonly ExternalOperationFailure[],
         preserveMetadata?: boolean,
+        internal?: readonly boolean[],
     ): never
 }
 

@@ -1,4 +1,8 @@
-import { ExternalOperationPhase } from "./external-types"
+import {
+    ExternalOperationPhase,
+    HostOperationKind,
+    HostOperationCursor,
+} from "./external-types"
 import { StoreTreeCounterId } from "./counter-ids"
 import type {
     SelectorDefinition,
@@ -40,6 +44,7 @@ import {
     makeStateHandle,
     registerRuntimeStateHandle,
     rejectGuardedSelectorRead,
+    sameOutcome,
     runGuardedCallback,
     runLazyInitializer,
     runSelectorActivity,
@@ -49,6 +54,7 @@ import {
     type AnyAtom,
     type AnyState,
     type AtomDefinition,
+    type ControlFaultSession,
     type CollectionCommitPlan,
     type CollectionMutationKind,
     type DefinitionState,
@@ -391,6 +397,44 @@ export const assertDefinitionState = (
     return undefined
 }
 
+class RetainedFamilyAtoms extends Set<AnyAtom> {
+    release(coordinator: StoreScopeCoordinator): void {
+        coordinator.recordCounter(
+            StoreTreeCounterId.familyOwnerReleases,
+            this.size,
+        )
+    }
+}
+
+// Family construction installs this optional policy. Ordinary stores retain
+// only the dispatch; a family Atom still has exactly the same scope ownership.
+class ReacquirableAtoms extends WeakSet<object> {
+    apply(scope: StoreScopeNode, { atom, kind }: AtomIntent): void {
+        let retained = scope[REACQUIRABLE_ATOMS]
+        if (kind === "set") {
+            if (!this.has(atom)) return
+            if (retained === undefined) {
+                retained = scope[REACQUIRABLE_ATOMS] = new RetainedFamilyAtoms()
+                scope.coordinator.recordCounter(
+                    StoreTreeCounterId.familyOwnerRetentionSetsCreated,
+                )
+            }
+            const before = retained.size
+            retained.add(atom)
+            if (retained.size !== before)
+                scope.coordinator.recordCounter(
+                    StoreTreeCounterId.familyOwnerRetains,
+                )
+        } else {
+            if (retained?.delete(atom))
+                scope.coordinator.recordCounter(
+                    StoreTreeCounterId.familyOwnerReleases,
+                )
+            if (retained?.size === 0) scope[REACQUIRABLE_ATOMS] = undefined
+        }
+    }
+}
+
 /** @internal Marks successful family members and only their Atoms as reacquirable. */
 export const markReacquirableDefinitionState = (
     domain: DefinitionDomain,
@@ -404,7 +448,7 @@ export const markReacquirableDefinitionState = (
     if (!records.atoms.has(state)) return
     const reacquirable =
         records[REACQUIRABLE_ATOMS] ??
-        (records[REACQUIRABLE_ATOMS] = new WeakSet())
+        (records[REACQUIRABLE_ATOMS] = new ReacquirableAtoms())
     reacquirable.add(state)
 }
 
@@ -515,21 +559,6 @@ const readCollectionValue = (
     const outcome = kernel.read(draft, scope, node)
     if (outcome.kind !== "value") throw outcome.error
     return outcome.value
-}
-
-const sameAtomOutcome = (
-    previous: DraftAtomOutcome,
-    next: DraftAtomOutcome,
-): boolean => {
-    if (previous.kind !== next.kind) return false
-    if (previous.kind === "value" && next.kind === "value") {
-        return Object.is(previous.value, next.value)
-    }
-    return (
-        previous.kind !== "value" &&
-        next.kind !== "value" &&
-        Object.is(previous.error, next.error)
-    )
 }
 
 const PROPAGATION_QUEUED = 1
@@ -689,6 +718,10 @@ class CommittedStoreTreeHost
 {
     #fallbackRecords = new WeakMap<AnyAtom, DraftAtomOutcome>()
     #external: ExternalTreePlane | undefined
+    // Primitive context exists before optional capabilities can be installed by
+    // user code. No plane, callback, or operation record is allocated otherwise.
+    #operationCursor: number | undefined
+    #operationEpoch!: number
     subscriberReading = false
     readonly #rootScope: StoreScopeNode
     #nextToken = 1
@@ -701,7 +734,12 @@ class CommittedStoreTreeHost
     #propagationStatuses:
         | Map<StoreScopeNode, Map<AnySelector, number>>
         | undefined
-    #propagationControlFault: unknown | undefined
+    #propagationControlFault:
+        | Extract<
+              ServedSelectorOutcome<OutcomeToken>["outcome"],
+              { kind: "control-error" }
+          >[]
+        | undefined
     #subscriptionTargets:
         | Map<StoreScopeNode, Map<AnyState, SubscriptionTarget>>
         | undefined
@@ -778,54 +816,93 @@ class CommittedStoreTreeHost
         if (ownerStatus === "invalid") {
             throw new TypeError("StoreTree.get requires a valid State")
         }
-        if (subscriberSession === undefined) {
-            const served =
-                this.#domain.externalRuntime === undefined
-                    ? scope.serveKnownLocal(node, session)
-                    : this.#externalPlane().get(scope, node, session)
-            if (served.outcome.kind !== "value") throw served.outcome.error
-            return served.outcome.value as Value
+        const served =
+            (subscriberSession === undefined &&
+            this.#domain.externalRuntime === undefined
+                ? scope.getMaterializedServedOutcome(node)
+                : undefined) ??
+            this.#read(scope, node, session, subscriberSession)
+        if (served.outcome.kind !== "value") {
+            if (served.outcome.kind === "control-error")
+                subscriberSession?.latchControlFault(served.outcome.error)
+            throw served.outcome.error
         }
-        this.subscriberReading = true
+        return served.outcome.value as Value
+    }
+
+    #read(
+        scope: StoreScopeNode,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+        subscriberSession: ControlFaultSession | undefined,
+    ): ServedSelectorOutcome<OutcomeToken> {
+        const outer =
+            subscriberSession === undefined &&
+            !this.#external?.current(scope, node) &&
+            this.#beginOperation(HostOperationKind.read)
+        let served!: ServedSelectorOutcome<OutcomeToken>
+        this.subscriberReading = subscriberSession !== undefined
         try {
-            const served = scope.serveKnownLocal(node, session)
-            if (served.outcome.kind !== "value") {
-                if (served.outcome.kind === "control-error") {
-                    subscriberSession.latchControlFault(served.outcome.error)
-                }
-                throw served.outcome.error
-            }
-            return served.outcome.value as Value
+            served =
+                this.subscriberReading || this.#external === undefined
+                    ? scope.serveKnownLocal(node, session)
+                    : this.#external.observe(scope, node, session)
         } catch (error) {
-            const controlFault = session.getControlFault()
-            if (controlFault.kind === "fault") {
-                subscriberSession.latchControlFault(controlFault.error)
-            }
+            const fault = session.getControlFault()
+            if (fault.kind === "fault")
+                subscriberSession?.latchControlFault(fault.error)
+            if (outer) this.#external?.failure(error)
             throw error
         } finally {
             this.subscriberReading = false
+            if (outer) {
+                this.#operationCursor = undefined
+                this.#external?.finish()
+            }
         }
+        return (
+            (outer ? this.#external?.installed(scope, node) : undefined) ??
+            served
+        )
     }
 
-    #externalPlane(): ExternalTreePlane {
-        return (this.#external ??=
-            this.#domain.externalRuntime!.createTree(this))
+    #beginOperation(kind: HostOperationKind): boolean {
+        if (this.#operationCursor || this.#external?.idle === false)
+            return false
+        this.#operationCursor = kind
+        this.#operationEpoch = this.sourceEpoch
+        this.external
+        return true
+    }
+    #phase(phase: ExternalOperationPhase): void {
+        if (this.#operationCursor)
+            this.#operationCursor =
+                ((phase + 1) << HostOperationCursor.phaseShift) |
+                (this.#operationCursor & HostOperationCursor.kindMask)
+        this.#external?.phase(phase)
+    }
+    get external(): ExternalTreePlane | undefined {
+        const runtime = this.#domain.externalRuntime
+        if (runtime === undefined) return undefined
+        const plane = (this.#external ??= runtime.createTree(this))
+        if (plane.idle && this.#operationCursor) {
+            plane.beginHost(
+                this.#operationCursor,
+                this.#operationEpoch,
+                this.#propagationControlFault,
+            )
+            this.#propagationControlFault = undefined
+        }
+        return plane
     }
     hasSubscription(scope: StoreScopeNode, node: AnyState): boolean {
         return this.#subscriptionTargets?.get(scope)?.has(node) === true
-    }
-
-    get external(): ExternalTreePlane | undefined {
-        return this.#domain.externalRuntime === undefined
-            ? undefined
-            : this.#externalPlane()
     }
 
     sub<Value>(
         scope: StoreScopeNode,
         state: State<Value>,
         callback: () => void,
-        admitted?: (registration: SubscriptionRegistration) => void,
     ): () => void {
         const node = state as unknown as AnyState
         let session: SelectorEvaluationSession<AnyState> | undefined
@@ -836,8 +913,7 @@ class CommittedStoreTreeHost
                   node,
                   (session = new SelectorEvaluationSession<AnyState>()),
               )
-        assertStoreOperationAllowed(this.#domain, "StoreTree.sub")
-        this.#assertScopeLive(scope)
+        this.#assertScopeLive(scope, "StoreTree.sub")
         if (
             ownerStatus === "invalid" ||
             (!this.#domain.atoms.has(node) &&
@@ -850,89 +926,101 @@ class CommittedStoreTreeHost
         if (typeof callback !== "function") {
             throw new TypeError("StoreTree.sub requires a callback function")
         }
-        if (
-            this.#domain.externalRuntime !== undefined &&
-            this.#externalPlane().idle
-        )
-            return this.#external!.subscribe(admitted =>
-                this.sub(scope, state, callback, admitted),
-            )
+        const current = scope.getMaterializedServedOutcome(node)
+        const outer =
+            (current === undefined ||
+                this.#domain.externalRuntime !== undefined) &&
+            this.#beginOperation(HostOperationKind.subscribe)
+        try {
+            const served =
+                this.#external === undefined
+                    ? (current ??
+                      scope.serveKnownLocal(
+                          node,
+                          session ?? new SelectorEvaluationSession<AnyState>(),
+                      ))
+                    : this.#external.observe(
+                          scope,
+                          node,
+                          session ?? new SelectorEvaluationSession<AnyState>(),
+                      )
+            if (served.outcome.kind === "control-error") {
+                throw served.outcome.error
+            }
 
-        const served =
-            this.#external === undefined
-                ? (scope.getMaterializedServedOutcome(node) ??
-                  scope.serveKnownLocal(
-                      node,
-                      session ?? new SelectorEvaluationSession<AnyState>(),
-                  ))
-                : this.#external.observe(
-                      scope,
-                      node,
-                      session ?? new SelectorEvaluationSession<AnyState>(),
-                  )
-        if (served.outcome.kind === "control-error") {
-            throw served.outcome.error
-        }
-
-        let targets = this.#subscriptionTargets
-        if (targets === undefined) {
-            targets = new Map()
-            this.#subscriptionTargets = targets
+            let targets = this.#subscriptionTargets
+            if (targets === undefined) {
+                targets = new Map()
+                this.#subscriptionTargets = targets
+                if (this.instrumented) {
+                    this.recordCounter(
+                        StoreTreeCounterId.subscriptionIndexMapsCreated,
+                    )
+                }
+            }
+            let byState = targets.get(scope)
+            if (byState === undefined) {
+                byState = new Map()
+                targets.set(scope, byState)
+                if (this.instrumented) {
+                    this.recordCounter(
+                        StoreTreeCounterId.subscriptionIndexMapsCreated,
+                    )
+                    this.recordCounter(
+                        StoreTreeCounterId.activeSubscriptionScopes,
+                    )
+                }
+            }
+            let target = byState.get(node)
+            if (target === undefined) {
+                target = {
+                    host: this,
+                    scope,
+                    state: node,
+                    head: undefined,
+                    tail: undefined,
+                    reachedEpoch: 0,
+                }
+                byState.set(node, target)
+                if (this.instrumented) {
+                    this.recordCounter(
+                        StoreTreeCounterId.subscriptionTargetsCreated,
+                    )
+                    this.recordCounter(
+                        StoreTreeCounterId.activeSubscriptionTargets,
+                    )
+                }
+            }
+            const registration: SubscriptionRegistration = {
+                callback: callback as SubscriberCallback,
+                target,
+                previous: target.tail,
+                next: undefined,
+            }
+            if (target.tail === undefined) {
+                target.head = registration
+            } else {
+                target.tail.next = registration
+            }
+            target.tail = registration
             if (this.instrumented) {
+                this.recordCounter(StoreTreeCounterId.subscriptionRegistrations)
+                this.recordCounter(StoreTreeCounterId.activeSubscriptions)
                 this.recordCounter(
-                    StoreTreeCounterId.subscriptionIndexMapsCreated,
+                    StoreTreeCounterId.unsubscribeClosuresCreated,
                 )
             }
-        }
-        let byState = targets.get(scope)
-        if (byState === undefined) {
-            byState = new Map()
-            targets.set(scope, byState)
-            if (this.instrumented) {
-                this.recordCounter(
-                    StoreTreeCounterId.subscriptionIndexMapsCreated,
-                )
-                this.recordCounter(StoreTreeCounterId.activeSubscriptionScopes)
+            this.#external?.admit(registration, served.token)
+            return createUnsubscribe(registration)
+        } catch (error) {
+            if (outer) this.#external?.failure(error)
+            throw error
+        } finally {
+            if (outer) {
+                this.#operationCursor = undefined
+                this.#external?.finish()
             }
         }
-        let target = byState.get(node)
-        if (target === undefined) {
-            target = {
-                host: this,
-                scope,
-                state: node,
-                head: undefined,
-                tail: undefined,
-                reachedEpoch: 0,
-            }
-            byState.set(node, target)
-            if (this.instrumented) {
-                this.recordCounter(
-                    StoreTreeCounterId.subscriptionTargetsCreated,
-                )
-                this.recordCounter(StoreTreeCounterId.activeSubscriptionTargets)
-            }
-        }
-        const registration: SubscriptionRegistration = {
-            callback: callback as SubscriberCallback,
-            target,
-            previous: target.tail,
-            next: undefined,
-        }
-        if (target.tail === undefined) {
-            target.head = registration
-        } else {
-            target.tail.next = registration
-        }
-        target.tail = registration
-        if (this.instrumented) {
-            this.recordCounter(StoreTreeCounterId.subscriptionRegistrations)
-            this.recordCounter(StoreTreeCounterId.activeSubscriptions)
-            this.recordCounter(StoreTreeCounterId.unsubscribeClosuresCreated)
-        }
-        if (this.#external === undefined) return createUnsubscribe(registration)
-        this.#external.admit(registration, served.token, admitted)
-        return createUnsubscribe(registration)
     }
 
     removeSubscription(registration: SubscriptionRegistration): void {
@@ -940,7 +1028,7 @@ class CommittedStoreTreeHost
         if (target === undefined) return
         assertUnsubscribeAllowed(this.#domain)
         if (this.#external?.idle)
-            return this.#external.run("external-cleanup", () =>
+            return this.#external.cleanup(() =>
                 this.removeSubscription(registration),
             )
 
@@ -1007,8 +1095,7 @@ class CommittedStoreTreeHost
                 new SelectorEvaluationSession<AnyState>(),
             )
         }
-        assertStoreOperationAllowed(this.#domain, "StoreTree.scope")
-        this.#assertScopeLive(parent)
+        this.#assertScopeLive(parent, "StoreTree.scope")
 
         if (argumentCount === 0) return this.#createChildScope(parent)
         if (argumentCount !== 1 || typeof id !== "string") {
@@ -1027,9 +1114,7 @@ class CommittedStoreTreeHost
         assertStoreOperationAllowed(this.#domain, "StoreTree.dispose")
         if (scope.status !== "live") return
         if (this.#external?.idle)
-            return this.#external.run("external-cleanup", () =>
-                this.dispose(scope),
-            )
+            return this.#external.cleanup(() => this.dispose(scope))
 
         const postorder: StoreScopeNode[] = []
         const pending: Readonly<{
@@ -1085,51 +1170,47 @@ class CommittedStoreTreeHost
         callback: TransactionCallback<Result>,
         name?: string,
     ): Result {
-        assertStoreOperationAllowed(this.#domain, "StoreTree.txn")
-        this.#assertScopeLive(scope)
+        this.#assertScopeLive(scope, "StoreTree.txn")
         if (
             typeof callback !== "function" ||
             (name !== undefined && typeof name !== "string")
         )
             throw new TypeError("StoreTree.txn requires a callback")
-        if (
-            this.#domain.externalRuntime !== undefined &&
-            this.#externalPlane().idle
-        )
-            return this.#external!.run("owned-mutation", () =>
-                this.txn(scope, callback, name),
-            )
-
-        const draft = this.createDraft()
-        const cursor = createRootTransactionCursor(this, draft, scope)
-        let result: Result
+        const outer = this.#beginOperation(HostOperationKind.mutation)
         try {
-            result = runTransactionActivity(
-                this.#domain,
-                draft.transaction,
-                () =>
-                    (
-                        callback as unknown as (
-                            transaction: typeof cursor,
-                        ) => Result
-                    )(cursor),
-            )
+            const draft = this.createDraft()
+            try {
+                const cursor = createRootTransactionCursor(this, draft, scope)
+                const result = runTransactionActivity(
+                    this.#domain,
+                    draft.transaction,
+                    () =>
+                        (
+                            callback as unknown as (
+                                transaction: typeof cursor,
+                            ) => Result
+                        )(cursor),
+                )
+                draft.close()
+                const resultSession = new SelectorEvaluationSession<AnyState>()
+                runTransactionResultActivity(this.#domain, resultSession, () =>
+                    inspectTransactionCallbackResult(result),
+                )
+                this.#commitDraft(draft)
+                return result
+            } finally {
+                draft.close()
+                draft.release()
+            }
         } catch (error) {
-            draft.close()
-            draft.release()
+            if (outer) this.#external?.failure(error)
             throw error
-        }
-        draft.close()
-        try {
-            const resultSession = new SelectorEvaluationSession<AnyState>()
-            runTransactionResultActivity(this.#domain, resultSession, () =>
-                inspectTransactionCallbackResult(result),
-            )
-            this.#commitDraft(draft)
         } finally {
-            draft.release()
+            if (outer) {
+                this.#operationCursor = undefined
+                this.#external?.finish()
+            }
         }
-        return result
     }
 
     get fallbackRecords(): WeakMap<AnyAtom, DraftAtomOutcome> {
@@ -1220,58 +1301,64 @@ class CommittedStoreTreeHost
         if (invalid) {
             throw new TypeError(`${operation} requires a valid State`)
         }
-        if (
+        const outer =
             draft === undefined &&
-            this.#domain.externalRuntime !== undefined &&
-            this.#externalPlane().idle
-        )
-            return this.#external!.run("owned-mutation", () =>
-                this.mutate(draft, scope, intent, target, input),
-            )
-
-        const ownDraft = draft === undefined
-        const activeDraft = draft ?? this.createDraft()
+            this.#beginOperation(HostOperationKind.mutation)
         try {
-            if (kernel !== undefined) {
-                kernel.stage(activeDraft, scope, intent, node, input, session)
-            } else if (intent === "set") {
-                this.#stageAtomSet(
-                    activeDraft,
-                    scope,
-                    node as AnyAtom,
-                    input,
-                    session,
-                )
-            } else if (intent === "update") {
-                this.#stageAtomUpdate(
-                    activeDraft,
-                    scope,
-                    node as AnyAtom,
-                    input as (current: unknown) => unknown,
-                    session,
-                    operation,
-                )
-            } else {
-                this.#stageAtomReset(
-                    activeDraft,
-                    scope,
-                    node as AnyAtom,
-                    session,
-                )
+            const ownDraft = draft === undefined
+            const activeDraft = draft ?? this.createDraft()
+            try {
+                if (kernel !== undefined) {
+                    kernel.stage(
+                        activeDraft,
+                        scope,
+                        intent,
+                        node,
+                        input,
+                        session,
+                    )
+                } else if (intent === "set") {
+                    this.#stageAtomSet(
+                        activeDraft,
+                        scope,
+                        node as AnyAtom,
+                        input,
+                        session,
+                    )
+                } else if (intent === "update") {
+                    this.#stageAtomUpdate(
+                        activeDraft,
+                        scope,
+                        node as AnyAtom,
+                        input as (current: unknown) => unknown,
+                        session,
+                        operation,
+                    )
+                } else {
+                    this.#stageAtomReset(
+                        activeDraft,
+                        scope,
+                        node as AnyAtom,
+                        session,
+                    )
+                }
+                if (!ownDraft) return
+                activeDraft.close()
+                this.#commitDraft(activeDraft)
+            } finally {
+                if (ownDraft) {
+                    activeDraft.close()
+                    activeDraft.release()
+                }
             }
         } catch (error) {
-            if (ownDraft) {
-                activeDraft.close()
-                activeDraft.release()
-            }
+            if (outer) this.#external?.failure(error)
             throw error
-        }
-        if (!ownDraft) return
-        activeDraft.close()
-        try {
-            this.#commitDraft(activeDraft)
         } finally {
-            activeDraft.release()
+            if (outer) {
+                this.#operationCursor = undefined
+                this.#external?.finish()
+            }
         }
     }
 
@@ -1441,7 +1528,9 @@ class CommittedStoreTreeHost
         throw new InvalidTransactionTargetError()
     }
 
-    #assertScopeLive(scope: StoreScopeNode): void {
+    #assertScopeLive(scope: StoreScopeNode, operation?: string): void {
+        if (operation !== undefined)
+            assertStoreOperationAllowed(this.#domain, operation)
         if (scope.status !== "live") throw new StoreDisposedError()
     }
 
@@ -1757,7 +1846,7 @@ class CommittedStoreTreeHost
     }
 
     #commitDraft(draft: TreeDraft): void {
-        this.#external?.phase(ExternalOperationPhase.preflight)
+        this.#phase(ExternalOperationPhase.preflight)
         let collectionPlan: CollectionCommitPlan | undefined
         if (draft.hasRows) {
             collectionPlan = this.#domain[COLLECTION_KERNEL]?.plan(draft)
@@ -1822,9 +1911,9 @@ class CommittedStoreTreeHost
                 remainingPlan.push(entry)
             })
         }
-        this.#external?.phase(ExternalOperationPhase.instrumenting)
+        this.#phase(ExternalOperationPhase.instrumenting)
         this.#trace?.(1, draft, this.#domain.atoms)
-        this.#external?.phase(ExternalOperationPhase.applying)
+        this.#phase(ExternalOperationPhase.applying)
 
         // Apply every fallback publication and owned source before propagation.
         if (firstPlan !== undefined) {
@@ -1932,7 +2021,7 @@ class CommittedStoreTreeHost
                 this.sourceEpoch += 1
                 this.recordCounter(StoreTreeCounterId.sourceEpoch)
             }
-            this.#external?.phase(ExternalOperationPhase.instrumenting)
+            this.#phase(ExternalOperationPhase.instrumenting)
             try {
                 this.#trace?.(
                     2,
@@ -2000,29 +2089,8 @@ class CommittedStoreTreeHost
         const { intent, scope } = entry
         if (intent.kind === "set") {
             scope.atomOverrides.set(intent.atom, intent.value)
-            if (this.#domain[REACQUIRABLE_ATOMS]?.has(intent.atom)) {
-                let retained = scope[REACQUIRABLE_ATOMS]
-                if (retained === undefined) {
-                    retained = new Set()
-                    scope[REACQUIRABLE_ATOMS] = retained
-                    this.recordCounter(
-                        StoreTreeCounterId.familyOwnerRetentionSetsCreated,
-                    )
-                }
-                const retainedBefore = retained.size
-                retained.add(intent.atom)
-                if (retained.size !== retainedBefore) {
-                    this.recordCounter(StoreTreeCounterId.familyOwnerRetains)
-                }
-            }
-        } else {
-            scope.atomOverrides.delete(intent.atom)
-            const retained = scope[REACQUIRABLE_ATOMS]
-            if (retained?.delete(intent.atom)) {
-                this.recordCounter(StoreTreeCounterId.familyOwnerReleases)
-            }
-            if (retained?.size === 0) scope[REACQUIRABLE_ATOMS] = undefined
-        }
+        } else scope.atomOverrides.delete(intent.atom)
+        this.#domain[REACQUIRABLE_ATOMS]?.apply(scope, intent)
         return entry.ownershipChanged
     }
 
@@ -2049,7 +2117,7 @@ class CommittedStoreTreeHost
             throw new Error("Affected AtomView final outcome is missing")
         }
         this.recordCounter(StoreTreeCounterId.finalResolutionVisits)
-        if (sameAtomOutcome(before, after)) return undefined
+        if (sameOutcome(before, after)) return undefined
         record.scope.updateAtomView(record, after)
         return record
     }
@@ -2070,7 +2138,7 @@ class CommittedStoreTreeHost
                 current.atom,
                 worksets,
             )
-            if (sameAtomOutcome(before, after)) continue
+            if (sameOutcome(before, after)) continue
             markAffected(worksets, current, before)
             const firstChild = pending.length
             current.inheritingChildren.forEach(child => {
@@ -2291,13 +2359,10 @@ class CommittedStoreTreeHost
         if (firstSource !== undefined)
             this.recordCounter(StoreTreeCounterId.propagationSettlements)
         const previousPull = this.#external?.beginPropagation()
-        this.#external?.phase(ExternalOperationPhase.propagating)
+        this.#phase(ExternalOperationPhase.propagating)
+        // The previous settlement clears its workspace in finally, including
+        // failed settlements. Only the active queue is allocated on entry.
         this.#propagationQueue = []
-        this.#propagationStatusScope = undefined
-        this.#propagationStatusSelector = undefined
-        this.#propagationStatusBits = 0
-        this.#propagationStatuses = undefined
-        this.#propagationControlFault = undefined
         this.#postSourceApply = true
         let authoritativeControlFault: unknown | undefined
         try {
@@ -2333,7 +2398,14 @@ class CommittedStoreTreeHost
                 }
             }
         } finally {
-            authoritativeControlFault = this.#propagationControlFault
+            authoritativeControlFault = (
+                this.#propagationControlFault as
+                    | Extract<
+                          ServedSelectorOutcome<OutcomeToken>["outcome"],
+                          { kind: "control-error" }
+                      >[]
+                    | undefined
+            )?.[0]!.error
             this.#propagationControlFault = undefined
             this.#postSourceApply = false
             this.#propagationQueue = undefined
@@ -2444,35 +2516,24 @@ class CommittedStoreTreeHost
                 )
             }
             const session = new SelectorEvaluationSession<AnyState>()
-            let callbackThrew = false
-            let callbackError: unknown
             try {
                 runSubscriberActivity(this.#domain, session, () => {
+                    let inspected: ReturnType<typeof inspectThenable>
                     try {
-                        const returned = callback()
-                        const inspected = inspectThenable(returned)
-                        if (inspected.kind === "thenable") {
+                        inspected = inspectThenable(callback())
+                        if (inspected.kind === "thenable")
                             containThenable(inspected)
-                        } else if (inspected.kind === "inspection-error") {
-                            callbackThrew = true
-                            callbackError = inspected.error
-                        }
                     } catch (thrown) {
-                        callbackThrew = true
-                        callbackError = thrown
-                        const inspected = inspectThenable(thrown)
-                        if (inspected.kind === "thenable") {
-                            containThenable(inspected)
-                        }
+                        const completion = inspectThenable(thrown)
+                        if (completion.kind === "thenable")
+                            containThenable(completion)
+                        throw thrown
                     }
+                    if (inspected.kind === "inspection-error")
+                        throw inspected.error
                 })
-            } catch (controlFault) {
-                callbackThrew = true
-                callbackError = controlFault
-            }
-            if (callbackThrew) {
-                if (subscriberErrors === undefined) subscriberErrors = []
-                subscriberErrors.push(callbackError)
+            } catch (error) {
+                ;(subscriberErrors ??= []).push(error)
                 if (instrumented)
                     this.recordCounter(StoreTreeCounterId.subscriberErrors)
             }
@@ -2523,8 +2584,7 @@ class CommittedStoreTreeHost
         session: SelectorEvaluationSession<AnyState>,
     ): void {
         if (this.#propagationQueue === undefined) return
-        if (this.#external?.dormantPull && !this.#external.changedPull) return
-        this.#external?.rethrowSelectorFault(scope, selector, session)
+        if (this.#external?.skipSelectorRead(scope, selector, session)) return
         this.#settleSelector(scope, selector, session)
     }
 
@@ -2579,8 +2639,7 @@ class CommittedStoreTreeHost
             }
             this.#updatePropagationStatus(scope, selector, PROPAGATION_SETTLED)
         } catch (error) {
-            if (this.#external?.dormantPull) {
-                this.#external.recordSelectorFault(scope, selector, error)
+            if (this.#external?.recordSelectorFault(scope, selector, error)) {
                 this.#updatePropagationStatus(
                     scope,
                     selector,
@@ -2654,9 +2713,9 @@ class CommittedStoreTreeHost
             { kind: "control-error" }
         >,
     ): void {
-        if (this.#external?.operating) {
+        if (this.#external?.idle === false) {
             this.#external.failure(outcome.error, "settling", outcome.origin)
-        } else this.#propagationControlFault ??= outcome.error
+        } else (this.#propagationControlFault ??= []).push(outcome)
     }
 
     #stageAlreadyInspectedAtomSet(
