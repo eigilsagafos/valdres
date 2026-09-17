@@ -146,6 +146,17 @@ entry. Phases are `admitting`, `sampling`, `settling`, `notifying`, `cleanup`,
 and `instrumenting`; sources additionally include `external-cleanup`. Directly
 thrown lifecycle/work-limit errors carry the same operation metadata.
 
+Direct control-error escape belongs to the current runtime occurrence. Throwing
+an application-created public error, or rethrowing a runtime error captured in a
+previous setup/cleanup callback, produces an operation wrapper with that exact
+object as its cause. Catching a nonsticky capability guard still handles it.
+
+The `ExternalSourceOperationError` constructor requires a readonly nonempty
+failure tuple. JavaScript callers passing an empty list receive a `TypeError`
+with message `ExternalSourceOperationError requires at least one failure`.
+The constructor preserves input order and freezes copied metadata, leaving the
+application's cause objects unchanged.
+
 ## Inspection
 
 `valdres/inspect` records opaque `external` references, diagnostic names, and

@@ -1,5 +1,5 @@
 ---
-"valdres": patch
+"valdres": minor
 "valdres-react": patch
 ---
 

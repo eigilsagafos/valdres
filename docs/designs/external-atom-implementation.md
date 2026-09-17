@@ -159,7 +159,7 @@ reconciled catalogs and guards together.
 
 ## Engineering review
 
-Scope is accepted as specified in the implementation brief: the five-slice
+Scope is accepted as specified in the implementation brief: the historical five-slice
 implementation already separates the necessary cross-cutting work. Reducing
 away lifecycle or hydration would violate the explicitly requested primitive.
 
@@ -241,7 +241,8 @@ This supports the adapter seam; repository contracts remain semantic authority.
 | E1 | `feat/external-atom-pull` | E0 tip | unexported pull, capture, hydration, family internals |
 | E2 | `feat/external-atom-lifecycle` | E1 tip | sparse retain plane, provisional ownership |
 | E3 | `feat/external-atom-settlement` | E2 tip | attach/drain/cleanup, quarantine, finite bounds |
-| E4 | `feat/external-atom-public` | E3 tip | approved contracts, root API, React/packed/GC/perf/docs/changeset |
+| E3.5 | `feat/external-atom-isolation` | E3 tip | occurrence ledger, notification contracts, optional runtime extraction |
+| E4 | `feat/external-atom-public` | E3.5 tip | approved contracts, root API, React/packed/GC/perf/docs/changeset |
 
 The rows above are implementation slices, not separate landing PRs. The final
 landing topology is exactly two PRs: `implement-external-atom` → `main`, followed
@@ -251,13 +252,15 @@ together in the implementation PR. No PR is opened, pushed, or merged by this la
 Sequential implementation ownership of the StoreTree kernel. Independent agents
 review contracts and recovery/test evidence only; they do not edit the kernel.
 
-At this model-only checkpoint, the later runtime tasks belong to the second PR.
+The checklist reflects completed implementation work; runtime tasks belong to the
+second PR. The repair certification and its disclosed baseline exceptions are
+recorded below.
 
 - [x] T1: implement independent external model and replayable trace protocol.
-- [ ] T2: implement pull/capture/hydration using existing host seams.
-- [ ] T3: implement sparse lifecycle and provisional registration.
-- [ ] T4: implement outer settlement ledger and bounded delivery.
-- [ ] T5: apply approved public decisions and certify all package/React gates.
+- [x] T2: implement pull/capture/hydration using existing host seams.
+- [x] T3: implement sparse lifecycle and provisional registration.
+- [x] T4: implement outer settlement ledger and bounded delivery.
+- [x] T5: apply approved public decisions and certify all package/React gates.
 
 ## NOT in scope
 
@@ -308,7 +311,7 @@ evidence statuses remain unchanged.
 
 ## E1 internal checkpoint
 
-Branch: `feat/external-atom-pull`, stacked on E0 `ee32f87a`. The constructor is
+Branch: `feat/external-atom-pull`, restacked on the repaired E0 tip `b91b03ed` (original model `ee32f87a`). The constructor is
 an internal helper only; root exports, public contract evidence, family admission,
 versions, changelogs, and changesets remain unchanged.
 
@@ -371,7 +374,7 @@ cleanup, final error metadata, and public family widening remain later slices.
 
 ## E2 internal checkpoint
 
-Branch `feat/external-atom-lifecycle`, based on E1 `d4586dc5`. The optional
+Branch `feat/external-atom-lifecycle`, based on E1 `8fed5dbb`. The optional
 host-owned plane now keeps separate weak scope/state retain records. Root
 ownership belongs to each subscribed target; incoming lifecycle edges count
 shared branches, whose dependencies are traversed only on 0/1 transitions.
@@ -397,7 +400,7 @@ E1 package certification and Gate 0 public approval remain open.
 
 ## E3 internal checkpoint
 
-Branch `feat/external-atom-settlement`, based on E2 `6d9aab71`. The same
+Branch `feat/external-atom-settlement`, based on E2 `dbf312e7`. The same
 host-owned optional plane now owns generation tickets, ordered dirty projections,
 deferred lifecycle acquisition/release, and an outer operation phase/failure
 ledger. No second evaluator or commit pipeline was added. Source outcomes enter
@@ -494,7 +497,7 @@ until Gate 0 approval and the relevant slice's certification are both complete.
 
 ## E3.5 repair and extraction (approved execution order)
 
-Branch `feat/external-atom-isolation`, based on E3 `c378d622`. The owner explicitly
+Branch `feat/external-atom-isolation`, based on E3 `066b439c`. The owner explicitly
 requires this repair commit to pass before starting public E4. The ordinary
 adapter gzip ceiling remains 17,249 bytes; `coreRetainingGzipAllowance` stays 77.
 
@@ -593,7 +596,7 @@ consumers, docs, and one changeset. No partial public implementation PR is opene
 
 ## E4 public certification
 
-E4 is based on E3.5 commit `3547fb176572594c77c5b6a9db3d627ce0828168`
+E4 is based on E3.5 commit `164abf00`
 on `feat/external-atom-public`. The public surface now includes the approved
 factory, exactly three named ExternalAtom types, and seven named error classes.
 Family admission accepts same-domain definitions constructed in the active
@@ -723,8 +726,8 @@ Exact commands/logs: `e4-verify-final.log` (steps 1–12),
 `.context/external-atom/baseline/test-v1-beta.log`. Invoke commands through
 `npm exec --yes --package=node@24.16.0 -- bun run ...` to use CI's Node pin.
 
-The local stack preserves E0 `ee32f87a`, E1 `d4586dc5`, E2 `6d9aab71`,
-E3 `c378d622`, E3.5 `3547fb17`, then the E4 commit containing this checkpoint.
+The local stack preserves E0 `ee32f87a` plus model repair `b91b03ed`, E1 `8fed5dbb`, E2 `dbf312e7`,
+E3 `066b439c`, E3.5 `164abf00`, then E4 `35630596` containing this checkpoint.
 Prepare exactly two PRs: model branch `implement-external-atom` → `main`, then
 `feat/external-atom-public` → `implement-external-atom`. Merge the model first
 and retarget the implementation to main. E1–E4 are reviewable commits inside the
@@ -746,3 +749,195 @@ represented as cross-provider coverage. Final local CI results and the reproduce
 the certification checkpoint above.
 
 NO UNRESOLVED DECISIONS
+
+
+## Pre-PR review repairs (2026-09-17)
+
+This checkpoint supersedes the historical E4 certification above. The final
+landing topology remains exactly two PRs; no PR is opened or pushed in this
+repair lane. Historical E0–E4 commits remain reviewable slices inside that stack.
+
+The model branch now includes `b91b03ed`, which separates source identities from
+invalid-snapshot, non-convergence, control, and model-error identities. All tags
+are deterministic JSON values. Three collision regressions failed on the old
+model; the repaired independent model passes 88 tests / 11,168 assertions.
+
+The host now carries a primitive operation cursor and starting epoch before
+optional capabilities exist. A plane created inside a family/selector adopts
+that exact context, all prior control occurrences, and one read memo. It finishes
+at the original operation boundary. Cached ordinary reads/subscriptions bypass
+that cursor; successful ordinary operations allocate no external records.
+Control outcomes carry their evaluator origin before any plane is installed.
+Thirteen fresh-domain scenarios cover admission, catch-up, propagation, equal
+values with changed dependencies, rollback, stale invalidators, transactions,
+read memoization, phase reset, and one/multiple prior control failures.
+
+Lifecycle passthrough now uses a private callback-extent occurrence map and
+ledger classifications. Nested source accessors, factories, and encoders forward
+real guards; a public constructor or replaying an old guard cannot acquire this
+provenance. Nonsticky guards remain catchable. The constructor accepts a readonly
+nonempty failure tuple and deliberately rejects an empty JavaScript list with
+the catalogued TypeError. Thirty-five new provenance/constructor tests and a
+packed declaration probe certify this boundary.
+
+The ExternalAtom GC helper uses actual timer tasks between collections, and each
+of its three unchanged scenarios now runs in a bounded child process. The parent
+requires successful exit and a sentinel emitted after every assertion completes.
+An initial timer-only repair passed the mixed suite (321 / 44,465 assertions),
+but the complete host suite exposed conservative engine roots. Heap snapshots
+found no source/invalidator/provenance retaining path; scheduling, explicit local
+release, JIT disabling, and snapshot experiments were not reliably sufficient.
+Process isolation removes unrelated test allocations from this measurement.
+All 20 attempts, live-ownership checks, and zero-survivor assertions remain; no
+production workaround or snapshot hook is retained. The repair audit includes
+the passing isolated suites and a deliberate retained-owner mutation that the
+same assertions reject.
+
+### Reviewed repair size decision
+
+Ordinary baselines, their 2% tolerance, and `coreRetainingGzipAllowance: 77` stay
+unchanged. The combined ordinary fixture is 17,345 gzip bytes against 17,346.
+Ordinary Atom/family/adapter fixtures still exclude the projection plane.
+
+The optional family registry now owns its existing Atom retention policy; scope
+ownership and counters are unchanged. Its scope field is declared rather than
+initialized on every scope, so definition-only consumers no longer retain that
+class through a computed field initializer. Shared outcome comparison and guard
+completion remove duplicated code, while host-only policy delegates through the
+optional plane. Independent read-only review found no new public surface,
+ordinary operation allocations, ownership edges, or counter changes.
+
+Feature-only budgets are deliberately recertified for the repairs below, not
+used to relax ordinary limits. The dedicated ExternalAtom fixture falls from
+86,234 to 85,834 raw bytes and rises from 22,888 to 23,133 gzip bytes (+245, 1.07%).
+The smaller raw program compresses differently after coherent host adoption and
+occurrence provenance replace class-based classification and recursive wrappers.
+The complete build/package totals additionally include the nonempty constructor
+and optional internal seam declaration changes. These deltas received independent
+architecture review; the review found no leaked projection dependency or second
+kernel. The exact measured table and final certification follow below.
+
+| Feature artifact | Previous raw / gzip | Repaired raw / gzip |
+| --- | ---: | ---: |
+| dist | 358,936 / 105,106 | 358,962 / 105,858 |
+| packed | 505,848 / 133,310 | 506,987 / 134,233 |
+| collection | 99,701 / 27,727 | 99,026 / 27,730 |
+| all-exports | 124,076 / 34,679 | 124,042 / 35,010 |
+| inspect | 102,745 / 27,344 | 102,070 / 27,317 |
+| query | 105,462 / 29,560 | 104,787 / 29,548 |
+| query-development | 105,462 / 29,560 | 104,787 / 29,548 |
+| external-atom | 86,234 / 22,888 | 85,834 / 23,133 |
+
+Final ordinary fixtures are Atom **6,357 / 2,302**, combined Atom/Selector/Store
+**65,105 / 17,345**, family **13,539 / 4,448**, adapter **8,003 / 2,704**, and
+equality **7,231 / 2,210** (raw / gzip). All isolation assertions pass.
+The packed-consumer shadow tarball measures **498,503 / 130,228** because that
+existing staging flow copies only dist and the manifest; the full package gate
+also includes the unchanged 7,414-byte README and 1,070-byte license and verifies
+the larger full-artifact budget shown above.
+
+Changeset classification is core **minor**, React **patch**. No package version,
+beta number, changelog, or release commit is introduced.
+
+### Controlled performance after repair
+
+The source was frozen before measurement. Separate baseline/candidate callers
+compare exact main `270f00e46f26aee66a724fcf6d6fdda09ddcf133` with the repaired
+runtime, using warmup and nine samples with alternating order. Raw samples are
+retained under `.context/external-atom/repair/*-certified.jsonl`.
+
+| Ordinary lane | Bun ratio | Node 24.16 ratio |
+| --- | ---: | ---: |
+| Atom read | 0.857 | 0.776 |
+| Selector read | 0.876 | 0.645 |
+| Write + notify | 0.825 controlled | 1.007 |
+| Subscribe/unsubscribe, 400,000 operations | 1.010 | 1.033 |
+| Transaction | 0.973 controlled | 1.095 |
+
+The short Bun write lane measured 1.143, and the short Node subscription lane
+measured 1.145. These results remain in the logs. Longer subscription runs and a
+200,000-operation write lane with collection before each timed run did not
+reproduce a material regression. The Bun transaction control uses 100,000
+operations with the same collection discipline. No results were averaged away
+and no production code was changed to chase these final timings.
+
+Build the preserved `.context/external-atom/e1-performance-monomorphic.ts`,
+`e35-subscribe-performance.ts`, `e4-transaction-gc-controlled.ts`, and
+`repair-write-gc-controlled.ts` with `bun build --target=node --outfile=...`.
+Run the resulting files with Bun and, for the ordinary/long-subscription lanes,
+`npm exec --yes --package=node@24.16.0 -- node ...`. Work-counter and ownership
+tests remain the algorithmic gate, alongside these timing comparisons.
+
+### Repaired stack
+
+The model branch ends at `b91b03ed5d69f37518870a0720b013d4e00245e6` after E0
+`ee32f87a2a5782e03688d2e9e6b446e8deb849f0`. The implementation retains restacked
+E1 `8fed5dbbe0a993716c569a8a38f048a0a52d6408`,
+E2 `dbf312e729449ea680e1e6647ad9a13d20266185`,
+E3 `066b439cb672dd683bce2742701532d33054f386`,
+E3.5 `164abf00c84a39410559be1d4ff921ba1eec1867`, and
+E4 `35630596945e9d7c4d9eda9f59692ba0c1f717c7`.
+Runtime/API repair `ee3283636abee5396b0db4f7aa580d5bd88fec24` follows E4; this
+documentation/certification checkpoint follows as a separate commit. The model
+remains independently landable and contains no production/package implementation.
+The two PR heads and bases remain exactly as specified above.
+
+### Final repair certification
+
+- Independent model: **88 pass / 11,168 assertions**, with source-only typecheck
+  and matching 20,000-command Bun/Node portability counters.
+- Evaluator/oracle: **118 pass / 10,236 assertions**.
+- Complete StoreTree package: **346 pass / 212,564 parent assertions**, twice,
+  plus nine unchanged GC assertions inside bounded children. Typechecking passes.
+- Final complete core runtime: **833 pass, 1 reproduced baseline failure,
+  398,948 parent assertions**, plus the nine child GC assertions. Fresh-domain
+  public admission and all randomized differential/retention cases pass.
+  Declaration emission passes in 3,482.84ms; its earlier 5,052.56ms timeout under
+  concurrent diagnostics is retained in the preceding run's log.
+- Full React: **74 pass / 2,154 assertions**. Core build/export tests:
+  **7 pass / 33 assertions**. Contract/ledger guards: **62 / 527**.
+- Release infrastructure: **311 pass**. Build, declarations, public types,
+  no-unused/suppression gates, generated READMEs, and core-load checks pass.
+- Package self-tests, publint, ATTW, declaration consumers, Node/Bun runtime
+  consumers, esbuild/Vite/webpack, and ordinary/feature size guards pass.
+  Packed standalone ExternalAtom and React 18/19 hydration/StrictMode/rebind
+  consumers pass. Three builds reproduce SHA256
+  `1224bc17c996fa48782ce9fe09890b17a62c2fa90a417b8ca257c998893d3ae5`.
+
+The broad workflow was invoked with
+`npm exec --yes --package=node@24.16.0 -- bun run verify` and explicit resumptions
+`--from=3`, `--from=4`, `--from=12`, `--from=16`, and `--from=17`. Logs are
+`.context/external-atom/repair/verify-certified{,-retry,-resume4,-resume12,-resume17}.log`
+and `verify-core-final.log`. The successful standalone contract gate is
+`contracts-certified.log`; final package/packed evidence is `package-certified.log`
+and `packed-certified-final.log`. Core build and React JUnit reports are freshly
+generated after the runtime command's baseline failure short-circuits those
+commands. No failed run is relabeled as a fully green workflow.
+
+The final `--from=17` run passes steps 17–19 (JUnit coverage, package self-test,
+and packed matrix). One intervening core-build attempt reports existing relative
+modules as missing in Bun's resolver; the unchanged fresh-process retry passes
+7/7, and both subsequent package builds pass. Its failed log is
+`core-build-junit-final.log`; successful logs are `core-build-junit-retry.log`
+and `react-junit-final.log`. No source or test change was made for that retry.
+
+The exact current `origin/main` remains
+`270f00e46f26aee66a724fcf6d6fdda09ddcf133` after a final fetch. In its clean
+comparison worktree, `bun test --reporter=dots test/selector-kernel-tournament`
+reproduces the historical-bytes 5-second timeout, predecessor 30-second timeout,
+and parent 110-second timeout (`repair/main-tournament.log`). The repaired final
+run has the same three timeout boundaries. No tournament code or limit changed.
+
+The archived mutation-scan portion of the contract command also timed out in two
+workflow attempts. The standalone repaired contract command passes. Running that
+same command on clean current main reproduces the five-second timeout boundary
+in the same archived suite, with different cases failing (bracket access/generic
+receiver, while the candidate's destructured-receiver case passes there in
+4,828.92ms). This is recorded precisely in `repair/main-contracts.log`; it is not
+claimed to be identical failed fixture names. No frozen source, inventory, digest,
+assertion, or timeout was relaxed.
+
+The comprehensive local handoff, full commit hashes, regression inventory, raw
+command results, and final cleanliness checks are in
+`.context/external-atom/repair-handoff.md`. No branch was pushed, PR opened or
+updated, merge performed, or package version changed by this repair.
