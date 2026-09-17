@@ -15,12 +15,11 @@ import type {
 } from "./types"
 
 /** Definition kinds a family factory may construct or return. */
-export type DefinitionState = Atom<any> | Selector<any>
+export type DefinitionState = Atom<any> | Selector<any> | ExternalAtom<any>
 /** Internal dispatch admits every public readonly State kind, while family
- * definition admission deliberately remains Atom-or-Selector. */
+ * definition admission deliberately excludes collection States. */
 export type AnyState =
     | DefinitionState
-    | ExternalAtom<any>
     | CollectionRow<any, any>
     | Collection<any, any, any, any>
 export type AnyAtom = Atom<any>
@@ -226,11 +225,14 @@ export class SubscriberNotificationError extends ImmutableRuntimeError {
     readonly causes: readonly unknown[]
     readonly committed = true
     readonly phase = "notifying"
-    readonly source: ExternalOperationFailure["source"]
+    readonly source: Exclude<
+        ExternalOperationFailure["source"],
+        "external-cleanup"
+    >
 
     constructor(
         causes: readonly unknown[],
-        source: ExternalOperationFailure["source"] = "owned-mutation",
+        source: SubscriberNotificationError["source"] = "owned-mutation",
     ) {
         super("One or more Store subscribers threw during notification")
         this.name = "SubscriberNotificationError"

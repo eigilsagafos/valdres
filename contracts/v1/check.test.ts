@@ -544,7 +544,12 @@ describe("v1 contract manifest validation", () => {
 
     test("manifest and reviewed target IDs must match exactly", () => {
         const missingApiManifest = mutableSet()
-        missingApiManifest.publicManifest.entries.pop()
+        missingApiManifest.publicManifest.entries.splice(
+            missingApiManifest.publicManifest.entries.findIndex(
+                (entry: any) => entry.id === "core.external-atom",
+            ),
+            1,
+        )
         expect(() => validateContractSet(missingApiManifest)).toThrow(
             /public API target catalog inventory differs|has no public manifest entry/,
         )
@@ -1169,6 +1174,20 @@ describe("v1 contract manifest validation", () => {
         const set = mutableSet()
         const expected = new Map<string, readonly [string, string]>([
             [
+                "core.invalid-synchronous-external-snapshot-error",
+                [
+                    "InvalidSynchronousExternalSnapshotError",
+                    "VALDRES_INVALID_SYNCHRONOUS_EXTERNAL_SNAPSHOT",
+                ],
+            ],
+            [
+                "core.external-source-operation-error",
+                [
+                    "ExternalSourceOperationError",
+                    "VALDRES_EXTERNAL_SOURCE_OPERATION",
+                ],
+            ],
+            [
                 "core.callback-capability-error",
                 ["CallbackCapabilityError", "VALDRES_CALLBACK_CAPABILITY"],
             ],
@@ -1297,6 +1316,219 @@ describe("v1 contract manifest validation", () => {
             "VALDRES_NOT_AN_ERROR"
         expect(() => validateContractSet(codeOnNonError)).toThrow(
             /core\.atom has an error code but is not an error entry/,
+        )
+    })
+
+    test("freezes exactly the three approved ExternalAtom type exports", () => {
+        const set = mutableSet()
+        const expected = new Map([
+            ["core.type.external-source", "ExternalSource"],
+            ["core.type.external-atom", "ExternalAtom"],
+            ["core.type.external-atom-options", "ExternalAtomOptions"],
+        ])
+        for (const [id, name] of expected) {
+            const entry = findPublicEntry(set, id)
+            expect(entry.kind).toBe("type-export")
+            expect(entry.target).toEqual({
+                package: "valdres",
+                subpath: ".",
+                name,
+                status: "stable",
+            })
+            expect(set.targetSurfaceCatalog.publicApiIds).toContain(id)
+            expect(
+                set.targetSurfaceCatalog.frozenPublicCoordinates.find(
+                    (coordinate: any) => coordinate.id === id,
+                ),
+            ).toEqual({
+                id,
+                kind: "type-export",
+                package: "valdres",
+                subpath: ".",
+                name,
+            })
+        }
+        const externalTypes = set.publicManifest.entries.filter(
+            (entry: any) =>
+                entry.kind === "type-export" &&
+                entry.target.package === "valdres" &&
+                entry.target.subpath === "." &&
+                entry.target.status === "stable" &&
+                entry.target.name.startsWith("External"),
+        )
+        expect(
+            externalTypes.map((entry: any) => entry.target.name).sort(),
+        ).toEqual([...expected.values()].sort())
+
+        const renamed = mutableSet()
+        findPublicEntry(renamed, "core.type.external-source").target.name =
+            "ExternalLifecycle"
+        renamed.targetSurfaceCatalog.frozenPublicCoordinates.find(
+            (coordinate: any) => coordinate.id === "core.type.external-source",
+        ).name = "ExternalLifecycle"
+        expect(() => validateContractSet(renamed)).toThrow(
+            /required standalone spelling|approved ExternalAtom type coordinate/,
+        )
+    })
+
+    test("rejects weakening fresh definitions, captured receivers, or the closed ExternalAtom options", () => {
+        for (const phrase of [
+            "fresh frozen branded definition on every call",
+            "getSnapshot, getServerSnapshot, then subscribe exactly once in that deterministic order",
+            "Preserve inherited-method receivers",
+            "including symbols and non-enumerable keys",
+            "non-null, non-array structural object",
+        ]) {
+            const set = mutableSet()
+            const entry = findPublicEntry(set, "core.external-atom")
+            expect(entry.notes).toContain(phrase)
+            entry.notes = entry.notes.replace(phrase, "implementation-defined")
+            expect(() => validateContractSet(set)).toThrow(
+                /approved ExternalAtom construction/,
+            )
+        }
+    })
+
+    test("freezes direct lifecycle metadata and every failure occurrence in the operation ledger", () => {
+        const cases = [
+            [
+                "core.invalid-external-cleanup-error",
+                "phase admitting and source external-startup",
+            ],
+            [
+                "core.invalid-external-cleanup-error",
+                "phase cleanup and source external-cleanup",
+            ],
+            [
+                "core.external-source-delivery-limit-error",
+                "phase sampling, source external-invalidation, and committed false",
+            ],
+            [
+                "core.external-source-non-convergence-error",
+                "phase sampling, source external-drain, and committed true",
+            ],
+            [
+                "core.external-source-operation-error",
+                "frozen readonly array of frozen { cause, committed, phase, source } records",
+            ],
+            [
+                "core.external-source-operation-error",
+                "never deduplicate by error identity",
+            ],
+            [
+                "core.external-source-operation-error",
+                "Top-level committed, phase, and source mirror failures[0]",
+            ],
+            [
+                "core.external-source-operation-error",
+                "pure notification failures retain SubscriberNotificationError",
+            ],
+        ] as const
+        for (const [id, phrase] of cases) {
+            const set = mutableSet()
+            const entry = findPublicEntry(set, id)
+            expect(entry.contractIds).toContain(
+                "external.frozen-error-metadata",
+            )
+            expect(entry.notes).toContain(phrase)
+            entry.notes = entry.notes.replace(phrase, "implementation-defined")
+            expect(() => validateContractSet(set)).toThrow(
+                /approved ExternalAtom construction, metadata, or occurrence contract/,
+            )
+        }
+    })
+
+    test("external notification metadata preserves the approved five sources and repeated causes", () => {
+        const set = mutableSet()
+        const error = findPublicEntry(set, "core.subscriber-notification-error")
+        expect(error.notes).toContain(
+            "the full notification source set is owned-mutation | external-read | external-startup | external-invalidation | external-drain",
+        )
+        expect(error.notes).toContain(
+            "Pure external notification failures also use SubscriberNotificationError",
+        )
+        expect(error.notes).toContain("The primary occurrence supplies source")
+        expect(error.notes).toContain("without deduplication by error identity")
+        const changed = mutableSet()
+        findPublicEntry(changed, "core.subscriber-notification-error").notes =
+            error.notes.replace(
+                "The primary occurrence supplies source",
+                "The last callback supplies source",
+            )
+        expect(() => validateContractSet(changed)).toThrow(
+            /frozen class, code, cause ledger, or committed notification metadata/,
+        )
+    })
+
+    test("freezes one live/server thenable error and exact-handle missing-server paths", () => {
+        const set = mutableSet()
+        const live = set.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.external-get-snapshot",
+        )
+        const server = set.callbackManifest.entries.find(
+            (entry: any) =>
+                entry.id === "callback.external-get-server-snapshot",
+        )
+        expect(live.thenableRule).toBe(server.thenableRule)
+        expect(live.thenableRule).toContain(
+            "InvalidSynchronousExternalSnapshotError / VALDRES_INVALID_SYNCHRONOUS_EXTERNAL_SNAPSHOT",
+        )
+        expect(live.thenableRule).toContain(
+            "exactly one stateless rejection-containment handler",
+        )
+        server.thenableRule = server.thenableRule.replace(
+            "InvalidSynchronousExternalSnapshotError",
+            "InvalidServerSnapshotError",
+        )
+        expect(() => validateContractSet(set)).toThrow(
+            /must retain outcome error|approved ExternalAtom callback contract/,
+        )
+
+        for (const phrase of [
+            "dependencyPath: readonly State<any>[]",
+            "frozen array of exact local State handles",
+            "requested target -> active dynamic selector reads -> missing ExternalAtom, inclusive",
+            "a direct request yields [external]",
+        ]) {
+            const changed = mutableSet()
+            const entry = findPublicEntry(
+                changed,
+                "core.server-snapshot-unavailable-error",
+            )
+            expect(entry.notes).toContain(phrase)
+            entry.notes = entry.notes.replace(phrase, "implementation-defined")
+            expect(() => validateContractSet(changed)).toThrow(
+                /approved ExternalAtom construction, metadata, or occurrence contract/,
+            )
+        }
+    })
+
+    test("family admits ExternalAtom only from an active factory frame or published family member", () => {
+        const set = mutableSet()
+        const factory = set.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.family-create-node",
+        )
+        for (const phrase of [
+            "Atom, Selector, or ExternalAtom constructed in the active factory frame",
+            "already-published family member",
+            "arbitrary pre-existing States",
+            "Collection rows and collection definitions reject",
+            "reacquisition remains Atom-only",
+        ]) {
+            expect(factory.resultBoundary).toContain(phrase)
+        }
+        const changed = mutableSet()
+        changed.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.family-create-node",
+        ).resultBoundary = factory.resultBoundary.replace(
+            "arbitrary pre-existing States",
+            "only cross-domain States",
+        )
+        expect(() => validateContractSet(changed)).toThrow(
+            /approved ExternalAtom callback contract/,
+        )
+        expect(findPublicEntry(set, "core.type.state").notes).toContain(
+            "Atom | Selector | ExternalAtom | readonly collection-row | readonly collection",
         )
     })
 

@@ -55,11 +55,13 @@ const cases: readonly DiagnosticCase[] = [
     },
     {
         source: "family(async (key: string) => atom(key))",
-        guidance: "family factories must return an Atom or Selector",
+        guidance:
+            "family factories must return an Atom, Selector, or ExternalAtom",
     },
     {
         source: "family((key: string) => key)",
-        guidance: "family factories must return an Atom or Selector",
+        guidance:
+            "family factories must return an Atom, Selector, or ExternalAtom",
     },
     {
         source: "family(key => atom(key))",

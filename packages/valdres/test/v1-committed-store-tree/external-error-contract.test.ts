@@ -12,6 +12,10 @@ import {
     configureInternalExternalBounds,
     createInternalExternalAtom,
 } from "../../src/v1-internal/committed-store-tree/external-atom"
+import {
+    SelectorDependencyError,
+    SelectorGetterError,
+} from "../../src/v1-internal/selector-evaluator/errors"
 
 function thrown(operation: () => unknown): unknown {
     try {
@@ -41,7 +45,96 @@ function expectNotification(
     expect(Object.isFrozen(notification.causes)).toBe(true)
 }
 
+function applicationWrapper(kind: "notification" | "operation") {
+    const causes = [new Error("first"), new Error("second")]
+    return kind === "notification"
+        ? new SubscriberNotificationError(causes, "external-invalidation")
+        : new ExternalSourceOperationError(
+              causes.map(cause => ({
+                  cause,
+                  committed: true,
+                  phase: "notifying",
+                  source: "external-drain",
+              })),
+          )
+}
+
 describe("external failure occurrence ledger", () => {
+    for (const operation of ["transaction", "updater"] as const) {
+        test(`${operation} preserves an empty notification wrapper with an unrelated external plane`, () => {
+            const domain = createCommittedStoreTreeDomain()
+            const tree = domain.createStoreTree()
+            const local = domain.atom(0)
+            const unrelated = createInternalExternalAtom(domain, {
+                getSnapshot: () => 1,
+                subscribe: () => () => {},
+            })
+            expect(tree.get(unrelated)).toBe(1)
+            const cause = new SubscriberNotificationError([])
+            let notifications = 0
+            const stop = tree.sub(local, () => {
+                notifications++
+            })
+
+            const error = thrown(() =>
+                operation === "transaction"
+                    ? tree.txn(tx => {
+                          tx.set(local, 1)
+                          throw cause
+                      })
+                    : tree.update(local, () => {
+                          throw cause
+                      }),
+            )
+
+            expect(error).toBe(cause)
+            expect(cause.causes).toEqual([])
+            expect(tree.get(local)).toBe(0)
+            expect(notifications).toBe(0)
+            stop()
+            tree.dispose()
+        })
+    }
+
+    for (const wrapper of ["notification", "operation"] as const) {
+        test(`dormant snapshots preserve the exact thrown ${wrapper} wrapper`, () => {
+            const domain = createCommittedStoreTreeDomain()
+            const tree = domain.createStoreTree()
+            const cause = applicationWrapper(wrapper)
+            let fail = true,
+                samples = 0,
+                subscriptions = 0
+            const external = createInternalExternalAtom(domain, {
+                getSnapshot() {
+                    samples++
+                    if (fail) throw cause
+                    return 7
+                },
+                subscribe() {
+                    subscriptions++
+                    return () => {}
+                },
+            })
+            const selected = domain.selector(get => get(external))
+
+            expect(thrown(() => tree.get(external))).toBe(cause)
+            const selectedError = thrown(() => tree.get(selected))
+            expect(selectedError).toBeInstanceOf(SelectorGetterError)
+            const dependencyError = (selectedError as SelectorGetterError).cause
+            expect(dependencyError).toBeInstanceOf(SelectorDependencyError)
+            expect((dependencyError as SelectorDependencyError).cause).toBe(
+                cause,
+            )
+            expect(samples).toBe(2)
+            expect(subscriptions).toBe(0)
+            fail = false
+            expect(tree.get(selected)).toBe(7)
+            expect(samples).toBe(3)
+            expect(subscriptions).toBe(0)
+            tree.dispose()
+        })
+    }
+
     test("an unrelated external plane preserves the owned mutation mismatch notification wrapper", () => {
         const domain = createCommittedStoreTreeDomain()
         const tree = domain.createStoreTree()
@@ -264,6 +357,92 @@ describe("external failure occurrence ledger", () => {
         expect(Object.isFrozen(cause)).toBe(false)
     })
 
+    for (const lifecycle of ["setup", "cleanup"] as const) {
+        for (const wrapper of ["notification", "operation"] as const) {
+            test(`${lifecycle} preserves repeated thrown ${wrapper} wrappers as raw occurrences`, () => {
+                const domain = createCommittedStoreTreeDomain()
+                const tree = domain.createStoreTree()
+                const cause = applicationWrapper(wrapper)
+                const setups: string[] = []
+                const cleanups: string[] = []
+                const invalidators: (() => void)[] = []
+                let samples = 0,
+                    notifications = 0
+                const source = (label: string) =>
+                    createInternalExternalAtom(domain, {
+                        getSnapshot() {
+                            samples++
+                            return 0
+                        },
+                        subscribe(invalidate) {
+                            setups.push(label)
+                            invalidators.push(invalidate)
+                            if (lifecycle === "setup") throw cause
+                            return () => {
+                                cleanups.push(label)
+                                throw cause
+                            }
+                        },
+                    })
+                const a = source("a"),
+                    b = source("b")
+                const combined = domain.selector(get => get(a) + get(b))
+                const subscribe = () =>
+                    tree.sub(combined, () => {
+                        notifications++
+                    })
+                const operation =
+                    lifecycle === "setup" ? subscribe : subscribe()
+
+                const error = thrown(operation) as ExternalSourceOperationError
+
+                const phase = lifecycle === "setup" ? "admitting" : "cleanup"
+                const sourceName =
+                    lifecycle === "setup"
+                        ? "external-startup"
+                        : "external-cleanup"
+                expect(error).toBeInstanceOf(ExternalSourceOperationError)
+                expect(error).not.toBe(cause)
+                expect(error).toMatchObject({
+                    code: "VALDRES_EXTERNAL_SOURCE_OPERATION",
+                    committed: false,
+                    phase,
+                    source: sourceName,
+                })
+                expect(error.cause).toBe(cause)
+                expect(error.causes).toHaveLength(2)
+                expect(error.failures).toHaveLength(2)
+                for (let index = 0; index < 2; index++) {
+                    expect(error.causes[index]).toBe(cause)
+                    expect(error.failures[index]!.cause).toBe(cause)
+                    expect(error.failures[index]).toEqual({
+                        cause,
+                        committed: false,
+                        phase,
+                        source: sourceName,
+                    })
+                    expect(Object.isFrozen(error.failures[index])).toBe(true)
+                }
+                expect(Object.isFrozen(error)).toBe(true)
+                expect(Object.isFrozen(error.causes)).toBe(true)
+                expect(Object.isFrozen(error.failures)).toBe(true)
+                expect([...setups].sort()).toEqual(["a", "b"])
+                expect([...cleanups].sort()).toEqual(
+                    lifecycle === "cleanup" ? ["a", "b"] : [],
+                )
+                expect(notifications).toBe(0)
+                const samplesBeforeStaleCallbacks = samples
+                for (const invalidate of invalidators) invalidate()
+                expect(samples).toBe(samplesBeforeStaleCallbacks)
+                if (lifecycle === "cleanup") operation()
+                tree.dispose()
+                expect([...cleanups].sort()).toEqual(
+                    lifecycle === "cleanup" ? ["a", "b"] : [],
+                )
+            })
+        }
+    }
+
     test("preserves identical causes across setup failure and rollback cleanup", () => {
         const domain = createCommittedStoreTreeDomain()
         const tree = domain.createStoreTree()
@@ -303,6 +482,64 @@ describe("external failure occurrence ledger", () => {
 })
 
 describe("external subscriber notification contract", () => {
+    for (const operation of [
+        "owned-mutation",
+        "external-invalidation",
+    ] as const) {
+        for (const wrapper of ["notification", "operation"] as const) {
+            test(`${operation} keeps repeated subscriber-thrown ${wrapper} wrappers intact and runs all callbacks`, () => {
+                const domain = createCommittedStoreTreeDomain()
+                const tree = domain.createStoreTree()
+                const local = domain.atom(0)
+                const cause = applicationWrapper(wrapper)
+                const callbacks: string[] = []
+                let value = 0,
+                    invalidate!: () => void
+                const external = createInternalExternalAtom(domain, {
+                    getSnapshot: () => value,
+                    subscribe(listener) {
+                        invalidate = listener
+                        return () => {}
+                    },
+                })
+                expect(tree.get(external)).toBe(0)
+                const target = operation === "owned-mutation" ? local : external
+                const stops = [
+                    tree.sub(target, () => {
+                        callbacks.push("first")
+                        throw cause
+                    }),
+                    tree.sub(target, () => {
+                        callbacks.push("second")
+                        throw cause
+                    }),
+                    tree.sub(target, () => callbacks.push("last")),
+                ]
+
+                const error = thrown(() => {
+                    if (operation === "owned-mutation") tree.set(local, 1)
+                    else {
+                        value = 1
+                        invalidate()
+                    }
+                })
+
+                expectNotification(error, [cause, cause], operation)
+                expect(error).not.toBe(cause)
+                expect((error as SubscriberNotificationError).causes[0]).toBe(
+                    cause,
+                )
+                expect((error as SubscriberNotificationError).causes[1]).toBe(
+                    cause,
+                )
+                expect(callbacks).toEqual(["first", "second", "last"])
+                expect(tree.get(target)).toBe(1)
+                for (const stop of stops) stop()
+                tree.dispose()
+            })
+        }
+    }
+
     test("startup notification keeps SubscriberNotificationError and rolls back admission", () => {
         const domain = createCommittedStoreTreeDomain()
         const tree = domain.createStoreTree()
@@ -422,6 +659,76 @@ describe("external subscriber notification contract", () => {
         expectNotification(error, [cause], "external-read")
         expect(attempts).toBe(2)
         expect(tree.get(selected)).toBe(1)
+    })
+
+    test("an unrelated unsubscribe retries startup with startup notification metadata", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const tree = domain.createStoreTree()
+        const mode = domain.atom(false)
+        const setupError = new Error("first setup")
+        const cause = new Error("retry subscriber")
+        const callbacks: string[] = []
+        const invalidators: (() => void)[] = []
+        let value = 0,
+            attempts = 0,
+            samples = 0,
+            cleanups = 0,
+            unrelatedCleanups = 0
+        const external = createInternalExternalAtom(domain, {
+            getSnapshot() {
+                samples++
+                return value
+            },
+            subscribe(invalidate) {
+                invalidators.push(invalidate)
+                if (++attempts === 1) throw setupError
+                value = 1
+                return () => {
+                    cleanups++
+                }
+            },
+        })
+        const unrelated = createInternalExternalAtom(domain, {
+            getSnapshot: () => 5,
+            subscribe: () => () => {
+                unrelatedCleanups++
+            },
+        })
+        const stopUnrelated = tree.sub(unrelated, () => {})
+        const selected = domain.selector(get => (get(mode) ? get(external) : 0))
+        const stopFirst = tree.sub(selected, () => {
+            callbacks.push("throwing")
+            throw cause
+        })
+        const stopLast = tree.sub(selected, () => callbacks.push("last"))
+
+        expect(
+            (thrown(() => tree.set(mode, true)) as ExternalSourceOperationError)
+                .cause,
+        ).toBe(setupError)
+        expect(attempts).toBe(1)
+        expect(callbacks).toEqual([])
+
+        const error = thrown(stopUnrelated)
+
+        expectNotification(error, [cause], "external-startup")
+        expect(callbacks).toEqual(["throwing", "last"])
+        expect(attempts).toBe(2)
+        expect(tree.get(selected)).toBe(1)
+        expect(unrelatedCleanups).toBe(1)
+        expect(cleanups).toBe(0)
+        stopUnrelated()
+        expect(unrelatedCleanups).toBe(1)
+        stopFirst()
+        expect(cleanups).toBe(0)
+        stopLast()
+        expect(cleanups).toBe(1)
+        const samplesBeforeStaleCallbacks = samples
+        for (const invalidate of invalidators) invalidate()
+        expect(samples).toBe(samplesBeforeStaleCallbacks)
+        tree.dispose()
+        expect(cleanups).toBe(1)
+        expect(unrelatedCleanups).toBe(1)
     })
 })
 

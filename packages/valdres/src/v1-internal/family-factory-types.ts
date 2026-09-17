@@ -2,9 +2,10 @@ import type {
     Atom,
     Selector,
 } from "./committed-store-tree/committed-store-tree"
+import type { ExternalAtom } from "./committed-store-tree/types"
 import type { FamilyKey } from "./family"
 
-export type FamilyState = Atom<any> | Selector<any>
+export type FamilyState = Atom<any> | Selector<any> | ExternalAtom<any>
 
 // The constraint is deliberately loose so an invalid factory still infers as
 // itself instead of collapsing to the constraint; the branded conditionals
@@ -42,7 +43,7 @@ export type CheckedFamilyFactory<
               : Factory &
                     FamilyFactoryTypeError<"family factories require at least one argument">
           : Factory &
-                FamilyFactoryTypeError<"family factories must return an Atom or Selector">
+                FamilyFactoryTypeError<"family factories must return an Atom, Selector, or ExternalAtom">
 
 export type PrimitiveFamilyFactory<Factory extends AnyFamilyFactory> =
     CheckedFamilyFactory<

@@ -1,3 +1,4 @@
+import { ExternalInspectionEvent } from "./external-inspection-protocol"
 import { ExternalOperationPhase } from "./external-types"
 import { StoreTreeCounterId } from "./counter-ids"
 import type { SubscriptionRegistration } from "./committed-store-tree"
@@ -20,7 +21,6 @@ import {
 } from "./scope-node"
 import {
     DormantExternalReadError,
-    ExternalSourceOperationError,
     ExternalSourceNonConvergenceError,
     ExternalSourceDeliveryLimitError,
     InvalidExternalCleanupError,
@@ -103,6 +103,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         bounds: ExternalBounds,
     ) {
         this.#bindings = {
+            event: host.evaluate.recordExtension,
             domain: host.runtimeDomain,
             propagating: () => host.postSourceApply,
             subscriberRead: () => host.subscriberReading,
@@ -138,6 +139,26 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         }
         this.#delivery = delivery
         this.#bounds = bounds
+    }
+
+    #event(code: ExternalInspectionEvent, node?: AnyState): void {
+        const event = this.#bindings.event
+        if (event === undefined) return
+        const previous = this.#operation?.phase
+        this.phase(ExternalOperationPhase.instrumenting)
+        try {
+            event(
+                code,
+                node,
+                node === undefined
+                    ? undefined
+                    : this.#bindings.domain.externalAtoms!.get(node)?.name,
+            )
+        } catch (error) {
+            this.failure(error, "instrumenting")
+        } finally {
+            if (previous !== undefined) this.phase(previous)
+        }
     }
 
     reaches(scope: StoreScopeNode, node: AnyState): boolean {
@@ -327,6 +348,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     notificationCallback(
         registration: SubscriptionRegistration,
     ): (() => unknown) | undefined {
+        this.phase(ExternalOperationPhase.notifying)
         if (
             registration.target === undefined ||
             registration.status === "rolled-back"
@@ -423,7 +445,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
 
     failure(
         error: unknown,
-        phase: ExternalOperationFailure["phase"] = this.#failurePhase(),
+        phase?: ExternalOperationFailure["phase"],
         origin?: object,
     ): void {
         if (error instanceof RecordedExternalFailure) return
@@ -436,29 +458,28 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             frame.controlOrigins.add(origin)
         }
         frame.originals.push(error)
-        if (error instanceof ExternalSourceOperationError) {
-            frame.failures.push(
-                ...error.failures.map(failure =>
-                    failure.source === "external-read"
-                        ? { ...failure, source: frame.source }
-                        : failure,
-                ),
-            )
-            return
-        }
-        for (const cause of error instanceof SubscriberNotificationError
-            ? error.causes
-            : [error]) {
+        frame.failures.push({
+            cause: error,
+            phase: phase ?? this.#failurePhase(),
+            source: frame.source,
+            committed: this.#bindings.epoch() !== frame.epoch,
+        })
+    }
+
+    // Only the core's completed notification boundary can forward this wrapper.
+    // Public error instances thrown by application callbacks remain raw causes.
+    notificationFailure(error: SubscriberNotificationError): unknown {
+        const frame = this.#operation
+        if (frame === undefined) return error
+        frame.originals.push(error)
+        for (const cause of error.causes)
             frame.failures.push({
                 cause,
-                phase:
-                    error instanceof SubscriberNotificationError
-                        ? "notifying"
-                        : phase,
+                phase: "notifying",
                 source: frame.source,
                 committed: this.#bindings.epoch() !== frame.epoch,
             })
-        }
+        return new RecordedExternalFailure()
     }
 
     #failureMetadata(
@@ -496,12 +517,18 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     startup(): void {
         if (this.#attachments.size === 0) return
         const previous = this.#pull
+        const source = this.#operation!.source
+        // A cleanup may retry an earlier failed attachment. Its catch-up
+        // notifications belong to that startup, while cleanup retains its phase.
+        if (source === "external-cleanup")
+            this.#operation!.source = "external-startup"
         this.#pull = this.#newPull(false)
         this.#pull.epochAdvanced = false
         try {
             this.#bindings.settleRead(() => {})
         } finally {
             this.#pull = previous
+            this.#operation!.source = source
         }
     }
 
@@ -547,6 +574,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         projection.generation = generation
         projection.status = "attaching"
         this.#bindings.count(StoreTreeCounterId.adapterSubscriptions)
+        this.#event(ExternalInspectionEvent.attach, projection.node)
         try {
             runExternalCallback(
                 domain,
@@ -650,6 +678,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         projection.status = "detaching"
         if (cleanup !== undefined) {
             this.#bindings.count(StoreTreeCounterId.adapterCleanups)
+            this.#event(ExternalInspectionEvent.detach, projection.node)
             const previous = this.#operation!.source
             this.#operation!.source = "external-cleanup"
             try {
@@ -724,6 +753,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         }
         if (this.#operation?.terminal) return
         if (this.#operation !== undefined) {
+            this.#event(ExternalInspectionEvent.invalidate, projection.node)
             this.#dirty.add(generation)
             return
         }
@@ -735,7 +765,29 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         ) {
             projection.retryRequired = true
             this.#bindings.count(StoreTreeCounterId.deliveryLimitHits)
-            throw new ExternalSourceDeliveryLimitError()
+            const limit = new ExternalSourceDeliveryLimitError()
+            try {
+                this.#event(
+                    ExternalInspectionEvent.deliveryLimit,
+                    projection.node,
+                )
+            } catch (cause) {
+                this.#bindings.domain.externalRuntime!.fail([
+                    {
+                        cause: limit,
+                        phase: "sampling",
+                        source: "external-invalidation",
+                        committed: false,
+                    },
+                    {
+                        cause,
+                        phase: "instrumenting",
+                        source: "external-invalidation",
+                        committed: false,
+                    },
+                ])
+            }
+            throw limit
         }
         delivery.depth++
         delivery.work++
@@ -743,6 +795,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         delete projection.retryRequired
         try {
             this.run("external-invalidation", () => {
+                this.#event(ExternalInspectionEvent.invalidate, projection.node)
                 this.#dirty.add(generation)
             })
         } finally {
@@ -766,6 +819,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             this.#dirty.clear()
             rounds++
             this.#bindings.count(StoreTreeCounterId.dirtyRounds)
+            this.#event(ExternalInspectionEvent.drain)
             frame.source =
                 rounds === 1 && frame.source === "external-invalidation"
                     ? "external-invalidation"
@@ -853,6 +907,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             committed: true,
         })
         this.#bindings.count(StoreTreeCounterId.nonConvergenceTerminations)
+        this.#event(ExternalInspectionEvent.nonconvergence)
         const outcomes: [
             Projection,
             ServedSelectorOutcome<OutcomeToken>["outcome"],
@@ -1187,6 +1242,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken>["outcome"] {
         this.#bindings.count(StoreTreeCounterId.liveSamples)
+        this.#event(ExternalInspectionEvent.sample, node)
         const previous = this.#operation?.phase
         this.phase(ExternalOperationPhase.samplingExternal)
         try {
@@ -1246,6 +1302,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                 this.#pull.epochAdvanced = true
                 this.#bindings.advanceEpoch()
             }
+            this.#event(ExternalInspectionEvent.publish, node)
         }
         const served = projection!.served
         this.#pull?.samples.set(node, served)

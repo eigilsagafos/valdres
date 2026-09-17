@@ -24,19 +24,19 @@ export interface Selector<Value> extends StateBase<Value> {
     readonly kind: "selector"
 }
 
-/** @internal Readonly external definition; root publication awaits Gate 0. */
+/** A read-only definition projecting synchronous, externally owned truth. */
 export interface ExternalAtom<Value> extends StateBase<Value> {
     readonly kind: "external"
 }
 
-/** @internal Structural producer, never branded or frozen by the runtime. */
+/** Structural source whose methods run with the original source receiver. */
 export interface ExternalSource<Value> {
     readonly getSnapshot: () => Value
     readonly getServerSnapshot?: () => Value
     readonly subscribe: (invalidate: () => void) => () => void
 }
 
-/** @internal Proposed root type, pending contract approval. */
+/** Optional inert diagnostic name; equality is always Object.is. */
 export interface ExternalAtomOptions {
     readonly name?: string
 }

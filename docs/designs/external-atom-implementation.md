@@ -1,6 +1,6 @@
 # ExternalAtom implementation contract and engineering review
 
-Status: Gate 0 approved with owner amendments; E3.5 repair/extraction passes its correctness, ordinary isolation/size, and performance gates. E4 public certification is next.
+Status: Gate 0 approved with owner amendments; E3.5 repair/extraction and E4 public certification are complete. The broad historical tournament timeout reproduces on clean main; all feature, ordinary isolation, package, and packed-consumer gates pass.
 Review target: `.context/attachments/HYMHX1/external-atom-implementation-agent-prompt.md`.
 Fetched base: `270f00e46f26aee66a724fcf6d6fdda09ddcf133` (`origin/main`, includes PR #397).
 Initial branch: `implement-external-atom`; initial HEAD equals base. No branch rename.
@@ -591,16 +591,158 @@ Commit this certified E3.5 repair, then create `feat/external-atom-public`
 from the repair commit and finish root/family, React, declarations, packed
 consumers, docs, and one changeset. No partial public implementation PR is opened.
 
+## E4 public certification
+
+E4 is based on E3.5 commit `3547fb176572594c77c5b6a9db3d627ce0828168`
+on `feat/external-atom-public`. The public surface now includes the approved
+factory, exactly three named ExternalAtom types, and seven named error classes.
+Family admission accepts same-domain definitions constructed in the active
+factory frame or an already-published member; collection rejection and
+Atom-only reacquisition are unchanged. An entry-owned factory interface makes
+emitted user declarations refer to the root ExternalAtom type.
+
+The contract catalogs contain 151 API entries, 20 callback entries, and 82
+contract IDs. Twelve ExternalAtom-specific migration rows are marked complete
+only after runtime, declarations, React, packed, isolation, and contract evidence.
+The broader catalog and independent family ShiftX handoff remain partial.
+Public error metadata and exact-handle server dependency paths are frozen.
+
+Inspection adds external references, flat work counters, and structural action
+rows without retaining application values, source objects, callbacks, errors,
+or State handles. Isolated transaction/server observations record counters only.
+React required no production change: ordinary and inspect bindings already use
+the corrected core adapter seam. New source and packed fixtures certify actual
+SSR/hydration, third-getter caching, server/live divergence, missing dynamic
+paths, thrown/returned thenables, StrictMode, abandoned renders, disposal, and
+Store/State rebinds under React 18 and 19.
+
+Final review found two additional failure-boundary defects and fixed both:
+application-thrown public wrappers were unpacked by class identity, and publish
+instrumentation ran before the epoch update. Only the core's completed
+notification boundary now forwards its own wrapper through the optional plane;
+raw setup, cleanup, updater, transaction, snapshot, subscriber, and instrumentation
+errors preserve exact identity and occurrence counts. Publish diagnostics run
+after the epoch changes. Cleanup-triggered attachment retries attribute pure
+notification errors to `external-startup`. Regression fixtures cover empty
+wrappers, repeated identical wrappers, all-run delivery/cleanup, pre/post-publish
+metadata, bounded delivery plus instrumentation failure, and recovery.
+
+### Final measured artifacts
+
+Three byte-identical Bun 1.4 runtime builds produced digest
+`de184fca5c0eb9bc52fc3e924a586b0dc9c1ce246627f7007f64de8f8b6838e2`.
+The packed core/React matrix passes Node 24.16 and Bun, TypeScript declaration
+emit, esbuild browser execution, React 18.3.1/19.1.1 ordinary and inspect probes,
+and a standalone core-only consumer with no React dependency. Source package
+manifests remain byte-for-byte unchanged by packing.
+
+| Fixture/artifact | Raw bytes | Gzip bytes | Ordinary gzip ceiling |
+| --- | ---: | ---: | ---: |
+| Atom | 14,710 | 4,607 | 17,276 |
+| Atom + selector + Store | 65,777 | 17,346 | 17,346 |
+| family | 20,868 | 6,389 | 18,990 |
+| adapter-internals | 15,774 | 4,757 | 17,249 |
+| ExternalAtom + Store | 86,234 | 22,888 | dedicated feature budget |
+| collection | 99,701 | 27,727 | feature budget |
+| query (both conditions) | 105,462 | 29,560 | feature budget |
+| all exports | 124,076 | 34,679 | feature budget |
+| inspect | 102,745 | 27,344 | feature budget |
+| distribution total | 358,936 | 105,106 | artifact budget |
+| packed package | 505,848 | 133,310 | artifact budget |
+
+Ordinary baseline values, tolerance, and the 77-byte allowance are unchanged.
+The combined ordinary fixture has no remaining gzip headroom. Guards assert
+that all four ordinary fixtures exclude the external projection plane; Atom,
+family, and adapter fixtures also exclude Store construction. The dedicated
+ExternalAtom consumer excludes React and unrelated family/hydration modules.
+E4's approved feature/artifact budgets were set from these measured artifacts;
+they do not redefine ordinary consumer budgets. Distribution growth includes
+production/development external capability code; packed growth also includes
+approved declarations and README documentation.
+
+### Performance evidence
+
+Final paired original-base measurements use separate monomorphic callers,
+alternating baseline/candidate order, and preserve every sample in
+`.context/external-atom/e4-*.jsonl`. Node 24.16 ratios: Atom 1.001, Selector 0.943,
+write/notify 1.033, subscriptions 1.059, transactions 1.011; the longer 400,000
+subscription lane is 1.061. Bun read/write lanes remain below the 10% gate.
+Short Bun allocation-heavy lanes were noisy (subscription 1.111/1.203 and
+transaction 1.140/1.083); these samples are retained, not averaged away. The
+400,000 subscription lane is 1.017. Investigation of transaction heap carryover
+used 100,000 operations with collection before each timed run: two independent
+ratios are 0.968 and 1.060. A direct E4/E3.5 comparison is 0.919. The apparent
+regression did not reproduce under controlled heap conditions; no production
+change was made to chase those timings. Work-counter tests continue to prove
+zero external work on ordinary paths, constant-time retained reads, one adapter
+attachment per tree/definition, and one transaction capture per identity.
+
+### Documentation and follow-up
+
+`docs/external-atom.md` documents the approved API, lifetimes, immutable errors,
+transactions, family, SSR, and inspection. `docs/howto-external-atom.md` includes
+executed and typechecked core and SSR examples. Root and generated core READMEs
+link these documents. One core/React changeset records the feature; no package
+version, changelog, lockfile, or release VERSION changed. The bounded synthetic
+hub follow-up is in `docs/designs/external-atom-adapter-follow-up.md`.
+
+### Final local CI checkpoint and stack handoff
+
+The final source passes the dedicated model, evaluator, committed StoreTree,
+public declaration, contract/ledger, and typecheck gates. `verify` used CI-pinned
+Bun 1.4.0 and Node 24.16.0. Its initial release-infrastructure failure identified
+an outdated expected feature-fixture list; adding the approved `external-atom`
+fixture to that assertion fixes it. The built-root export assertion likewise
+now enumerates the approved factory and seven errors. These are contract
+snapshot updates, not weakened checks.
+
+- Broad core runtime: **782 pass, 1 known baseline failure, 398,618 assertions**.
+  The failure is the isolated tournament wrapper after its historical-bytes
+  subprocess exceeds 5 seconds and predecessor-lineage subprocess exceeds
+  30 seconds. Both reproduce in the preserved clean-main baseline. No timeout,
+  inventory, or test was relaxed. The standalone focused run before the final
+  publication-hook regression was 766/766; final committed-tree and broad-core
+  runs also cover that added regression.
+- Core build/package-export tests: **7 pass, 33 assertions**.
+- Full React source/build suite: **74 pass, 2,154 assertions**, including 33
+  ExternalAtom tests / 209 assertions, with strict test typechecking.
+- Contracts and production-ledger guards: **62 pass, 527 assertions**.
+- Release infrastructure: **311 pass** after the new feature fixture inventory
+  entry. Generated README and unchecked-suppression gates pass.
+- JUnit coverage, package red/green self-test, manifest, publint, ATTW, all
+  declaration consumers, Node/Bun smokes, esbuild/Vite/webpack, size gates, and
+  packed core/React consumer matrix pass. The final resume covers workflow
+  steps 17–19. The overall workflow is reported with its baseline failure,
+  not relabeled as an entirely green full run.
+
+Exact commands/logs: `e4-verify-final.log` (steps 1–12),
+`e4-verify-resume13.log` (steps 13–16 and baseline timeout),
+`e4-core-build-certified.log`, `e4-react-final.log`,
+`e4-verify-resume17.log` (steps 17–19), and `e4-packed-certified.log`, all under
+`.context/external-atom/`. The clean-main comparison is
+`.context/external-atom/baseline/test-v1-beta.log`. Invoke commands through
+`npm exec --yes --package=node@24.16.0 -- bun run ...` to use CI's Node pin.
+
+The local stack preserves E0 `ee32f87a`, E1 `d4586dc5`, E2 `6d9aab71`,
+E3 `c378d622`, E3.5 `3547fb17`, then the E4 commit containing this checkpoint.
+Prepare exactly two PRs: model branch `implement-external-atom` → `main`, then
+`feat/external-atom-public` → `implement-external-atom`. Merge the model first
+and retarget the implementation to main. E1–E4 are reviewable commits inside the
+single implementation PR. Prepared titles/bodies are in
+`.context/external-atom/pr-model.md` and `pr-implementation.md`. No branch was
+renamed, PR opened, commit pushed, or merge performed in this feature task.
+
 ## GSTACK REVIEW REPORT
 
-| Review | Trigger | Why | Runs | Status | Findings |
-| --- | --- | --- | --- | --- | --- |
-| Eng Review | `/plan-eng-review` | Architecture and extraction | 2 | E3.5 gates pass | One queue/evaluator; optional capabilities and hydration extracted |
-| Independent review | contract/recovery and E3.5 fixture agents | Failure occurrences and ordinary bundle isolation | 4 | Repairs and isolation verified | Occurrence ledger fixed; four ordinary size fixtures pass unchanged budgets |
+| Review | Trigger | Status | Findings |
+| --- | --- | --- | --- |
+| Engineering | `/plan-eng-review`, approved owner amendments | Architecture implemented | Existing evaluator/queue; optional capability seam |
+| Independent public and React fixtures | E4 contract certification | Pass | Runtime/declaration and React boundaries covered |
+| Structural implementation review | `/review` checklist, native bounded review | No remaining actionable finding | Raw-wrapper provenance and publication metadata fixed |
+| Documentation review | `/document-generate` plus independent factual check | Corrected and examples verified | Definition capabilities and streaming ordinary-state conditions clarified |
 
-VERDICT: Gate 0 is approved and E3.5 ordinary size/performance/correctness gates
-pass. Proceed to E4 public certification. The full package remains uncertified
-until its approved feature budgets and packed digest are measured in E4.
-The ordinary ceilings and allowance remain unchanged.
+External-provider review was not run; the native structural review is not
+represented as cross-provider coverage. Final local CI results and the reproduced clean-main exception are recorded in
+the certification checkpoint above.
 
 NO UNRESOLVED DECISIONS

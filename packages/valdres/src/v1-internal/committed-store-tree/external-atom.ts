@@ -31,7 +31,7 @@ import type {
     State,
 } from "./types"
 
-/** @internal No root export until lifecycle, settlement and Gate 0 are certified. */
+/** @internal Installs the optional external capability for one runtime domain. */
 export const createInternalExternalAtom = <Value>(
     domain: DefinitionDomain,
     ...args: [source: ExternalSource<Value>, options?: ExternalAtomOptions]
@@ -155,7 +155,7 @@ export class ExternalSourceDeliveryLimitError extends Error {
     }
 }
 
-/** Proposed operation ledger; remains unexported from the public facade. */
+/** Immutable, occurrence-ordered metadata for mixed source operation failures. */
 export class ExternalSourceOperationError extends Error {
     readonly code = "VALDRES_EXTERNAL_SOURCE_OPERATION"
     readonly failures: readonly ExternalOperationFailure[]
@@ -393,7 +393,8 @@ function ensureExternalRuntime(domain: RuntimeDomainRecords): void {
             if (failures.every(failure => failure.phase === "notifying"))
                 throw new SubscriberNotificationError(
                     failures.map(failure => failure.cause),
-                    failures[0]!.source,
+                    failures[0]!
+                        .source as SubscriberNotificationError["source"],
                 )
             if (!preserveMetadata && failures.length === 1) {
                 const failure = failures[0]!

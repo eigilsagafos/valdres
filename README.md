@@ -44,9 +44,37 @@ including functions; `update` applies an updater. Stores also provide
 synchronous subscriptions, transactions, nested scopes, reset, and explicit
 disposal.
 
+## External sources
+
+`externalAtom(source, { name? })` projects synchronous externally owned truth as
+read-only State. A Store shares one source subscription across retained scopes
+and selector consumers, captures each source once per transaction, and releases
+it when the last consumer leaves. Snapshot comparison uses `Object.is`.
+
+```ts
+import { externalAtom, store } from "valdres"
+
+const fixedSource = externalAtom({
+    getSnapshot: () => 42,
+    getServerSnapshot: () => 42,
+    subscribe: () => () => {},
+}, { name: "external answer" })
+
+const app = store()
+app.get(fixedSource) // 42
+app.dispose()
+```
+
+Every constructor call creates a fresh definition. Keep definitions stable and
+provide a synchronous cleanup from `subscribe`. React SSR/hydration uses the
+server snapshot without attaching a live listener. Read the
+[ExternalAtom reference](docs/external-atom.md) and
+[integration guide](docs/howto-external-atom.md) for updates, lifecycle, errors,
+and request-local hydration examples.
+
 ## Parameterized State identity
 
-`family(factory)` memoizes one Atom or Selector per non-empty ordered tuple of
+`family(factory)` memoizes one Atom, Selector, or ExternalAtom per non-empty ordered tuple of
 primitive keys (`string`, `number`, `bigint`, `boolean`, `symbol`, `null`, or
 `undefined`). Keys use SameValueZero, so `NaN` matches `NaN` and `0` matches
 `-0`; tuple arity and order still matter.
@@ -68,8 +96,8 @@ stepProgress({ id: "step-1", title: "Draft" }) ===
 ```
 
 Structured arguments require a synchronous `encodeKey` that returns one
-canonical primitive key. The factory must construct and return its Atom or
-Selector during that member's construction, or return any member already
+canonical primitive key. The factory must construct and return its Atom,
+Selector, or ExternalAtom during that member's construction, or return any member already
 published by a family. Returning an arbitrary pre-existing State is rejected.
 The exported `FamilyKey` type names the primitive-key union for reusable APIs.
 
@@ -170,7 +198,8 @@ inspect.reset()
 
 The report links labels to opaque operation, commit, evaluation, session, and
 search IDs. It records selector topology/search work, collection row and
-membership work, related counters, and propagation/notification totals.
+membership work, external projection/lifecycle work, related counters, and
+propagation/notification totals.
 Summary/detail rings are bounded with explicit overflow. Exports are immutable
 and JSON-safe; collection keys, values, callbacks, errors, and live State handles
 are never recorded. Labels are metadata, not identity. The core inspection

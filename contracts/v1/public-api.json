@@ -229,7 +229,7 @@
                 "inspect.same-domain-store"
             ],
             "decisionStatus": "approved",
-            "notes": "This freezes only the experimental subpath boundary. It creates a native Store in the public v1 domain with construction-time bounded recording; exact report types may continue to iterate before 1.0."
+            "notes": "This freezes only the experimental subpath boundary. It creates a native Store in the public v1 domain with construction-time bounded recording; exact report types may continue to iterate before 1.0. ExternalAtom integration includes structural external references, bounded sample/capture/publication/lifecycle/delivery counters, and external-source action details without snapshot values, source objects, callback identities, or application error payloads. It adds no core graph enumeration or root lifecycle type export. External-source detail actions are sample-live, attach, detach, invalidate, publish, drain, nonconvergence, and delivery-limit, with an optional structural state reference. Server samples and transaction captures are counters only; isolated observations create no projection detail events."
         },
         {
             "id": "beta.inspect-react-correlation",
@@ -741,16 +741,17 @@
                 "codemod": "Move synchronous browser/device ownership from onMount/global atoms to an ExternalSource snapshot and invalidation subscription.",
                 "typeError": "ExternalAtom is readonly and cannot be passed to set/update/reset.",
                 "firstPartyOwner": "core-and-browser-adapters",
-                "evidenceStatus": "planned"
+                "evidenceStatus": "complete"
             },
             "contractIds": [
                 "external.pull-contract",
                 "external.store-tree-projection",
                 "external.recoverable-snapshot-errors",
-                "options.closed-surface"
+                "options.closed-surface",
+                "external.construction-contract"
             ],
             "decisionStatus": "approved",
-            "notes": "ExternalAtomOptions contains only name. Async acquisition, equality overrides, and stale/cache policy stay outside this primitive."
+            "notes": "externalAtom<T>(source: ExternalSource<T>, options?: ExternalAtomOptions): ExternalAtom<T> creates a fresh frozen branded definition on every call, including repeated calls with the same source. Accept a non-null, non-array structural object; capture getSnapshot, getServerSnapshot, then subscribe exactly once in that deterministic order. Required methods are callable; getServerSnapshot is undefined or callable. Preserve inherited-method receivers and captured method references. Extra source properties are ignored; the source and application snapshots remain unbranded and unfrozen. Validate one or two positional arguments and options before registration or source invocation. Options are undefined or a non-null, non-array object with no own keys except name, including symbols and non-enumerable keys; name is undefined or a string. Accessor exceptions remain exact and validation runs under capability quarantine. ExternalAtom is read-only, Object.is defines outcome identity, and every StoreTree owns its projection and retained attachment. Async acquisition, equality overrides, and stale/cache policy stay outside this primitive."
         },
         {
             "id": "core.external-atom-options.name",
@@ -770,11 +771,15 @@
                 "codemod": "Keep only inert diagnostic ExternalAtomOptions.name metadata.",
                 "typeError": "Equality, cache, freshness, lifecycle, and scheduler option keys reject.",
                 "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
+                "evidenceStatus": "complete"
             },
-            "contractIds": ["external.pull-contract", "options.closed-surface"],
+            "contractIds": [
+                "external.pull-contract",
+                "options.closed-surface",
+                "external.construction-contract"
+            ],
             "decisionStatus": "approved",
-            "notes": "Optional inert string metadata; Object.is and source-owned lifecycle remain fixed semantics."
+            "notes": "Optional inert string metadata; undefined is accepted and name never participates in definition identity. ExternalAtomOptions contains only readonly name?: string. Every unknown own option key rejects, including symbol and non-enumerable keys; Object.is and source-owned lifecycle remain fixed semantics."
         },
         {
             "id": "core.family",
@@ -864,10 +869,11 @@
                 "family.variadic-primitive-identity",
                 "family.same-value-zero",
                 "family.no-membership",
-                "options.closed-surface"
+                "options.closed-surface",
+                "family.external-factory-admission"
             ],
             "decisionStatus": "approved",
-            "notes": "FamilyOptions contains only encodeKey. A factory constructs its member during the active construction frame or returns any already-published family member; accepting an arbitrary pre-existing State would require reverse-indexing every ordinary Store override to preserve weak reacquisition. The current ShiftX family migration must be validated externally."
+            "notes": "FamilyOptions contains only encodeKey. A factory returns a same-domain Atom, Selector, or ExternalAtom constructed during the active factory frame, or an already-published family member of those kinds. Arbitrary pre-existing States, collection rows, collection definitions, and collection query States reject. Only Atom members participate in Store override reacquisition; ExternalAtom members retain source-owned lifecycle and read-only projection semantics. Accepting arbitrary pre-existing States would require reverse-indexing every ordinary Store override. The current ShiftX family migration must be validated externally."
         },
         {
             "id": "core.family-options.encode-key",
@@ -1095,7 +1101,7 @@
                 "notification.after-stability"
             ],
             "decisionStatus": "approved",
-            "notes": "SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION is the immutable post-commit delivery wrapper for subscriber throws. Without an already-authoritative post-apply RuntimeMismatchError, cause is the exact first thrown value and causes is a frozen readonly array of all subscriber-thrown values in deterministic delivery order; committed is exactly true; phase is exactly notifying; source is exactly owned-mutation for the lifecycle-free slice. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. No external-source literal is frozen by this slice."
+            "notes": "SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION is the immutable post-commit delivery wrapper for subscriber throws. Without an already-authoritative post-apply RuntimeMismatchError, cause is the exact first thrown value and causes is a frozen readonly array of all subscriber-thrown values in deterministic delivery order; committed is exactly true; phase is exactly notifying; source is exactly owned-mutation for the lifecycle-free slice. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. Pure external notification failures also use SubscriberNotificationError, with source external-read | external-startup | external-invalidation | external-drain; the full notification source set is owned-mutation | external-read | external-startup | external-invalidation | external-drain. The primary occurrence supplies source. Preserve every failure occurrence without deduplication by error identity, including equal causes from different callbacks or rounds. Mixed-phase and setup/cleanup aggregation use ExternalSourceOperationError. The error, cause/causes metadata, committed, phase, and source are immutable; application error objects are not mutated. Message is exactly \"One or more Store subscribers threw during notification\"."
         },
         {
             "id": "core.dormant-external-read-error",
@@ -1116,15 +1122,16 @@
                 "codemod": "Move dormant external sampling out of subscriber delivery and into an admitted read or retained source path.",
                 "typeError": "Subscriber-time reads that would publish a dormant external source throw VALDRES_DORMANT_EXTERNAL_READ.",
                 "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
+                "evidenceStatus": "complete"
             },
             "contractIds": [
                 "callback.subscriber-quarantine",
                 "error.stable-name-and-code",
-                "external.store-tree-projection"
+                "external.store-tree-projection",
+                "external.frozen-error-metadata"
             ],
             "decisionStatus": "approved",
-            "notes": "The exact root class/code pair is DormantExternalReadError / VALDRES_DORMANT_EXTERNAL_READ."
+            "notes": "DormantExternalReadError / VALDRES_DORMANT_EXTERNAL_READ is frozen with immutable name, code, and message exactly \"Subscriber callbacks cannot sample dormant external sources\". A subscriber read that would sample a dormant external closure is rejected before sampling or publication. No application data, phase, source, or committed metadata is attached to this error."
         },
         {
             "id": "core.external-source-delivery-limit-error",
@@ -1145,15 +1152,16 @@
                 "codemod": "Break same-runtime nested source-delivery feedback instead of relying on unbounded re-entry.",
                 "typeError": "A delivery chain exceeding the fixed source-only bound throws VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT.",
                 "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
+                "evidenceStatus": "complete"
             },
             "contractIds": [
                 "error.stable-name-and-code",
                 "external.bounded-settlement",
-                "notification.after-stability"
+                "notification.after-stability",
+                "external.frozen-error-metadata"
             ],
             "decisionStatus": "approved",
-            "notes": "The exact root class/code pair is ExternalSourceDeliveryLimitError / VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT."
+            "notes": "ExternalSourceDeliveryLimitError / VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT is frozen with immutable name, code, message, phase, source, and committed metadata. Message is exactly \"External source delivery exceeded the synchronous work bound\". Denied entry has phase sampling, source external-invalidation, and committed false: the unentered tree publishes nothing and its generation remains retryable. A sole bound failure is thrown directly with this metadata; aggregation preserves the exact error as a cause. Numeric delivery bounds are internal and are not public timing or scheduling API."
         },
         {
             "id": "core.external-source-non-convergence-error",
@@ -1174,15 +1182,16 @@
                 "codemod": "Make source snapshots converge inside the bounded StoreTree settlement protocol.",
                 "typeError": "A source generation that cannot settle within the fixed bound throws VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE.",
                 "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
+                "evidenceStatus": "complete"
             },
             "contractIds": [
                 "error.stable-name-and-code",
                 "external.bounded-settlement",
-                "external.startup-dirty-latch"
+                "external.startup-dirty-latch",
+                "external.frozen-error-metadata"
             ],
             "decisionStatus": "approved",
-            "notes": "The exact root class/code pair is ExternalSourceNonConvergenceError / VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE."
+            "notes": "ExternalSourceNonConvergenceError / VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE is frozen with immutable name, code, message, phase, source, and committed metadata. Message is exactly \"External sources did not settle within the synchronous work bound\". Dirty-drain exhaustion has phase sampling, source external-drain, and committed true after terminal projection publication; attachment-work exhaustion has phase admitting and the originating operation source, with committed equal to publication state at failure. Pending active generations publish the exact same terminal error for that exhaustion, retain attachments, ignore same-stack terminal feedback, and recover on a later invalidation. A sole bound failure is thrown directly; aggregation preserves its exact identity. Numeric work bounds are internal."
         },
         {
             "id": "core.invalid-external-cleanup-error",
@@ -1203,15 +1212,16 @@
                 "codemod": "Return one synchronous cleanup function from ExternalSource.subscribe and return no async cleanup result.",
                 "typeError": "Missing, non-function, thenable, and otherwise invalid cleanup results throw VALDRES_INVALID_EXTERNAL_CLEANUP.",
                 "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
+                "evidenceStatus": "complete"
             },
             "contractIds": [
                 "error.stable-name-and-code",
                 "external.generation-safe-cleanup",
-                "lifecycle.synchronous-cleanup"
+                "lifecycle.synchronous-cleanup",
+                "external.frozen-error-metadata"
             ],
             "decisionStatus": "approved",
-            "notes": "The exact root class/code pair is InvalidExternalCleanupError / VALDRES_INVALID_EXTERNAL_CLEANUP."
+            "notes": "InvalidExternalCleanupError / VALDRES_INVALID_EXTERNAL_CLEANUP is frozen with immutable name, code, message, phase, source, and committed metadata. Message is exactly \"External source subscribe must return a synchronous cleanup function\". Invalid subscribe cleanup has phase admitting and source external-startup; invalid cleanup completion has phase cleanup and source external-cleanup. committed is the boolean publication state when this failure occurs, not whether a later failure or cleanup changes the operation. Returned or thrown thenables are contained once and never awaited; ordinary synchronous cleanup return values are ignored. A sole named lifecycle failure is thrown directly with this metadata; aggregation retains the exact error as a cause and never mutates application errors."
         },
         {
             "id": "core.server-snapshot-unavailable-error",
@@ -1232,15 +1242,16 @@
                 "codemod": "Provide ExternalSource.getServerSnapshot for every source reachable by an SSR/hydration read.",
                 "typeError": "A transitive hydration path reaching a source without a server snapshot throws VALDRES_SERVER_SNAPSHOT_UNAVAILABLE.",
                 "firstPartyOwner": "core-and-react",
-                "evidenceStatus": "planned"
+                "evidenceStatus": "complete"
             },
             "contractIds": [
                 "error.stable-name-and-code",
                 "external.deterministic-server-snapshot",
-                "react.isolated-hydration-reader"
+                "react.isolated-hydration-reader",
+                "external.frozen-error-metadata"
             ],
             "decisionStatus": "approved",
-            "notes": "The exact root class/code pair is ServerSnapshotUnavailableError / VALDRES_SERVER_SNAPSHOT_UNAVAILABLE and carries the dynamic dependency path."
+            "notes": "ServerSnapshotUnavailableError / VALDRES_SERVER_SNAPSHOT_UNAVAILABLE is frozen with immutable name, code, message, and dependencyPath. Message is exactly \"An external source has no server snapshot\". dependencyPath: readonly State<any>[] is a frozen array of exact local State handles ordered requested target -> active dynamic selector reads -> missing ExternalAtom, inclusive; a direct request yields [external]. Preserve the first missing path as host-fatal even when selector code catches it. Derive the path in the disposable hydration host rather than reusing live-cache paths; publish and warm no live projection or graph. Names, values, IDs, and paths are not interpolated into the message; application snapshots are not frozen."
         },
         {
             "id": "core.invalid-atom-comparator-result-error",
@@ -3117,10 +3128,12 @@
                 "atom.exact-value",
                 "collection.invariant-readable-state",
                 "collection.membership-order",
-                "selector.pure-sync-dag"
+                "selector.pure-sync-dag",
+                "external.invariant-readable-state",
+                "family.external-factory-admission"
             ],
             "decisionStatus": "approved",
-            "notes": "The root State<Value> is the discriminated Atom | Selector | readonly collection-row | readonly collection union over one private invariant value base, preserving kind narrowing. Family factory admission deliberately remains the narrower Atom | Selector definition union and cannot return collection rows or collection definitions."
+            "notes": "The root State<Value> is the discriminated Atom | Selector | ExternalAtom | readonly collection-row | readonly collection union over one private invariant value base, preserving kind narrowing. Family factory admission deliberately remains the narrower Atom | Selector | ExternalAtom definition union and cannot return collection rows or collection definitions. A family factory may return a same-domain definition created in its active factory frame or an already-published family member, never an arbitrary pre-existing State. Store override reacquisition remains Atom-only."
         },
         {
             "id": "core.type.store",
@@ -3219,7 +3232,7 @@
                 "notification.after-stability"
             ],
             "decisionStatus": "approved",
-            "notes": "SubscribeFn is exactly <Value>(state: State<Value>, callback: () => void) => () => void. State includes Atom, Selector, collection-row, and collection inputs. It returns one idempotent unsubscribe; family callback and deep-equality parameters are removed."
+            "notes": "SubscribeFn is exactly <Value>(state: State<Value>, callback: () => void) => () => void. State includes Atom, Selector, ExternalAtom, collection-row, and collection inputs. It returns one idempotent unsubscribe; family callback and deep-equality parameters are removed."
         },
         {
             "id": "core.type.transaction",
@@ -5295,6 +5308,147 @@
             ],
             "decisionStatus": "approved",
             "notes": "IndexNotReadyError is the sole materialization/Suspense control exception."
+        },
+        {
+            "id": "core.type.external-source",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ExternalSource",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use ExternalSource for the synchronous ExternalAtom contract.",
+                "typeError": "ExternalAtom is read-only and all source callbacks are synchronous; internal lifecycle types are not public.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "complete"
+            },
+            "contractIds": [
+                "external.construction-contract",
+                "external.pull-contract"
+            ],
+            "decisionStatus": "approved",
+            "notes": "ExternalSource<T> is exactly the readonly structural source contract with getSnapshot(): T, optional getServerSnapshot?(): T, and subscribe(invalidate: () => void): () => void. Inherited callable methods retain their source receiver. Methods are captured once in getSnapshot, getServerSnapshot, subscribe order. The source is neither branded nor frozen. Live and server snapshots are synchronous; subscribe returns one synchronous cleanup function. No named callback, projection, lifecycle, scheduling, or internal metadata type is exported."
+        },
+        {
+            "id": "core.type.external-atom",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ExternalAtom",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use ExternalAtom for the synchronous ExternalAtom contract.",
+                "typeError": "ExternalAtom is read-only and all source callbacks are synchronous; internal lifecycle types are not public.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "complete"
+            },
+            "contractIds": [
+                "external.invariant-readable-state",
+                "external.store-tree-projection",
+                "family.external-factory-admission"
+            ],
+            "decisionStatus": "approved",
+            "notes": "ExternalAtom<T> is a distinct invariant read-only State<T> arm over the private invariant value base, with readonly kind: \"external\". Store and Transaction reads, selectors, subscriptions, React useValue, and the approved family factory admit it; set, update, reset, and delete reject it. Every externalAtom call creates a fresh definition even for the same source. No source, projection, lifecycle, or writable capability is exposed on the handle."
+        },
+        {
+            "id": "core.type.external-atom-options",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ExternalAtomOptions",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use ExternalAtomOptions for the synchronous ExternalAtom contract.",
+                "typeError": "ExternalAtom is read-only and all source callbacks are synchronous; internal lifecycle types are not public.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "complete"
+            },
+            "contractIds": [
+                "external.construction-contract",
+                "options.closed-surface"
+            ],
+            "decisionStatus": "approved",
+            "notes": "ExternalAtomOptions has exactly readonly name?: string. The optional name is inert diagnostic metadata. Undefined options are accepted; otherwise require a non-null, non-array object. Reject every unknown own option key, including symbols and non-enumerable keys, and every name value other than undefined or string. No equality, lifecycle, cache, freshness, or scheduling option is supported."
+        },
+        {
+            "id": "core.invalid-synchronous-external-snapshot-error",
+            "kind": "error",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "InvalidSynchronousExternalSnapshotError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use InvalidSynchronousExternalSnapshotError for the synchronous ExternalAtom contract.",
+                "typeError": "ExternalAtom is read-only and all source callbacks are synchronous; internal lifecycle types are not public.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "complete"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "external.frozen-error-metadata",
+                "external.recoverable-snapshot-errors",
+                "external.deterministic-server-snapshot"
+            ],
+            "decisionStatus": "approved",
+            "notes": "InvalidSynchronousExternalSnapshotError / VALDRES_INVALID_SYNCHRONOUS_EXTERNAL_SNAPSHOT is the single frozen error class for returned or thrown thenables in either getSnapshot or getServerSnapshot. Its immutable name, code, and message are fixed; message is exactly \"External source snapshots must be synchronous\". Each actual sample installs exactly one stateless rejection-containment handler and never awaits. A throwing then getter remains its exact ordinary error, subject to sticky control-fault precedence. No phase, source, committed, dependency path, or application snapshot metadata is attached to this error.",
+            "errorCode": "VALDRES_INVALID_SYNCHRONOUS_EXTERNAL_SNAPSHOT"
+        },
+        {
+            "id": "core.external-source-operation-error",
+            "kind": "error",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ExternalSourceOperationError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use ExternalSourceOperationError for the synchronous ExternalAtom contract.",
+                "typeError": "ExternalAtom is read-only and all source callbacks are synchronous; internal lifecycle types are not public.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "complete"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "external.failure-occurrences",
+                "external.frozen-error-metadata"
+            ],
+            "decisionStatus": "approved",
+            "notes": "ExternalSourceOperationError / VALDRES_EXTERNAL_SOURCE_OPERATION is reserved for mixed-phase failures and setup/cleanup aggregation; pure notification failures retain SubscriberNotificationError. The error is frozen; immutable name, code, and message are fixed, with message exactly \"An external source operation failed\". cause is the exact first failure cause; causes is a frozen readonly array of every raw cause in deterministic occurrence order; failures is a frozen readonly array of frozen { cause, committed, phase, source } records. Preserve every independent failure occurrence, including repeated throws of the same value or error object; never deduplicate by error identity. Propagating one control occurrence through multiple selectors does not create new occurrences. Top-level committed, phase, and source mirror failures[0], even if later work commits. Phase is admitting | sampling | settling | notifying | cleanup | instrumenting. Source is owned-mutation | external-read | external-startup | external-invalidation | external-drain | external-cleanup. Complete all required notification, cleanup, and drain work before throwing after idle or terminal. Ordinary sampled snapshot errors are outcomes, not ledger entries. Sole control faults remain exact; arbitrary setup/cleanup throws use this wrapper without mutating application objects. No named failure-record or internal lifecycle type is exported.",
+            "errorCode": "VALDRES_EXTERNAL_SOURCE_OPERATION"
         }
     ]
 }

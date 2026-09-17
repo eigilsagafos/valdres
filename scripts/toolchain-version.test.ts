@@ -211,6 +211,7 @@ describe("pinned Bun toolchain", () => {
         expect(featureFixtureNames).toEqual([
             "all-exports",
             "collection",
+            "external-atom",
             "inspect",
             "query",
             "query-development",

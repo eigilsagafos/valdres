@@ -369,7 +369,9 @@ export const assertDefinitionState = (
         (typeof value === "object" || typeof value === "function") &&
         value !== null &&
         records.states.has(value) &&
-        (records.atoms.has(value) || records.selectors.has(value))
+        (records.atoms.has(value) ||
+            records.selectors.has(value) ||
+            records.externalAtoms?.has(value))
     ) {
         const frame = records[DEFINITION_CALLBACK_FRAME]
         if (
@@ -2387,7 +2389,6 @@ class CommittedStoreTreeHost
     #deliverSubscriptionSnapshot(
         authoritativeControlFault: unknown | undefined,
     ): void {
-        this.#external?.phase(ExternalOperationPhase.notifying)
         const firstTarget = this.#notificationTarget
         if (firstTarget === undefined) {
             this.clearNotificationSettlement()
@@ -2483,11 +2484,12 @@ class CommittedStoreTreeHost
             }
             return
         }
-        throw new SubscriberNotificationError(
+        const error = new SubscriberNotificationError(
             authoritativeControlFault === undefined
                 ? subscriberErrors
                 : [authoritativeControlFault, ...subscriberErrors],
         )
+        throw this.#external?.notificationFailure(error) ?? error
     }
 
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean {

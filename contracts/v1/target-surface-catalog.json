@@ -148,7 +148,12 @@
         "react.use-transaction",
         "react.use-update-atom",
         "react.use-valdres-callback",
-        "react.use-value"
+        "react.use-value",
+        "core.type.external-source",
+        "core.type.external-atom",
+        "core.type.external-atom-options",
+        "core.invalid-synchronous-external-snapshot-error",
+        "core.external-source-operation-error"
     ],
     "callbackIds": [
         "callback.adapter-subscriber",
@@ -946,6 +951,43 @@
             "package": "valdres-react",
             "subpath": ".",
             "name": "useValue"
+        },
+        {
+            "id": "core.type.external-source",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ExternalSource"
+        },
+        {
+            "id": "core.type.external-atom",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ExternalAtom"
+        },
+        {
+            "id": "core.type.external-atom-options",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ExternalAtomOptions"
+        },
+        {
+            "id": "core.invalid-synchronous-external-snapshot-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidSynchronousExternalSnapshotError",
+            "errorCode": "VALDRES_INVALID_SYNCHRONOUS_EXTERNAL_SNAPSHOT"
+        },
+        {
+            "id": "core.external-source-operation-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ExternalSourceOperationError",
+            "errorCode": "VALDRES_EXTERNAL_SOURCE_OPERATION"
         }
     ],
     "pendingSurfaceDecisions": []

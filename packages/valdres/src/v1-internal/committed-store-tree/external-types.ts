@@ -7,7 +7,12 @@ import type {
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
 import type { AnyState, RuntimeDomainRecords } from "./runtime-domain"
-import type { StoreScopeNode, SelectorRecord, OutcomeToken } from "./scope-node"
+import type {
+    StoreScopeNode,
+    SelectorRecord,
+    OutcomeToken,
+    StoreScopeEvaluationStrategy,
+} from "./scope-node"
 
 export interface ExternalBounds {
     rounds: number
@@ -32,6 +37,7 @@ export const enum ExternalOperationPhase {
 }
 
 export interface ExternalTreeHost {
+    readonly evaluate: StoreScopeEvaluationStrategy
     readonly runtimeDomain: RuntimeDomainRecords
     readonly postSourceApply: boolean
     readonly subscriberReading: boolean
@@ -51,6 +57,7 @@ export interface ExternalTreeHost {
 
 /** A tree-owned optional plane. Every settlement still uses the core queue. */
 export interface ExternalTreeBindings {
+    readonly event: StoreScopeEvaluationStrategy["recordExtension"]
     readonly domain: RuntimeDomainRecords
     readonly propagating: () => boolean
     readonly subscriberRead: () => boolean
@@ -98,6 +105,9 @@ export interface ExternalTreePlane {
     notificationCallback(
         registration: SubscriptionRegistration,
     ): (() => unknown) | undefined
+    notificationFailure(
+        error: import("./runtime-domain").SubscriberNotificationError,
+    ): unknown
     readonly operating: boolean
     readonly idle: boolean
     readonly admissionAllowed: boolean

@@ -1,4 +1,10 @@
 import type { CollectionIndexSchema } from "./v1-internal/committed-store-tree/types"
+import { createInternalExternalAtom } from "./v1-internal/committed-store-tree/external-atom"
+import type {
+    ExternalAtom as InternalExternalAtom,
+    ExternalAtomOptions,
+    ExternalSource,
+} from "./v1-internal/committed-store-tree/types"
 import {
     assertDefinitionFamilyCallAllowed,
     createDomainAtom,
@@ -45,6 +51,8 @@ import type {
 
 export type Atom<Value> = InternalAtom<Value>
 export type Selector<Value> = InternalSelector<Value>
+export type ExternalAtom<Value> = InternalExternalAtom<Value>
+export type { ExternalSource, ExternalAtomOptions }
 export type State<Value> = InternalState<Value>
 export type CollectionKey = InternalCollectionKey
 export type CollectionValue = InternalCollectionValue
@@ -138,6 +146,10 @@ export const selector = <Value>(
     options: SelectorOptions<Value> = {},
 ): Selector<Value> => createDomainSelector(v1Domain, read, options)
 
+export const externalAtom = <Value>(
+    ...args: [source: ExternalSource<Value>, options?: ExternalAtomOptions]
+): ExternalAtom<Value> => createInternalExternalAtom(v1Domain, ...args)
+
 export function collection<
     Key extends CollectionKey,
     Value extends CollectionValue,
@@ -203,7 +215,10 @@ const defineFamily = (
         member =>
             markReacquirableDefinitionState(
                 v1Domain,
-                member as InternalAtom<unknown> | InternalSelector<unknown>,
+                member as
+                    | InternalAtom<unknown>
+                    | InternalSelector<unknown>
+                    | InternalExternalAtom<unknown>,
             ),
         () => assertDefinitionFamilyCallAllowed(v1Domain),
     )
@@ -242,3 +257,13 @@ export {
 }
 
 export { SelectorCircularDependencyError } from "./v1-internal/selector-evaluator/errors"
+
+export {
+    DormantExternalReadError,
+    ExternalSourceDeliveryLimitError,
+    ExternalSourceNonConvergenceError,
+    ExternalSourceOperationError,
+    InvalidExternalCleanupError,
+    InvalidSynchronousExternalSnapshotError,
+    ServerSnapshotUnavailableError,
+} from "./v1-internal/committed-store-tree/external-atom"

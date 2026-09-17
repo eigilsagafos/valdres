@@ -25,7 +25,7 @@
                 "dormant external sampling"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. One callback error cannot starve the remaining frozen delivery snapshot.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. One callback error cannot starve the remaining frozen delivery snapshot. Pure notification failures retain SubscriberNotificationError with immutable committed true, phase notifying, and source owned-mutation | external-read | external-startup | external-invalidation | external-drain. Every callback failure occurrence is retained; mixed-phase and setup/cleanup aggregation use ExternalSourceOperationError.",
             "thenableRule": "The subscriber is not awaited and no asynchronous Valdres capability survives delivery.",
             "resultBoundary": "subscribe returns one idempotent unsubscribe and admits no delivery wrapper, batching hook, Transaction, Store ID, or adapter options.",
             "requiredContractIds": [
@@ -276,12 +276,13 @@
             ],
             "guardDomain": "same-runtime-domain",
             "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A borrowed active selector get latches that fault even when caught. Any other throw creates no family member and is not cached.",
-            "thenableRule": "A thenable rejects as an invalid family factory result; the factory must synchronously return a same-domain Atom or Selector.",
-            "resultBoundary": "One same-domain Atom or Selector constructed in this callback, or any already-published family Atom or Selector member, is weakly memoized for the canonical identity tuple. Collection rows and collection definitions reject even after public readable State widens. A pre-existing ordinary Atom or Selector rejects so weak family identity never requires retroactive reverse indexing across Store overrides.",
+            "thenableRule": "A thenable rejects as an invalid family factory result; the factory must synchronously return a same-domain Atom, Selector, or ExternalAtom.",
+            "resultBoundary": "One same-domain Atom, Selector, or ExternalAtom constructed in the active factory frame, or an already-published family member of those kinds, is weakly memoized for the canonical identity tuple. Collection rows and collection definitions reject, as do collection query States and arbitrary pre-existing States. Store override reacquisition remains Atom-only; ExternalAtom members keep source-owned lifecycle.",
             "requiredContractIds": [
                 "family.variadic-primitive-identity",
                 "callback.definition-only",
-                "error.stable-name-and-code"
+                "error.stable-name-and-code",
+                "family.external-factory-admission"
             ],
             "decisionStatus": "approved"
         },
@@ -415,17 +416,21 @@
                 "same-domain Store mutation",
                 "same-domain Store transaction",
                 "same-domain registration or unsubscribe",
-                "same-domain source invalidation"
+                "same-domain source invalidation",
+                "same-domain scope access or creation",
+                "same-domain Store disposal",
+                "active selector-supplied get"
             ],
             "guardDomain": "same-runtime-domain",
             "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. An ordinary non-thenable throw becomes a recoverable external projection error; RuntimeMismatchError remains an exact control fault with host-specific publication rules. Runtime drain non-convergence is owned outside this callback boundary.",
-            "thenableRule": "A returned or thrown thenable becomes one contained named invalid synchronous snapshot outcome and is never awaited.",
-            "resultBoundary": "One Object.is-stable live value or error is sampled per admitted generation/transaction capture according to the external lifecycle contract.",
+            "thenableRule": "A returned or thrown thenable becomes InvalidSynchronousExternalSnapshotError / VALDRES_INVALID_SYNCHRONOUS_EXTERNAL_SNAPSHOT for both live and server snapshots. Each actual sample receives exactly one stateless rejection-containment handler, is never awaited, and never becomes a Suspense wakeable. A throwing then getter remains its exact ordinary error, subject to sticky control-fault precedence.",
+            "resultBoundary": "Retained reads never poll. A dormant admitted read samples each reached source at most once; a Transaction lazily captures each distinct ExternalAtom once across all scope cursors and draft generations without subscribing. Object.is compares sampled outcomes, and invalidation settles the authoritative snapshot synchronously.",
             "requiredContractIds": [
                 "external.pull-contract",
                 "external.recoverable-snapshot-errors",
                 "external.bounded-settlement",
-                "error.stable-name-and-code"
+                "error.stable-name-and-code",
+                "external.frozen-error-metadata"
             ],
             "decisionStatus": "approved"
         },
@@ -443,16 +448,20 @@
                 "same-domain Store mutation",
                 "same-domain Store transaction",
                 "same-domain registration or unsubscribe",
-                "same-domain source invalidation"
+                "same-domain source invalidation",
+                "same-domain scope access or creation",
+                "same-domain Store disposal",
+                "active selector-supplied get"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A non-thenable throw is memoized exactly within the disposable host; a missing reader throws the sticky host-fatal ServerSnapshotUnavailableError with its dependency path.",
-            "thenableRule": "A returned or thrown thenable becomes the named invalid synchronous server snapshot error and is never a Suspense wakeable.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A non-thenable throw is memoized exactly within the disposable host; a missing reader throws the sticky host-fatal ServerSnapshotUnavailableError with frozen dependencyPath of exact State handles ordered requested target to missing ExternalAtom, inclusive, even if selector code catches it.",
+            "thenableRule": "A returned or thrown thenable becomes InvalidSynchronousExternalSnapshotError / VALDRES_INVALID_SYNCHRONOUS_EXTERNAL_SNAPSHOT for both live and server snapshots. Each actual sample receives exactly one stateless rejection-containment handler, is never awaited, and never becomes a Suspense wakeable. A throwing then getter remains its exact ordinary error, subject to sticky control-fault precedence.",
             "resultBoundary": "Sampled at most once per disposable host and never published into the live graph or external projection.",
             "requiredContractIds": [
                 "external.deterministic-server-snapshot",
                 "react.isolated-hydration-reader",
-                "error.stable-name-and-code"
+                "error.stable-name-and-code",
+                "external.frozen-error-metadata"
             ],
             "decisionStatus": "approved"
         },
@@ -474,14 +483,16 @@
                 "arbitrary same-domain publication"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A throw rolls back provisional admission; a missing, non-function, or thenable cleanup throws InvalidExternalCleanupError. Runtime delivery limits are owned outside this callback boundary.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A throw rolls back provisional admission; a missing, non-function, or thenable cleanup throws InvalidExternalCleanupError. Runtime delivery limits are owned outside this callback boundary. Direct InvalidExternalCleanupError has frozen phase admitting, source external-startup, and committed equal to publication state at failure. Arbitrary setup throws and setup/cleanup aggregation use ExternalSourceOperationError; every failure occurrence is retained without deduplication by error identity.",
             "thenableRule": "subscribe itself is synchronous and must return a cleanup function; a thenable setup or cleanup result throws InvalidExternalCleanupError and is never awaited.",
             "resultBoundary": "After a valid cleanup is returned, core performs the mandatory second sample and one admission settlement before sub returns.",
             "requiredContractIds": [
                 "external.race-closing-attach",
                 "external.startup-dirty-latch",
                 "external.bounded-settlement",
-                "error.stable-name-and-code"
+                "error.stable-name-and-code",
+                "external.failure-occurrences",
+                "external.frozen-error-metadata"
             ],
             "decisionStatus": "approved"
         },
@@ -502,13 +513,15 @@
                 "publication through the revoked invalidator"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Invalid synchronous cleanup results throw InvalidExternalCleanupError; cleanup remains all-run and ordinary errors join the ordered outer lifecycle ledger after the target is idle or terminal.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Invalid synchronous cleanup results throw InvalidExternalCleanupError with frozen phase cleanup, source external-cleanup, and committed equal to publication state at failure. Cleanup remains revoke-first and all-run. Arbitrary cleanup throws and mixed-phase aggregation use ExternalSourceOperationError after idle or terminal, preserving every occurrence in order, including repeated error identities; application errors remain untouched. Pure notification failures retain SubscriberNotificationError.",
             "thenableRule": "A returned or thrown thenable becomes InvalidExternalCleanupError, is never awaited, and cannot add disposeAsync.",
             "resultBoundary": "The generation is revoked before invocation and remains revoked regardless of cleanup outcome.",
             "requiredContractIds": [
                 "external.generation-safe-cleanup",
                 "lifecycle.synchronous-cleanup",
-                "error.stable-name-and-code"
+                "error.stable-name-and-code",
+                "external.failure-occurrences",
+                "external.frozen-error-metadata"
             ],
             "decisionStatus": "approved"
         },
@@ -535,7 +548,7 @@
                 "dormant external sampling"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. Subscriber throws are all collected in deterministic target-reaching and callback-insertion order without starving the remaining snapshot. Without an already-authoritative post-apply RuntimeMismatchError, they surface after idle as SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION with immutable cause equal to the exact first thrown value, frozen ordered causes, committed true, phase notifying, and lifecycle-free source owned-mutation. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. Subscriber throws are all collected in deterministic target-reaching and callback-insertion order without starving the remaining snapshot. Without an already-authoritative post-apply RuntimeMismatchError, they surface after idle as SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION with immutable cause equal to the exact first thrown value, frozen ordered causes, committed true, phase notifying, and lifecycle-free source owned-mutation. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. Pure external notification failures preserve SubscriberNotificationError with source external-read, external-startup, external-invalidation, or external-drain; owned-mutation remains unchanged. The first occurrence supplies source, and every failure occurrence remains in order without deduplication by error identity. Mixed-phase and setup/cleanup aggregation use ExternalSourceOperationError after all required delivery, cleanup, and drain work.",
             "thenableRule": "Callback return values are ignored. A returned thenable receives exactly one stateless rejection-containment handler, is never awaited, and does not itself create a notification error. A thrown thenable receives exactly one stateless rejection-containment handler, is never awaited, and remains the exact ordered subscriber cause; no asynchronous Valdres capability survives delivery.",
             "resultBoundary": "Store.sub(state, callback: () => void): () => void creates one independent registration even when callback identity repeats. Registration performs the same outcome materialization as get, but internally catches the public read throw of a successfully materialized ordinary current error outcome so it can register; only admission, disposal, or internal-publication failure registers nothing. A lifecycle-free registration does not notify. Changed target callback sets enter the frozen settlement snapshot in first-reaching order and callbacks within each target retain subscription insertion order; every snapshotted registration is attempted at most once. The returned unsubscribe is idempotent, removes future eligibility immediately, and cannot edit the current snapshot.",
             "requiredContractIds": [

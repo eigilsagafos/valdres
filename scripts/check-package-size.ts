@@ -162,6 +162,7 @@ try {
         inspect: `export * from "valdres/inspect"`,
         equality: `export { deepEqual } from "valdres/equality"`,
         "adapter-internals": `export * from "valdres/adapter-internals/v1"`,
+        "external-atom": `import { externalAtom, store } from "valdres"; export const clock = externalAtom({ getSnapshot: () => 1, getServerSnapshot: () => 0, subscribe: () => () => {} }); export const app = store(); export const read = () => app.get(clock);`,
     }
     fixtureSources["query-development"] = fixtureSources.query!
     const fixtures: Record<string, Size> = {}
@@ -245,6 +246,21 @@ try {
                 if (JavaScript.includes(storeConstructionSentinel)) {
                     throw new Error(
                         `${name} fixture retained Store construction: ${storeConstructionSentinel}`,
+                    )
+                }
+            }
+        }
+        if (name === "external-atom") {
+            const JavaScript = new TextDecoder().decode(bytes)
+            for (const unrelatedSentinel of [
+                "useSyncExternalStore",
+                "react.transitional.element",
+                "readHydrationSnapshot requires a valid State",
+                "family cannot recursively construct the same member",
+            ]) {
+                if (JavaScript.includes(unrelatedSentinel)) {
+                    throw new Error(
+                        `ExternalAtom fixture retained an unrelated capability: ${unrelatedSentinel}`,
                     )
                 }
             }
