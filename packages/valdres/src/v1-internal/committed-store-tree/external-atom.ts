@@ -1,3 +1,8 @@
+import { StoreTreeCounterId } from "./counter-ids"
+import {
+    getExternalDomainRecords,
+    type DefinitionDomain,
+} from "./committed-store-tree"
 import { SelectorEvaluationSession } from "../selector-evaluator/types"
 import { ExternalProjectionPlane } from "./external-projection"
 import type { ExternalOperationFailure } from "./external-types"
@@ -5,6 +10,7 @@ import {
     assertRuntimeDefinitionConstructionAllowed,
     CallbackCapabilityError,
     RuntimeMismatchError,
+    SubscriberNotificationError,
     containThenable,
     inspectThenable,
     makeStateHandle,
@@ -25,7 +31,32 @@ import type {
     State,
 } from "./types"
 
-/** Internal names and fields remain provisional until Gate 0 approval. */
+/** @internal No root export until lifecycle, settlement and Gate 0 are certified. */
+export const createInternalExternalAtom = <Value>(
+    domain: DefinitionDomain,
+    ...args: [source: ExternalSource<Value>, options?: ExternalAtomOptions]
+): ExternalAtom<Value> =>
+    defineExternalAtom(getExternalDomainRecords(domain), args)
+
+/** @internal Smaller deterministic work bounds for adversarial fixtures. */
+export const configureInternalExternalBounds = (
+    domain: DefinitionDomain,
+    bounds: Partial<import("./external-types").ExternalBounds>,
+): void => {
+    const runtime = getExternalDomainRecords(domain).externalRuntime
+    if (runtime === undefined)
+        throw new TypeError(
+            "Define an ExternalAtom before configuring its internal bounds",
+        )
+    for (const value of Object.values(bounds))
+        if (!Number.isInteger(value) || value < 1)
+            throw new TypeError(
+                "External work bounds must be positive integers",
+            )
+    Object.assign(runtime.bounds, bounds)
+}
+
+/** Approved immutable synchronous snapshot failure. */
 export class InvalidSynchronousExternalSnapshotError extends Error {
     readonly code = "VALDRES_INVALID_SYNCHRONOUS_EXTERNAL_SNAPSHOT"
     constructor() {
@@ -57,31 +88,69 @@ export class DormantExternalReadError extends Error {
 
 export class InvalidExternalCleanupError extends Error {
     readonly code = "VALDRES_INVALID_EXTERNAL_CLEANUP"
-    constructor() {
+    readonly phase: ExternalOperationFailure["phase"]
+    readonly source: ExternalOperationFailure["source"]
+    readonly committed: boolean
+    constructor(
+        metadata: Readonly<
+            Pick<ExternalOperationFailure, "phase" | "source" | "committed">
+        > = {
+            phase: "admitting",
+            source: "external-startup",
+            committed: false,
+        },
+    ) {
         super(
             "External source subscribe must return a synchronous cleanup function",
         )
         this.name = "InvalidExternalCleanupError"
+        this.phase = metadata.phase
+        this.source = metadata.source
+        this.committed = metadata.committed
         Object.freeze(this)
     }
 }
 
 export class ExternalSourceNonConvergenceError extends Error {
     readonly code = "VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE"
-    constructor() {
+    readonly phase: ExternalOperationFailure["phase"]
+    readonly source: ExternalOperationFailure["source"]
+    readonly committed: boolean
+    constructor(
+        metadata: Readonly<
+            Pick<ExternalOperationFailure, "phase" | "source" | "committed">
+        > = { phase: "sampling", source: "external-drain", committed: true },
+    ) {
         super(
             "External sources did not settle within the synchronous work bound",
         )
         this.name = "ExternalSourceNonConvergenceError"
+        this.phase = metadata.phase
+        this.source = metadata.source
+        this.committed = metadata.committed
         Object.freeze(this)
     }
 }
 
 export class ExternalSourceDeliveryLimitError extends Error {
     readonly code = "VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT"
-    constructor() {
+    readonly phase: ExternalOperationFailure["phase"]
+    readonly source: ExternalOperationFailure["source"]
+    readonly committed: boolean
+    constructor(
+        metadata: Readonly<
+            Pick<ExternalOperationFailure, "phase" | "source" | "committed">
+        > = {
+            phase: "sampling",
+            source: "external-invalidation",
+            committed: false,
+        },
+    ) {
         super("External source delivery exceeded the synchronous work bound")
         this.name = "ExternalSourceDeliveryLimitError"
+        this.phase = metadata.phase
+        this.source = metadata.source
+        this.committed = metadata.committed
         Object.freeze(this)
     }
 }
@@ -260,28 +329,74 @@ function ensureExternalRuntime(domain: RuntimeDomainRecords): void {
         deliveryDepth: 32,
         deliveryWork: 4096,
     }
-    domain.externalRuntime ??= Object.freeze({
+    domain.externalRuntime ??= Object.freeze<
+        import("./external-types").ExternalRuntime
+    >({
         bounds,
-        createTree: (
-            bindings: import("./external-types").ExternalTreeBindings,
-        ) => new ExternalProjectionPlane(bindings, delivery, bounds),
+        createTree: (host: import("./external-types").ExternalTreeHost) =>
+            new ExternalProjectionPlane(host, delivery, bounds),
+        read: (draft, node, session, serverPath, count) => {
+            const sample = () => {
+                count?.(
+                    serverPath === undefined
+                        ? StoreTreeCounterId.liveSamples
+                        : StoreTreeCounterId.serverSamples,
+                    1,
+                )
+                const outcome = domain
+                    .externalAtoms!.get(node)!
+                    .sample(
+                        session,
+                        serverPath,
+                        count === undefined
+                            ? undefined
+                            : () =>
+                                  count(
+                                      StoreTreeCounterId.thenableContainments,
+                                      1,
+                                  ),
+                    )
+                if (serverPath === undefined)
+                    count?.(StoreTreeCounterId.transactionCaptures, 1)
+                return outcome
+            }
+            if (serverPath !== undefined) return sample()
+            const current = draft.externalCaptures?.get(node)
+            if (current !== undefined) return current
+            // A control fault escapes before a transaction capture is stored.
+            const outcome = sample()
+            let captures = draft.externalCaptures
+            if (captures === undefined) {
+                draft.onAllocation?.()
+                captures = draft.externalCaptures = new Map()
+            }
+            captures.set(node, outcome)
+            return outcome
+        },
         fail: (
             failures: readonly ExternalOperationFailure[],
             preserveMetadata = false,
         ): never => {
-            const seen = new Set<unknown>()
-            const distinct = failures.filter(failure => {
-                if (failure.phase === "notifying") return true
-                if (seen.has(failure.cause)) return false
-                seen.add(failure.cause)
-                return true
-            })
             if (
-                !preserveMetadata &&
-                distinct.length === 1 &&
-                distinct[0]!.phase !== "notifying"
-            ) {
-                const failure = distinct[0]!
+                failures.length > 1 &&
+                failures[0]!.cause instanceof RuntimeMismatchError &&
+                failures.every(
+                    failure => failure.source === "owned-mutation",
+                ) &&
+                failures
+                    .slice(1)
+                    .every(failure => failure.phase === "notifying")
+            )
+                throw new SubscriberNotificationError(
+                    failures.map(failure => failure.cause),
+                )
+            if (failures.every(failure => failure.phase === "notifying"))
+                throw new SubscriberNotificationError(
+                    failures.map(failure => failure.cause),
+                    failures[0]!.source,
+                )
+            if (!preserveMetadata && failures.length === 1) {
+                const failure = failures[0]!
                 if (
                     (failure.phase !== "admitting" &&
                         failure.phase !== "cleanup") ||
@@ -294,7 +409,7 @@ function ensureExternalRuntime(domain: RuntimeDomainRecords): void {
                 )
                     throw failure.cause
             }
-            throw new ExternalSourceOperationError(distinct)
+            throw new ExternalSourceOperationError(failures)
         },
     })
 }

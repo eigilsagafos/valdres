@@ -1,13 +1,13 @@
+import type { StoreTreeCounterId } from "./counter-ids"
+import type { TreeDraft } from "./tree-transaction"
+import type { SynchronousResult } from "./runtime-domain"
+import type { SubscriptionRegistration } from "./committed-store-tree"
 import type {
     SelectorEvaluationSession,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
 import type { AnyState, RuntimeDomainRecords } from "./runtime-domain"
-import type {
-    StoreScopeNode,
-    OutcomeToken,
-    StoreTreeCounter,
-} from "./scope-node"
+import type { StoreScopeNode, SelectorRecord, OutcomeToken } from "./scope-node"
 
 export interface ExternalBounds {
     rounds: number
@@ -15,20 +15,39 @@ export interface ExternalBounds {
     deliveryDepth: number
     deliveryWork: number
 }
-export type ExternalOperationPhase =
-    | "materializingRead"
-    | "drafting"
-    | "preflight"
-    | "applying"
-    | "propagating"
-    | "transitioningLifecycle"
-    | "instrumenting"
-    | "notifying"
-    | "samplingExternal"
-    | "drainingExternal"
-    | "disposing"
-    | "cleanup"
-    | "terminal"
+export const enum ExternalOperationPhase {
+    materializingRead,
+    drafting,
+    preflight,
+    applying,
+    propagating,
+    transitioningLifecycle,
+    instrumenting,
+    notifying,
+    samplingExternal,
+    drainingExternal,
+    disposing,
+    cleanup,
+    terminal,
+}
+
+export interface ExternalTreeHost {
+    readonly runtimeDomain: RuntimeDomainRecords
+    readonly postSourceApply: boolean
+    readonly subscriberReading: boolean
+    sourceEpoch: number
+    createOutcomeToken(): OutcomeToken
+    recordCounter(counter: StoreTreeCounterId, amount?: number): void
+    hasSubscription(scope: StoreScopeNode, node: AnyState): boolean
+    reachSubscriptionTarget(scope: StoreScopeNode, node: AnyState): void
+    beginNotificationSettlement(): void
+    clearNotificationSettlement(): void
+    propagateFromSources(
+        firstSource: undefined,
+        remainingSources: undefined,
+        prepare: () => void,
+    ): void
+}
 
 /** A tree-owned optional plane. Every settlement still uses the core queue. */
 export interface ExternalTreeBindings {
@@ -37,7 +56,7 @@ export interface ExternalTreeBindings {
     readonly subscriberRead: () => boolean
     readonly subscribed: (scope: StoreScopeNode, node: AnyState) => boolean
     readonly token: () => OutcomeToken
-    readonly count: (counter: StoreTreeCounter, amount?: number) => void
+    readonly count: (counter: StoreTreeCounterId, amount?: number) => void
     readonly advanceEpoch: () => void
     readonly epoch: () => number
     readonly reach: (scope: StoreScopeNode, node: AnyState) => void
@@ -45,7 +64,42 @@ export interface ExternalTreeBindings {
 }
 
 export interface ExternalTreePlane {
+    selectorRecord(
+        scope: StoreScopeNode,
+        record: SelectorRecord,
+        session: SelectorEvaluationSession<AnyState>,
+    ): SelectorRecord
+    publishedSelector(
+        scope: StoreScopeNode,
+        node: AnyState,
+        previous: SelectorRecord | undefined,
+        record: SelectorRecord,
+    ): void
+    get(
+        scope: StoreScopeNode,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ServedSelectorOutcome<OutcomeToken>
+    observe(
+        scope: StoreScopeNode,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ServedSelectorOutcome<OutcomeToken>
+    subscribe(
+        operation: (
+            admitted: (registration: SubscriptionRegistration) => void,
+        ) => () => void,
+    ): () => void
+    admit(
+        registration: SubscriptionRegistration,
+        token: OutcomeToken,
+        admitted?: (registration: SubscriptionRegistration) => void,
+    ): void
+    notificationCallback(
+        registration: SubscriptionRegistration,
+    ): (() => unknown) | undefined
     readonly operating: boolean
+    readonly idle: boolean
     readonly admissionAllowed: boolean
     readonly pendingLifecycle: boolean
     active(node: AnyState): boolean
@@ -57,7 +111,11 @@ export interface ExternalTreePlane {
         rollback?: () => void,
     ): Result
     phase(phase: ExternalOperationPhase): void
-    failure(cause: unknown, phase?: ExternalOperationFailure["phase"]): void
+    failure(
+        cause: unknown,
+        phase?: ExternalOperationFailure["phase"],
+        origin?: object,
+    ): void
     settleLifecycle(): boolean
     startup(): void
     readonly dormantPull: boolean
@@ -96,7 +154,14 @@ export interface ExternalTreePlane {
 
 export interface ExternalRuntime {
     readonly bounds: ExternalBounds
-    createTree(bindings: ExternalTreeBindings): ExternalTreePlane
+    createTree(host: ExternalTreeHost): ExternalTreePlane
+    read(
+        draft: TreeDraft,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+        serverPath?: readonly AnyState[],
+        count?: (counter: StoreTreeCounterId, amount: number) => void,
+    ): SynchronousResult
     fail(
         failures: readonly ExternalOperationFailure[],
         preserveMetadata?: boolean,

@@ -1,8 +1,6 @@
+import { createInternalExternalAtom } from "../../src/v1-internal/committed-store-tree/external-atom"
 import { describe, expect, test } from "bun:test"
-import {
-    createCommittedStoreTreeDomain,
-    createInternalExternalAtom,
-} from "../../src/v1-internal/committed-store-tree/committed-store-tree"
+import { createCommittedStoreTreeDomain } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
 import type {
     CommittedStoreTree,
     ExternalAtom,

@@ -1,11 +1,14 @@
+import {
+    createInternalExternalAtom,
+    configureInternalExternalBounds,
+} from "../../src/v1-internal/committed-store-tree/external-atom"
 import { describe, expect, test } from "bun:test"
 import {
     CallbackCapabilityError,
     RuntimeMismatchError,
+    SubscriberNotificationError,
     createCommittedStoreTreeDomain,
-    createInternalExternalAtom,
     createInternalStoreTreeInstrumentation,
-    configureInternalExternalBounds,
 } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
 import {
     ExternalSourceOperationError,
@@ -499,11 +502,13 @@ describe("external synchronous bounds", () => {
         })
         configureInternalExternalBounds(f.domain, { deliveryDepth: 2 })
         a.set(1)
-        const error = thrown(a.invalidate) as ExternalSourceOperationError
+        const error = thrown(a.invalidate)
         const deepest = (value: unknown): unknown =>
-            value instanceof ExternalSourceOperationError
+            value instanceof ExternalSourceOperationError ||
+            value instanceof SubscriberNotificationError
                 ? deepest(value.cause)
                 : value
+        expect(error).toBeInstanceOf(SubscriberNotificationError)
         expect(deepest(error)).toBeInstanceOf(ExternalSourceDeliveryLimitError)
         expect(third.get(c.ext)).toBe(0)
         expect(c.samples()).toBe(2)

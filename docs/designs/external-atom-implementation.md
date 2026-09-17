@@ -1,10 +1,10 @@
 # ExternalAtom implementation contract and engineering review
 
-Status: Gate 0 recommendations awaiting owner approval; E0 executable model checkpoint.
+Status: Gate 0 approved with owner amendments; E3.5 repair/extraction passes its correctness, ordinary isolation/size, and performance gates. E4 public certification is next.
 Review target: `.context/attachments/HYMHX1/external-atom-implementation-agent-prompt.md`.
 Fetched base: `270f00e46f26aee66a724fcf6d6fdda09ddcf133` (`origin/main`, includes PR #397).
 Initial branch: `implement-external-atom`; initial HEAD equals base. No branch rename.
-No production/public export, version, changelog, or contract evidence change is authorized by this memo alone.
+Owner approval authorizes E3.5, followed by E4 once E3.5 is green. No version or changelog bump; no merge.
 
 ## Ownership and data flow
 
@@ -37,10 +37,10 @@ operation frame: work -> instrumentation -> all-fire notification -> cleanup
                 terminal round installs recoverable errors; no queued work
 ```
 
-## Gate 0 recommendations
+## Approved Gate 0 decisions
 
-These are proposals, not approved public contracts. Items 1–5 require owner
-confirmation before catalog changes or publication. Source citations are to the
+The owner approved items 1–5 with the amendments below on 2026-09-16.
+Source citations are to the
 fetched base unless an absolute recovery-plan path is given. The recovery plan
 is `/Users/eigilsagafos/conductor/workspaces/valdres/amsterdam-v1/.context/valdres-1.0-recovery-plan.md`;
 that file and the Amsterdam roadmap will not be edited here.
@@ -75,7 +75,7 @@ that file and the Amsterdam roadmap will not be edited here.
    operation, its first failure stays primary; append later failures in
    occurrence order after all delivery, cleanup, and drain work.
 
-   For mixed-phase failures propose one additional immutable root class,
+   For mixed-phase failures use one additional immutable root class,
    `ExternalSourceOperationError / VALDRES_EXTERNAL_SOURCE_OPERATION`, with
    `cause`, frozen raw `causes`, and frozen `failures` records of
    `{ cause, committed, phase, source }`. Top-level `committed`, `phase`, and
@@ -96,7 +96,7 @@ that file and the Amsterdam roadmap will not be edited here.
    The proposed `external-read` source also covers a dormant pull that publishes
    one source before a later source fails; its earlier changes must still settle
    and any subscriber failure remains secondary. This case was added during E1
-   review and remains part of the unapproved public recommendation.
+   review and is included in the approved contract.
    `InvalidExternalCleanupError / VALDRES_INVALID_EXTERNAL_CLEANUP` already
    exists in the contract and covers invalid setup cleanup and returned/thrown
    cleanup thenables. Ordinary synchronous cleanup return values are ignored
@@ -145,17 +145,17 @@ that file and the Amsterdam roadmap will not be edited here.
    Evidence: recovery 2561–2596. Counters below freeze the work definition before
    production implementation.
 
-## Public family contradiction requiring reconciliation
+## Public family contradiction resolved by owner approval
 
 `contracts/v1/check.ts:1554–1561` demands `same-domain Atom or Selector` and
 emits: `family factory admission must remain Atom-or-Selector after State widens`.
 `callback-capabilities.json:279–280` freezes that restriction. Recovery 849–851
 instead explicitly includes `family((key) => externalAtom(...))`, as does this
-implementation brief. Recommendation: approve a narrow widening to Atom,
-Selector, or ExternalAtom, while arbitrary collection State admission remains
-rejected. Keep Atom-only override retention/reacquisition unchanged. This stops
-only public family widening pending owner confirmation; internal model work is
-unblocked. No other blocking contradiction has been identified.
+implementation brief. The owner approved narrow widening to Atom, Selector, or
+ExternalAtom created in the active factory frame or already published as a family
+member. Arbitrary pre-existing States and collection States remain rejected.
+Atom-only override retention/reacquisition stays unchanged. E4 applies the
+reconciled catalogs and guards together.
 
 ## Engineering review
 
@@ -492,18 +492,115 @@ packed provenance, public family admission, React external consumers, generated
 API evidence, docs, and the single changeset remain E4 work. No PR is authorized
 until Gate 0 approval and the relevant slice's certification are both complete.
 
+## E3.5 repair and extraction (approved execution order)
+
+Branch `feat/external-atom-isolation`, based on E3 `c378d622`. The owner explicitly
+requires this repair commit to pass before starting public E4. The ordinary
+adapter gzip ceiling remains 17,249 bytes; `coreRetainingGzipAllowance` stays 77.
+
+Approved amendments:
+
+- Root type exports are exactly `ExternalSource<T>`, `ExternalAtom<T>`, and
+  `ExternalAtomOptions`, with explicit catalog entries and no internal lifecycle
+  type exports. Live/server thenables share the approved named synchronous error.
+- Pure notification failures retain `SubscriberNotificationError` with their
+  external source; only mixed-phase and setup/cleanup aggregation use
+  `ExternalSourceOperationError`. Every failure occurrence is preserved, including
+  two callbacks throwing the same object. All public metadata is frozen and
+  catalogued, including directly thrown lifecycle and bound errors.
+- Missing server paths contain exact State handles, requested target through
+  missing ExternalAtom inclusive, in a frozen array.
+- Each constructor call creates a fresh definition. Structural non-null,
+  non-array sources keep inherited method receivers; methods are captured once
+  in deterministic order. Unknown option keys reject.
+- Family admits same-domain ExternalAtoms created in the active factory frame
+  or already published as family members. Arbitrary pre-existing States and
+  collection States remain rejected. Reacquisition remains Atom-only.
+
+Extraction uses the existing optional `externalRuntime` capability and existing
+StoreTree propagation queue. Construction/runtime installation, admission policy,
+closure-marker traversal, external sampling, and failure bookkeeping belong to
+that optional implementation. The core retains narrow dispatch hooks and its
+existing graph/queue ownership. Independent size attribution established that
+Bun already dropped the projection implementation at E3: host additions cost
+most of the 1,848-byte gzip overage. Removing the static import alone is insufficient.
+
+The repeated-cause regression reproduces two setup failures, two cleanup failures,
+and setup plus rollback cleanup using the same application error. A propagated
+control outcome carries an internal occurrence token. The operation ledger tracks
+that token, so observing one occurrence through multiple selector ancestors adds
+no duplicate; a later operation still reports the stored control error. Distinct
+callbacks always retain distinct occurrences even when they throw the same
+application object. Application errors are never identity-deduped. Pure owned
+mutation mismatch-plus-notification delivery retains its existing subscriber
+wrapper even when an unrelated ExternalAtom has installed the optional plane.
+
+Public PR topology is now E0 model, then one implementation PR containing E1–E4,
+including the required E3.5 repair commit. The individual local slice commits stay
+reviewable, but no intermediate PR exposes ExternalAtom through public State
+without the approved factory and catalog entries. No PR is opened while its
+relevant certification is red.
+
+The extraction also removes an older capability coupling: the public domain now
+contains only shared runtime records. Separate internal functions construct
+Atoms, Selectors, Stores, and adapters from those exact records. The complete
+internal domain factory still composes them for model/architecture fixtures.
+Collection presence and inspectable Stores use the same identity. Hydration
+orchestration lives in the adapter capability, with narrow draft/scratch/fallback
+bridges to the existing host. No second Store implementation or evaluator exists.
+Transaction capture policy lives in `externalRuntime`; its memo remains owned and
+cleared by the root TreeDraft, independently of scope scratch generations.
+
+E3.5 measured ordinary fixtures (immutable baselines and allowance unchanged):
+
+| Fixture | Raw bytes | Raw ceiling | Gzip bytes | Gzip ceiling |
+| --- | ---: | ---: | ---: | ---: |
+| Atom | 14,710 | 66,093 | 4,610 | 17,276 |
+| Atom / Selector / Store | 65,754 | 66,284 | 17,341 | 17,346 |
+| Family | 20,840 | 71,482 | 6,388 | 18,990 |
+| Adapter | 15,774 | 66,063 | 4,757 | 17,249 |
+
+The four fixtures exclude projection/construction sentinels. Atom, family, and
+adapter additionally exclude Store construction. Adapter gzip fell from E3's
+19,097 to 4,757; the shared runtime records remain compatible across imports.
+The combined fixture has only five gzip bytes of remaining headroom, so E4 must
+recheck all ordinary gates after its final module graph is built.
+
+Validation on this extraction: 731 functional tests / 345,638 assertions across
+model, evaluator, committed tree (including external and GC), public candidate,
+and inspect; 56 contract tests / 441 assertions; 41 React tests / 1,817 assertions;
+both package typechecks pass. Package manifest, publint, declaration consumers,
+Node/Bun smokes, esbuild, Vite, and webpack pass. Controlled final Bun 1.4 / Node 24.16 median ratios against the exact original
+base are, respectively: Atom reads 0.976 / 0.992; Selector reads 1.025 / 1.026;
+write/notify 1.008 / 1.005; subscriptions 1.035 / 1.050; transactions 1.014 / 1.017.
+The longer 400,000-operation subscription fixture reports 1.000 / 1.027. Every
+final lane is below the 10% regression threshold. Raw paired samples and harnesses
+are preserved under `.context/external-atom/` (`*certified.jsonl`).
+
+The full package command still reports 12 pre-E4 feature/artifact budget failures
+(dist/packed and collection/query/all-exports/inspect), but no ordinary fixture
+failure. Those measured feature budgets and the three-build digest belong to
+E4's explicit packed certification; no baseline, allowance, or digest has been
+changed in E3.5. The packed command reproduces three identical builds then stops
+at the existing certified digest. `verify` initially stopped at installed Node
+24.21 versus CI's 24.16; Node 24.16.0 is now available through an isolated npm
+exec cache for final certification. The earlier broad runtime command reproduced
+clean-main historical tournament timeouts without changing their limits.
+
+Commit this certified E3.5 repair, then create `feat/external-atom-public`
+from the repair commit and finish root/family, React, declarations, packed
+consumers, docs, and one changeset. No partial public implementation PR is opened.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 | --- | --- | --- | --- | --- | --- |
-| Eng Review | `/plan-eng-review` | Architecture and test plan before edits | 1 | Internal model may proceed; public gate pending | existing evaluator reused; four implementation hazards already covered by brief |
-| Independent review | contract/recovery audit agents | Evidence and conflicting authority | 2 | Model regressions addressed; public gate pending | family admission conflict confirmed; model counterexamples reproduced and tested |
+| Eng Review | `/plan-eng-review` | Architecture and extraction | 2 | E3.5 gates pass | One queue/evaluator; optional capabilities and hydration extracted |
+| Independent review | contract/recovery and E3.5 fixture agents | Failure occurrences and ordinary bundle isolation | 4 | Repairs and isolation verified | Occurrence ledger fixed; four ordinary size fixtures pass unchanged budgets |
 
-VERDICT: E0–E3 internal behavior implemented and tested. Full delivery remains
-blocked at E4 public approval, with size and packed certification still open.
-No public constructor export, changeset, PR, or final certification claim.
+VERDICT: Gate 0 is approved and E3.5 ordinary size/performance/correctness gates
+pass. Proceed to E4 public certification. The full package remains uncertified
+until its approved feature budgets and packed digest are measured in E4.
+The ordinary ceilings and allowance remain unchanged.
 
-**UNRESOLVED DECISIONS:**
-- Gate 0 items 1–5, including the operation-error wrapper and metadata shape.
-- Narrow public family widening to include ExternalAtom.
-- E4 measured feature-cost policy versus further ordinary-core extraction.
+NO UNRESOLVED DECISIONS

@@ -1,3 +1,5 @@
+import { StoreTreeCounterId } from "./counter-ids"
+import type { ExternalTreePlane } from "./external-types"
 import type {
     SelectorComparisonBaseline,
     SelectorDependencySnapshot,
@@ -87,9 +89,9 @@ export type StoreTreeCounter =
     | "familyOwnerRetains"
     | "familyOwnerReleases"
 
-interface SelectorRecord {
-    readonly lifecycleInClosure: boolean
-    readonly dormantExternalInClosure: boolean
+export interface SelectorRecord {
+    readonly lifecycleInClosure?: boolean
+    readonly dormantExternalInClosure?: boolean
     readonly served: ServedSelectorOutcome<OutcomeToken>
     readonly dependencies: readonly SelectorDependencySnapshot<
         AnyState,
@@ -116,7 +118,6 @@ export interface AtomViewRecord {
 export interface StoreScopeCoordinator {
     readonly runtimeDomain: RuntimeDomainRecords
     readonly postSourceApply: boolean
-    readonly allowControlPublication: boolean
     readonly instrumented: boolean
     /** Inspector-owned evaluator metadata transports optional numeric codes
      * without changing the ordinary coordinator or runtime-domain shape. */
@@ -128,16 +129,7 @@ export interface StoreScopeCoordinator {
         atom: AnyAtom,
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken>
-    serveExternal(
-        scope: StoreScopeNode,
-        node: AnyState,
-        session: SelectorEvaluationSession<AnyState>,
-    ): ServedSelectorOutcome<OutcomeToken>
-    refreshExternalClosure(
-        scope: StoreScopeNode,
-        node: AnyState,
-        session: SelectorEvaluationSession<AnyState>,
-    ): void
+    readonly external: ExternalTreePlane | undefined
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean
     prepareSelectorRead(
         scope: StoreScopeNode,
@@ -145,10 +137,13 @@ export interface StoreScopeCoordinator {
         session: SelectorEvaluationSession<AnyState>,
     ): void
     reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void
-    reconcileExternalLifecycle(scope: StoreScopeNode, state: AnyState): void
-    isExternalActive(state: AnyState): boolean
-    latchPropagationControlFault(error: unknown): void
-    recordCounter(counter: StoreTreeCounter, amount?: number): void
+    latchPropagationControlFault(
+        outcome: Extract<
+            ServedSelectorOutcome<OutcomeToken>["outcome"],
+            { kind: "control-error" }
+        >,
+    ): void
+    recordCounter(counter: StoreTreeCounterId, amount?: number): void
 }
 
 /**
@@ -352,7 +347,7 @@ export class StoreScopeNode
         this.#liveAtomViews.add(record)
         if (inheritedFrom !== undefined) {
             inheritedFrom.inheritingChildren.add(record)
-            this.coordinator.recordCounter("routeAdds")
+            this.coordinator.recordCounter(StoreTreeCounterId.routeAdds)
         }
         return record
     }
@@ -365,14 +360,14 @@ export class StoreScopeNode
         this.detachAtomView(record)
         record.inheritedFrom = inheritedFrom
         inheritedFrom.inheritingChildren.add(record)
-        this.coordinator.recordCounter("routeAdds")
+        this.coordinator.recordCounter(StoreTreeCounterId.routeAdds)
     }
 
     detachAtomView(record: AtomViewRecord): void {
         if (record.inheritedFrom === undefined) return
         record.inheritedFrom.inheritingChildren.delete(record)
         record.inheritedFrom = undefined
-        this.coordinator.recordCounter("routeRemoves")
+        this.coordinator.recordCounter(StoreTreeCounterId.routeRemoves)
     }
 
     updateAtomView(record: AtomViewRecord, outcome: DraftAtomOutcome): void {
@@ -404,68 +399,14 @@ export class StoreScopeNode
         return this.#selectorRecords.get(selector)?.dependencies
     }
 
-    reachesExternal(node: AnyState): boolean {
-        return (
-            this.#selectorRecords.get(node as AnySelector)
-                ?.lifecycleInClosure ??
-            this.coordinator.runtimeDomain.externalAtoms?.has(node) ??
-            false
-        )
+    externalRecord(node: AnyState): SelectorRecord | undefined {
+        return this.#selectorRecords.get(node as AnySelector)
     }
-
-    reachesDormantExternal(node: AnyState): boolean {
-        return (
-            this.#selectorRecords.get(node as AnySelector)
-                ?.dormantExternalInClosure ??
-            (this.coordinator.runtimeDomain.externalAtoms?.has(node) === true &&
-                !this.coordinator.isExternalActive(node))
-        )
+    replaceExternalRecord(node: AnyState, record: SelectorRecord): void {
+        this.#selectorRecords.set(node as AnySelector, record)
     }
-
-    refreshExternalActivity(node: AnyState): void {
-        const pending: AnySelector[] = []
-        this.#reverseEdges.get(node)?.forEach(parent => pending.push(parent))
-        for (let index = 0; index < pending.length; index++) {
-            const current = pending[index]!,
-                record = this.#selectorRecords.get(current)
-            if (record === undefined) continue
-            const dormantExternalInClosure = record.dependencies.some(
-                dependency => this.reachesDormantExternal(dependency.node),
-            )
-            if (dormantExternalInClosure === record.dormantExternalInClosure)
-                continue
-            this.#selectorRecords.set(
-                current,
-                Object.freeze({ ...record, dormantExternalInClosure }),
-            )
-            this.#reverseEdges
-                .get(current)
-                ?.forEach(parent => pending.push(parent))
-        }
-    }
-
-    #refreshClosureMarkers(selector: AnySelector): void {
-        const pending = [selector]
-        for (let index = 0; index < pending.length; index++) {
-            const current = pending[index]!
-            const record = this.#selectorRecords.get(current)
-            if (record === undefined) continue
-            const lifecycleInClosure = record.dependencies.some(dependency =>
-                this.reachesExternal(dependency.node),
-            )
-            if (lifecycleInClosure === record.lifecycleInClosure) {
-                this.coordinator.reconcileExternalLifecycle(this, current)
-                continue
-            }
-            this.#selectorRecords.set(
-                current,
-                Object.freeze({ ...record, lifecycleInClosure }),
-            )
-            this.coordinator.reconcileExternalLifecycle(this, current)
-            this.#reverseEdges
-                .get(current)
-                ?.forEach(parent => pending.push(parent))
-        }
+    externalDependents(node: AnyState): WeakHandleSet<AnySelector> | undefined {
+        return this.#reverseEdges.get(node)
     }
 
     markDependents(node: AnyState): void {
@@ -487,7 +428,7 @@ export class StoreScopeNode
         const retainedFamilyAtoms = this[REACQUIRABLE_ATOMS]?.size ?? 0
         if (retainedFamilyAtoms > 0) {
             this.coordinator.recordCounter(
-                "familyOwnerReleases",
+                StoreTreeCounterId.familyOwnerReleases,
                 retainedFamilyAtoms,
             )
         }
@@ -530,7 +471,7 @@ export class StoreScopeNode
         const definition = domain.selectors.get(node)
         if (definition === undefined) {
             if (domain.externalAtoms?.has(node))
-                return this.coordinator.serveExternal(this, node, session)
+                return this.coordinator.external!.serve(this, node, session)
             const served = domain[COLLECTION_KERNEL]?.scope(this, node)
             if (served !== undefined) {
                 return served as ServedSelectorOutcome<OutcomeToken>
@@ -543,7 +484,7 @@ export class StoreScopeNode
             current?.lifecycleInClosure &&
             !this.#dirtySelectors.has(selector)
         ) {
-            this.coordinator.refreshExternalClosure(this, selector, session)
+            this.coordinator.external?.refresh(this, selector, session)
             current = this.#selectorRecords.get(selector)
         }
         if (current !== undefined && this.coordinator.postSourceApply) {
@@ -559,7 +500,8 @@ export class StoreScopeNode
         )
         if (
             proposal.outcome.kind === "control-error" &&
-            !this.coordinator.allowControlPublication
+            (!this.coordinator.postSourceApply ||
+                this.coordinator.external?.dormantPull === true)
         ) {
             throw proposal.outcome.error
         }
@@ -692,17 +634,7 @@ export class StoreScopeNode
             token: proposal.token,
             outcome: proposal.outcome,
         })
-        const record: SelectorRecord = Object.freeze({
-            dormantExternalInClosure:
-                this.coordinator.runtimeDomain.externalAtoms !== undefined &&
-                proposal.dependencies.some(dependency =>
-                    this.reachesDormantExternal(dependency.node),
-                ),
-            lifecycleInClosure:
-                this.coordinator.runtimeDomain.externalAtoms !== undefined &&
-                proposal.dependencies.some(dependency =>
-                    this.reachesExternal(dependency.node),
-                ),
+        let record: SelectorRecord = {
             served,
             dependencies: proposal.dependencies,
             lastSuccess:
@@ -712,7 +644,10 @@ export class StoreScopeNode
                           token: proposal.token,
                       })
                     : previous?.lastSuccess,
-        })
+        }
+        record =
+            this.coordinator.external?.selectorRecord(this, record, session) ??
+            Object.freeze(record)
 
         const topologyChanged = this.#replaceReverseEdges(
             selector,
@@ -730,23 +665,12 @@ export class StoreScopeNode
         this.#selectorGraphVersion++
         session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(selector, record)
-        if (
-            previous !== undefined &&
-            previous.dormantExternalInClosure !==
-                record.dormantExternalInClosure
+        this.coordinator.external?.publishedSelector(
+            this,
+            selector,
+            previous,
+            record,
         )
-            this.refreshExternalActivity(selector)
-        if (this.coordinator.runtimeDomain.externalAtoms !== undefined) {
-            this.coordinator.reconcileExternalLifecycle(this, selector)
-        }
-        if (
-            previous !== undefined &&
-            previous.lifecycleInClosure !== record.lifecycleInClosure
-        ) {
-            this.#reverseEdges
-                .get(selector)
-                ?.forEach(parent => this.#refreshClosureMarkers(parent))
-        }
         this.#dirtySelectors.delete(selector)
         if (addedSelectorEdges !== undefined) {
             this.#appendObservedSelectorEdgeAdditions(addedSelectorEdges)
@@ -761,10 +685,10 @@ export class StoreScopeNode
         }
         if (proposal.outcome.kind === "control-error") {
             this.coordinator.latchPropagationControlFault(
-                proposal.outcome.error,
+                record.served.outcome as typeof proposal.outcome,
             )
         }
-        return served
+        return record.served
     }
 
     #replaceReverseEdges(
@@ -869,7 +793,10 @@ export class StoreScopeNode
     #weakRoutes<Value extends object>(): WeakHandleSet<Value> {
         return new WeakHandleSet(
             this.coordinator.instrumented
-                ? () => this.coordinator.recordCounter("deadRouteCompactions")
+                ? () =>
+                      this.coordinator.recordCounter(
+                          StoreTreeCounterId.deadRouteCompactions,
+                      )
                 : undefined,
         )
     }

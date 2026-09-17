@@ -207,6 +207,48 @@ try {
                 }
             }
         }
+        if (
+            name === "atom" ||
+            name === "atom-selector-store" ||
+            name === "family" ||
+            name === "adapter-internals"
+        ) {
+            const JavaScript = new TextDecoder().decode(bytes)
+            // Construction and projection behavior belong to the optional
+            // external runtime. Ordinary consumers may retain only its seams.
+            for (const externalImplementationSentinel of [
+                "externalAtom requires a source and optional options",
+                "ExternalAtom options support only name",
+                "External source subscribe must return a synchronous cleanup function",
+                "External sources did not settle within the synchronous work bound",
+                "External source delivery exceeded the synchronous work bound",
+                "retryRequired",
+                "drainingExternal",
+            ]) {
+                if (JavaScript.includes(externalImplementationSentinel)) {
+                    throw new Error(
+                        `fixture "${name}" retained the optional external implementation: ${externalImplementationSentinel}`,
+                    )
+                }
+            }
+        }
+        if (
+            name === "atom" ||
+            name === "family" ||
+            name === "adapter-internals"
+        ) {
+            const JavaScript = new TextDecoder().decode(bytes)
+            for (const storeConstructionSentinel of [
+                "StoreTree.txn requires a callback",
+                "Unknown committed StoreTree Atom",
+            ]) {
+                if (JavaScript.includes(storeConstructionSentinel)) {
+                    throw new Error(
+                        `${name} fixture retained Store construction: ${storeConstructionSentinel}`,
+                    )
+                }
+            }
+        }
         fixtures[name] = { raw: bytes.length, gzip: gzipSize(bytes) }
     }
 

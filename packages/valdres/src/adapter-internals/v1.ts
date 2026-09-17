@@ -1,10 +1,11 @@
+import { createDomainAdapter } from "../v1-internal/committed-store-tree/committed-store-tree"
 import type {
     CommittedStoreTree as Store,
     State,
 } from "../v1-internal/committed-store-tree/committed-store-tree"
 import { v1Domain } from "../v1-internal/public-domain"
 
-const adapter = v1Domain.adapter
+const adapter = createDomainAdapter(v1Domain)
 
 export const assertStore: (value: unknown) => asserts value is Store =
     adapter.assertStore

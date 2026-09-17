@@ -1,3 +1,6 @@
+import { ExternalOperationPhase } from "./external-types"
+import { StoreTreeCounterId } from "./counter-ids"
+import type { SubscriptionRegistration } from "./committed-store-tree"
 import {
     SelectorEvaluationSession,
     type ServedSelectorOutcome,
@@ -13,6 +16,7 @@ import {
     WeakHandleSet,
     type OutcomeToken,
     type StoreScopeNode,
+    type SelectorRecord,
 } from "./scope-node"
 import {
     DormantExternalReadError,
@@ -26,8 +30,8 @@ import {
 import type {
     ExternalBounds,
     ExternalOperationFailure,
-    ExternalOperationPhase,
     ExternalTreeBindings,
+    ExternalTreeHost,
     ExternalTreePlane,
 } from "./external-types"
 interface Generation {
@@ -35,6 +39,9 @@ interface Generation {
     projection: Projection | undefined
     cleanup: (() => unknown) | undefined
 }
+// Transport an already-recorded failed read to its operation boundary without
+// creating a second ledger occurrence or comparing application error identities.
+class RecordedExternalFailure {}
 // A departed callback retains only this cleared ticket, never its old tree.
 const invalidator = (generation: Generation) => () =>
     generation.owner?.invalidate(generation)
@@ -44,6 +51,7 @@ interface Operation {
     readonly epoch: number
     readonly failures: ExternalOperationFailure[]
     readonly originals: unknown[]
+    readonly controlOrigins: Set<object>
     terminal: boolean
     attachments: number
 }
@@ -90,13 +98,255 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     readonly #bounds: ExternalBounds
 
     constructor(
-        bindings: ExternalTreeBindings,
+        host: ExternalTreeHost,
         delivery: { depth: number; work: number },
         bounds: ExternalBounds,
     ) {
-        this.#bindings = bindings
+        this.#bindings = {
+            domain: host.runtimeDomain,
+            propagating: () => host.postSourceApply,
+            subscriberRead: () => host.subscriberReading,
+            subscribed: (scope, node) => host.hasSubscription(scope, node),
+            token: () => host.createOutcomeToken(),
+            epoch: () => host.sourceEpoch,
+            count: (counter, amount) => host.recordCounter(counter, amount),
+            advanceEpoch: () => {
+                host.sourceEpoch++
+                host.recordCounter(StoreTreeCounterId.sourceEpoch)
+                host.recordCounter(StoreTreeCounterId.propagationSettlements)
+            },
+            reach: (scope, node) => {
+                host.reachSubscriptionTarget(scope, node)
+                scope.markDependents(node)
+            },
+            settleRead: prepare => {
+                host.beginNotificationSettlement()
+                try {
+                    host.propagateFromSources(undefined, undefined, () => {
+                        try {
+                            prepare()
+                        } catch (error) {
+                            this.failure(error, "sampling")
+                        }
+                    })
+                } catch (error) {
+                    this.failure(error)
+                } finally {
+                    host.clearNotificationSettlement()
+                }
+            },
+        }
         this.#delivery = delivery
         this.#bounds = bounds
+    }
+
+    reaches(scope: StoreScopeNode, node: AnyState): boolean {
+        return (
+            scope.externalRecord(node)?.lifecycleInClosure ??
+            this.#bindings.domain.externalAtoms!.has(node)
+        )
+    }
+    reachesDormant(scope: StoreScopeNode, node: AnyState): boolean {
+        return (
+            scope.externalRecord(node)?.dormantExternalInClosure ??
+            (this.#bindings.domain.externalAtoms!.has(node) &&
+                !this.active(node))
+        )
+    }
+    selectorRecord(
+        scope: StoreScopeNode,
+        record: SelectorRecord,
+        session: SelectorEvaluationSession<AnyState>,
+    ): SelectorRecord {
+        const outcome = record.served.outcome
+        if (outcome.kind === "control-error") {
+            const fault = session.getControlFault()
+            record = {
+                ...record,
+                served: Object.freeze({
+                    ...record.served,
+                    outcome: Object.freeze({
+                        ...outcome,
+                        origin: fault.kind === "fault" ? fault.origin : {},
+                    }),
+                }),
+            }
+        }
+        return Object.freeze({
+            ...record,
+            lifecycleInClosure: record.dependencies.some(dependency =>
+                this.reaches(scope, dependency.node),
+            ),
+            dormantExternalInClosure: record.dependencies.some(dependency =>
+                this.reachesDormant(scope, dependency.node),
+            ),
+        })
+    }
+    refreshActivity(scope: StoreScopeNode, node: AnyState): void {
+        const pending: AnyState[] = []
+        scope.externalDependents(node)?.forEach(parent => pending.push(parent))
+        for (let index = 0; index < pending.length; index++) {
+            const current = pending[index]!,
+                record = scope.externalRecord(current)
+            if (record === undefined) continue
+            const dormantExternalInClosure = record.dependencies.some(
+                dependency => this.reachesDormant(scope, dependency.node),
+            )
+            if (dormantExternalInClosure === record.dormantExternalInClosure)
+                continue
+            scope.replaceExternalRecord(
+                current,
+                Object.freeze({ ...record, dormantExternalInClosure }),
+            )
+            scope
+                .externalDependents(current)
+                ?.forEach(parent => pending.push(parent))
+        }
+    }
+    publishedSelector(
+        scope: StoreScopeNode,
+        node: AnyState,
+        previous: SelectorRecord | undefined,
+        record: SelectorRecord,
+    ): void {
+        if (
+            previous !== undefined &&
+            previous.dormantExternalInClosure !==
+                record.dormantExternalInClosure
+        )
+            this.refreshActivity(scope, node)
+        this.reconcile(scope, node)
+        if (
+            previous === undefined ||
+            previous.lifecycleInClosure === record.lifecycleInClosure
+        )
+            return
+        const pending: AnyState[] = []
+        scope.externalDependents(node)?.forEach(parent => pending.push(parent))
+        for (let index = 0; index < pending.length; index++) {
+            const current = pending[index]!,
+                entry = scope.externalRecord(current)
+            if (entry === undefined) continue
+            const lifecycleInClosure = entry.dependencies.some(dependency =>
+                this.reaches(scope, dependency.node),
+            )
+            if (lifecycleInClosure !== entry.lifecycleInClosure) {
+                scope.replaceExternalRecord(
+                    current,
+                    Object.freeze({ ...entry, lifecycleInClosure }),
+                )
+                scope
+                    .externalDependents(current)
+                    ?.forEach(parent => pending.push(parent))
+            }
+            this.reconcile(scope, current)
+        }
+    }
+
+    get(
+        scope: StoreScopeNode,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ServedSelectorOutcome<OutcomeToken> {
+        const served =
+            this.operating || this.current(scope, node)
+                ? this.observe(scope, node, session)
+                : this.run("external-read", () =>
+                      this.observe(scope, node, session),
+                  )
+        return (
+            scope.getMaterializedServedOutcome(node) ??
+            this.installed(node) ??
+            served
+        )
+    }
+
+    observe(
+        scope: StoreScopeNode,
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ServedSelectorOutcome<OutcomeToken> {
+        if (
+            !this.reaches(scope, node) &&
+            (!this.#bindings.domain.selectors.has(node) ||
+                scope.getSelectorRecord(node) !== undefined)
+        )
+            return scope.serveKnownLocal(node, session)
+        return this.read(scope, node, session)
+    }
+
+    subscribe(
+        operation: (
+            admitted: (registration: SubscriptionRegistration) => void,
+        ) => () => void,
+    ): () => void {
+        let registration: SubscriptionRegistration | undefined
+        const stop = this.run(
+            "external-startup",
+            () =>
+                operation(value => {
+                    registration = value
+                }),
+            () => {
+                if (registration === undefined) return
+                registration.target?.host?.removeSubscription(registration)
+                registration.status = "rolled-back"
+            },
+        )
+        if (registration?.status === "provisional") {
+            registration.status = "active"
+            delete registration.admissionToken
+            delete registration.admissionNotified
+        }
+        return stop
+    }
+
+    admit(
+        registration: SubscriptionRegistration,
+        token: OutcomeToken,
+        admitted?: (registration: SubscriptionRegistration) => void,
+    ): void {
+        registration.status = "provisional"
+        registration.admissionToken = token
+        try {
+            admitted?.(registration)
+            const target = registration.target!
+            this.retainRoot(target.scope, target.state)
+            this.startup()
+            if (admitted === undefined) {
+                registration.status = "active"
+                delete registration.admissionToken
+            }
+        } catch (error) {
+            registration.target?.host?.removeSubscription(registration)
+            registration.status = "rolled-back"
+            throw error
+        }
+    }
+
+    notificationCallback(
+        registration: SubscriptionRegistration,
+    ): (() => unknown) | undefined {
+        if (
+            registration.target === undefined ||
+            registration.status === "rolled-back"
+        )
+            return
+        const callback = registration.callback
+        if (registration.status === "provisional") {
+            const target = registration.target!
+            const token = target.scope.getMaterializedServedOutcome(
+                target.state,
+            )?.token
+            if (
+                !this.admissionAllowed ||
+                registration.admissionNotified ||
+                (token !== undefined && token === registration.admissionToken)
+            )
+                return
+            if (callback !== undefined) registration.admissionNotified = true
+        }
+        return callback
     }
 
     run<Result>(
@@ -109,15 +359,16 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             source,
             phase:
                 source === "external-startup"
-                    ? "transitioningLifecycle"
+                    ? ExternalOperationPhase.transitioningLifecycle
                     : source === "owned-mutation"
-                      ? "drafting"
+                      ? ExternalOperationPhase.drafting
                       : source === "external-cleanup"
-                        ? "disposing"
-                        : "materializingRead",
+                        ? ExternalOperationPhase.disposing
+                        : ExternalOperationPhase.materializingRead,
             epoch: this.#bindings.epoch(),
             failures: [],
             originals: [],
+            controlOrigins: new Set(),
             terminal: false,
             attachments: 0,
         }
@@ -173,9 +424,17 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     failure(
         error: unknown,
         phase: ExternalOperationFailure["phase"] = this.#failurePhase(),
+        origin?: object,
     ): void {
+        if (error instanceof RecordedExternalFailure) return
         const frame = this.#operation
         if (frame === undefined) throw error
+        // An origin identifies a control occurrence, never an application error.
+        // Propagation shares it; independent callbacks always receive new origins.
+        if (origin !== undefined) {
+            if (frame.controlOrigins.has(origin)) return
+            frame.controlOrigins.add(origin)
+        }
         frame.originals.push(error)
         if (error instanceof ExternalSourceOperationError) {
             frame.failures.push(
@@ -202,21 +461,32 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         }
     }
 
+    #failureMetadata(
+        phase: ExternalOperationFailure["phase"],
+    ): Pick<ExternalOperationFailure, "phase" | "source" | "committed"> {
+        const frame = this.#operation!
+        return {
+            phase,
+            source: frame.source,
+            committed: this.#bindings.epoch() !== frame.epoch,
+        }
+    }
+
     #failurePhase(): ExternalOperationFailure["phase"] {
         switch (this.#operation?.phase) {
-            case "transitioningLifecycle":
-            case "drafting":
-            case "preflight":
+            case ExternalOperationPhase.transitioningLifecycle:
+            case ExternalOperationPhase.drafting:
+            case ExternalOperationPhase.preflight:
                 return "admitting"
-            case "materializingRead":
-            case "samplingExternal":
+            case ExternalOperationPhase.materializingRead:
+            case ExternalOperationPhase.samplingExternal:
                 return "sampling"
-            case "notifying":
+            case ExternalOperationPhase.notifying:
                 return "notifying"
-            case "instrumenting":
+            case ExternalOperationPhase.instrumenting:
                 return "instrumenting"
-            case "cleanup":
-            case "disposing":
+            case ExternalOperationPhase.cleanup:
+            case ExternalOperationPhase.disposing:
                 return "cleanup"
             default:
                 return "settling"
@@ -237,7 +507,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
 
     settleLifecycle(): boolean {
         if (this.#attachments.size === 0) return false
-        this.phase("transitioningLifecycle")
+        this.phase(ExternalOperationPhase.transitioningLifecycle)
         const pending = [...this.#attachments]
         this.#attachments.clear()
         for (const projection of pending) {
@@ -247,7 +517,9 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             if (this.#operation!.attachments++ >= this.#bounds.samples) {
                 this.#operation!.terminal = true
                 this.failure(
-                    new ExternalSourceNonConvergenceError(),
+                    new ExternalSourceNonConvergenceError(
+                        this.#failureMetadata("admitting"),
+                    ),
                     "admitting",
                 )
                 continue
@@ -258,7 +530,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                 this.failure(error, "admitting")
             }
         }
-        this.phase("propagating")
+        this.phase(ExternalOperationPhase.propagating)
         return true
     }
 
@@ -274,7 +546,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         }
         projection.generation = generation
         projection.status = "attaching"
-        this.#bindings.count("adapterSubscriptions")
+        this.#bindings.count(StoreTreeCounterId.adapterSubscriptions)
         try {
             runExternalCallback(
                 domain,
@@ -295,12 +567,28 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                     if (inspected.kind === "inspection-error")
                         throw inspected.error
                     if (inspected.kind === "thenable") {
-                        this.#bindings.count("thenableContainments")
+                        this.#bindings.count(
+                            StoreTreeCounterId.thenableContainments,
+                        )
                         containThenable(inspected)
-                        throw new InvalidExternalCleanupError()
+                        throw new InvalidExternalCleanupError(
+                            this.#failureMetadata(
+                                this.#operation?.phase ===
+                                    ExternalOperationPhase.cleanup
+                                    ? "cleanup"
+                                    : "admitting",
+                            ),
+                        )
                     }
                     if (typeof returned !== "function")
-                        throw new InvalidExternalCleanupError()
+                        throw new InvalidExternalCleanupError(
+                            this.#failureMetadata(
+                                this.#operation?.phase ===
+                                    ExternalOperationPhase.cleanup
+                                    ? "cleanup"
+                                    : "admitting",
+                            ),
+                        )
                     generation.cleanup = returned as () => unknown
                 },
                 generation,
@@ -314,7 +602,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             projection.status = "active"
             projection.scopes.forEach(scope => {
                 if (scope.status === "live")
-                    scope.refreshExternalActivity(projection.node)
+                    this.refreshActivity(scope, projection.node)
             })
             this.#unattached.delete(projection)
         } catch (error) {
@@ -342,20 +630,26 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         const inspected = inspectThenable(thrown)
         if (inspected.kind === "inspection-error") return inspected.error
         if (inspected.kind === "thenable") {
-            this.#bindings.count("thenableContainments")
+            this.#bindings.count(StoreTreeCounterId.thenableContainments)
             containThenable(inspected)
-            return new InvalidExternalCleanupError()
+            return new InvalidExternalCleanupError(
+                this.#failureMetadata(
+                    this.#operation?.phase === ExternalOperationPhase.cleanup
+                        ? "cleanup"
+                        : "admitting",
+                ),
+            )
         }
         return thrown
     }
 
     #cleanup(projection: Projection): void {
         const previousPhase = this.#operation?.phase
-        this.phase("cleanup")
+        this.phase(ExternalOperationPhase.cleanup)
         const cleanup = this.#revoke(projection)
         projection.status = "detaching"
         if (cleanup !== undefined) {
-            this.#bindings.count("adapterCleanups")
+            this.#bindings.count(StoreTreeCounterId.adapterCleanups)
             const previous = this.#operation!.source
             this.#operation!.source = "external-cleanup"
             try {
@@ -374,9 +668,18 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                         if (inspected.kind === "inspection-error")
                             throw inspected.error
                         if (inspected.kind === "thenable") {
-                            this.#bindings.count("thenableContainments")
+                            this.#bindings.count(
+                                StoreTreeCounterId.thenableContainments,
+                            )
                             containThenable(inspected)
-                            throw new InvalidExternalCleanupError()
+                            throw new InvalidExternalCleanupError(
+                                this.#failureMetadata(
+                                    this.#operation?.phase ===
+                                        ExternalOperationPhase.cleanup
+                                        ? "cleanup"
+                                        : "admitting",
+                                ),
+                            )
                         }
                     },
                 )
@@ -389,7 +692,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         projection.status = "dormant"
         projection.scopes.forEach(scope => {
             if (scope.status === "live")
-                scope.refreshExternalActivity(projection.node)
+                this.refreshActivity(scope, projection.node)
         })
         if (previousPhase !== undefined) this.phase(previousPhase)
     }
@@ -431,12 +734,12 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             delivery.work >= this.#bounds.deliveryWork
         ) {
             projection.retryRequired = true
-            this.#bindings.count("deliveryLimitHits")
+            this.#bindings.count(StoreTreeCounterId.deliveryLimitHits)
             throw new ExternalSourceDeliveryLimitError()
         }
         delivery.depth++
         delivery.work++
-        this.#bindings.count("deliveryEntries")
+        this.#bindings.count(StoreTreeCounterId.deliveryEntries)
         delete projection.retryRequired
         try {
             this.run("external-invalidation", () => {
@@ -462,17 +765,17 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             const batch = [...this.#dirty]
             this.#dirty.clear()
             rounds++
-            this.#bindings.count("dirtyRounds")
+            this.#bindings.count(StoreTreeCounterId.dirtyRounds)
             frame.source =
                 rounds === 1 && frame.source === "external-invalidation"
                     ? "external-invalidation"
                     : "external-drain"
-            frame.phase = "drainingExternal"
+            frame.phase = ExternalOperationPhase.drainingExternal
             const outcomes: [
                 Projection,
                 ServedSelectorOutcome<OutcomeToken>["outcome"],
             ][] = []
-            const sampleFailures: unknown[] = []
+            const sampleFailures: { error: unknown; origin?: object }[] = []
             let cursor = 0
             for (; cursor < batch.length; cursor++) {
                 const generation = batch[cursor]!,
@@ -484,21 +787,21 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                     continue
                 if (samples >= this.#bounds.samples) break
                 samples++
-                this.#bindings.count("dirtySamples")
+                this.#bindings.count(StoreTreeCounterId.dirtySamples)
+                const session = new SelectorEvaluationSession<AnyState>()
                 try {
                     outcomes.push([
                         projection,
-                        this.#sample(
-                            projection.node,
-                            new SelectorEvaluationSession(),
-                        ),
+                        this.#sample(projection.node, session),
                     ])
                 } catch (error) {
+                    const fault = session.getControlFault()
+                    const origin = fault.kind === "fault" ? fault.origin : {}
                     outcomes.push([
                         projection,
-                        Object.freeze({ kind: "control-error", error }),
+                        Object.freeze({ kind: "control-error", error, origin }),
                     ])
-                    sampleFailures.push(error)
+                    sampleFailures.push({ error, origin })
                 }
             }
             if (cursor < batch.length) {
@@ -516,7 +819,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             Projection,
             ServedSelectorOutcome<OutcomeToken>["outcome"],
         ])[],
-        sampleFailures: readonly unknown[] = [],
+        sampleFailures: readonly { error: unknown; origin?: object }[] = [],
     ): void {
         const previous = this.#pull
         this.#pull = this.#newPull(false)
@@ -525,8 +828,8 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             this.#bindings.settleRead(() => {
                 for (const [projection, outcome] of outcomes)
                     this.#publish(projection.node, outcome)
-                for (const error of sampleFailures)
-                    this.failure(error, "sampling")
+                for (const { error, origin } of sampleFailures)
+                    this.failure(error, "sampling", origin)
             })
         } catch (error) {
             this.failure(error)
@@ -541,11 +844,15 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             Projection,
             ServedSelectorOutcome<OutcomeToken>["outcome"],
         ][] = [],
-        sampleFailures: readonly unknown[] = [],
+        sampleFailures: readonly { error: unknown; origin?: object }[] = [],
     ): void {
         this.#operation!.terminal = true
-        const error = new ExternalSourceNonConvergenceError()
-        this.#bindings.count("nonConvergenceTerminations")
+        this.#operation!.source = "external-drain"
+        const error = new ExternalSourceNonConvergenceError({
+            ...this.#failureMetadata("sampling"),
+            committed: true,
+        })
+        this.#bindings.count(StoreTreeCounterId.nonConvergenceTerminations)
         const outcomes: [
             Projection,
             ServedSelectorOutcome<OutcomeToken>["outcome"],
@@ -561,12 +868,15 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                 ])
         }
         this.#dirty.clear()
-        this.#round(outcomes, [...sampleFailures, error])
+        this.#round(outcomes, [...sampleFailures, { error }])
         this.#flushReleases()
         this.#dirty.clear()
     }
     get dormantPull(): boolean {
         return this.#pull?.dormant === true
+    }
+    get idle(): boolean {
+        return this.#operation === undefined
     }
     get operating(): boolean {
         return this.#operation !== undefined
@@ -586,7 +896,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     current(scope: StoreScopeNode, node: AnyState): boolean {
         return (
             this.active(node) ||
-            (!scope.reachesDormantExternal(node) &&
+            (!this.reachesDormant(scope, node) &&
                 scope.getMaterializedServedOutcome(node) !== undefined)
         )
     }
@@ -606,7 +916,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         for (const dependency of scope.getCommittedSelectorDependencies(
             node as never,
         ) ?? []) {
-            if (scope.reachesExternal(dependency.node))
+            if (this.reaches(scope, dependency.node))
                 result.add(dependency.node)
         }
         return result
@@ -619,7 +929,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         const pending = [node]
         while (pending.length > 0) {
             const current = pending.pop()!
-            this.#bindings.count("lifecycleEdgeVisits")
+            this.#bindings.count(StoreTreeCounterId.lifecycleEdgeVisits)
             let record = records.get(current)
             if (record === undefined)
                 records.set(
@@ -634,7 +944,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             if (this.#bindings.domain.externalAtoms!.has(current)) {
                 const projection = this.#projections.get(current)!
                 if (projection.retains++ === 0) {
-                    this.#bindings.count("lifecycleRetains")
+                    this.#bindings.count(StoreTreeCounterId.lifecycleRetains)
                     this.#releases.delete(projection)
                     if (projection.status === "dormant") {
                         this.#attachments.add(projection)
@@ -656,12 +966,12 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             const current = pending.pop()!
             const record = records?.get(current)
             if (record === undefined || record.count === 0) continue
-            this.#bindings.count("lifecycleEdgeVisits")
+            this.#bindings.count(StoreTreeCounterId.lifecycleEdgeVisits)
             if (--record.count !== 0) continue
             if (this.#bindings.domain.externalAtoms!.has(current)) {
                 const projection = this.#projections.get(current)!
                 if (--projection.retains === 0) {
-                    this.#bindings.count("lifecycleReleases")
+                    this.#bindings.count(StoreTreeCounterId.lifecycleReleases)
                     this.#releases.add(projection)
                 }
             } else {
@@ -674,7 +984,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     }
 
     retainRoot(scope: StoreScopeNode, node: AnyState): void {
-        if (!scope.reachesExternal(node)) return
+        if (!this.reaches(scope, node)) return
         if (this.#retains.get(scope)?.get(node)?.root) return
         this.#retain(scope, node)
         this.#retains.get(scope)!.get(node)!.root = true
@@ -690,7 +1000,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     reconcile(scope: StoreScopeNode, node: AnyState): void {
         if (
             this.#bindings.subscribed(scope, node) &&
-            scope.reachesExternal(node)
+            this.reaches(scope, node)
         ) {
             this.retainRoot(scope, node)
         } else this.releaseRoot(scope, node)
@@ -763,12 +1073,15 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         if (this.current(scope, node))
             return scope.serveKnownLocal(node, session)
         this.#pull = this.#newPull(true)
+        const failureCount = this.#operation!.failures.length
         let served: ServedSelectorOutcome<OutcomeToken> | undefined
         try {
             this.#bindings.settleRead(() => {
                 this.refresh(scope, node, session)
                 served = scope.serveKnownLocal(node, session)
             })
+            if (this.#operation!.failures.length !== failureCount)
+                throw new RecordedExternalFailure()
             return (
                 scope.getMaterializedServedOutcome(node) ??
                 this.#projections.get(node)?.served ??
@@ -798,8 +1111,8 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         node: AnyState,
         session: SelectorEvaluationSession<AnyState>,
     ): void {
-        if (!scope.reachesExternal(node)) return
-        if (!scope.reachesDormantExternal(node)) return
+        if (!this.reaches(scope, node)) return
+        if (!this.reachesDormant(scope, node)) return
         const pull = this.#pull
         // Subscriber reads still inspect a dormant closure before serving a
         // clean cached selector, but do not publish or poll any source.
@@ -822,12 +1135,12 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             }
             if (visited.has(current)) continue
             visited.add(current)
-            this.#bindings.count("externalClosureVisits")
+            this.#bindings.count(StoreTreeCounterId.externalClosureVisits)
             const dependencies =
                 scope.getCommittedSelectorDependencies(current as never) ?? []
             for (let index = dependencies.length - 1; index >= 0; index--) {
                 const dependency = dependencies[index]!.node
-                if (scope.reachesExternal(dependency)) pending.push(dependency)
+                if (this.reaches(scope, dependency)) pending.push(dependency)
             }
         }
     }
@@ -855,7 +1168,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             session.latchControlFault(error)
             throw error
         }
-        this.#bindings.count("externalClosureVisits")
+        this.#bindings.count(StoreTreeCounterId.externalClosureVisits)
         let outcome: ServedSelectorOutcome<OutcomeToken>["outcome"]
         try {
             outcome = this.#sample(node, session)
@@ -873,16 +1186,19 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         node: AnyState,
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken>["outcome"] {
-        this.#bindings.count("liveSamples")
+        this.#bindings.count(StoreTreeCounterId.liveSamples)
         const previous = this.#operation?.phase
-        this.phase("samplingExternal")
+        this.phase(ExternalOperationPhase.samplingExternal)
         try {
             return sampleExternal(
                 this.#bindings.domain,
                 this.#bindings.domain.externalAtoms!.get(node)!,
                 session,
                 undefined,
-                () => this.#bindings.count("thenableContainments"),
+                () =>
+                    this.#bindings.count(
+                        StoreTreeCounterId.thenableContainments,
+                    ),
             )
         } finally {
             if (previous !== undefined) this.phase(previous)
@@ -918,12 +1234,14 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                     retains: 0,
                     status: "dormant",
                     scopes: new WeakHandleSet(() =>
-                        this.#bindings.count("deadRouteCompactions"),
+                        this.#bindings.count(
+                            StoreTreeCounterId.deadRouteCompactions,
+                        ),
                     ),
                 }
                 this.#projections.set(node, projection)
             } else projection.served = served
-            this.#bindings.count("projectionPublications")
+            this.#bindings.count(StoreTreeCounterId.projectionPublications)
             if (previous !== undefined && this.#pull?.epochAdvanced === false) {
                 this.#pull.epochAdvanced = true
                 this.#bindings.advanceEpoch()
@@ -933,7 +1251,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         this.#pull?.samples.set(node, served)
         if (previous !== undefined && previous !== served) {
             projection!.scopes.forEach(route => {
-                this.#bindings.count("routeVisits")
+                this.#bindings.count(StoreTreeCounterId.routeVisits)
                 if (route.status === "live") this.#bindings.reach(route, node)
             })
         }

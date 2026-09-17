@@ -1,12 +1,13 @@
 import {
     assertDefinitionAccessorCallAllowed,
+    createDomainSelector,
     assertDefinitionConstructionAllowed,
     classifyDefinitionHandleOwner,
     ensureCollectionKernel,
     getDefinitionDomainIdentity,
     registerDefinitionHandle,
     runDefinitionCallback,
-    type InternalCommittedStoreTreeDomain,
+    type DefinitionDomain,
 } from "./committed-store-tree/committed-store-tree"
 import {
     containThenable as containRuntimeThenable,
@@ -65,7 +66,7 @@ let definitionRegistries:
     | undefined
 
 const registryFor = (
-    domain: InternalCommittedStoreTreeDomain,
+    domain: DefinitionDomain,
 ): CollectionDefinitionRegistry => {
     const identity = getDefinitionDomainIdentity(domain)
     const registries =
@@ -86,7 +87,7 @@ const registryFor = (
 
 /** @internal Deterministic assertion for the atom-only allocation gate. */
 export const hasCollectionDefinitionRegistry = (
-    domain: InternalCommittedStoreTreeDomain,
+    domain: DefinitionDomain,
 ): boolean =>
     definitionRegistries?.has(getDefinitionDomainIdentity(domain)) ?? false
 
@@ -132,7 +133,7 @@ const rejectThenableCollectionKey = (
 }
 
 const runCollectionEncoder = (
-    domain: InternalCommittedStoreTreeDomain,
+    domain: DefinitionDomain,
     encodeKey: (input: unknown) => unknown,
     input: unknown,
 ): CollectionKey =>
@@ -206,7 +207,7 @@ const invalidCollectionRow = (): TypeError =>
     new TypeError("presence requires a same-domain CollectionRow")
 
 const rowRecordFor = (
-    domain: InternalCommittedStoreTreeDomain,
+    domain: DefinitionDomain,
     value: unknown,
 ): CollectionRowRecord => {
     const registry = definitionRegistries?.get(
@@ -230,7 +231,7 @@ export function createCollectionDefinition<
     Key extends CollectionKey,
     Value extends CollectionValue,
 >(
-    domain: InternalCommittedStoreTreeDomain,
+    domain: DefinitionDomain,
     options?: CollectionOptions<Key, Value>,
     weakRuntime?: WeakMemberRuntime,
 ): Collection<Key, Value>
@@ -239,13 +240,13 @@ export function createCollectionDefinition<
     Value extends CollectionValue,
     Input,
 >(
-    domain: InternalCommittedStoreTreeDomain,
+    domain: DefinitionDomain,
     options: CollectionOptions<Key, Value, Input>,
     weakRuntime?: WeakMemberRuntime,
 ): Collection<Key, Value, Input>
 /** @internal Store-free collection definition composed by the root API. */
 export function createCollectionDefinition(
-    domain: InternalCommittedStoreTreeDomain,
+    domain: DefinitionDomain,
     options?: unknown,
     weakRuntime?: WeakMemberRuntime,
 ): Collection<CollectionKey, CollectionValue, unknown> {
@@ -355,7 +356,7 @@ export const getCollectionPresence = <
     Key extends CollectionKey,
     Value extends CollectionValue,
 >(
-    domain: InternalCommittedStoreTreeDomain,
+    domain: DefinitionDomain,
     row: CollectionRow<Key, Value>,
 ): Selector<boolean> => {
     assertDefinitionAccessorCallAllowed(domain)
@@ -363,7 +364,8 @@ export const getCollectionPresence = <
     const current = record.presence?.deref()
     if (current !== undefined) return current
 
-    const presence = domain.selector(
+    const presence = createDomainSelector(
+        domain,
         get => get(row as unknown as State<Value | undefined>) !== undefined,
     )
     record.presence = record.definition.referencePresence(presence)
@@ -372,7 +374,7 @@ export const getCollectionPresence = <
 
 /** @internal Query registration stays in its separately reachable module. */
 export const collectionIndexExtractor = (
-    domain: InternalCommittedStoreTreeDomain,
+    domain: DefinitionDomain,
     collection: object,
     name: string,
 ): ((value: unknown) => CollectionKey) => {

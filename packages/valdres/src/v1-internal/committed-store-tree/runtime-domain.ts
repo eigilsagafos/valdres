@@ -1,4 +1,7 @@
-import type { ExternalRuntime } from "./external-types"
+import type {
+    ExternalRuntime,
+    ExternalOperationFailure,
+} from "./external-types"
 import type {
     SelectorDefinition,
     ServedSelectorOutcome,
@@ -223,13 +226,17 @@ export class SubscriberNotificationError extends ImmutableRuntimeError {
     readonly causes: readonly unknown[]
     readonly committed = true
     readonly phase = "notifying"
-    readonly source = "owned-mutation"
+    readonly source: ExternalOperationFailure["source"]
 
-    constructor(causes: readonly unknown[]) {
+    constructor(
+        causes: readonly unknown[],
+        source: ExternalOperationFailure["source"] = "owned-mutation",
+    ) {
         super("One or more Store subscribers threw during notification")
         this.name = "SubscriberNotificationError"
         this.causes = Object.freeze([...causes])
         this.cause = this.causes[0]
+        this.source = source
         this.seal()
     }
 }

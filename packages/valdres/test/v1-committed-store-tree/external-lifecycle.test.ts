@@ -1,7 +1,7 @@
+import { createInternalExternalAtom } from "../../src/v1-internal/committed-store-tree/external-atom"
 import { describe, expect, test } from "bun:test"
 import {
     createCommittedStoreTreeDomain,
-    createInternalExternalAtom,
     createInternalStoreTreeInstrumentation,
     RuntimeMismatchError,
 } from "../../src/v1-internal/committed-store-tree/committed-store-tree"

@@ -1,6 +1,10 @@
 import type { CollectionIndexSchema } from "./v1-internal/committed-store-tree/types"
 import {
     assertDefinitionFamilyCallAllowed,
+    createDomainAtom,
+    createDomainLazyAtom,
+    createDomainSelector,
+    createDomainStore,
     assertDefinitionState,
     markReacquirableDefinitionState,
     runDefinitionCallback,
@@ -113,12 +117,12 @@ interface AtomFactory {
 const atomLazy = <Value>(
     initialize: () => Value,
     options: AtomOptions<Value> = {},
-): Atom<Value> => v1Domain.atomLazy(initialize, options)
+): Atom<Value> => createDomainLazyAtom(v1Domain, initialize, options)
 
 const atomEager = <Value>(
     initial: Value,
     options: AtomOptions<Value> = {},
-): Atom<Value> => v1Domain.atom(initial, options)
+): Atom<Value> => createDomainAtom(v1Domain, initial, options)
 
 Object.defineProperty(atomEager, "lazy", {
     configurable: false,
@@ -132,7 +136,7 @@ export const atom = Object.freeze(atomEager) as AtomFactory
 export const selector = <Value>(
     read: (get: StateRead) => Value,
     options: SelectorOptions<Value> = {},
-): Selector<Value> => v1Domain.selector(read, options)
+): Selector<Value> => createDomainSelector(v1Domain, read, options)
 
 export function collection<
     Key extends CollectionKey,
@@ -211,7 +215,7 @@ export function store(): Store {
     if (arguments.length !== 0) {
         throw new TypeError("store() accepts no arguments")
     }
-    return v1Domain.createStoreTree()
+    return createDomainStore(v1Domain)
 }
 
 export {

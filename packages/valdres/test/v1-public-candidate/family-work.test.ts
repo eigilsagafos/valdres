@@ -1,3 +1,4 @@
+import { createDomainStore } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
 import { describe, expect, test } from "bun:test"
 import { atom, family } from "../../src/index"
 import { createInternalStoreTreeInstrumentation } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
@@ -12,7 +13,7 @@ const FAMILY_COUNTERS = [
 describe("v1 family structural work", () => {
     test("constructs each member once across a high-cardinality identity set", () => {
         const counters = createInternalStoreTreeInstrumentation()
-        const target = v1Domain.createStoreTree(counters)
+        const target = createDomainStore(v1Domain, counters)
         let factoryCalls = 0
         const members = family((id: number) => {
             factoryCalls++
@@ -33,7 +34,7 @@ describe("v1 family structural work", () => {
 
     test("counts only distinct committed family Atom ownership", () => {
         const counters = createInternalStoreTreeInstrumentation()
-        const root = v1Domain.createStoreTree(counters)
+        const root = createDomainStore(v1Domain, counters)
         const child = root.scope("child")
         const ordinary = atom(0)
         const members = family((key: string) => atom(key.length))

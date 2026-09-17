@@ -10,7 +10,7 @@ export interface SelectorDefinition<Node, Value = unknown> {
 export type SelectorOutcome<Value = unknown> =
     | Readonly<{ kind: "value"; value: Value }>
     | Readonly<{ kind: "error"; error: unknown }>
-    | Readonly<{ kind: "control-error"; error: unknown }>
+    | Readonly<{ kind: "control-error"; error: unknown; origin?: object }>
 
 export interface ServedSelectorOutcome<Token extends object, Value = unknown> {
     readonly token: Token
@@ -299,9 +299,9 @@ export class SelectorEvaluationSession<Node> {
     #controlFault: ControlFault = NO_CONTROL_FAULT
     #suppliedReadGuard: (() => never) | undefined
 
-    latchControlFault(error: unknown): void {
+    latchControlFault(error: unknown, origin: object = {}): void {
         if (this.#controlFault.kind === "fault") return
-        this.#controlFault = Object.freeze({ kind: "fault", error })
+        this.#controlFault = Object.freeze({ kind: "fault", error, origin })
     }
 
     getControlFault(): ControlFault {
@@ -598,6 +598,6 @@ export class SelectorEvaluationSession<Node> {
 
 type ControlFault =
     | Readonly<{ kind: "none" }>
-    | Readonly<{ kind: "fault"; error: unknown }>
+    | Readonly<{ kind: "fault"; error: unknown; origin: object }>
 
 const NO_CONTROL_FAULT = Object.freeze({ kind: "none" as const })

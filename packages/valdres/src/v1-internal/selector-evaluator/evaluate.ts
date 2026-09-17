@@ -1332,7 +1332,10 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         prefixProofSessionPublications = sessionPublicationsAfterServe
 
         if (served.outcome.kind === "control-error") {
-            session.latchControlFault(served.outcome.error)
+            session.latchControlFault(
+                served.outcome.error,
+                served.outcome.origin,
+            )
             const fault = session.getControlFault()
             if (fault.kind === "fault") throw fault.error
             throw served.outcome.error
@@ -1372,7 +1375,10 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             return makeProposal(
                 selector,
                 host.createOutcomeToken(),
-                { kind: "control-error", error: controlFault.error },
+                {
+                    kind: "control-error",
+                    error: controlFault.error,
+                },
                 dependencies,
             )
         }

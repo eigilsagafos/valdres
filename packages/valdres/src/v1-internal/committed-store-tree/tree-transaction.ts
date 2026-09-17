@@ -61,7 +61,7 @@ export interface DraftScratchHost<Node extends object = AnyState> {
  */
 export class TreeDraft {
     readonly transaction = Object.freeze({})
-    readonly #onStorageAllocation: (() => void) | undefined
+    readonly onAllocation: (() => void) | undefined
     #singleIntentScope: StoreScopeNode | undefined
     #singleIntent: AtomIntent | undefined
     #secondIntent: AtomIntent | undefined
@@ -81,14 +81,14 @@ export class TreeDraft {
     #fallbackMemo: Map<AnyAtom, DraftAtomOutcome> | undefined
     #scratchHosts: Map<StoreScopeNode, DraftScratchHost> | undefined
     /** Tree-wide, independent of scope scratch hosts and draft generations. */
-    #externalCaptures: Map<AnyState, DraftAtomOutcome> | undefined
+    externalCaptures: Map<AnyState, DraftAtomOutcome> | undefined
     #rowRelease: ((draft: TreeDraft) => void) | undefined
     #hasRowIntents = false
     generation = 0
     active = true
 
     constructor(onStorageAllocation?: () => void) {
-        this.#onStorageAllocation = onStorageAllocation
+        this.onAllocation = onStorageAllocation
     }
 
     get hasIntents(): boolean {
@@ -462,19 +462,6 @@ export class TreeDraft {
         return this.#scratchHosts?.get(scope)
     }
 
-    captureExternal(
-        node: AnyState,
-        sample: () => DraftAtomOutcome,
-    ): DraftAtomOutcome {
-        const current = this.#externalCaptures?.get(node)
-        if (current !== undefined) return current
-        // A control fault escapes sampling before any memo can be installed.
-        const outcome = sample()
-        const captures = (this.#externalCaptures ??= this.#allocateMap())
-        captures.set(node, outcome)
-        return outcome
-    }
-
     installScratchHost(
         scope: StoreScopeNode,
         scratchHost: DraftScratchHost,
@@ -539,15 +526,15 @@ export class TreeDraft {
             this.#fallbackMemo = undefined
             this.#scratchHosts?.clear()
             this.#scratchHosts = undefined
-            this.#externalCaptures?.clear()
-            this.#externalCaptures = undefined
+            this.externalCaptures?.clear()
+            this.externalCaptures = undefined
         } finally {
             releaseRows?.(this)
         }
     }
 
     #allocateMap<Key, Value>(): Map<Key, Value> {
-        this.#onStorageAllocation?.()
+        this.onAllocation?.()
         return new Map<Key, Value>()
     }
 }
