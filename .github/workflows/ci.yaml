@@ -64,10 +64,6 @@ jobs:
               # through the exact frozen ShiftX workload in fresh Node processes
               # with broad, cross-runner catastrophic ceilings.
               run: bun --filter 'valdres' test:core-load-harness
-            - name: ExternalAtom installed-but-unrelated performance
-              # Paired fresh processes in Bun and Node; never share an installed
-              # runtime with a baseline arm or overlap other benchmark jobs.
-              run: bun scripts/check-external-isolation.ts
             - name: V1 model contract
               # Proves the pure state/selector model before the evaluator and
               # committed StoreTree host exercise it through their own lanes.
@@ -81,6 +77,12 @@ jobs:
               # This first persistent host is also intentionally outside every
               # package entrypoint, so its dedicated tsconfig must run explicitly.
               run: bun --filter 'valdres' test:v1-committed-store-tree
+            - name: ExternalAtom installed-but-unrelated timing detector
+              # The StoreTree lane above is the primary blocking zero-plane /
+              # zero-operation certificate. Timing blocks credible regressions;
+              # inconclusive is non-blocking and does not prove <=10% slowdown.
+              # Paired fresh Bun/Node processes; never overlap benchmark jobs.
+              run: bun scripts/check-external-isolation.ts
             - name: Ban unchecked TypeScript suppressions in valdres
               run: |
                   if git grep -n -E '^[[:space:]]*//[[:space:]]*@ts-ignore([[:space:]]|$)' -- packages/valdres/src; then

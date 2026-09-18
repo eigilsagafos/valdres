@@ -1,6 +1,6 @@
 # ExternalAtom implementation contract and engineering review
 
-Status: Gate 0 approved with owner amendments; E3.5 repair/extraction and E4 public certification are complete. The broad historical tournament timeout reproduces on clean main; all feature, ordinary isolation, package, and packed-consumer gates pass.
+Status: Gate 0 approved with owner amendments; E3.5 repair/extraction and E4 public certification are complete. The broad historical tournament timeout reproduces on clean main; the functional, structural isolation, package, and packed-consumer gates pass. Timing uncertainty is reported separately below.
 Review target: `.context/attachments/HYMHX1/external-atom-implementation-agent-prompt.md`.
 Fetched base: `270f00e46f26aee66a724fcf6d6fdda09ddcf133` (`origin/main`, includes PR #397).
 Initial branch: `implement-external-atom`; initial HEAD equals base. No branch rename.
@@ -1150,7 +1150,7 @@ already installed: 34 fresh processes. They cover dynamic dependency changes,
 admission failure, startup catch-up, propagation, transaction-created sources,
 control-fault transfer, and phase reset.
 
-### Performance gate
+### Structural certificate and timing detector
 
 `scripts/check-external-isolation.ts` is a required CI step and part of `verify`.
 Run it with pinned Node using:
@@ -1163,16 +1163,32 @@ Each of four workloads (cached selector reads, subscribe/unsubscribe, writes,
 transactions) runs in fresh Bun and Node processes. Baseline and installed arms
 load the same bundle; only the unused ExternalAtom definition differs. Nine
 paired processes per arm alternate order, warm their JITs, and report individual
-ratios. A one-sided 95% lower confidence bound above 1.10 fails the lane. Separate
-workloads and engines are never averaged together. Structural zero-work tests
-complement timing evidence on loaded machines.
+ratios. The required StoreTree tests are the **primary blocking certificate**:
+ordinary unrelated trees must allocate zero external planes and start zero
+external operations. CI runs that certificate before the timing detector.
 
-Before repair, the gate failed for Bun reads/subscriptions and Node
-reads/subscriptions/writes/transactions. Exact paired data are preserved in
+The detector uses `scripts/lib/paired-decision.ts` with its unchanged default
+10% budget: Hodges–Lehmann location on paired log ratios, Winsorized standard
+error with the existing resolution floor, Student-t tests in both directions,
+and 5% Benjamini–Hochberg adjustment across all eight comparisons in each
+direction. Each workload/runtime retains its own estimate; only the statistical
+adjustment spans the family. Nine pairs are the fixed measurement cap.
+
+Every lane explicitly reports `regression`, `within-budget`, or `inconclusive`,
+plus raw pairs, flags, estimates, intervals, and adjusted probabilities.
+`regression` blocks; `within-budget` supports a slowdown within the 10% budget
+under this decision model. `inconclusive` is non-blocking under the regression
+**detector** policy, but is neither a pass nor evidence of a slowdown at most 10%.
+A successful process exit only means no lane was classified as a regression;
+malformed measurements and subprocess failures still block. Unadjusted 90%
+intervals aid interpretation; the adjusted decision determines the classification.
+
+Before the lazy-plane repair, the original detector failed for Bun
+reads/subscriptions and Node reads/subscriptions/writes/transactions. Exact paired data are preserved in
 `.context/external-atom/review3/performance-red.log`. Candidate measurements and
 complete verification output are preserved in the same directory.
 
-The final `verify` measurements were:
+The previous `verify` measurements (before the classification repair) were:
 
 | Engine | Workload | Installed / baseline | Lower bound | Upper bound |
 | --- | --- | ---: | ---: | ---: |
@@ -1185,11 +1201,13 @@ The final `verify` measurements were:
 | node | writes | 0.982× | 0.862× | 1.120× |
 | node | transactions | 0.925× | 0.794× | 1.078× |
 
-Bounds are separate one-sided 95% confidence bounds. No lane has a credible
-regression above 10%; some upper bounds still exceed 1.10, so these measurements
-do not establish a strict upper-bound guarantee. An initial noisy Node write
-estimate of 1.114× did not repeat (0.982× in final `verify`). No performance threshold
-or ordinary bundle allowance was relaxed.
+These historical bounds are separate one-sided 95% confidence bounds from the
+old mean-log-ratio detector, without multiple-comparison adjustment. Reading
+those bounds against 1.10 gives four within-budget and four inconclusive lanes
+(Bun reads/writes and Node reads/writes). Zero regression detections did **not**
+mean all eight lanes passed or establish slowdown at most 10%. An initial noisy
+Node write estimate of 1.114× did not repeat (0.982× in final `verify`). No
+performance threshold or ordinary bundle allowance was relaxed.
 
 ### Independent review follow-up
 
@@ -1266,14 +1284,14 @@ A final certification/documentation commit follows this list; the complete exact
 heads and command logs are in `.context/external-atom/review3/handoff.md`.
 
 Final `verify` used pinned Node 24.16.0 and Bun 1.4.0. No benchmark/contract jobs
-were run concurrently. The final runtime passed:
+were run concurrently. The final results were:
 
 | Gate | Result |
 | --- | --- |
 | Contracts/migration ledger | 62 pass / 527 assertions |
 | Production build, declarations, source/public types | Pass |
 | Packed core-load gate | 15 pass / 118 assertions |
-| Installed-but-unrelated Bun/Node performance | All eight lanes pass |
+| Installed-but-unrelated Bun/Node timing (historical detector) | 0 regressions detected; 4 within-budget and 4 inconclusive from the reported bounds |
 | Independent model, including every identity test | 94 pass / 11,224 assertions |
 | Evaluator/oracle | 118 pass / 10,236 assertions |
 | StoreTree, including external/provenance/GC | 352 pass / 212,676 parent assertions |
