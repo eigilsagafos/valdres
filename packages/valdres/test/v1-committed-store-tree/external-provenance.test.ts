@@ -331,6 +331,76 @@ describe("external failure occurrence provenance", () => {
 })
 
 describe("ExternalSourceOperationError public construction", () => {
+    test.each(["accessors", "proxy"] as const)(
+        "snapshots every structural property once through %s for all public views",
+        kind => {
+            const expected = [
+                {
+                    cause: { application: "first" },
+                    committed: false,
+                    phase: "admitting" as const,
+                    source: "external-startup" as const,
+                },
+                {
+                    cause: { application: "second" },
+                    committed: true,
+                    phase: "cleanup" as const,
+                    source: "external-cleanup" as const,
+                },
+            ] as const
+            const reads = expected.map(() => ({
+                cause: 0,
+                committed: 0,
+                phase: 0,
+                source: 0,
+            }))
+            const structural = (index: number) => {
+                const record = expected[index]!
+                const read = (key: keyof typeof record) => {
+                    const count = ++reads[index]![key]
+                    // A second access is valid but returns different metadata.
+                    return (count === 1 ? record : expected[1 - index]!)[key]
+                }
+                if (kind === "proxy")
+                    return new Proxy(record, {
+                        get: (_target, key) => read(key as keyof typeof record),
+                    })
+                return Object.defineProperties(
+                    {},
+                    Object.fromEntries(
+                        Object.keys(record).map(key => [
+                            key,
+                            { get: () => read(key as keyof typeof record) },
+                        ]),
+                    ),
+                ) as typeof record
+            }
+            const input = [structural(0), structural(1)] as const
+            const error = new ExternalSourceOperationError(input)
+            expect(reads).toEqual([
+                { cause: 1, committed: 1, phase: 1, source: 1 },
+                { cause: 1, committed: 1, phase: 1, source: 1 },
+            ])
+            expect(error.failures).toEqual(expected)
+            expect(error.failures).not.toBe(input)
+            expect(Object.isFrozen(error)).toBe(true)
+            expect(Object.isFrozen(error.failures)).toBe(true)
+            expect(Object.isFrozen(error.causes)).toBe(true)
+            for (const [index, failure] of error.failures.entries()) {
+                expect(failure).not.toBe(input[index])
+                expect(Object.isFrozen(failure)).toBe(true)
+                expect(failure.cause).toBe(expected[index]!.cause)
+                expect(error.causes[index]).toBe(failure.cause)
+            }
+            expect(error.causes).toHaveLength(error.failures.length)
+            expect(error.cause).toBe(error.failures[0]!.cause)
+            expect(error.cause).toBe(error.causes[0])
+            expect(error.committed).toBe(error.failures[0]!.committed)
+            expect(error.phase).toBe(error.failures[0]!.phase)
+            expect(error.source).toBe(error.failures[0]!.source)
+        },
+    )
+
     test("rejects an empty JavaScript failure list with deliberate validation", () => {
         const error = thrown(() =>
             Reflect.construct(ExternalSourceOperationError, [[]]),

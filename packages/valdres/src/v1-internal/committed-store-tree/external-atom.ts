@@ -180,11 +180,11 @@ export class ExternalSourceOperationError extends Error {
                 Object.freeze({ cause, committed, phase, source }),
             ),
         )
-        this.causes = Object.freeze(failures.map(failure => failure.cause))
-        this.cause = this.causes[0]
-        this.committed = failures[0]!.committed
-        this.phase = failures[0]!.phase
-        this.source = failures[0]!.source
+        this.causes = Object.freeze(this.failures.map(failure => failure.cause))
+        this.cause = this.failures[0]!.cause
+        this.committed = this.failures[0]!.committed
+        this.phase = this.failures[0]!.phase
+        this.source = this.failures[0]!.source
         Object.freeze(this)
     }
 }
