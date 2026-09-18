@@ -1072,6 +1072,101 @@ describe("external projection reference model", () => {
         },
     )
 
+    test.each(["deliveryDepth", "deliveryWork"] as const)(
+        "%s retry markers follow accepted active invalidation and generation lifetime",
+        bound => {
+            const instance = new ExternalReferenceModel(
+                [
+                    source(),
+                    { id: "other", snapshot: number(0) },
+                    source({
+                        id: "blocked",
+                        sampleActions: [{ kind: "emit", source: "other" }],
+                    }),
+                ],
+                [
+                    external,
+                    { kind: "external", id: "blocked", source: "blocked" },
+                    { kind: "external", id: "right", source: "other" },
+                    { kind: "atom", id: "trigger", value: value.number(0) },
+                ],
+                { ...externalModelBounds, [bound]: 1 },
+            )
+            instance.execute(tree)
+            instance.execute({ kind: "tree", tree: "b", root: "root" })
+            instance.execute(
+                subscribe("a", "ext", [
+                    { kind: "write", source: "other", snapshot: number(2) },
+                    { kind: "emit", source: "other" },
+                ]),
+            )
+            const attach = (subscription: string) =>
+                instance.execute({
+                    kind: "subscribe",
+                    tree: "b",
+                    scope: "root",
+                    node: "right",
+                    subscription,
+                })
+            attach("b")
+            instance.execute({
+                kind: "subscribe",
+                tree: "b",
+                scope: "root",
+                node: "trigger",
+                subscription: "trigger",
+                callback: [{ kind: "emit", source: "other" }],
+            })
+            instance.execute(write(1))
+            expect(instance.execute(emit).failures[0]?.identity).toBe(
+                "delivery-limit",
+            )
+            expect(instance.inspect("b", "right")?.retryRequired).toBe(true)
+            expect(instance.execute(read("blocked")).outcome).toMatchObject({
+                kind: "error",
+                identity: "callback-capability",
+                space: "control",
+            })
+            expect(instance.inspect("b", "right")?.retryRequired).toBe(true)
+            expect(
+                instance.execute({
+                    kind: "set",
+                    tree: "b",
+                    scope: "root",
+                    atom: "trigger",
+                    value: value.number(1),
+                }).failures,
+            ).toEqual([])
+            expect(instance.inspect("b", "right")).toMatchObject({
+                status: "active",
+                retryRequired: false,
+                outcome: number(2),
+            })
+            const generation = instance.inspect("b", "right")!.generation
+            instance.execute({ kind: "unsubscribe", subscription: "b" })
+            expect(instance.inspect("b", "right")?.retryRequired).toBe(false)
+            expect(attach("replacement").failures).toEqual([])
+            expect(instance.inspect("b", "right")!.generation).not.toBe(
+                generation,
+            )
+            expect(instance.inspect("b", "right")?.retryRequired).toBe(false)
+
+            instance.execute(write(2))
+            expect(instance.execute(emit).failures[0]?.identity).toBe(
+                "delivery-limit",
+            )
+            expect(instance.inspect("b", "right")?.retryRequired).toBe(true)
+            // Even an unretried generation must surrender its pending marker.
+            instance.execute({
+                kind: "unsubscribe",
+                subscription: "replacement",
+            })
+            expect(instance.inspect("b", "right")?.retryRequired).toBe(false)
+            expect(attach("third").failures).toEqual([])
+            expect(instance.inspect("b", "right")?.retryRequired).toBe(false)
+        },
+    )
+
     test("a dynamically chosen cached selector refreshes its dormant source closure", () => {
         const instance = new ExternalReferenceModel(
             [

@@ -877,6 +877,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
             id: projection.nextGeneration++,
             live: true,
         }
+        projection.retryRequired = false
         projection.generation = generation
         this.#transition(tree, projection, "attaching")
         this.work.adapterSubscriptions++
@@ -959,6 +960,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         )
             return
         generation.live = false
+        projection.retryRequired = false
         tree.dirty.delete(generation)
         projection.source.listeners.delete(generation)
         this.#transition(tree, projection, "detaching")
@@ -1034,6 +1036,8 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
             this.#callback === "subscribe" &&
             this.#allowedGeneration === generation
         ) {
+            if (tree.terminal) return
+            projection.retryRequired = false
             tree.dirty.add(generation)
             return
         }
@@ -1044,6 +1048,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         )
             throw new Fault("callback-capability")
         if (tree.terminal) return
+        projection.retryRequired = false
         if (tree.phase !== "idle") {
             tree.dirty.add(generation)
             return
@@ -1065,7 +1070,6 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         this.#depth++
         this.#deliveryWork++
         this.work.deliveryEntries++
-        projection.retryRequired = false
         try {
             tree.dirty.add(generation)
             this.#frame(tree, "sampling", () => {})
