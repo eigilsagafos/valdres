@@ -1112,3 +1112,220 @@ through the workspace filter, with and without JUnit (`main-build-output-ready.l
 `main-build-filtered.log`, `main-build-filtered-junit.log`). An initial optional main
 build probe lacked its local compiler executable; that environment setup was
 corrected before the final checks. No tournament source or timeout was changed.
+
+
+## Generated error identity and lazy plane repair (2026-09-18)
+
+This checkpoint supersedes the branch heads and certification tables above;
+those sections retain the history of the earlier review passes. The landing
+shape remains exactly two branches: `implement-external-atom` → `main`, then
+`feat/external-atom-public` → the repaired model branch. Neither branch is pushed.
+
+### Repair boundaries
+
+The model previously compared every generated callback-capability fault by its
+readable label. Two fresh runtime errors therefore appeared unchanged to the
+oracle, suppressing both notifications. Generated outcomes and failure records
+now carry a deterministic per-model allocation number, separate from their label
+and identity space. Propagation, transaction captures, cached selector outcomes,
+and the shared terminal outcome retain that allocation number. Reused source
+symbols keep their original stable identity. The old regression gives zero
+notifications; the corrected oracle and runtime both deliver two exact fresh
+errors. Replay produces identical symbolic traces.
+
+Domain installation previously disabled cached StoreTree paths and eagerly
+created operation frames in every unrelated tree. Cached paths now consult the
+tree's actual plane. Ordinary selector bookkeeping can observe an existing plane
+but cannot create one. Only a committed reach of an ExternalAtom calls the
+internal `reachExternal()` seam. That seam adopts the current operation cursor,
+epoch, phase, and preceding control faults, including during propagation. Server
+reads and transaction captures do not install the live plane. No public API or
+runtime-domain registry is added.
+
+`external-isolation.test.ts` counts allocations and operation starts through the
+existing internal runtime factory. Cold and warm unrelated trees perform none;
+a first committed external reach creates one shared plane. The 17 late-install
+scenarios now run both with an absent runtime and with an unrelated source
+already installed: 34 fresh processes. They cover dynamic dependency changes,
+admission failure, startup catch-up, propagation, transaction-created sources,
+control-fault transfer, and phase reset.
+
+### Performance gate
+
+`scripts/check-external-isolation.ts` is a required CI step and part of `verify`.
+Run it with pinned Node using:
+
+```sh
+npm exec --yes --package=node@24.16.0 -- bun scripts/check-external-isolation.ts
+```
+
+Each of four workloads (cached selector reads, subscribe/unsubscribe, writes,
+transactions) runs in fresh Bun and Node processes. Baseline and installed arms
+load the same bundle; only the unused ExternalAtom definition differs. Nine
+paired processes per arm alternate order, warm their JITs, and report individual
+ratios. A one-sided 95% lower confidence bound above 1.10 fails the lane. Separate
+workloads and engines are never averaged together. Structural zero-work tests
+complement timing evidence on loaded machines.
+
+Before repair, the gate failed for Bun reads/subscriptions and Node
+reads/subscriptions/writes/transactions. Exact paired data are preserved in
+`.context/external-atom/review3/performance-red.log`. Candidate measurements and
+complete verification output are preserved in the same directory.
+
+The final `verify` measurements were:
+
+| Engine | Workload | Installed / baseline | Lower bound | Upper bound |
+| --- | --- | ---: | ---: | ---: |
+| bun | reads | 1.052× | 0.954× | 1.161× |
+| bun | subscriptions | 1.016× | 0.939× | 1.098× |
+| bun | writes | 1.035× | 0.969× | 1.106× |
+| bun | transactions | 0.964× | 0.899× | 1.034× |
+| node | reads | 1.077× | 0.998× | 1.162× |
+| node | subscriptions | 0.976× | 0.929× | 1.026× |
+| node | writes | 0.982× | 0.862× | 1.120× |
+| node | transactions | 0.925× | 0.794× | 1.078× |
+
+Bounds are separate one-sided 95% confidence bounds. No lane has a credible
+regression above 10%; some upper bounds still exceed 1.10, so these measurements
+do not establish a strict upper-bound guarantee. An initial noisy Node write
+estimate of 1.114× did not repeat (0.982× in final `verify`). No performance threshold
+or ordinary bundle allowance was relaxed.
+
+### Independent review follow-up
+
+Independent testing found that first reach *inside a subscriber callback* could
+lose the second of two preceding control faults. The old eager plane retained
+both; the first lazy implementation reduced the pending list before delivery.
+The final host retains it until notification delivery completes, with an outer
+`finally` clearing it on every exit. First reach adopts every occurrence exactly
+once, and the host advances to the notifying phase independently of whether a
+plane already exists. Core error assembly reads the remaining pending fault only
+after all callbacks, avoiding duplicate forwarding after adoption.
+
+Four fresh-process regressions cover zero, one, and two prior faults and a later
+replay of the first error. They verify exact ordered causes, wrapper choice,
+settling/notifying phases, owned-mutation/committed metadata, all-fire delivery,
+zero source work during forbidden reads, and subsequent read/attach/release
+recovery. The independent review's six probes match the preceding runtime exactly,
+including the internal notifying phase and repeated error occurrences. Final
+independent re-review reports no remaining actionable findings. Raw prior,
+reproduced-failure, and repaired results are in `review3/independent-*.json`.
+
+### Final artifact measurements
+
+Ordinary combined Atom/selector/Store is **17,340 / 17,346 allowed gzip bytes**;
+adapter is **2,674 / 17,249**. The ordinary baselines, 2% tolerance, and 77-byte
+shared allowance are unchanged. Package-size checks reject optional projection
+implementation in every ordinary fixture. Error assembly is centralized and
+plane checks use the truthiness of the internal object-or-undefined slot.
+
+| Artifact | Raw bytes | Gzip bytes | Gzip delta vs prior head |
+| --- | ---: | ---: | ---: |
+| Atom | 6,373 | 2,305 | +0 |
+| Atom / selector / Store | 64,811 | 17,340 | -5 |
+| family | 13,333 | 4,443 | +0 |
+| adapter | 7,780 | 2,674 | +0 |
+| equality | 7,231 | 2,210 | +0 |
+| collection | 98,732 | 27,725 | -7 |
+| all-exports | 123,840 | 34,999 | -18 |
+| inspect | 101,760 | 27,291 | -9 |
+| query | 104,493 | 29,558 | +3 |
+| query-development | 104,493 | 29,558 | +3 |
+| external-atom | 85,632 | 23,142 | -6 |
+| dist | 358,596 | 105,898 | -44 |
+| packed | 506,909 | 134,300 | -86 |
+
+Only affected feature budgets and the runtime digest are recertified. Runtime
+shrinks by 204 raw bytes; the internal coordinator declaration adds 80 bytes across
+production/development trees, leaving the packed artifact 124 raw bytes smaller.
+Public exports are unchanged. The certified runtime build digest is
+`7102b3156af2d9d4528f72e4bf80783efce7768b94cce5bf21897ccd81778d1d`.
+
+### Final verification and stack
+
+The model branch ends at `bdcab35e6afd12ea87d50070bada6cc69fc81e41`.
+The implementation is restacked on that exact head; the amendment after the first
+restack only adds the model README explanation, and production source trees were
+checked identical across that documentation-only restack.
+
+Ordered implementation commits (after the model head):
+
+1. `68e368d83c42c70c2be845e1f759eeca69f56d11` — WIP: implement internal external pull capture and hydration.
+2. `cc9347648db3639f5bd8567284311bba6bca253a` — WIP: add sparse external lifecycle retention.
+3. `0f4ef9afcda292ceda6129ce9b99078e280fb658` — WIP: implement bounded external attachment and settlement.
+4. `7b4f716576181c9d37f90486be2b5601020971be` — Fix external failure occurrences and isolate optional runtime capabilities.
+5. `3b3fd313ad404eb2595d15e4eca98f08151edf80` — Expose and certify read-only ExternalAtom public integration.
+6. `1f1ffb1a6a41e7b1ea1d17310cb59346e355c829` — Adopt late external runtimes and preserve guard occurrence provenance.
+7. `86a16660e10d875b996419c053bb37cc3aef4265` — Recertify ExternalAtom repairs and correct release classification.
+8. `8a9038b1b7d77e6bd1c6ffabc3ded7ea25999dd4` — Repair external retry lifetime and classify failures without prototype hooks.
+9. `17354b1652b6a5d095bdf57d7c5b7f782decdea4` — Isolate build-test compilation and recertify external repairs.
+10. `30e432eb1b823691e660fe5d149fd2a69803e315` — Allocate external planes only when a StoreTree reaches external state.
+11. `c119e9935b7055cce7f7a8fc279ecdef7eaf01aa` — Preserve pending control occurrences through first external reach in callbacks.
+
+A final certification/documentation commit follows this list; the complete exact
+heads and command logs are in `.context/external-atom/review3/handoff.md`.
+
+Final `verify` used pinned Node 24.16.0 and Bun 1.4.0. No benchmark/contract jobs
+were run concurrently. The final runtime passed:
+
+| Gate | Result |
+| --- | --- |
+| Contracts/migration ledger | 62 pass / 527 assertions |
+| Production build, declarations, source/public types | Pass |
+| Packed core-load gate | 15 pass / 118 assertions |
+| Installed-but-unrelated Bun/Node performance | All eight lanes pass |
+| Independent model, including every identity test | 94 pass / 11,224 assertions |
+| Evaluator/oracle | 118 pass / 10,236 assertions |
+| StoreTree, including external/provenance/GC | 352 pass / 212,676 parent assertions |
+| Focused model + external StoreTree/public/inspect | 337 pass / 45,740 parent assertions |
+| Fresh-process public late installation | All 34 cases pass |
+| Release infrastructure | 311 pass / 1,239 assertions |
+| Full core runtime | 869 pass / 399,181 parent assertions; one tournament parent timeout |
+
+StoreTree/core additionally execute nine assertions in bounded GC children;
+fresh-process public fixtures execute Node assertions in their child processes.
+Independent review additionally ran six focused probes against the prior and
+repaired runtimes. The previous retry lifetime, hostile Proxy sentinel, and
+public `Symbol.hasInstance` regressions remain passing.
+
+The broad core failure short-circuited package build tests and React, so those
+were run explicitly before resuming the remaining verification steps:
+
+| Completion gate | Result |
+| --- | --- |
+| Core build-output tests | 7 pass / 37 assertions |
+| React, SSR/hydration/rebind/StrictMode | 74 pass / 2,154 assertions |
+| JUnit coverage | Pass |
+| Package mutation/self-tests, publint, ATTW, declaration consumers, bundlers | Pass |
+| Ordinary/feature size and projection exclusion | Pass |
+| Packed Node/Bun, standalone ExternalAtom, React 18.3.1/19.1.1 | Pass |
+| Runtime reproducibility | Three byte-identical builds matching the certified digest |
+
+Exact commands (all at the workspace root unless specified):
+
+```sh
+npm exec --yes --package=node@24.16.0 -- bun run verify
+npm exec --yes --package=node@24.16.0 -- bun --filter valdres test:build -- --reporter=junit --reporter-outfile=junit-build.xml
+npm exec --yes --package=node@24.16.0 -- bun --filter valdres-react test -- --reporter=junit --reporter-outfile=junit.xml
+npm exec --yes --package=node@24.16.0 -- bun run verify --from=18
+```
+
+`verify-final.log` records steps 1–17; the last three commands complete the
+short-circuited build/React lanes and steps 18–20. This is not an unqualified green
+`verify`: its one excluded tournament parent failure reproduces on clean
+`origin/main` at `270f00e46f26aee66a724fcf6d6fdda09ddcf133`. From that clean
+comparison worktree's `packages/valdres`, the command was
+`npm exec --yes --package=node@24.16.0 -- bun test test/selector-kernel-tournament`.
+Both candidate and clean main hit the historical-bytes 5-second child limit,
+predecessor 30-second child limit, and 110-second parent limit. The full outputs
+are `review3/verify-final.log` and `review3/main-tournament.log`; no timeout or
+assertion was weakened.
+
+The final packed-consumer shadow (without README/license payload) is 498,425 raw /
+130,307 gzip bytes. Full-package figures above include that payload. Both package
+and packed-consumer gates certify the same final runtime digest.
+
+The historical E0 section's old 85/11,155 count is corrected to its 90/11,198
+checkpoint; this pass's model count is 94/11,224. Implementation, model, and
+comparison worktrees are clean at handoff. No push, PR creation/update, merge,
+version bump, or new beta-labelled metadata is part of this repair.
