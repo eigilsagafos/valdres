@@ -3,6 +3,22 @@ import type { LateInstallScenario } from "./fixtures/external-late-install"
 
 const scenarios = [
     [
+        "subscriber-first-reach-zero",
+        "subscriber first reach with no preceding fault has one exact cause",
+    ],
+    [
+        "subscriber-first-reach-single",
+        "subscriber first reach adopts a preceding fault exactly once",
+    ],
+    [
+        "subscriber-first-reach-replay",
+        "subscriber first reach preserves a later replay as another occurrence",
+    ],
+    [
+        "subscriber-first-reach",
+        "first reach in a subscriber preserves every preceding control occurrence",
+    ],
+    [
         "cold-subscription",
         "cold family subscription attaches and releases once",
     ],

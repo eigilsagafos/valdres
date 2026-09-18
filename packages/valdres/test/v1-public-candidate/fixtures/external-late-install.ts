@@ -28,6 +28,10 @@ export type LateInstallScenario =
     | "prior-control-fault"
     | "prior-control-notification-fault"
     | "multiple-prior-control-faults"
+    | "subscriber-first-reach"
+    | "subscriber-first-reach-zero"
+    | "subscriber-first-reach-single"
+    | "subscriber-first-reach-replay"
     | "initial-control-failure"
     | "operation-phase-reset"
 
@@ -355,6 +359,84 @@ if (scenario === "cold-subscription" || scenario === "cold-catchup") {
     stopFault()
     stopValue()
     assert.equal(hub.counts.cleanups, 1)
+    app.dispose()
+} else if (scenario?.startsWith("subscriber-first-reach")) {
+    const count = scenario.endsWith("zero")
+        ? 0
+        : scenario.endsWith("single")
+          ? 1
+          : 2
+    const replay = scenario.endsWith("replay")
+    const app = store()
+    const trigger = atom(false)
+    const alien = createCommittedStoreTreeDomain().atom(0)
+    const faults: unknown[] = []
+    const failing = () =>
+        selector(get => {
+            if (!get(trigger)) return 0
+            try {
+                return get(alien)
+            } catch (error) {
+                faults.push(error)
+                throw error
+            }
+        })
+    const hub = source(7)
+    const external = externalAtom(hub.adapter)
+    const callbacks: string[] = []
+    let dormant: unknown
+    const stops = [
+        ...Array.from({ length: count }, (_, index) =>
+            app.sub(failing(), () => callbacks.push(`fault:${index}`)),
+        ),
+        app.sub(trigger, () => {
+            callbacks.push("external")
+            try {
+                app.get(external)
+            } catch (error) {
+                dormant = error
+                throw error
+            }
+        }),
+        app.sub(trigger, () => {
+            callbacks.push("last")
+            if (replay) throw faults[0]
+        }),
+    ]
+    const error = thrown(() => app.set(trigger, true))
+    assert.equal(faults.length, count)
+    const expected = [...faults, dormant, ...(replay ? [faults[0]] : [])]
+    if (count === 2) {
+        assert.ok(error instanceof ExternalSourceOperationError)
+        assert.deepEqual(
+            error.failures.map(failure => failure.phase),
+            [
+                ...faults.map(() => "settling"),
+                "notifying",
+                ...(replay ? ["notifying"] : []),
+            ],
+        )
+        for (const failure of error.failures) {
+            assert.equal(failure.source, "owned-mutation")
+            assert.equal(failure.committed, true)
+        }
+    } else assert.ok(error instanceof SubscriberNotificationError)
+    assert.deepEqual(error.causes, expected)
+    error.causes.forEach((cause, index) => assert.equal(cause, expected[index]))
+    assert.deepEqual(callbacks, [
+        "external",
+        "last",
+        ...faults.map((_, index) => `fault:${index}`),
+    ])
+    assert.equal(hub.counts.samples, 0)
+    assert.equal(hub.counts.attempts, 0)
+    stops.forEach(stop => stop())
+    assert.equal(app.get(external), 7)
+    const stop = app.sub(external, () => {})
+    stop()
+    assert.equal(hub.counts.attempts, 1)
+    assert.equal(hub.counts.cleanups, 1)
+    app.set(trigger, false)
     app.dispose()
 } else if (scenario === "multiple-prior-control-faults") {
     const app = store()

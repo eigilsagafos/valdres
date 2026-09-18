@@ -289,7 +289,6 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     notificationCallback(
         registration: SubscriptionRegistration,
     ): (() => unknown) | undefined {
-        this.phase(ExternalOperationPhase.notifying)
         if (
             registration.target === undefined ||
             registration.status === "rolled-back"

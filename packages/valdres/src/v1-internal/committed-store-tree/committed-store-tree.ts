@@ -817,7 +817,7 @@ class CommittedStoreTreeHost
             throw new TypeError("StoreTree.get requires a valid State")
         }
         const served =
-            (subscriberSession === undefined && this.#external === undefined
+            (subscriberSession === undefined && !this.#external
                 ? scope.getMaterializedServedOutcome(node)
                 : undefined) ??
             this.#read(scope, node, session, subscriberSession)
@@ -843,7 +843,7 @@ class CommittedStoreTreeHost
         this.subscriberReading = subscriberSession !== undefined
         try {
             served =
-                this.subscriberReading || this.#external === undefined
+                this.subscriberReading || !this.#external
                     ? scope.serveKnownLocal(node, session)
                     : this.#external.observe(scope, node, session)
         } catch (error) {
@@ -932,21 +932,20 @@ class CommittedStoreTreeHost
         }
         const current = scope.getMaterializedServedOutcome(node)
         const outer =
-            (current === undefined || this.#external !== undefined) &&
+            (current === undefined || this.#external) &&
             this.#beginOperation(HostOperationKind.subscribe)
         try {
-            const served =
-                this.#external === undefined
-                    ? (current ??
-                      scope.serveKnownLocal(
-                          node,
-                          session ?? new SelectorEvaluationSession<AnyState>(),
-                      ))
-                    : this.#external.observe(
-                          scope,
-                          node,
-                          session ?? new SelectorEvaluationSession<AnyState>(),
-                      )
+            const served = !this.#external
+                ? (current ??
+                  scope.serveKnownLocal(
+                      node,
+                      session ?? new SelectorEvaluationSession<AnyState>(),
+                  ))
+                : this.#external.observe(
+                      scope,
+                      node,
+                      session ?? new SelectorEvaluationSession<AnyState>(),
+                  )
             if (served.outcome.kind === "control-error") {
                 throw served.outcome.error
             }
@@ -2033,7 +2032,7 @@ class CommittedStoreTreeHost
                         : 1 + (remainingChangedSources?.length ?? 0),
                 )
             } catch (error) {
-                if (this.#external === undefined) throw error
+                if (!this.#external) throw error
                 this.#external.failure(error, "instrumenting")
             }
             this.propagateFromSources(
@@ -2367,58 +2366,71 @@ class CommittedStoreTreeHost
         // failed settlements. Only the active queue is allocated on entry.
         this.#propagationQueue = []
         this.#postSourceApply = true
-        let authoritativeControlFault: unknown | undefined
         try {
-            prepare?.()
-            firstSource?.scope.markDependents(firstSource.atom)
-            if (remainingSources !== undefined) {
-                for (const source of remainingSources) {
-                    source.scope.markDependents(source.atom)
+            try {
+                prepare?.()
+                firstSource?.scope.markDependents(firstSource.atom)
+                if (remainingSources !== undefined) {
+                    for (const source of remainingSources) {
+                        source.scope.markDependents(source.atom)
+                    }
                 }
+                let cursor = 0
+                while (
+                    cursor < this.#propagationQueue.length ||
+                    this.#external?.pendingLifecycle
+                ) {
+                    if (cursor >= this.#propagationQueue.length) {
+                        // Catch-up is another propagation wave within the same
+                        // atomic settlement and frozen notification snapshot.
+                        this.#propagationStatusScope = undefined
+                        this.#propagationStatusSelector = undefined
+                        this.#propagationStatusBits = 0
+                        this.#propagationStatuses = undefined
+                        this.#external!.settleLifecycle()
+                        continue
+                    }
+                    const scope = this.#propagationQueue[
+                        cursor++
+                    ] as StoreScopeNode
+                    const selector = this.#propagationQueue[
+                        cursor++
+                    ] as AnySelector
+                    try {
+                        this.#settleSelector(scope, selector)
+                    } catch (cause) {
+                        if (prepare === undefined) throw cause
+                        this.#external!.failure(cause, "settling")
+                    }
+                }
+            } finally {
+                this.#postSourceApply = false
+                this.#propagationQueue = undefined
+                this.#propagationStatusScope = undefined
+                this.#propagationStatusSelector = undefined
+                this.#propagationStatusBits = 0
+                this.#propagationStatuses = undefined
+                this.#external?.endPropagation(previousPull)
             }
-            let cursor = 0
-            while (
-                cursor < this.#propagationQueue.length ||
-                this.#external?.pendingLifecycle
-            ) {
-                if (cursor >= this.#propagationQueue.length) {
-                    // Catch-up is another propagation wave within the same
-                    // atomic settlement and frozen notification snapshot.
-                    this.#propagationStatusScope = undefined
-                    this.#propagationStatusSelector = undefined
-                    this.#propagationStatusBits = 0
-                    this.#propagationStatuses = undefined
-                    this.#external!.settleLifecycle()
-                    continue
-                }
-                const scope = this.#propagationQueue[cursor++] as StoreScopeNode
-                const selector = this.#propagationQueue[cursor++] as AnySelector
-                try {
-                    this.#settleSelector(scope, selector)
-                } catch (cause) {
-                    if (prepare === undefined) throw cause
-                    this.#external!.failure(cause, "settling")
-                }
+            const subscriberErrors = this.#deliverSubscriptionSnapshot()
+            // A first external reach in a callback adopts and clears the pending
+            // control ledger. Only an unadopted fault belongs to this core result.
+            const authoritativeControlFault =
+                this.#propagationControlFault?.[0]?.error
+            if (subscriberErrors === undefined) {
+                if (authoritativeControlFault !== undefined)
+                    throw authoritativeControlFault
+                return
             }
+            const error = new SubscriberNotificationError(
+                authoritativeControlFault === undefined
+                    ? subscriberErrors
+                    : [authoritativeControlFault, ...subscriberErrors],
+            )
+            throw this.#external?.notificationFailure(error) ?? error
         } finally {
-            authoritativeControlFault = (
-                this.#propagationControlFault as
-                    | Extract<
-                          ServedSelectorOutcome<OutcomeToken>["outcome"],
-                          { kind: "control-error" }
-                      >[]
-                    | undefined
-            )?.[0]!.error
             this.#propagationControlFault = undefined
-            this.#postSourceApply = false
-            this.#propagationQueue = undefined
-            this.#propagationStatusScope = undefined
-            this.#propagationStatusSelector = undefined
-            this.#propagationStatusBits = 0
-            this.#propagationStatuses = undefined
-            this.#external?.endPropagation(previousPull)
         }
-        this.#deliverSubscriptionSnapshot(authoritativeControlFault)
     }
 
     beginNotificationSettlement(): void {
@@ -2461,15 +2473,10 @@ class CommittedStoreTreeHost
         }
     }
 
-    #deliverSubscriptionSnapshot(
-        authoritativeControlFault: unknown | undefined,
-    ): void {
+    #deliverSubscriptionSnapshot(): unknown[] | undefined {
         const firstTarget = this.#notificationTarget
         if (firstTarget === undefined) {
             this.clearNotificationSettlement()
-            if (authoritativeControlFault !== undefined) {
-                throw authoritativeControlFault
-            }
             return
         }
         let firstCallback: SubscriberCallback | undefined
@@ -2477,10 +2484,9 @@ class CommittedStoreTreeHost
         const capture = (target: SubscriptionTarget): void => {
             let registration = target.head
             while (registration !== undefined) {
-                const callback =
-                    this.#external === undefined
-                        ? registration.callback
-                        : this.#external.notificationCallback(registration)
+                const callback = !this.#external
+                    ? registration.callback
+                    : this.#external.notificationCallback(registration)
                 if (callback !== undefined) {
                     if (firstCallback === undefined) {
                         firstCallback = callback
@@ -2502,11 +2508,9 @@ class CommittedStoreTreeHost
         this.clearNotificationSettlement()
 
         if (firstCallback === undefined) {
-            if (authoritativeControlFault !== undefined) {
-                throw authoritativeControlFault
-            }
             return
         }
+        this.#phase(ExternalOperationPhase.notifying)
         const frozenSnapshot = Object.freeze(snapshot ?? [firstCallback])
         const instrumented = this.instrumented
         if (instrumented)
@@ -2542,18 +2546,7 @@ class CommittedStoreTreeHost
             }
         }
 
-        if (subscriberErrors === undefined) {
-            if (authoritativeControlFault !== undefined) {
-                throw authoritativeControlFault
-            }
-            return
-        }
-        const error = new SubscriberNotificationError(
-            authoritativeControlFault === undefined
-                ? subscriberErrors
-                : [authoritativeControlFault, ...subscriberErrors],
-        )
-        throw this.#external?.notificationFailure(error) ?? error
+        return subscriberErrors
     }
 
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean {
@@ -2561,7 +2554,7 @@ class CommittedStoreTreeHost
         if (queue === undefined) return false
         let status = this.#getPropagationStatus(scope, selector)
         if (
-            this.#external !== undefined &&
+            this.#external &&
             (status & PROPAGATION_SETTLED) !== 0 &&
             (status & PROPAGATION_EVALUATED) === 0
         ) {
@@ -2619,7 +2612,7 @@ class CommittedStoreTreeHost
                 }
             }
             if (scope.isSelectorDirty(selector)) {
-                if (this.#external !== undefined)
+                if (this.#external)
                     this.#updatePropagationStatus(
                         scope,
                         selector,
