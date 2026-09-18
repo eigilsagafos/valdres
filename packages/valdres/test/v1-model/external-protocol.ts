@@ -14,6 +14,8 @@ export type ExternalOutcome =
           kind: "error" | "control"
           identity: string
           space: ExternalIdentitySpace
+          /** Per-model allocation identity; source symbols omit this field. */
+          occurrence?: number
       }>
 
 export type ExternalSample =
@@ -134,6 +136,7 @@ export type ExternalWorkCounter = (typeof externalWorkCounters)[number]
 export interface ExternalFailure {
     readonly identity: string
     readonly space: ExternalIdentitySpace
+    readonly occurrence?: number
     readonly phase: ExternalPhase
     readonly committed: boolean
 }

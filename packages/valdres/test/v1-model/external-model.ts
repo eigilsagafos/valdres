@@ -96,12 +96,17 @@ type CallbackMode =
 class Fault {
     constructor(
         readonly identity: string,
-        readonly space: ExternalIdentitySpace = "control",
+        readonly space: ExternalIdentitySpace,
+        readonly occurrence: number | undefined,
     ) {}
 }
 class RecordedFault extends Fault {
     constructor(readonly failures: readonly ExternalFailure[]) {
-        super(failures[0]!.identity, failures[0]!.space)
+        super(
+            failures[0]!.identity,
+            failures[0]!.space,
+            failures[0]!.occurrence,
+        )
     }
 }
 class CombinedFault {
@@ -109,10 +114,17 @@ class CombinedFault {
 }
 const val = (input: ValueToken): ExternalOutcome =>
     Object.freeze({ kind: "value", value: input })
-const err = (identity: string, space: ExternalIdentitySpace): ExternalOutcome =>
-    Object.freeze({ kind: "error", identity, space })
-const control = (identity: string): ExternalOutcome =>
-    Object.freeze({ kind: "control", identity, space: "control" })
+const err = (
+    identity: string,
+    space: ExternalIdentitySpace,
+    occurrence: number | undefined,
+): ExternalOutcome =>
+    Object.freeze({
+        kind: "error",
+        identity,
+        space,
+        ...(occurrence === undefined ? {} : { occurrence }),
+    })
 
 export function sameExternalOutcome(
     a: ExternalOutcome,
@@ -124,7 +136,8 @@ export function sameExternalOutcome(
               b.kind !== "value" &&
               a.kind === b.kind &&
               a.space === b.space &&
-              a.identity === b.identity
+              a.identity === b.identity &&
+              a.occurrence === b.occurrence
 }
 
 /**
@@ -156,6 +169,8 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
     #depth = 0
     #deliveryWork = 0
     #nextError = 1
+    #nextOccurrence = 1
+    readonly #unexpectedFaults = new Map<unknown, Fault>()
 
     constructor(
         sources: readonly ExternalSourceSpec[],
@@ -322,7 +337,11 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                                 host,
                             )
                             if (initial.kind === "control")
-                                throw new Fault(initial.identity, initial.space)
+                                throw new Fault(
+                                    initial.identity,
+                                    initial.space,
+                                    initial.occurrence,
+                                )
                             // The initial read settles before provisional admission.
                             this.#settle(tree)
                             const subscription: Subscription = {
@@ -373,7 +392,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                     const tree = this.#tree(command.tree)
                     const scope = this.#scope(tree, command.scope)
                     if (this.#node(command.atom).kind !== "atom")
-                        throw new Fault("readonly")
+                        throw this.#newFault("readonly")
                     this.#frame(tree, "settling", () => {
                         scope.atoms.set(command.atom, command.value)
                         tree.committed = true
@@ -405,7 +424,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                                     step.snapshot
                             else if (step.kind === "set") {
                                 if (this.#node(step.atom).kind !== "atom")
-                                    throw new Fault("readonly")
+                                    throw this.#newFault("readonly")
                                 const scope = this.#scope(tree, step.scope)
                                 let local = atoms.get(scope)
                                 if (local === undefined)
@@ -452,13 +471,12 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         } catch (failure) {
             for (const thrown of this.#flattenFailures(failure)) {
                 if (!(thrown instanceof RecordedFault)) {
-                    const identity = this.#faultIdentity(thrown)
+                    const fault = this.#fault(thrown)
                     this.trace.push({
                         kind: "failure",
                         tree: "tree" in command ? command.tree : "hub",
                         failure: Object.freeze({
-                            identity,
-                            space: this.#faultSpace(thrown),
+                            ...this.#symbol(fault),
                             phase: "idle",
                             committed: false,
                         }),
@@ -558,7 +576,9 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                 ) {
                     const path = Object.freeze([...host.path, nodeId])
                     this.trace.push({ kind: "missing-server", path })
-                    sampled = control(`missing-server:${JSON.stringify(path)}`)
+                    sampled = this.#control(
+                        `missing-server:${JSON.stringify(path)}`,
+                    )
                     host.fatal = sampled
                 } else sampled = this.#sample(tree, nodeId, source, host.mode)
                 if (sampled.kind === "control") host.fatal = sampled
@@ -577,7 +597,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                 (existingProjection === undefined ||
                     existingProjection.status === "dormant")
             ) {
-                host.fatal = control("dormant-read")
+                host.fatal = this.#control("dormant-read")
                 return host.fatal
             }
             const projection =
@@ -602,7 +622,8 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                 this.#publish(tree, projection, sample)
             }
             const current =
-                projection.outcome ?? err("unread-projection", "model-error")
+                projection.outcome ??
+                err("unread-projection", "model-error", this.#nextOccurrence++)
             if (current.kind === "control") host.fatal = current
             return current
         }
@@ -610,7 +631,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         const records = host.mode === "live" ? scope.selectors : host.selectors
         const recordKey = host.mode === "live" ? nodeId : key
         const memo = records.get(recordKey)
-        if (host.path.includes(nodeId)) return control("selector-cycle")
+        if (host.path.includes(nodeId)) return this.#control("selector-cycle")
         // A newly chosen, already materialized selector can hide a dormant
         // external branch. Refresh that closure when reached by a getter, not
         // while the oracle checks old dependency outcomes for changes.
@@ -693,7 +714,11 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                         break
                     }
                     if (current.value.kind !== "number") {
-                        outcome = err("expected-number", "model-error")
+                        outcome = err(
+                            "expected-number",
+                            "model-error",
+                            this.#nextOccurrence++,
+                        )
                         break
                     }
                     total += current.value.value
@@ -889,7 +914,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
             const result = projection.source.spec.cleanupResult ?? "valid"
             if (result !== "valid") {
                 if (result === "thenable") this.work.thenableContainments++
-                throw new Fault("invalid-cleanup")
+                throw this.#newFault("invalid-cleanup")
             }
             acquired = true
             projection.source.listeners.add(generation)
@@ -901,7 +926,11 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                 "live",
             )
             if (sampled.kind === "control")
-                throw new Fault(sampled.identity, sampled.space)
+                throw new Fault(
+                    sampled.identity,
+                    sampled.space,
+                    sampled.occurrence,
+                )
             this.#publish(tree, projection, sampled)
             this.#transition(tree, projection, "active")
         } catch (failure) {
@@ -973,7 +1002,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
             )
             if (projection.source.spec.cleanupThenable) {
                 this.work.thenableContainments++
-                throw new Fault("invalid-cleanup")
+                throw this.#newFault("invalid-cleanup")
             }
         } catch (failure) {
             this.#failure(tree, failure)
@@ -991,7 +1020,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         const subscription = this.#subscriptions.get(id)
         if (subscription === undefined) return
         if (this.#callback !== undefined && this.#callback !== "subscriber")
-            throw new Fault("callback-capability")
+            throw this.#newFault("callback-capability")
         const tree = subscription.tree
         if (tree.phase === "idle")
             this.#frame(tree, "cleanup", () => this.#remove(subscription))
@@ -1046,7 +1075,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
             this.#callback === "subscribe" ||
             this.#callback === "cleanup"
         )
-            throw new Fault("callback-capability")
+            throw this.#newFault("callback-capability")
         if (tree.terminal) return
         projection.retryRequired = false
         if (tree.phase !== "idle") {
@@ -1065,7 +1094,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                 tree: tree.id,
                 external: projection.external,
             })
-            throw new Fault("delivery-limit")
+            throw this.#newFault("delivery-limit")
         }
         this.#depth++
         this.#deliveryWork++
@@ -1084,7 +1113,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         operation: () => void,
         rollback?: () => void,
     ): void {
-        if (tree.phase !== "idle") throw new Fault("active-tree")
+        if (tree.phase !== "idle") throw this.#newFault("active-tree")
         tree.phase = phase
         tree.sampled = new Set()
         tree.failures.length = 0
@@ -1159,7 +1188,11 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                 if (outcome.kind === "control")
                     this.#failure(
                         tree,
-                        new Fault(outcome.identity, outcome.space),
+                        new Fault(
+                            outcome.identity,
+                            outcome.space,
+                            outcome.occurrence,
+                        ),
                         true,
                     )
             }
@@ -1184,6 +1217,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
         const outcome = err(
             `non-convergence:${this.#nextError++}`,
             "non-convergence",
+            this.#nextOccurrence++,
         )
         for (const generation of new Set(pending))
             if (generation.live && generation.projection.status === "active")
@@ -1194,6 +1228,7 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
             new Fault(
                 outcome.kind === "value" ? "unreachable" : outcome.identity,
                 "non-convergence",
+                outcome.kind === "value" ? undefined : outcome.occurrence,
             ),
             true,
         )
@@ -1235,13 +1270,12 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                 return err(
                     `invalid-snapshot:${this.#nextError++}`,
                     "invalid-snapshot",
+                    this.#nextOccurrence++,
                 )
             })
         } catch (failure) {
-            outcome = err(
-                this.#faultIdentity(failure),
-                this.#faultSpace(failure),
-            )
+            const fault = this.#fault(failure)
+            outcome = err(fault.identity, fault.space, fault.occurrence)
         }
         this.trace.push({
             kind: "sample",
@@ -1291,10 +1325,10 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                     this.#unsubscribe(action.subscription)
                     break
                 case "fail":
-                    throw new Fault(action.identity, "source")
+                    throw new Fault(action.identity, "source", undefined)
                 case "read": {
                     if (this.#callback !== "subscriber")
-                        throw new Fault("callback-capability")
+                        throw this.#newFault("callback-capability")
                     const tree = this.#tree(action.tree)
                     const result = this.#read(
                         tree,
@@ -1303,7 +1337,11 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
                         this.#host("live"),
                     )
                     if (result.kind !== "value")
-                        throw new Fault(result.identity, result.space)
+                        throw new Fault(
+                            result.identity,
+                            result.space,
+                            result.occurrence,
+                        )
                     break
                 }
             }
@@ -1341,25 +1379,48 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
             return
         }
         const failure = Object.freeze({
-            identity: this.#faultIdentity(thrown),
-            space: this.#faultSpace(thrown),
+            ...this.#symbol(this.#fault(thrown)),
             phase: tree.phase,
             committed,
         })
         tree.failures.push(failure)
         this.trace.push({ kind: "failure", tree: tree.id, failure })
     }
-    #faultIdentity(thrown: unknown): string {
-        if (thrown instanceof CombinedFault)
-            return this.#faultIdentity(thrown.failures[0])
-        return thrown instanceof Fault
-            ? thrown.identity
-            : `model-error:${String(thrown)}`
+    #newFault(
+        identity: string,
+        space: ExternalIdentitySpace = "control",
+    ): Fault {
+        return new Fault(identity, space, this.#nextOccurrence++)
     }
-    #faultSpace(thrown: unknown): ExternalIdentitySpace {
+    #symbol(fault: Fault) {
+        return {
+            identity: fault.identity,
+            space: fault.space,
+            ...(fault.occurrence === undefined
+                ? {}
+                : { occurrence: fault.occurrence }),
+        }
+    }
+    #control(identity: string): ExternalOutcome {
+        return Object.freeze({
+            kind: "control",
+            ...this.#symbol(this.#newFault(identity)),
+        })
+    }
+    #fault(thrown: unknown): Fault {
         if (thrown instanceof CombinedFault)
-            return this.#faultSpace(thrown.failures[0])
-        return thrown instanceof Fault ? thrown.space : "model-error"
+            return this.#fault(thrown.failures[0])
+        if (thrown instanceof Fault) return thrown
+        // Unexpected model exceptions also keep exact identity when forwarded.
+        let fault = this.#unexpectedFaults.get(thrown)
+        if (fault === undefined) {
+            fault = this.#newFault(
+                `model-error:${String(thrown)}`,
+                "model-error",
+            )
+            this.#unexpectedFaults.set(thrown, fault)
+        }
+        return fault
     }
     #flattenFailures(thrown: unknown): unknown[] {
         return thrown instanceof CombinedFault
@@ -1367,7 +1428,8 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
             : [thrown]
     }
     #assertCommand(): void {
-        if (this.#callback !== undefined) throw new Fault("callback-capability")
+        if (this.#callback !== undefined)
+            throw this.#newFault("callback-capability")
     }
     #projection(tree: Tree, external: string): Projection {
         let projection = tree.projections.get(external)
@@ -1410,23 +1472,23 @@ export class ExternalReferenceModel implements ExternalProtocolDriver {
     }
     #tree(id: string): Tree {
         const tree = this.#trees.get(id)
-        if (tree === undefined) throw new Fault("missing-tree")
+        if (tree === undefined) throw this.#newFault("missing-tree")
         return tree
     }
     #scope(tree: Tree, id: string, allowDisposed = false): Scope {
         const scope = tree.scopes.get(id)
-        if (scope === undefined) throw new Fault("missing-scope")
-        if (!allowDisposed && scope.disposed) throw new Fault("disposed")
+        if (scope === undefined) throw this.#newFault("missing-scope")
+        if (!allowDisposed && scope.disposed) throw this.#newFault("disposed")
         return scope
     }
     #node(id: string): ExternalNodeSpec {
         const node = this.#nodes.get(id)
-        if (node === undefined) throw new Fault("missing-node")
+        if (node === undefined) throw this.#newFault("missing-node")
         return node
     }
     #source(id: string): Source {
         const source = this.#sources.get(id)
-        if (source === undefined) throw new Fault("missing-source")
+        if (source === undefined) throw this.#newFault("missing-source")
         return source
     }
     #identifier(id: string): void {

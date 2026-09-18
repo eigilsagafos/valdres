@@ -1245,6 +1245,7 @@ describe("external projection reference model", () => {
                 kind: "error",
                 identity: "callback-capability",
                 space: "control",
+                occurrence: 1,
             })
             expect(instance.inspect("tree", "right")?.outcome).toEqual(
                 number(0),

@@ -7,6 +7,43 @@ const root = { tree: "tree", scope: "root" } as const
 const number = (input: number) =>
     ({ kind: "value", value: value.number(input) }) as const
 
+test("fresh callback faults with the same label publish and notify each time", () => {
+    const model = new ExternalReferenceModel(
+        [
+            {
+                id: "source",
+                snapshot: number(0),
+                sampleActions: [{ kind: "read", ...root, node: "external" }],
+            },
+        ],
+        [{ kind: "external", id: "external", source: "source" }],
+    )
+    model.execute({ kind: "tree", tree: "tree", root: "root" })
+    expect(
+        model.execute({
+            kind: "subscribe",
+            ...root,
+            node: "external",
+            subscription: "sub",
+        }).failures,
+    ).toEqual([])
+    model.clearTrace()
+    const before = model.work.subscriberCalls
+    for (let i = 0; i < 2; i++)
+        model.execute({ kind: "emit", source: "source" })
+    expect(model.work.subscriberCalls - before).toBe(2)
+    const notifications = model.trace.filter(event => event.kind === "notify")
+    expect(notifications).toHaveLength(2)
+    const outcomes = notifications.map(event => event.outcome)
+    for (const outcome of outcomes)
+        expect(outcome).toMatchObject({
+            kind: "error",
+            space: "control",
+            identity: "callback-capability",
+        })
+    expect(sameExternalOutcome(outcomes[0]!, outcomes[1]!)).toBe(false)
+})
+
 test("source invalid-snapshot text cannot suppress a generated error publication", () => {
     const model = new ExternalReferenceModel(
         [
@@ -126,4 +163,111 @@ test("source control text cannot collide with a generated missing-server control
     })
     expect(sameExternalOutcome(source, generated)).toBe(false)
     expect(model.work.projectionPublications).toBe(0)
+})
+
+test("fresh missing-server faults keep their labels but have distinct replayable identities", () => {
+    const replay = () => {
+        const model = new ExternalReferenceModel(
+            [{ id: "source", snapshot: number(0) }],
+            [{ kind: "external", id: "external", source: "source" }],
+        )
+        model.execute({ kind: "tree", tree: "tree", root: "root" })
+        const read = () =>
+            model.execute({ kind: "hydrate", ...root, node: "external" })
+                .outcome!
+        const first = read()
+        const second = read()
+        expect(first).toMatchObject({
+            identity: 'missing-server:["external"]',
+            occurrence: 1,
+        })
+        expect(second).toMatchObject({
+            identity: 'missing-server:["external"]',
+            occurrence: 2,
+        })
+        expect(sameExternalOutcome(first, second)).toBe(false)
+        return model.trace
+    }
+    expect(replay()).toEqual(replay())
+})
+
+test("transaction capture and selector forwarding preserve a generated fault identity", () => {
+    const model = new ExternalReferenceModel(
+        [
+            {
+                id: "source",
+                snapshot: number(0),
+                sampleActions: [{ kind: "read", ...root, node: "external" }],
+            },
+        ],
+        [
+            { kind: "external", id: "external", source: "source" },
+            { kind: "atom", id: "atom", value: value.number(0) },
+            {
+                kind: "selector",
+                id: "selected",
+                expression: { kind: "read", node: "external" },
+            },
+        ],
+    )
+    model.execute({ kind: "tree", tree: "tree", root: "root" })
+    const result = model.execute({
+        kind: "transaction",
+        tree: "tree",
+        steps: [
+            { kind: "read", scope: "root", node: "external" },
+            {
+                kind: "set",
+                scope: "root",
+                atom: "atom",
+                value: value.number(1),
+            },
+            { kind: "read", scope: "root", node: "selected" },
+            { kind: "read", scope: "root", node: "external" },
+        ],
+    })
+    expect(result.failures).toEqual([])
+    expect(result.reads).toHaveLength(3)
+    for (const outcome of result.reads!) expect(outcome).toBe(result.reads![0])
+    expect(model.work.transactionCaptures).toBe(1)
+    expect(model.work.liveSamples).toBe(1)
+})
+
+test("reused source errors remain stable while new model faults stay distinct", () => {
+    const model = new ExternalReferenceModel(
+        [
+            {
+                id: "source",
+                snapshot: { kind: "error", identity: "callback-capability" },
+            },
+        ],
+        [{ kind: "external", id: "external", source: "source" }],
+    )
+    model.execute({ kind: "tree", tree: "tree", root: "root" })
+    model.execute({
+        kind: "subscribe",
+        ...root,
+        node: "external",
+        subscription: "sub",
+    })
+    const read = () =>
+        model.execute({ kind: "read", ...root, node: "external" }).outcome!
+    const before = read()
+    model.execute({ kind: "emit", source: "source" })
+    model.execute({ kind: "emit", source: "source" })
+    expect(sameExternalOutcome(before, read())).toBe(true)
+    expect(model.work.subscriberCalls).toBe(0)
+    const reject = () =>
+        model.execute({
+            kind: "set",
+            ...root,
+            atom: "external",
+            value: value.number(1),
+        }).failures[0]!
+    const first = reject()
+    const second = reject()
+    expect(first.identity).toBe("readonly")
+    expect(second.identity).toBe(first.identity)
+    expect(first.occurrence).toBeNumber()
+    expect(second.occurrence).not.toBe(first.occurrence)
 })

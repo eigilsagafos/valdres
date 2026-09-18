@@ -269,7 +269,7 @@ the new external protocol, independent model, regression/differential tests,
 test-only barrel exports, and README. There is no production constructor or
 export, contract-manifest edit, changeset, version bump, or PR.
 
-- Model typecheck and all 85 model tests pass (45 new external cases); 11,155
+- Model typecheck and all 90 model tests pass (50 external cases); 11,198
   assertions, including 32 seeds × 100 direct-source differential operations.
 - The targeted v1 core run passes 617 tests / 364,444 assertions across 40 files.
   It includes model, evaluator, committed StoreTree, public candidate, inspection,
