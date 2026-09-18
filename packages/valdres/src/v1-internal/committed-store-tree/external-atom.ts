@@ -8,7 +8,7 @@ import { ExternalProjectionPlane } from "./external-projection"
 import type { ExternalOperationFailure } from "./external-types"
 import {
     assertRuntimeDefinitionConstructionAllowed,
-    RuntimeMismatchError,
+    isInternalRuntimeMismatch,
     SubscriberNotificationError,
     containThenable,
     inspectThenable,
@@ -425,7 +425,7 @@ function ensureExternalRuntime(domain: RuntimeDomainRecords): void {
             if (
                 failures.length > 1 &&
                 internal[0] &&
-                failures[0]!.cause instanceof RuntimeMismatchError &&
+                isInternalRuntimeMismatch(failures[0]!.cause) &&
                 failures.every(
                     failure => failure.source === "owned-mutation",
                 ) &&

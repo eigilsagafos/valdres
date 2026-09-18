@@ -43,10 +43,11 @@ interface Generation {
     owner: ExternalProjectionPlane | undefined
     projection: Projection | undefined
     cleanup: (() => unknown) | undefined
+    retryRequired?: boolean
 }
 // Transport an already-recorded failed read to its operation boundary without
 // creating a second ledger occurrence or comparing application error identities.
-class RecordedExternalFailure {}
+const recordedExternalFailure = Symbol()
 // A departed callback retains only this cleared ticket, never its old tree.
 const invalidator = (generation: Generation) => () =>
     generation.owner?.invalidate(generation)
@@ -71,7 +72,6 @@ interface Projection {
     retains: number
     status: "dormant" | "attaching" | "active" | "detaching"
     generation?: Generation
-    retryRequired?: boolean
 }
 interface RetainRecord {
     count: number
@@ -147,6 +147,11 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         }
         this.#delivery = delivery
         this.#bounds = bounds
+    }
+
+    /** @internal Read-only invariant probe for the projection test harness. */
+    inspectRetryRequired(node: AnyState): boolean {
+        return this.#projections.get(node)?.generation?.retryRequired === true
     }
 
     #event(code: ExternalInspectionEvent, node?: AnyState): void {
@@ -448,7 +453,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         phase?: ExternalOperationFailure["phase"],
         origin?: object,
     ): void {
-        if (error instanceof RecordedExternalFailure) return
+        if (error === recordedExternalFailure) return
         const frame = this.#operation
         if (frame === undefined) throw error
         // An origin identifies a control occurrence, never an application error.
@@ -482,7 +487,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                 committed: this.#bindings.epoch() !== frame.epoch,
             })
         }
-        return new RecordedExternalFailure()
+        return recordedExternalFailure
     }
 
     #failureMetadata(
@@ -745,6 +750,8 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             activity?.kind === "external-subscribe" &&
             activity.generation === generation
         ) {
+            if (this.#operation?.terminal) return
+            delete generation.retryRequired
             this.#dirty.add(generation)
             return
         }
@@ -752,6 +759,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             rejectCallbackOperation(this.#bindings.domain)
         }
         if (this.#operation?.terminal) return
+        delete generation.retryRequired
         if (this.#operation !== undefined) {
             this.#event(ExternalInspectionEvent.invalidate, projection.node)
             this.#dirty.add(generation)
@@ -763,7 +771,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             delivery.depth >= this.#bounds.deliveryDepth ||
             delivery.work >= this.#bounds.deliveryWork
         ) {
-            projection.retryRequired = true
+            generation.retryRequired = true
             this.#bindings.count(StoreTreeCounterId.deliveryLimitHits)
             const limit = new ExternalSourceDeliveryLimitError()
             try {
@@ -792,7 +800,6 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         delivery.depth++
         delivery.work++
         this.#bindings.count(StoreTreeCounterId.deliveryEntries)
-        delete projection.retryRequired
         try {
             this.run("external-invalidation", () => {
                 this.#event(ExternalInspectionEvent.invalidate, projection.node)
@@ -1138,7 +1145,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
                 served = scope.serveKnownLocal(node, session)
             })
             if (this.#operation!.failures.length !== failureCount)
-                throw new RecordedExternalFailure()
+                throw recordedExternalFailure
             return (
                 scope.getMaterializedServedOutcome(node) ??
                 this.#projections.get(node)?.served ??

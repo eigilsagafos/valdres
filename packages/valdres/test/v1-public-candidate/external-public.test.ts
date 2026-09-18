@@ -493,3 +493,112 @@ describe("public ExternalAtom error boundaries", () => {
         target.dispose()
     })
 })
+
+describe("external error classification avoids application prototype hooks", () => {
+    test.each(["setup", "cleanup"] as const)(
+        "%s preserves a thrown Proxy without inspecting its prototype",
+        phase => {
+            let traps = 0
+            const trapError = new Error("prototype trap must not run")
+            const cause = new Proxy(
+                {},
+                {
+                    getPrototypeOf() {
+                        traps++
+                        throw trapError
+                    },
+                },
+            )
+            const target = store()
+            const external = externalAtom({
+                getSnapshot: () => 1,
+                subscribe() {
+                    if (phase === "setup") throw cause
+                    return () => {
+                        throw cause
+                    }
+                },
+            })
+            try {
+                const error = thrown(() => {
+                    const stop = target.sub(external, () => {})
+                    stop()
+                }) as ExternalSourceOperationError
+                expect(error).toBeInstanceOf(ExternalSourceOperationError)
+                expect(error.cause).toBe(cause)
+                expect(error.causes).toHaveLength(1)
+                expect(error.causes[0]).toBe(cause)
+                expect(error.failures[0]!.cause).toBe(cause)
+                expect(error.phase).toBe(
+                    phase === "setup" ? "admitting" : "cleanup",
+                )
+                expect(traps).toBe(0)
+            } finally {
+                target.dispose()
+            }
+        },
+    )
+
+    test("genuine mismatch and notification preserve ordered causes despite a hostile public hasInstance", () => {
+        const target = store()
+        const mode = atom(false)
+        const alien = createCommittedStoreTreeDomain().atom(0)
+        const unrelated = externalAtom(source(1))
+        target.get(unrelated)
+        let mismatch: unknown
+        const selected = selector(get => {
+            if (!get(mode)) return 0
+            try {
+                return get(alien)
+            } catch (error) {
+                mismatch = error
+                throw error
+            }
+        })
+        const notification = new Error("subscriber failure")
+        const callbacks: string[] = []
+        target.sub(selected, () => {
+            callbacks.push("throwing")
+            throw notification
+        })
+        target.sub(selected, () => {
+            callbacks.push("last")
+        })
+        const original = Object.getOwnPropertyDescriptor(
+            RuntimeMismatchError,
+            Symbol.hasInstance,
+        )
+        let hooks = 0
+        Object.defineProperty(RuntimeMismatchError, Symbol.hasInstance, {
+            configurable: true,
+            value() {
+                hooks++
+                throw new Error("hasInstance must not run")
+            },
+        })
+        try {
+            const error = thrown(() =>
+                target.set(mode, true),
+            ) as SubscriberNotificationError
+            expect(error).toBeInstanceOf(SubscriberNotificationError)
+            expect(error.source).toBe("owned-mutation")
+            expect(error.cause).toBe(mismatch)
+            expect(error.causes).toHaveLength(2)
+            expect(error.causes[0]).toBe(mismatch)
+            expect(error.causes[1]).toBe(notification)
+            expect(callbacks).toEqual(["throwing", "last"])
+            expect(hooks).toBe(0)
+        } finally {
+            if (original === undefined)
+                Reflect.deleteProperty(RuntimeMismatchError, Symbol.hasInstance)
+            else
+                Object.defineProperty(
+                    RuntimeMismatchError,
+                    Symbol.hasInstance,
+                    original,
+                )
+            target.dispose()
+        }
+        expect(mismatch).toBeInstanceOf(RuntimeMismatchError)
+    })
+})

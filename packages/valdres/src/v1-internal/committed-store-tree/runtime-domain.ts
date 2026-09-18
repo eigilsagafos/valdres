@@ -231,6 +231,12 @@ abstract class ImmutableRuntimeError extends Error {
     }
 }
 
+// Brand only internally created mismatches. Public construction and prototype
+// hooks confer no classification; callers must also require current provenance.
+const runtimeMismatches = new WeakSet<object>()
+export const isInternalRuntimeMismatch = (error: unknown): boolean =>
+    runtimeMismatches.has(error as object)
+
 /** The stable owner failure re-exported by the public runtime facade. */
 export class RuntimeMismatchError extends ImmutableRuntimeError {
     readonly code = "VALDRES_RUNTIME_MISMATCH"
@@ -666,24 +672,22 @@ const currentFaultSession = (
         : fallback
 }
 
+// Native weak membership rejects primitives and proxies without inspecting them.
 export const classifyOwner = (
     domain: RuntimeDomainRecords,
     value: unknown,
     session: ControlFaultSession,
 ): "local" | "invalid" => {
     if (
-        (typeof value === "object" || typeof value === "function") &&
-        value !== null &&
-        (domain.states.has(value) ||
-            domain.stores.has(value) ||
-            domain.transactionCursors.has(value))
+        domain.states.has(value as object) ||
+        domain.stores.has(value as object) ||
+        domain.transactionCursors.has(value as object)
     ) {
         return "local"
     }
-    if (
-        (typeof value === "object" || typeof value === "function") &&
-        value !== null
-    ) {
+    // Non-null primitives have no own runtime-owner symbol. The native
+    // descriptor lookup boxes them without invoking application callbacks.
+    if (value !== null && value !== undefined) {
         const ownerDescriptor = Object.getOwnPropertyDescriptor(
             value,
             RUNTIME_OWNER_KEY,
@@ -694,7 +698,9 @@ export const classifyOwner = (
             !Object.is(ownerDescriptor.value, domain.ownerToken)
         ) {
             const error = new RuntimeMismatchError()
-            domain.externalRuntime?.guard(error)
+            runtimeMismatches.add(error)
+            // Sticky session provenance also reaches nested guarded callbacks;
+            // this occurrence needs no second callback-ledger registration.
             currentFaultSession(domain, session).latchControlFault(error)
             throw error
         }
@@ -708,11 +714,9 @@ export const classifyEntryOwner = (
     session: ControlFaultSession,
 ): "local" | "invalid" => {
     if (
-        (typeof value === "object" || typeof value === "function") &&
-        value !== null &&
-        (domain.states.has(value) ||
-            domain.stores.has(value) ||
-            domain.transactionCursors.has(value))
+        domain.states.has(value as object) ||
+        domain.stores.has(value as object) ||
+        domain.transactionCursors.has(value as object)
     ) {
         return "local"
     }
@@ -721,14 +725,10 @@ export const classifyEntryOwner = (
     const faultSession = currentFaultSession(domain, session)
     if (activity !== undefined && "session" in activity) {
         try {
-            const owner = classifyOwner(domain, value, faultSession)
+            return classifyOwner(domain, value, faultSession)
+        } finally {
             const fault = faultSession.getControlFault()
             if (fault.kind === "fault") throw fault.error
-            return owner
-        } catch (error) {
-            const fault = faultSession.getControlFault()
-            if (fault.kind === "fault") throw fault.error
-            throw error
         }
     }
     return runGuardedCallback(domain, faultSession, () =>
