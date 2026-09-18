@@ -54,21 +54,24 @@ const scenarios = [
 ] as const satisfies readonly (readonly [LateInstallScenario, string])[]
 
 describe("fresh public-domain ExternalAtom installation", () => {
-    for (const [scenario, description] of scenarios) {
-        test(description, () => {
-            // A separate process is essential: another test defining even an
-            // unrelated ExternalAtom would hide the first-install boundary.
-            const child = Bun.spawnSync({
-                cmd: [
-                    process.execPath,
-                    `${import.meta.dir}/fixtures/external-late-install.ts`,
-                    scenario,
-                ],
-                stdout: "pipe",
-                stderr: "pipe",
+    for (const installation of ["absent", "installed-unrelated"]) {
+        for (const [scenario, description] of scenarios) {
+            test(`${description} (${installation})`, () => {
+                // A separate process is essential: another test defining even an
+                // unrelated ExternalAtom would hide the first-install boundary.
+                const child = Bun.spawnSync({
+                    cmd: [
+                        process.execPath,
+                        `${import.meta.dir}/fixtures/external-late-install.ts`,
+                        scenario,
+                        installation,
+                    ],
+                    stdout: "pipe",
+                    stderr: "pipe",
+                })
+                expect(child.exitCode, child.stderr.toString()).toBe(0)
+                expect(child.stdout.toString().trim()).toBe(`PASS ${scenario}`)
             })
-            expect(child.exitCode, child.stderr.toString()).toBe(0)
-            expect(child.stdout.toString().trim()).toBe(`PASS ${scenario}`)
-        })
+        }
     }
 })

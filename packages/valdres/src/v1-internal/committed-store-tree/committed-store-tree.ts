@@ -817,8 +817,7 @@ class CommittedStoreTreeHost
             throw new TypeError("StoreTree.get requires a valid State")
         }
         const served =
-            (subscriberSession === undefined &&
-            this.#domain.externalRuntime === undefined
+            (subscriberSession === undefined && this.#external === undefined
                 ? scope.getMaterializedServedOutcome(node)
                 : undefined) ??
             this.#read(scope, node, session, subscriberSession)
@@ -882,10 +881,8 @@ class CommittedStoreTreeHost
         this.#external?.phase(phase)
     }
     get external(): ExternalTreePlane | undefined {
-        const runtime = this.#domain.externalRuntime
-        if (runtime === undefined) return undefined
-        const plane = (this.#external ??= runtime.createTree(this))
-        if (plane.idle && this.#operationCursor) {
+        const plane = this.#external
+        if (plane?.idle && this.#operationCursor) {
             plane.beginHost(
                 this.#operationCursor,
                 this.#operationEpoch,
@@ -894,6 +891,13 @@ class CommittedStoreTreeHost
             this.#propagationControlFault = undefined
         }
         return plane
+    }
+    reachExternal(): ExternalTreePlane {
+        // A domain definition does not opt unrelated trees into the plane.
+        // First reach adopts the cursor, epoch and faults of the current host
+        // operation, including installation during selector propagation.
+        this.#external ??= this.#domain.externalRuntime!.createTree(this)
+        return this.external!
     }
     hasSubscription(scope: StoreScopeNode, node: AnyState): boolean {
         return this.#subscriptionTargets?.get(scope)?.has(node) === true
@@ -928,8 +932,7 @@ class CommittedStoreTreeHost
         }
         const current = scope.getMaterializedServedOutcome(node)
         const outer =
-            (current === undefined ||
-                this.#domain.externalRuntime !== undefined) &&
+            (current === undefined || this.#external !== undefined) &&
             this.#beginOperation(HostOperationKind.subscribe)
         try {
             const served =

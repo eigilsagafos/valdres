@@ -77,6 +77,17 @@ const source = (initial: number, onSubscribe?: (attempt: number) => void) => {
 }
 
 const scenario = process.argv[2]
+let unrelatedCalls = 0
+if (process.argv[3] === "installed-unrelated")
+    externalAtom({
+        getSnapshot: () => ++unrelatedCalls,
+        subscribe: () => {
+            unrelatedCalls++
+            return () => {
+                unrelatedCalls++
+            }
+        },
+    })
 if (scenario === "cold-subscription" || scenario === "cold-catchup") {
     const catchup = scenario === "cold-catchup"
     const hub = source(1, () => {
@@ -500,4 +511,5 @@ if (scenario === "cold-subscription" || scenario === "cold-catchup") {
 } else {
     throw new Error(`Unknown scenario: ${scenario}`)
 }
+assert.equal(unrelatedCalls, 0)
 console.log(`PASS ${scenario}`)

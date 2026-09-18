@@ -130,6 +130,7 @@ export interface StoreScopeCoordinator {
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken>
     readonly external: ExternalTreePlane | undefined
+    reachExternal(): ExternalTreePlane
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean
     prepareSelectorRead(
         scope: StoreScopeNode,
@@ -467,7 +468,9 @@ export class StoreScopeNode
         const definition = domain.selectors.get(node)
         if (definition === undefined) {
             if (domain.externalAtoms?.has(node))
-                return this.coordinator.external!.serve(this, node, session)
+                return this.coordinator
+                    .reachExternal()
+                    .serve(this, node, session)
             const served = domain[COLLECTION_KERNEL]?.scope(this, node)
             if (served !== undefined) {
                 return served as ServedSelectorOutcome<OutcomeToken>

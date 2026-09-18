@@ -64,6 +64,10 @@ jobs:
               # through the exact frozen ShiftX workload in fresh Node processes
               # with broad, cross-runner catastrophic ceilings.
               run: bun --filter 'valdres' test:core-load-harness
+            - name: ExternalAtom installed-but-unrelated performance
+              # Paired fresh processes in Bun and Node; never share an installed
+              # runtime with a baseline arm or overlap other benchmark jobs.
+              run: bun scripts/check-external-isolation.ts
             - name: V1 model contract
               # Proves the pure state/selector model before the evaluator and
               # committed StoreTree host exercise it through their own lanes.

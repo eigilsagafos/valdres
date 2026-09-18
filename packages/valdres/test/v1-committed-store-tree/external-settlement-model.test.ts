@@ -1,11 +1,17 @@
 import { createInternalExternalAtom } from "../../src/v1-internal/committed-store-tree/external-atom"
 import { describe, expect, test } from "bun:test"
-import { createCommittedStoreTreeDomain } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
+import {
+    CallbackCapabilityError,
+    createCommittedStoreTreeDomain,
+} from "../../src/v1-internal/committed-store-tree/committed-store-tree"
 import type {
     CommittedStoreTree,
     ExternalAtom,
 } from "../../src/v1-internal/committed-store-tree/types"
-import { ExternalReferenceModel } from "../v1-model/external-model"
+import {
+    ExternalReferenceModel,
+    sameExternalOutcome,
+} from "../v1-model/external-model"
 import type {
     ExternalAction,
     ExternalCommand,
@@ -39,6 +45,84 @@ const number = (input: number): ExternalOutcome => ({
     value: value.number(input),
 })
 const key = (...parts: string[]) => parts.join("\0")
+
+test("model and runtime notify for every fresh source callback fault", () => {
+    const model = new ExternalReferenceModel(
+        [
+            {
+                id: "source",
+                snapshot: number(0),
+                sampleActions: [
+                    {
+                        kind: "read",
+                        tree: "tree",
+                        scope: "root",
+                        node: "external",
+                    },
+                ],
+            },
+        ],
+        [{ kind: "external", id: "external", source: "source" }],
+    )
+    model.execute({ kind: "tree", tree: "tree", root: "root" })
+    const domain = createCommittedStoreTreeDomain()
+    const app = domain.createStoreTree()
+    const forbidden = domain.atom(0)
+    const errors: unknown[] = []
+    const notifications: unknown[] = []
+    let invalidate!: () => void
+    const external = createInternalExternalAtom(domain, {
+        getSnapshot() {
+            try {
+                return app.get(forbidden)
+            } catch (error) {
+                errors.push(error)
+                throw error
+            }
+        },
+        subscribe(listener) {
+            invalidate = listener
+            return () => {}
+        },
+    })
+    model.execute({
+        kind: "subscribe",
+        tree: "tree",
+        scope: "root",
+        node: "external",
+        subscription: "sub",
+    })
+    const stop = app.sub(external, () => {
+        try {
+            app.get(external)
+        } catch (error) {
+            notifications.push(error)
+        }
+    })
+    notifications.length = 0
+    const before = model.work.subscriberCalls
+    for (let i = 0; i < 2; i++) {
+        model.execute({ kind: "emit", source: "source" })
+        invalidate()
+    }
+    expect(notifications).toHaveLength(2)
+    expect(model.work.subscriberCalls - before).toBe(notifications.length)
+    expect(notifications[0]).toBe(errors[2])
+    expect(notifications[1]).toBe(errors[3])
+    const modeled = model.trace
+        .filter(event => event.kind === "sample")
+        .map(event => event.outcome)
+    expect(modeled).toHaveLength(errors.length)
+    for (let i = 0; i < errors.length; i++) {
+        expect(errors[i]).toBeInstanceOf(CallbackCapabilityError)
+        for (let j = 0; j < errors.length; j++)
+            expect(sameExternalOutcome(modeled[i]!, modeled[j]!)).toBe(
+                Object.is(errors[i], errors[j]),
+            )
+    }
+    stop()
+    app.dispose()
+})
 
 /** Direct-source adapter only: no production evaluator or model internals. */
 class DirectSourceDriver {
