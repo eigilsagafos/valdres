@@ -10,11 +10,7 @@ import {
 import { tmpdir } from "node:os"
 import { basename, join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
-import {
-    buildOptions,
-    developmentBuildOptions,
-    removeStaleBuildJavaScript,
-} from "../build"
+import { removeStaleBuildJavaScript } from "../build"
 
 const temporaryDirectories: string[] = []
 
@@ -40,23 +36,49 @@ const run = (
     }
 }
 
+// Keep the compiler out of Bun 1.4's test-runner resolver state. Even
+// sequential in-process builds can report existing modules as missing.
+// The child uses the production options, builds graphs in order, and returns
+// every result for mandatory compiler assertions before artifact assertions.
+const buildGraphs = (
+    graphs: readonly { outdir: string; development?: boolean }[],
+): void => {
+    const child = run(
+        [
+            process.execPath,
+            "--input-type=module",
+            "--eval",
+            `
+                import { buildOptions, developmentBuildOptions } from ${JSON.stringify(pathToFileURL(resolve(import.meta.dir, "../build.ts")).href)}
+                const results = []
+                for (const graph of ${JSON.stringify(graphs)}) {
+                    const options = graph.development ? developmentBuildOptions : buildOptions
+                    const result = await Bun.build({ ...options, outdir: graph.outdir })
+                    results.push({ success: result.success, logs: result.logs.map(String) })
+                }
+                console.log(JSON.stringify(results))
+            `,
+        ],
+        resolve(import.meta.dir, ".."),
+    )
+    expect(child.exitCode, child.stderr).toBe(0)
+    const results: { success: boolean; logs: string[] }[] = JSON.parse(
+        child.stdout,
+    )
+    expect(results).toHaveLength(graphs.length)
+    for (const result of results) {
+        expect(result.success, result.logs.join("\n")).toBe(true)
+    }
+}
+
 let builtDistPromise: Promise<string> | undefined
 const builtDist = (): Promise<string> =>
     (builtDistPromise ??= (async () => {
         const outdir = await temporaryDirectory("valdres-v1-dist-")
-        // Match the production build's sequencing. Bun 1.4 can share resolver
-        // state between simultaneous split builds and intermittently report
-        // existing relative modules as missing.
-        const results = [
-            await Bun.build({ ...buildOptions, outdir }),
-            await Bun.build({
-                ...developmentBuildOptions,
-                outdir: join(outdir, "development"),
-            }),
-        ]
-        for (const result of results) {
-            expect(result.success, result.logs.join("\n")).toBe(true)
-        }
+        buildGraphs([
+            { outdir },
+            { outdir: join(outdir, "development"), development: true },
+        ])
         return outdir
     })())
 
@@ -255,11 +277,7 @@ describe("v1 build output", () => {
         await mkdir(packageDirectory)
         await mkdir(consumerDirectory)
 
-        const output = await Bun.build({
-            ...buildOptions,
-            outdir: join(packageDirectory, "dist"),
-        })
-        expect(output.success, output.logs.join("\n")).toBe(true)
+        buildGraphs([{ outdir: join(packageDirectory, "dist") }])
         await writeFile(
             join(packageDirectory, "package.json"),
             JSON.stringify({

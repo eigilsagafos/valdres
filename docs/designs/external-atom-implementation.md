@@ -868,7 +868,7 @@ Run the resulting files with Bun and, for the ordinary/long-subscription lanes,
 `npm exec --yes --package=node@24.16.0 -- node ...`. Work-counter and ownership
 tests remain the algorithmic gate, alongside these timing comparisons.
 
-### Repaired stack
+### Previous repaired stack (superseded by the retry/provenance checkpoint below)
 
 The model branch ends at `b91b03ed5d69f37518870a0720b013d4e00245e6` after E0
 `ee32f87a2a5782e03688d2e9e6b446e8deb849f0`. The implementation retains restacked
@@ -941,3 +941,174 @@ The comprehensive local handoff, full commit hashes, regression inventory, raw
 command results, and final cleanliness checks are in
 `.context/external-atom/repair-handoff.md`. No branch was pushed, PR opened or
 updated, merge performed, or package version changed by this repair.
+
+
+## Retry and hostile-value repair checkpoint (2026-09-18)
+
+The model repair is on `implement-external-atom` at
+`f5b18c1caed79dc8691a84c46e0324af0d546e86`. The implementation branch was locally
+restacked from model head `b91b03ed` onto this repaired head, preserving all seven
+implementation commits. The two-PR landing order remains model → main, then
+implementation → model; no PR or push is part of this repair.
+
+### Invariants and error identity
+
+Accepted invalidations now clear the retry marker before the active-operation
+shortcut. Capability and terminal rejection preserve it, and a subsequent delivery
+bound sets it again. The model resets the marker on attachment and revocation.
+Production stores it on the generation ticket, so revocation and replacement cannot
+carry it into another generation. A read-only method on the internal projection
+class lets tests observe this invariant; no public Store, State, inspect, or root
+export was added.
+
+The recorded-failure transport is one module-private unique symbol. All three
+sentinel sites use strict identity, including notification forwarding and read
+settlement. Public setup and cleanup tests throw a Proxy whose `getPrototypeOf`
+trap throws, and require the original Proxy as the exact operation-error cause
+with zero trap calls.
+
+Runtime mismatches receive private WeakSet membership only at the internal
+creation site. Classification requires both membership and current occurrence
+provenance. Public construction grants neither, and replaying a previously genuine
+error in a later callback grants no occurrence provenance. The public regression
+installs a throwing `RuntimeMismatchError[Symbol.hasInstance]`, verifies the exact
+ordered mismatch/subscriber causes in `SubscriberNotificationError`, and restores
+the original descriptor in `finally`.
+
+To preserve the ordinary size cap, ownership validation uses native weak membership
+for arbitrary inputs and native own-descriptor lookup for non-null inputs (primitive
+boxing invokes no application callback). Sticky-fault precedence is expressed once
+in `finally`. A mismatch's sticky session already conveys its occurrence, including
+through nested guarded callbacks, so its duplicate callback-ledger registration is
+removed. The existing spoofing, nested-callback, replay, and pre-install-fault suites
+certify those paths. No ordinary budget or shared allowance changes.
+
+### Regression evidence
+
+- `review2/model-red.log`: both depth/work active-retry regressions fail on the old
+  model, after the correct new value has already published. The repaired independent
+  model passes **90 tests / 11,198 assertions**, including every identity test, and
+  its source-only typecheck passes.
+- `review2/retry-red.log`: both production tests fail at the stale private marker
+  with the read-only probe installed. The repaired tests cover active retry,
+  detach/reattach, later bound rejection, stale invalidators, and capability and
+  terminal rejection.
+- `review2/runtime-red.log`: the public setup and cleanup regressions expose the
+  prototype trap, and the public mismatch regression exposes the `hasInstance`
+  hook. The corresponding repaired public tests pass.
+- `review2/provenance-sticky.log`: all **35 provenance tests**, **13 fresh-process
+  late-install cases**, and **19 public ExternalAtom tests** pass. Final broad
+  verification reruns them with the final ownership implementation.
+
+### Restacked implementation commits
+
+1. E1 `3f95d4e0ca2597c31bdb40dd507dc6f53818944d`.
+2. E2 `b3935d05a99c1af9383d5d7cf6a8ba94016075b4`.
+3. E3 `31ed57b903bfa06b8aa7ff6c4b5a00e2e7c4aea4`.
+4. E3.5 `a484b9b550706c8186f786d63257a6bef007e3a2`.
+5. E4 `94d37f9a4336123b352a14e9a8b8b2ba7eb91f4f`.
+6. Previous runtime/provenance repair `6048823fc52e3a5b726b453250979c201d1b8a88`.
+7. Previous certification `b2af25158dd115b1416544941f352979591281de`.
+8. Retry and prototype-independent classification repair
+   `e40d839dc8cfc8cbca4a3a4641ff9c6ca0db1ac4`.
+
+The certification/documentation commit follows this list. Exact final heads and
+complete command logs are recorded in `.context/external-atom/review2/handoff.md`.
+
+### Measured artifact changes
+
+Measurements are bytes, relative to supplied implementation head `2f2359e6`.
+The ordinary 2% policy, immutable baselines, and **77-byte shared allowance** are
+unchanged. Ordinary fixtures still exclude the projection implementation.
+
+| Artifact | Raw | Raw delta | Gzip | Gzip delta |
+| --- | ---: | ---: | ---: | ---: |
+| Atom | 6,373 | +16 | 2,305 | +3 |
+| Atom / selector / Store | 64,899 | -206 | 17,345 | 0 |
+| family | 13,333 | -206 | 4,443 | -5 |
+| adapter internals | 7,780 | -223 | 2,674 | -30 |
+| equality | 7,231 | 0 | 2,210 | 0 |
+| ExternalAtom | 85,734 | -100 | 23,148 | +15 |
+| collection | 98,820 | -206 | 27,732 | +2 |
+| query / development | 104,581 | -206 | 29,555 | +7 |
+| all exports | 123,942 | -100 | 35,017 | +7 |
+| inspect | 101,848 | -222 | 27,300 | -17 |
+| core dist | 358,800 | -162 | 105,942 | +84 |
+| full packed core | 507,033 | +46 | 134,386 | +153 |
+
+The combined ordinary fixture remains **17,345 / 17,346 gzip bytes**; adapter
+internals are **2,674 / 17,249**. Only affected feature budgets and the runtime
+build digest are recertified. Changes come from private mismatch membership,
+generation-owned retries, the internal invariant probe, symbol transport, and
+ownership-guard simplification; declaration bytes account for packed growth even
+though runtime raw bytes shrink.
+
+
+### Final sequential certification
+
+All commands use pinned Node 24.16.0 via
+`npm exec --yes --package=node@24.16.0 -- ...` and Bun 1.4.0. No benchmark or
+contract job was launched concurrently with the broad workflow.
+
+| Gate | Result |
+| --- | --- |
+| Contracts and migration ledger | 62 pass / 527 assertions |
+| Build, declarations, source/public typechecks | Pass |
+| Independent model (including identity tests) | 90 pass / 11,198 assertions; separate model-worktree typecheck passes |
+| Evaluator/oracle | 118 pass / 10,236 assertions |
+| StoreTree, including external differential/provenance/GC suites | 348 pass / 212,614 parent assertions, plus nine GC assertions in bounded children |
+| Full core runtime, including public and inspect | 840 pass / 399,051 parent assertions; one tournament timeout |
+| Fresh-process late installation | All 13 pass inside the full core run |
+| Build-output tests | 7 pass / 37 assertions, through both package and workspace commands |
+| React, including SSR/hydration/rebind/StrictMode | 74 pass / 2,154 assertions |
+| Release infrastructure | 311 pass / 1,239 assertions |
+| Suppressions, generated READMEs, core-load, JUnit coverage | Pass |
+| Package mutations/self-tests, publint, ATTW, declaration consumers, bundlers, size/tree-shaking | Pass |
+| Packed Node/Bun, standalone ExternalAtom, React 18.3.1 and 19.1.1 consumers | Pass |
+| Reproducible runtime build certificate | Three byte-identical builds |
+
+The certified runtime SHA256 is
+`84b5b39fbdf50bc6bac795f7a02e0ae485a26c7f4d17539e3de2bffb7f5c6fe7`.
+The packed-consumer shadow artifact omits the README/license payload; it measures
+498,549 raw / 130,384 gzip, versus the full artifact's 507,033 / 134,386 above.
+
+Broad commands were `bun run verify`, `bun run verify --from=11`, and
+`bun run verify --from=17`. The first run caught an extra argument in a new test
+assertion; correcting that test allowed the complete StoreTree gate to pass.
+Step 16 remains failed solely on the tournament subprocess, so the resumed
+steps 17–19 are not represented as an uninterrupted green broad command.
+
+The core failure short-circuits build-output and React execution. Those commands
+were run explicitly with fresh JUnit reports before steps 17–19. Build-output
+attempts intermittently reported existing relative modules as missing, through
+both the workspace filter and direct package command. Moving the split-graph
+compiler into a child made its three consumers pass and exposed the same failure
+at the remaining in-process tarball build. Moving that compiler into a child too
+makes both invocations pass **7 tests / 37 assertions**. The children import the
+unchanged production build options and build each requested graph sequentially.
+Every prior compiler/artifact assertion remains; four new assertions require
+successful child exits and complete result arrays. No compiler timeout changes.
+
+Passing logs are `build-output-isolated-all.log` and
+`build-output-isolated-direct.log`; `build-output-isolated.log` records the
+intermediate result (six pass, the remaining in-process compiler fails).
+Earlier failed and passing attempts remain in `build-output*.log`. The isolated
+harness has its own successful TypeScript check (`build-test-types.log`). Final
+JUnit coverage is rechecked after both passing invocations (`junit-final.log`).
+This test-only isolation changes no runtime artifact or certified digest.
+
+Other logs under `.context/external-atom/review2/` are `verify.log`,
+`verify-from11.log`, `react.log`, and `verify-from17.log`. The latter passes
+JUnit coverage and every package/packed gate. No timeout, artifact assertion,
+budget policy, version, or release metadata was weakened to obtain these results.
+
+A fresh fetch confirms clean `origin/main` at
+`270f00e46f26aee66a724fcf6d6fdda09ddcf133`. The isolated comparison worktree
+reproduces the same historical-bytes 5-second child timeout, predecessor 30-second
+child timeout, and 110-second parent timeout in `main-tournament.log`. A second
+comparison with its root compiler dependency path linked also reproduces all three
+boundaries (`main-tournament-ready.log`). Main build tests pass 7/7 directly and
+through the workspace filter, with and without JUnit (`main-build-output-ready.log`,
+`main-build-filtered.log`, `main-build-filtered-junit.log`). An initial optional main
+build probe lacked its local compiler executable; that environment setup was
+corrected before the final checks. No tournament source or timeout was changed.
