@@ -8,7 +8,7 @@
     "provenance": {
         "ordinaryBaselineCommit": "7c55be567457218fb597f9cd9658b1c71997fb83",
         "certificationBuildCount": 3,
-        "certifiedRuntimeBuildSha256": "7102b3156af2d9d4528f72e4bf80783efce7768b94cce5bf21897ccd81778d1d"
+        "certifiedRuntimeBuildSha256": "637ac60d198a82d7c6576dfcca000405465da84329194bb0ed7c6550438c139a"
     },
     "policy": {
         "ordinaryTolerancePercent": 2,
@@ -44,12 +44,12 @@
     },
     "featureBudgets": {
         "dist": {
-            "raw": 358596,
-            "gzip": 105898
+            "raw": 358708,
+            "gzip": 105910
         },
         "packed": {
-            "raw": 506909,
-            "gzip": 134300
+            "raw": 507021,
+            "gzip": 134311
         },
         "fixtures": {
             "collection": {
@@ -57,8 +57,8 @@
                 "gzip": 27725
             },
             "all-exports": {
-                "raw": 123840,
-                "gzip": 34999
+                "raw": 123896,
+                "gzip": 35003
             },
             "inspect": {
                 "raw": 101760,
@@ -73,8 +73,8 @@
                 "gzip": 29558
             },
             "external-atom": {
-                "raw": 85632,
-                "gzip": 23142
+                "raw": 85688,
+                "gzip": 23146
             }
         }
     }

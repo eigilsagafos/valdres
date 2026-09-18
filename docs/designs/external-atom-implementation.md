@@ -1347,3 +1347,93 @@ The historical E0 section's old 85/11,155 count is corrected to its 90/11,198
 checkpoint; this pass's model count is 94/11,224. Implementation, model, and
 comparison worktrees are clean at handoff. No push, PR creation/update, merge,
 version bump, or new beta-labelled metadata is part of this repair.
+
+
+## Final constructor and timing classification repair
+
+The model head remains `bdcab35e6afd12ea87d50070bada6cc69fc81e41`.
+This bounded implementation repair preserves the public API, changeset category,
+versions, existing beta metadata, and every ordinary size policy value.
+
+`ExternalSourceOperationError` first snapshots each structural failure into a
+frozen canonical record. Every other public view (`causes`, `cause`, `committed`,
+`phase`, and `source`) now derives exclusively from `this.failures`. Accessor and
+Proxy regressions return different values on subsequent reads and require exactly
+one read of every property on every occurrence, frozen copies, and exact identity
+and metadata consistency across all views. Both regressions failed before the
+repair; constructor/provenance and lifecycle metadata checks now pass 65 tests /
+619 assertions. No error occurrence, prototype, or public constructor provenance
+rules changed.
+
+The installed-but-unrelated detector now uses the existing paired-decision model
+and prints an explicit classification for every lane. Deterministic tests cover
+all three outcomes, overlapping-budget uncertainty, bimodality, and the policy
+that only a regression blocks on timing. The zero-plane/zero-operation StoreTree
+certificate remains the primary blocker and runs first in CI. The historical
+"all eight pass" claim above and in the previous local handoff is corrected.
+
+The single final timing run recorded **0 regressions, 5 within-budget, and
+3 inconclusive** results, with nine fresh pairs per lane on Bun 1.4.0 and
+Node 24.16.0. No retry was used to select a more favorable measurement.
+
+| Engine | Workload | Estimate ratio | Unadjusted 90% interval | Classification |
+| --- | --- | ---: | --- | --- |
+| bun | reads | 0.946× | 0.864–1.035× | within-budget |
+| bun | subscriptions | 0.999× | 0.959–1.040× | within-budget |
+| bun | writes | 1.181× | 0.989–1.410× | inconclusive |
+| bun | transactions | 0.914× | 0.814–1.026× | within-budget |
+| node | reads | 1.015× | 0.967–1.066× | within-budget |
+| node | subscriptions | 1.013× | 0.876–1.170× | inconclusive |
+| node | writes | 1.019× | 0.976–1.064× | within-budget |
+| node | transactions | 1.021× | 0.906–1.150× | inconclusive |
+
+The three inconclusive lanes are non-blocking under the regression-detector
+policy and do **not** establish slowdown at most 10%. The table's unadjusted 90%
+intervals are descriptive; the family-adjusted paired decisions determine the
+classifications. Raw pairs, adjusted probabilities, and policy are retained in
+`.context/external-atom/review4/timing.log` and `timing-results.json`.
+
+Validation ran serially, with no overlapping benchmark or contract jobs:
+
+| Validation | Result |
+| --- | --- |
+| Contracts and migration ledger | 62 pass / 527 assertions |
+| Core/React build, declarations, source types, public candidate types | Pass |
+| Detector and detector-test typecheck | Pass |
+| Model, including all identity cases | 94 pass / 11,224 assertions |
+| Evaluator/oracle | 118 pass / 10,236 assertions |
+| StoreTree, including external model comparison, provenance, isolation and GC | 354 pass / 212,716 parent assertions |
+| Public candidate and packed core-load | 253 pass / 110,974 assertions; includes all 34 fresh-process late-install cases |
+| Inspect | 60 pass / 1,814 assertions |
+| Build-output | 7 pass / 37 assertions |
+| React, including SSR/hydration/rebind/StrictMode | 74 pass / 2,154 assertions |
+| Release infrastructure, including paired decision and CI plan | 314 pass / 1,251 assertions |
+| Package validation and mutation self-tests, declarations, bundlers, size/tree-shaking | Pass |
+| Packed Node/Bun, standalone ExternalAtom, React 18.3.1/19.1.1, declarations and bundlers | Pass |
+| Runtime reproducibility | Three byte-identical pinned-Bun builds |
+
+StoreTree also runs nine assertions in GC children. The unrelated historical
+selector-kernel tournament timeout already reproduced on clean main is not
+rerun by this bounded pass; this is not a new claim of full `verify` success.
+All requested final-repair validations completed without a remaining failure.
+Evidence and exact commands are in `.context/external-atom/review4/`.
+
+Every ordinary fixture size is unchanged: Atom 6,373 / 2,305;
+Atom/selector/Store 64,811 / 17,340; family 13,333 / 4,443; adapter 7,780 / 2,674;
+equality 7,231 / 2,210 (raw / gzip). The combined gzip cap stays 17,346 bytes,
+the adapter cap stays 17,249 bytes, and the shared allowance stays 77 bytes.
+Only changed feature budgets were recertified:
+
+| Artifact | Raw bytes | Gzip bytes | Change (raw / gzip) |
+| --- | ---: | ---: | ---: |
+| ExternalAtom fixture | 85,688 | 23,146 | +56 / +4 |
+| All exports fixture | 123,896 | 35,003 | +56 / +4 |
+| Dist total | 358,708 | 105,910 | +112 / +12 |
+| Full packed package | 507,021 | 134,311 | +112 / +11 |
+
+Collection, query, query-development, and inspect fixture budgets are unchanged.
+The consumer shadow package measures 498,537 / 130,320 bytes. The newly certified
+runtime digest, reproduced by all three builds, is
+`637ac60d198a82d7c6576dfcca000405465da84329194bb0ed7c6550438c139a`.
+No push, PR, version bump, merge, or new beta-labelled metadata is part of this
+repair.
