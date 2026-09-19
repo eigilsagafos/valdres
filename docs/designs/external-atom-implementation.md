@@ -1455,3 +1455,92 @@ runtime digest, reproduced by all three builds, is
 `637ac60d198a82d7c6576dfcca000405465da84329194bb0ed7c6550438c139a`.
 No push, PR, version bump, merge, or new beta-labelled metadata is part of this
 repair.
+
+
+## Balanced timing protocol certification (2026-09-19)
+
+This pass changes only the timing harness, its tests, CI commentary, and this
+memo. The ExternalAtom runtime, constructor repair, public API, model head,
+versions, changeset/category, existing beta metadata, and the entire size-budget
+file remain unchanged from `c1b8d99f89fcf99082794075800414e392d521de`.
+
+Three certification defects are repaired:
+
+1. The collector executes **eight pairs in four complete B-P-P-B blocks**.
+   Every raw pair records actual arm order. Reporting rejects incomplete,
+   nine-pair, unbalanced, missing-order, nonfinite, or inconsistent records.
+   The collector test checks all 16 callback invocations and their pairing.
+2. **Unresolved protected bimodality blocks certification** and reports a
+   specific blocking reason. Its statistical outcome remains `inconclusive`.
+   This conservative measurement rule also blocks when both modes are below
+   budget; it does not invent a regression verdict from an unresolved mixture.
+   Regressions cover both modes above budget (1.3×/2×), a mixed-budget case,
+   and both modes below budget. Ordinary unimodal uncertainty remains
+   non-blocking, without proving slowdown at most 10%.
+3. The harness reuses the shared **1,000 ns baseline-median timing floor**.
+   Sub-floor lanes are informational, even for regression or bimodality, and
+   cannot certify the 10% bound. There is no A/A-calibrated floor exception.
+   Tests cover the exact boundary, baseline versus candidate cost, outliers,
+   and separate protected/informational result counts.
+
+Five new regression cases failed against the old harness; all now pass. The
+focused detector/shared-decision/floor/CI-plan run passes **176 tests / 466
+assertions**. The full release-infrastructure run passes **324 / 1,303**,
+including all 13 detector tests. The detector and tests also typecheck.
+
+A single serial fresh-process Bun 1.4.0 / Node 24.16.0 run recorded:
+
+| Engine | Workload | Baseline median (ns/op) | Family | Ratio | Classification |
+| --- | --- | ---: | --- | ---: | --- |
+| bun | reads | 7.87 | informational | 1.071× | inconclusive |
+| bun | subscriptions | 85.36 | informational | 0.970× | within-budget |
+| bun | writes | 1084.87 | protected | 1.045× | inconclusive |
+| bun | transactions | 1619.31 | protected | 1.052× | inconclusive |
+| node | reads | 21.48 | informational | 1.076× | inconclusive |
+| node | subscriptions | 159.47 | informational | 1.020× | inconclusive |
+| node | writes | 1435.53 | protected | 0.970× | within-budget |
+| node | transactions | 2055.27 | protected | 1.069× | inconclusive |
+
+Protected results are **0 regression, 1 within-budget, 3 inconclusive**.
+Informational results are **0 regression, 1 within-budget, 3 inconclusive**.
+No lane was bimodal, and no timing blocker fired. The three protected
+inconclusive lanes remain non-blocking under the detector policy and do not
+prove slowdown at most 10%. Informational labels are observations, not timing
+certificates. The structural zero-plane/zero-operation suite remains the primary
+blocking isolation certificate and passed. No retries selected favorable timings.
+
+All substantial validation ran serially, with no overlapping benchmark/contract
+jobs. Final results:
+
+| Validation | Result |
+| --- | --- |
+| Contracts / migration ledger | 62 pass / 527 assertions |
+| Production build, declarations, source/public types, detector types | Pass |
+| Model, including identity tests | 94 pass / 11,224 assertions |
+| Evaluator/oracle | 118 pass / 10,236 assertions |
+| StoreTree, including constructor/provenance, isolation, external model comparison, GC | 354 pass / 212,716 parent assertions |
+| Public candidate / packed core-load, including all 34 fresh-process late-install cases | 253 pass / 110,974 assertions |
+| Inspect | 60 pass / 1,814 assertions |
+| Build-output | 7 pass / 37 assertions |
+| React, including SSR/hydration/rebind/StrictMode | 74 pass / 2,154 assertions |
+| Release infrastructure | 324 pass / 1,303 assertions |
+| Exact package and mutation self-tests, declarations, bundlers, sizes/tree-shaking | Pass |
+| Packed Node/Bun, standalone ExternalAtom, React 18.3.1/19.1.1, declarations and bundlers | Pass |
+| Runtime reproducibility | Three byte-identical pinned-Bun builds; unchanged digest |
+
+StoreTree also runs nine assertions in bounded GC children. All measured artifact
+sizes equal the prior certification: ordinary Atom 6,373 / 2,305; combined
+64,811 / 17,340; family 13,333 / 4,443; adapter 7,780 / 2,674; equality 7,231 /
+2,210; ExternalAtom 85,688 / 23,146; all exports 123,896 / 35,003; dist total
+358,708 / 105,910; full packed package 507,021 / 134,311 (raw / gzip bytes).
+Collection, query, query-development and inspect sizes also match. No budget,
+ordinary cap, shared allowance, or digest was edited. The three-build digest
+remains `637ac60d198a82d7c6576dfcca000405465da84329194bb0ed7c6550438c139a`.
+
+Raw measurements with verified order, complete commands and logs are retained in
+`.context/external-atom/review5/`. Earlier nine-pair timing certificates are
+superseded; their raw evidence remains available. The unrelated historical
+selector-kernel tournament timeout, already reproduced on clean main, was not
+rerun and this pass does not claim full `verify` success. All requested bounded
+certification checks completed without a remaining failure. No push, PR, merge,
+version bump, or new beta-labelled metadata occurred.
