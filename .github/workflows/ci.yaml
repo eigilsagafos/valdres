@@ -79,9 +79,11 @@ jobs:
               run: bun --filter 'valdres' test:v1-committed-store-tree
             - name: ExternalAtom installed-but-unrelated timing detector
               # The StoreTree lane above is the primary blocking zero-plane /
-              # zero-operation certificate. Timing blocks credible regressions;
-              # inconclusive is non-blocking and does not prove <=10% slowdown.
-              # Paired fresh Bun/Node processes; never overlap benchmark jobs.
+              # zero-operation certificate. Eight balanced B-P-P-B pairs per lane.
+              # Protected regression or unresolved bimodality blocks; baseline
+              # medians below 1000ns are informational under the shared floor.
+              # Other inconclusive results do not prove <=10% slowdown.
+              # Fresh Bun/Node processes; never overlap benchmark jobs.
               run: bun scripts/check-external-isolation.ts
             - name: Ban unchecked TypeScript suppressions in valdres
               run: |

@@ -1161,30 +1161,39 @@ npm exec --yes --package=node@24.16.0 -- bun scripts/check-external-isolation.ts
 
 Each of four workloads (cached selector reads, subscribe/unsubscribe, writes,
 transactions) runs in fresh Bun and Node processes. Baseline and installed arms
-load the same bundle; only the unused ExternalAtom definition differs. Nine
-paired processes per arm alternate order, warm their JITs, and report individual
-ratios. The required StoreTree tests are the **primary blocking certificate**:
+load the same bundle; only the unused ExternalAtom definition differs. Eight
+pairs per lane form four complete B-P-P-B blocks, warm their JITs, and report
+individual ratios and actual execution order. Incomplete or unbalanced records
+are rejected. The required StoreTree tests are the **primary blocking certificate**:
 ordinary unrelated trees must allocate zero external planes and start zero
 external operations. CI runs that certificate before the timing detector.
 
 The detector uses `scripts/lib/paired-decision.ts` with its unchanged default
 10% budget: Hodges–Lehmann location on paired log ratios, Winsorized standard
 error with the existing resolution floor, Student-t tests in both directions,
-and 5% Benjamini–Hochberg adjustment across all eight comparisons in each
-direction. Each workload/runtime retains its own estimate; only the statistical
-adjustment spans the family. Nine pairs are the fixed measurement cap.
+and 5% Benjamini–Hochberg adjustment within each family in each direction.
+Each workload/runtime retains its own estimate. Eight pairs are the fixed cap.
+The shared 1,000 ns timing floor applies to the median baseline operation time:
+lanes below it are informational, including regression and bimodality results.
+There is no A/A-calibrated exception for this harness. The measurements remain
+per-operation ns; batching is not used to bypass the floor.
 
 Every lane explicitly reports `regression`, `within-budget`, or `inconclusive`,
 plus raw pairs, flags, estimates, intervals, and adjusted probabilities.
-`regression` blocks; `within-budget` supports a slowdown within the 10% budget
-under this decision model. `inconclusive` is non-blocking under the regression
-**detector** policy, but is neither a pass nor evidence of a slowdown at most 10%.
-A successful process exit only means no lane was classified as a regression;
-malformed measurements and subprocess failures still block. Unadjusted 90%
+A protected `regression` blocks. Unresolved protected bimodality also blocks as
+a measurement failure while retaining its statistical
+`inconclusive` classification; even two modes both below budget require resolving
+the measurement rather than silently certifying it. Other inconclusive results
+remain non-blocking and are neither passes nor evidence of slowdown at most 10%.
+Informational classifications cannot certify that bound or block this timing
+check. Output separates both families and includes each lane's blocking reason.
+A successful exit means no protected regression or unresolved protected bimodality;
+malformed measurements and subprocess failures also block. Unadjusted 90%
 intervals aid interpretation; the adjusted decision determines the classification.
 
 Before the lazy-plane repair, the original detector failed for Bun
-reads/subscriptions and Node reads/subscriptions/writes/transactions. Exact paired data are preserved in
+reads/subscriptions and Node reads/subscriptions/writes/transactions. Exact paired
+data are preserved in
 `.context/external-atom/review3/performance-red.log`. Candidate measurements and
 complete verification output are preserved in the same directory.
 
@@ -1349,7 +1358,13 @@ comparison worktrees are clean at handoff. No push, PR creation/update, merge,
 version bump, or new beta-labelled metadata is part of this repair.
 
 
-## Final constructor and timing classification repair
+## Constructor repair and initial timing classification (superseded certification)
+
+The constructor certification below remains valid. Its nine-pair timing
+certification was rejected by subsequent review: pairing was unbalanced,
+bimodality could hide a protected regression, and the timing floor was omitted.
+These measurements are historical observations, not valid timing certification.
+The balanced-protocol certification at the end of this memo supersedes them.
 
 The model head remains `bdcab35e6afd12ea87d50070bada6cc69fc81e41`.
 This bounded implementation repair preserves the public API, changeset category,
@@ -1367,14 +1382,15 @@ rules changed.
 
 The installed-but-unrelated detector now uses the existing paired-decision model
 and prints an explicit classification for every lane. Deterministic tests cover
-all three outcomes, overlapping-budget uncertainty, bimodality, and the policy
-that only a regression blocks on timing. The zero-plane/zero-operation StoreTree
-certificate remains the primary blocker and runs first in CI. The historical
+all three outcomes, overlapping-budget uncertainty, and bimodality. The then-used
+policy blocked only regression verdicts; it was subsequently repaired as described
+above. The zero-plane/zero-operation StoreTree certificate remains the primary
+blocker and runs first in CI. The historical
 "all eight pass" claim above and in the previous local handoff is corrected.
 
-The single final timing run recorded **0 regressions, 5 within-budget, and
-3 inconclusive** results, with nine fresh pairs per lane on Bun 1.4.0 and
-Node 24.16.0. No retry was used to select a more favorable measurement.
+The initial, subsequently rejected timing run reported **0 regressions,
+5 within-budget, and 3 inconclusive** results, with nine fresh pairs per lane on
+Bun 1.4.0 and Node 24.16.0. No retry was used to select a more favorable measurement.
 
 | Engine | Workload | Estimate ratio | Unadjusted 90% interval | Classification |
 | --- | --- | ---: | --- | --- |
@@ -1387,10 +1403,11 @@ Node 24.16.0. No retry was used to select a more favorable measurement.
 | node | writes | 1.019× | 0.976–1.064× | within-budget |
 | node | transactions | 1.021× | 0.906–1.150× | inconclusive |
 
-The three inconclusive lanes are non-blocking under the regression-detector
-policy and do **not** establish slowdown at most 10%. The table's unadjusted 90%
-intervals are descriptive; the family-adjusted paired decisions determine the
-classifications. Raw pairs, adjusted probabilities, and policy are retained in
+Those were the old detector's labels, including incorrectly forced
+protected lanes below the timing floor. They do **not** establish slowdown at
+most 10%; the nine-pair run is unbalanced and cannot certify even its formerly
+within-budget lanes. The table's unadjusted 90% intervals are historical. Raw
+pairs, adjusted probabilities, and policy are retained in
 `.context/external-atom/review4/timing.log` and `timing-results.json`.
 
 Validation ran serially, with no overlapping benchmark or contract jobs:
@@ -1415,8 +1432,9 @@ Validation ran serially, with no overlapping benchmark or contract jobs:
 StoreTree also runs nine assertions in GC children. The unrelated historical
 selector-kernel tournament timeout already reproduced on clean main is not
 rerun by this bounded pass; this is not a new claim of full `verify` success.
-All requested final-repair validations completed without a remaining failure.
-Evidence and exact commands are in `.context/external-atom/review4/`.
+The functional and package checks completed successfully; timing certification
+was subsequently rejected for the reasons above. Evidence and exact commands
+are in `.context/external-atom/review4/`.
 
 Every ordinary fixture size is unchanged: Atom 6,373 / 2,305;
 Atom/selector/Store 64,811 / 17,340; family 13,333 / 4,443; adapter 7,780 / 2,674;
