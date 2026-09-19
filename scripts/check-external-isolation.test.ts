@@ -107,6 +107,39 @@ test("sub-1000ns baseline lanes are informational even if every pair regresses",
     expect(report.summary.timingBlocks).toBe(false)
 })
 
+test("six 1.3x and two 2x protected pairs trigger the unanimous terminal backstop", () => {
+    const report = reportExternalIsolation([
+        lane("writes", [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 2, 2]),
+    ])
+    expect(report.lanes[0]!.decision.family).toBe("protected")
+    expect(report.lanes[0]!.decision.outcome).toBe("inconclusive")
+    expect(report.lanes[0]!.decision.flags).not.toContain("bimodal")
+    expect(report.summary.timingBlocks).toBe(true)
+    expect(report.lanes[0]!.blockingReason).toBe(
+        "unanimous protected over-budget pairs",
+    )
+})
+
+test("the unanimous backstop requires all eight pairs strictly above budget", () => {
+    const report = reportExternalIsolation([
+        lane("writes", [1.1, 1.3, 1.3, 1.3, 1.3, 1.3, 2, 2]),
+    ])
+    expect(report.lanes[0]!.blockingReason).not.toBe(
+        "unanimous protected over-budget pairs",
+    )
+})
+
+test("the six/two terminal backstop cannot promote an informational lane", () => {
+    const report = reportExternalIsolation([
+        lane("reads", [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 2, 2], 999),
+    ])
+    expect(report.lanes[0]!.decision.family).toBe("informational")
+    expect(report.lanes[0]!.decision.outcome).toBe("inconclusive")
+    expect(report.lanes[0]!.decision.flags).not.toContain("bimodal")
+    expect(report.lanes[0]!.blockingReason).toBeNull()
+    expect(report.summary.timingBlocks).toBe(false)
+})
+
 test("collector executes four B-P-P-B blocks and pairs the actual observations", () => {
     const calls: string[] = []
     const measurements = collectExternalIsolation(arm => {

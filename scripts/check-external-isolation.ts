@@ -94,6 +94,9 @@ export function reportExternalIsolation(lanes: IsolationLane[]) {
         // process states. That uncertainty must not green-light a protected
         // lane, including when BOTH states regress. Fail certification closed
         // without relabelling the statistical outcome as a regression.
+        // Also backstop unanimous strict exceedance at the fixed eight-pair
+        // cap, independently of modality: one-sided sign p = 2^-8 = 1/256;
+        // Bonferroni across all eight lanes is 8/256 = 0.03125 < 0.05.
         const blockingReason =
             decision.family !== "protected"
                 ? null
@@ -101,7 +104,13 @@ export function reportExternalIsolation(lanes: IsolationLane[]) {
                   ? "unresolved protected bimodality"
                   : decision.outcome === "regression"
                     ? "protected regression"
-                    : null
+                    : lane.measurements.every(
+                            measurement =>
+                                measurement.ratio >
+                                1 + DEFAULT_PAIRED_POLICY.budgetPct,
+                        )
+                      ? "unanimous protected over-budget pairs"
+                      : null
         return { ...lane, decision, blockingReason }
     })
     const counts: Record<PairedOutcome, number> = {
@@ -128,7 +137,7 @@ export function reportExternalIsolation(lanes: IsolationLane[]) {
             timingFloorNs: TIMING_FLOOR_NS,
             policy: DEFAULT_PAIRED_POLICY,
             inconclusivePolicy:
-                "Protected regressions and unresolved protected bimodality block. Other inconclusive results are non-blocking; inconclusive does not establish slowdown <=10%.",
+                "Protected regressions, unresolved protected bimodality, and unanimous protected over-budget pairs block. Other inconclusive results are non-blocking; inconclusive does not establish slowdown <=10%.",
             informationalPolicy:
                 "Baseline median below the timing floor is informational, including regression or bimodality; no A/A-calibrated exception is claimed.",
             primaryBlockingCertificate:

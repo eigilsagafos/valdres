@@ -80,8 +80,9 @@ jobs:
             - name: ExternalAtom installed-but-unrelated timing detector
               # The StoreTree lane above is the primary blocking zero-plane /
               # zero-operation certificate. Eight balanced B-P-P-B pairs per lane.
-              # Protected regression or unresolved bimodality blocks; baseline
-              # medians below 1000ns are informational under the shared floor.
+              # Protected regression, unresolved bimodality or eight unanimous
+              # over-budget pairs block; baseline medians below 1000ns remain
+              # informational under the shared floor.
               # Other inconclusive results do not prove <=10% slowdown.
               # Fresh Bun/Node processes; never overlap benchmark jobs.
               run: bun scripts/check-external-isolation.ts

@@ -1183,12 +1183,17 @@ plus raw pairs, flags, estimates, intervals, and adjusted probabilities.
 A protected `regression` blocks. Unresolved protected bimodality also blocks as
 a measurement failure while retaining its statistical
 `inconclusive` classification; even two modes both below budget require resolving
-the measurement rather than silently certifying it. Other inconclusive results
-remain non-blocking and are neither passes nor evidence of slowdown at most 10%.
+the measurement rather than silently certifying it. A protected lane also blocks
+when all eight pairs strictly exceed the 10% budget, independently of any
+bimodal flag or statistical verdict. At the fixed cap, the one-sided sign
+probability is 1/256; Bonferroni across all eight lanes gives 8/256 = 0.03125.
+Other inconclusive results remain non-blocking and are neither passes nor
+evidence of slowdown at most 10%.
 Informational classifications cannot certify that bound or block this timing
 check. Output separates both families and includes each lane's blocking reason.
-A successful exit means no protected regression or unresolved protected bimodality;
-malformed measurements and subprocess failures also block. Unadjusted 90%
+A successful exit means no protected regression, unresolved protected bimodality,
+or unanimous protected exceedance; malformed measurements and subprocess
+failures also block. Unadjusted 90%
 intervals aid interpretation; the adjusted decision determines the classification.
 
 Before the lazy-plane repair, the original detector failed for Bun
@@ -1544,3 +1549,60 @@ selector-kernel tournament timeout, already reproduced on clean main, was not
 rerun and this pass does not claim full `verify` success. All requested bounded
 certification checks completed without a remaining failure. No push, PR, merge,
 version bump, or new beta-labelled metadata occurred.
+
+
+## Unanimous terminal backstop (2026-09-19)
+
+The final detector guard now blocks any protected lane whose eight validated
+pairs all strictly exceed the 10% budget, regardless of the `bimodal` flag.
+This catches six 1.3× pairs plus two 2× pairs: the smaller cluster is below the
+bimodality threshold, while the shared estimator returns `inconclusive`. The
+statistical label remains unchanged; the independent terminal blocking reason
+is `unanimous protected over-budget pairs`.
+
+At the fixed eight-pair cap, unanimous exceedance gives a one-sided sign
+probability of 1/256. Bonferroni across all eight lanes is 8/256 = 0.03125.
+The backstop is restricted to protected lanes. Exactly-at-budget pairs prevent
+unanimity, and informational lanes remain non-blocking. Existing regression and
+bimodality blockers retain their existing reasons.
+
+The exact six/two regression failed before the guard and passes after it. Two
+additional boundary tests cover strict exceedance and informational isolation.
+The focused detector/shared-decision/floor/CI-plan suite passes **179 tests /
+477 assertions**; all infrastructure tests pass **327 / 1,314**. Detector and
+detector-test typechecking passes. A single fresh Bun 1.4.0 / Node 24.16.0 timing
+run, executed after tests without overlapping jobs, recorded:
+
+| Engine | Workload | Baseline median (ns/op) | Family | Ratio | Classification |
+| --- | --- | ---: | --- | ---: | --- |
+| bun | reads | 6.32 | informational | 1.022× | inconclusive |
+| bun | subscriptions | 61.00 | informational | 1.034× | within-budget |
+| bun | writes | 864.72 | informational | 1.020× | inconclusive |
+| bun | transactions | 1042.53 | protected | 1.024× | within-budget |
+| node | reads | 17.73 | informational | 0.987× | inconclusive |
+| node | subscriptions | 115.48 | informational | 1.023× | within-budget |
+| node | writes | 1065.15 | protected | 1.027× | within-budget |
+| node | transactions | 1603.36 | protected | 0.947× | within-budget |
+
+Protected results are **0 regression, 3 within-budget, 0 inconclusive**.
+Informational results are **0 regression, 2 within-budget, 3 inconclusive**.
+No blocker fired. Bun writes is informational in this run because its measured
+baseline median is below the unchanged 1,000 ns floor. Informational labels and
+inconclusive results do not establish slowdown at most 10%. Every lane retains
+exactly eight pairs in four verified B-P-P-B blocks; no timing rerun selected a
+more favorable result.
+
+This bounded follow-up changes only the detector guard, its tests, CI commentary,
+and documentation. Runtime, model, pairing, measurement fixture, shared decision
+machinery, floor policy, size budgets, public API, versions, changeset/category,
+lockfile and existing beta metadata remain unchanged from `27691f20`.
+The complete runtime/contract/build/package certification in review5 remains
+applicable to those unchanged sources; it was not rerun for this detector-only
+repair. Its three-build digest remains
+`637ac60d198a82d7c6576dfcca000405465da84329194bb0ed7c6550438c139a`.
+
+Evidence and exact commands are in `.context/external-atom/review6/`, including
+the red regression, focused/infrastructure/type logs, and every timing pair.
+There is no new learning beyond the already-recorded terminal-backstop pitfall.
+No push, PR, merge, version bump, or new beta-labelled metadata is part of this
+repair.
