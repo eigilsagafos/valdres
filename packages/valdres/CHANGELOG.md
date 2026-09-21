@@ -1,5 +1,44 @@
 # valdres
 
+## 1.0.0-beta.39
+
+### Minor Changes
+
+- [#395](https://github.com/eigilsagafos/valdres/pull/395)
+  [`48dab24`](https://github.com/eigilsagafos/valdres/commit/48dab2411ca1ae9759f529fdb251c6010169d2ed)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add optional static
+  diagnostic names to collections and their inspection row references.
+
+- [#399](https://github.com/eigilsagafos/valdres/pull/399)
+  [`844ecb0`](https://github.com/eigilsagafos/valdres/commit/844ecb052ebc19d3e949ca67432b80b7910879fa)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add read-only
+  ExternalAtom definitions for synchronous external sources. Stores share one
+  projection across scopes, attach sources while consumers retain them, capture
+  transaction snapshots, and isolate server/hydration reads. Family factories
+  can create ExternalAtoms, and inspection reports their lifecycle work without
+  recording values. React bindings are certified for SSR, hydration, rebinding,
+  and StrictMode with ordinary and inspectable Stores.
+
+- [#397](https://github.com/eigilsagafos/valdres/pull/397)
+  [`270f00e`](https://github.com/eigilsagafos/valdres/commit/270f00e46f26aee66a724fcf6d6fdda09ddcf133)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Declare non-unique
+  scalar equality indexes on collections and read matching rows with `query`
+  from `valdres/query`. Indexes materialize lazily and update from effective
+  scoped row changes, preserving membership order, atomic rollback and stable
+  result snapshots.
+
+### Patch Changes
+
+- [#398](https://github.com/eigilsagafos/valdres/pull/398)
+  [`8bebc76`](https://github.com/eigilsagafos/valdres/commit/8bebc767b2cbb030c32129eca751f97301175cd4)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - `family()` now
+  reports actionable TypeScript diagnostics for invalid factories. A
+  structured-argument factory without `options.encodeKey` used to fail with "not
+  assignable to parameter of type 'never'"; the compiler output now names the
+  fix ("structured family arguments require a valid options.encodeKey"), and
+  zero-argument, non-State-returning, and loosely typed factories get their own
+  messages. Valid calls infer exactly as before.
+
 ## 1.0.0-beta.38
 
 ### Patch Changes

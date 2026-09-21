@@ -1,5 +1,25 @@
 # valdres-react
 
+## 1.0.0-beta.7
+
+### Patch Changes
+
+- [#399](https://github.com/eigilsagafos/valdres/pull/399)
+  [`844ecb0`](https://github.com/eigilsagafos/valdres/commit/844ecb052ebc19d3e949ca67432b80b7910879fa)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add read-only
+  ExternalAtom definitions for synchronous external sources. Stores share one
+  projection across scopes, attach sources while consumers retain them, capture
+  transaction snapshots, and isolate server/hydration reads. Family factories
+  can create ExternalAtoms, and inspection reports their lifecycle work without
+  recording values. React bindings are certified for SSR, hydration, rebinding,
+  and StrictMode with ordinary and inspectable Stores.
+- Updated dependencies
+  [[`48dab24`](https://github.com/eigilsagafos/valdres/commit/48dab2411ca1ae9759f529fdb251c6010169d2ed),
+  [`844ecb0`](https://github.com/eigilsagafos/valdres/commit/844ecb052ebc19d3e949ca67432b80b7910879fa),
+  [`270f00e`](https://github.com/eigilsagafos/valdres/commit/270f00e46f26aee66a724fcf6d6fdda09ddcf133),
+  [`8bebc76`](https://github.com/eigilsagafos/valdres/commit/8bebc767b2cbb030c32129eca751f97301175cd4)]:
+    - valdres@1.0.0-beta.39
+
 ## 1.0.0-beta.6
 
 ### Minor Changes
