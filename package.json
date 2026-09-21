@@ -29,6 +29,7 @@
         "test:ci:all": "bun --filter '*' test -- --reporter=junit --reporter-outfile=junit.xml",
         "test:browser-media": "bun run scripts/check-browser-media.ts",
         "test:browser-media:packed": "bun run scripts/test-browser-media-packed-consumer.ts",
+        "probe:browser-media": "bun run scripts/browser-media-dispatch-probe/serve.ts",
         "verify": "bun run scripts/verify.ts",
         "changeset": "changeset",
         "version-packages": "changeset version && bun install",
