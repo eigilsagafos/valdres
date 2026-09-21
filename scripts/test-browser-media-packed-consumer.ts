@@ -28,6 +28,7 @@ import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { gzipSync } from "node:zlib"
 import {
+    BROWSER_MEDIA_CORE_PEER_RANGE,
     BROWSER_MEDIA_PACKAGES as MEDIA_PACKAGES,
 } from "./lib/browser-media-packages"
 
@@ -212,6 +213,14 @@ for (const entry of packed) {
     if (entry.name === CORE) continue
     const range = entry.manifest.peerDependencies?.[CORE]
     assert.ok(range, `${entry.name} declares no ${CORE} peer range`)
+    // On the PREPACKED manifest — the one that would actually be published.
+    // `satisfies` alone would pass for the pre-migration ^1.0.0-beta.19, which
+    // admits cores without `externalAtom`, so pin the floor exactly.
+    assert.equal(
+        range,
+        BROWSER_MEDIA_CORE_PEER_RANGE,
+        `${entry.name} publishes peer range ${range}, expected ${BROWSER_MEDIA_CORE_PEER_RANGE}`,
+    )
     assert.ok(
         Bun.semver.satisfies(coreVersion, range),
         `${entry.name} peer range ${range} does not admit the packed core ${coreVersion}`,

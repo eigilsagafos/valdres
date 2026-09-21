@@ -12,6 +12,7 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import {
+    BROWSER_MEDIA_CORE_PEER_RANGE,
     BROWSER_MEDIA_PACKAGES,
     browserMediaPackageNames,
 } from "./lib/browser-media-packages"
@@ -66,7 +67,13 @@ describe("browser media package list", () => {
                 expect(existsSync(join(directory, "tsconfig.tests.json"))).toBe(
                     true,
                 )
-                expect(manifest.peerDependencies?.valdres).toBeString()
+                // Equality, not existence: the packed gate only checks that the
+                // packed core satisfies whatever range is declared, and
+                // beta.39 satisfies the pre-migration ^1.0.0-beta.19 too, so
+                // existence alone would let the floor regress unnoticed.
+                expect(manifest.peerDependencies?.valdres).toBe(
+                    BROWSER_MEDIA_CORE_PEER_RANGE,
+                )
             })
 
             test("is actually migrated off globalAtom", () => {
@@ -123,6 +130,18 @@ describe("browser media package list", () => {
             })
         })
     }
+
+    test("the declared peer floor actually excludes pre-externalAtom cores", () => {
+        // Guards the constant itself: loosening it back towards beta.19 would
+        // otherwise satisfy the equality assertion above by construction.
+        expect(Bun.semver.satisfies("1.0.0-beta.39", BROWSER_MEDIA_CORE_PEER_RANGE)).toBe(true)
+        expect(Bun.semver.satisfies("1.0.0-beta.40", BROWSER_MEDIA_CORE_PEER_RANGE)).toBe(true)
+        expect(Bun.semver.satisfies("1.0.0", BROWSER_MEDIA_CORE_PEER_RANGE)).toBe(true)
+        // The release that still lacked `externalAtom`.
+        expect(Bun.semver.satisfies("1.0.0-beta.38", BROWSER_MEDIA_CORE_PEER_RANGE)).toBe(false)
+        expect(Bun.semver.satisfies("1.0.0-beta.19", BROWSER_MEDIA_CORE_PEER_RANGE)).toBe(false)
+        expect(Bun.semver.satisfies("2.0.0", BROWSER_MEDIA_CORE_PEER_RANGE)).toBe(false)
+    })
 
     test("exposes scoped npm names in list order", () => {
         expect(browserMediaPackageNames()).toEqual(

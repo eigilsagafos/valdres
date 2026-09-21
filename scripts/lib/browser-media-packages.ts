@@ -14,6 +14,20 @@
  * them.
  */
 
+/**
+ * The exact `valdres` peer range every migrated media package must declare.
+ *
+ * `externalAtom` first shipped in `1.0.0-beta.39`, so a package that declared
+ * an earlier floor would install against a core where the primitive does not
+ * exist — the precise breakage this migration fixes.
+ *
+ * This is an equality check on purpose. The packed-consumer gate asserts that
+ * the packed core *satisfies* whatever range a package declares, and
+ * `1.0.0-beta.39` satisfies the old `^1.0.0-beta.19` too, so that gate alone
+ * would let the floor regress silently.
+ */
+export const BROWSER_MEDIA_CORE_PEER_RANGE = "^1.0.0-beta.39"
+
 export interface BrowserMediaPackage {
     /** Directory under `packages/@valdres/`, and the unscoped package name. */
     readonly dir: string

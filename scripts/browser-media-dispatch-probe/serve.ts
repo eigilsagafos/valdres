@@ -82,6 +82,32 @@ const verdict = document.getElementById("verdict")
 const output = document.getElementById("result")
 const settle = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
 
+// Poll rather than wait on the iframe's load event. The event may already have
+// fired before this module runs, and a child that loads but throws before
+// installing window.mediaProbe never fires anything at all -- either way a bare
+// load listener leaves the page stuck on "running…" instead of reporting the
+// failure. Polling to a deadline always terminates, into PASS or FAIL.
+const PROBE_READY_TIMEOUT_MS = 10000
+const PROBE_POLL_INTERVAL_MS = 50
+const waitForProbe = async () => {
+    const deadline = Date.now() + PROBE_READY_TIMEOUT_MS
+    for (;;) {
+        const probe = frame.contentWindow?.mediaProbe
+        if (probe) return probe
+        if (Date.now() >= deadline) {
+            const state = frame.contentDocument?.readyState ?? "unavailable"
+            throw new Error(
+                "the probe iframe did not install window.mediaProbe within " +
+                    PROBE_READY_TIMEOUT_MS +
+                    " ms (iframe readyState: " +
+                    state +
+                    "). Check the browser console for a module error in /frame.",
+            )
+        }
+        await new Promise(resolve => setTimeout(resolve, PROBE_POLL_INTERVAL_MS))
+    }
+}
+
 const fail = (message, detail) => {
     verdict.textContent = "FAIL — " + message
     verdict.className = "fail"
@@ -89,13 +115,8 @@ const fail = (message, detail) => {
 }
 
 try {
-    await new Promise(resolve => {
-        if (frame.contentWindow?.mediaProbe) resolve()
-        else frame.addEventListener("load", () => resolve(), { once: true })
-    })
+    const probe = await waitForProbe()
     await settle()
-    const probe = frame.contentWindow.mediaProbe
-    if (!probe) throw new Error("probe did not install")
 
     // 400px -> 1000px -> 400px, each a native viewport media change.
     frame.style.width = "1000px"
