@@ -22,6 +22,12 @@ export interface MediaHarness {
      * establish it.
      */
     changeReportingErrors(query: string): readonly unknown[]
+    /**
+     * Make `addEventListener("change", …)` throw for one query, to exercise a
+     * source that fails partway through attaching to several queries. Pass
+     * `undefined` to stop failing.
+     */
+    failOnAttach(query: string, error: unknown): void
     /** Physical `change` listeners currently attached to that query's object. */
     listeners(query: string): number
     /** How many times `window.matchMedia` was called for that query. */
@@ -46,6 +52,7 @@ export const installMediaHarness = (
     const instances = new Map<string, MediaQueryList>()
     const registered = new Map<string, ChangeListener[]>()
     const created = new Map<string, number>()
+    const attachFailures = new Map<string, unknown>()
 
     window.matchMedia = ((query: string) => {
         created.set(query, (created.get(query) ?? 0) + 1)
@@ -59,6 +66,8 @@ export const installMediaHarness = (
         const listeners: ChangeListener[] = []
         registered.set(query, listeners)
         list.addEventListener = ((type: string, listener: ChangeListener, ...rest: unknown[]) => {
+            if (type === "change" && attachFailures.has(query))
+                throw attachFailures.get(query)
             if (type === "change") listeners.push(listener)
             return (add as (...args: unknown[]) => unknown)(type, listener, ...rest)
         }) as typeof list.addEventListener
@@ -78,6 +87,10 @@ export const installMediaHarness = (
 
     return {
         set: (query, matches) => states.set(query, matches),
+        failOnAttach: (query, error) => {
+            if (error === undefined) attachFailures.delete(query)
+            else attachFailures.set(query, error)
+        },
         change: query => {
             instances.get(query)?.dispatchEvent(new Event("change"))
         },
