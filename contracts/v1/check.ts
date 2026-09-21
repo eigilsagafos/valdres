@@ -16,6 +16,7 @@ import { tmpdir } from "node:os"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
+import { externalCallbackRules, externalPublicNotes } from "./external-contract"
 
 type Completeness = "partial" | "complete"
 type DecisionStatus =
@@ -447,6 +448,11 @@ const requiredPublicIds = new Set([
     "core.selector-options.name",
     "core.external-atom",
     "core.external-atom-options.name",
+    "core.type.external-source",
+    "core.type.external-atom",
+    "core.type.external-atom-options",
+    "core.invalid-synchronous-external-snapshot-error",
+    "core.external-source-operation-error",
     "core.external-source-delivery-limit-error",
     "core.external-source-non-convergence-error",
     "core.dormant-external-read-error",
@@ -539,9 +545,9 @@ const frozenLegacyProvenanceInventorySha256 =
 const frozenReviewedLegacyDispositionSha256 =
     "e59fc2432d3402205d77cf96095b4b57ca870044d9db6c64bc908752d8fa01f8"
 const frozenTargetCoordinateInventorySha256 =
-    "5ea762989779077ec3e2367f69982cb1bcafe68cdbaf808590567bd4d58eeaea"
+    "dbe67b7027639165ed72360893bd2c6b54834d781ba8d0fdf461cc42542c05a2"
 const frozenReleaseTrackOwnershipSha256 =
-    "387c925069e12648893d2805dfb0f83c3821477dd0238f76e6324701e856dab3"
+    "5634f4948a8911ac7a2f1ee7964858856e885e4f451919b6f012cafde7d61033"
 const frozenWorkspaceBaseline = Object.freeze({
     commit: "ff1424bde13445eba07fcb426f5493dd43898f72",
     packageVersion: "1.0.0-beta.22",
@@ -555,6 +561,34 @@ const frozenLegacySubpaths = new Map([
     ["valdres-react", new Set(["."])],
 ] as const)
 const requiredFrozenPublicCoordinates = new Map([
+    [
+        "core.type.external-source",
+        { package: "valdres", subpath: ".", name: "ExternalSource" },
+    ],
+    [
+        "core.type.external-atom",
+        { package: "valdres", subpath: ".", name: "ExternalAtom" },
+    ],
+    [
+        "core.type.external-atom-options",
+        { package: "valdres", subpath: ".", name: "ExternalAtomOptions" },
+    ],
+    [
+        "core.invalid-synchronous-external-snapshot-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "InvalidSynchronousExternalSnapshotError",
+        },
+    ],
+    [
+        "core.external-source-operation-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "ExternalSourceOperationError",
+        },
+    ],
     [
         "adapter.assert-store",
         {
@@ -901,6 +935,14 @@ const requiredFrozenPublicCoordinates = new Map([
     ],
 ] as const)
 const requiredFrozenErrorCodes = new Map([
+    [
+        "core.invalid-synchronous-external-snapshot-error",
+        "VALDRES_INVALID_SYNCHRONOUS_EXTERNAL_SNAPSHOT",
+    ],
+    [
+        "core.external-source-operation-error",
+        "VALDRES_EXTERNAL_SOURCE_OPERATION",
+    ],
     ["core.callback-capability-error", "VALDRES_CALLBACK_CAPABILITY"],
     ["core.dormant-external-read-error", "VALDRES_DORMANT_EXTERNAL_READ"],
     [
@@ -1084,6 +1126,14 @@ const requiredCallbackPhaseErrors = new Map([
     ["callback.transaction-scope", "TransactionPhaseError"],
 ] as const)
 const requiredCallbackOutcomeErrors = new Map([
+    [
+        "callback.external-get-snapshot",
+        "InvalidSynchronousExternalSnapshotError",
+    ],
+    [
+        "callback.external-get-server-snapshot",
+        "InvalidSynchronousExternalSnapshotError",
+    ],
     ["callback.atom-lazy-initializer", "InvalidSynchronousAtomValueError"],
     ["callback.atom-comparator", "InvalidAtomComparatorResultError"],
     ["callback.atom-update", "InvalidSynchronousAtomValueError"],
@@ -1115,7 +1165,7 @@ const storeSubscriberContract = Object.freeze({
         "dormant external sampling",
     ]),
     errorRule:
-        "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. Subscriber throws are all collected in deterministic target-reaching and callback-insertion order without starving the remaining snapshot. Without an already-authoritative post-apply RuntimeMismatchError, they surface after idle as SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION with immutable cause equal to the exact first thrown value, frozen ordered causes, committed true, phase notifying, and lifecycle-free source owned-mutation. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced.",
+        "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. Subscriber throws are all collected in deterministic target-reaching and callback-insertion order without starving the remaining snapshot. Without an already-authoritative post-apply RuntimeMismatchError, they surface after idle as SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION with immutable cause equal to the exact first thrown value, frozen ordered causes, committed true, phase notifying, and lifecycle-free source owned-mutation. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. Pure external notification failures preserve SubscriberNotificationError with source external-read, external-startup, external-invalidation, or external-drain; owned-mutation remains unchanged. The first occurrence supplies source, and every failure occurrence remains in order without deduplication by error identity. Mixed-phase and setup/cleanup aggregation use ExternalSourceOperationError after all required delivery, cleanup, and drain work.",
     thenableRule:
         "Callback return values are ignored. A returned thenable receives exactly one stateless rejection-containment handler, is never awaited, and does not itself create a notification error. A thrown thenable receives exactly one stateless rejection-containment handler, is never awaited, and remains the exact ordered subscriber cause; no asynchronous Valdres capability survives delivery.",
     resultBoundary:
@@ -1128,9 +1178,9 @@ const storeSubscriberContract = Object.freeze({
     storeNotes:
         "Store.sub(state, callback: () => void): () => void creates one independent synchronous zero-argument invalidation registration, even when callback identity repeats. Registration performs the same outcome materialization as get, but internally catches the public read throw of a successfully materialized ordinary current error outcome so it can register; only admission, disposal, or internal-publication failure registers nothing. A lifecycle-free registration does not notify. Changed target callback sets enter the frozen post-stability settlement snapshot in first-reaching order; callbacks within each target retain subscription insertion order; delivery is all-fire and each registration runs at most once. Without an already-authoritative post-apply RuntimeMismatchError, the first subscriber throw becomes the SubscriberNotificationError cause and later subscriber throws remain ordered causes. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. The returned unsubscribe is idempotent, removes future eligibility immediately, and cannot edit the current snapshot.",
     typeNotes:
-        "SubscribeFn is exactly <Value>(state: State<Value>, callback: () => void) => () => void. State includes Atom, Selector, collection-row, and collection inputs. It returns one idempotent unsubscribe; family callback and deep-equality parameters are removed.",
+        "SubscribeFn is exactly <Value>(state: State<Value>, callback: () => void) => () => void. State includes Atom, Selector, ExternalAtom, collection-row, and collection inputs. It returns one idempotent unsubscribe; family callback and deep-equality parameters are removed.",
     errorNotes:
-        "SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION is the immutable post-commit delivery wrapper for subscriber throws. Without an already-authoritative post-apply RuntimeMismatchError, cause is the exact first thrown value and causes is a frozen readonly array of all subscriber-thrown values in deterministic delivery order; committed is exactly true; phase is exactly notifying; source is exactly owned-mutation for the lifecycle-free slice. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. No external-source literal is frozen by this slice.",
+        'SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION is the immutable post-commit delivery wrapper for subscriber throws. Without an already-authoritative post-apply RuntimeMismatchError, cause is the exact first thrown value and causes is a frozen readonly array of all subscriber-thrown values in deterministic delivery order; committed is exactly true; phase is exactly notifying; source is exactly owned-mutation for the lifecycle-free slice. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. Pure external notification failures also use SubscriberNotificationError, with source external-read | external-startup | external-invalidation | external-drain; the full notification source set is owned-mutation | external-read | external-startup | external-invalidation | external-drain. The primary occurrence supplies source. Preserve every failure occurrence without deduplication by error identity, including equal causes from different callbacks or rounds. Mixed-phase and setup/cleanup aggregation use ExternalSourceOperationError. The error, cause/causes metadata, committed, phase, and source are immutable; application error objects are not mutated. Message is exactly "One or more Store subscribers threw during notification".',
 })
 const runtimeOwnedExternalErrorNames = [
     "ExternalSourceNonConvergenceError",
@@ -1317,6 +1367,7 @@ export function validateContractSet(input: ContractSet): Readonly<{
         publicManifest.entries,
         callbackManifest.entries,
     )
+    assertExternalAtomContract(publicManifest.entries, callbackManifest.entries)
 
     assertFrozenReleaseTrackOwnership(
         publicManifest,
@@ -1503,10 +1554,10 @@ function assertCollectionContractAuthority(
             state.contractIds.includes("collection.invariant-readable-state") &&
             state.notes.includes("private invariant value base") &&
             state.notes.includes(
-                "Atom | Selector | readonly collection-row | readonly collection",
+                "Atom | Selector | ExternalAtom | readonly collection-row | readonly collection",
             ) &&
             state.notes.includes(
-                "Family factory admission deliberately remains the narrower Atom | Selector",
+                "Family factory admission deliberately remains the narrower Atom | Selector | ExternalAtom",
             ) &&
             state.notes.includes(
                 "cannot return collection rows or collection definitions",
@@ -1553,12 +1604,12 @@ function assertCollectionContractAuthority(
     assert(
         familyFactory !== undefined &&
             familyFactory.thenableRule.includes(
-                "same-domain Atom or Selector",
+                "same-domain Atom, Selector, or ExternalAtom",
             ) &&
             familyFactory.resultBoundary.includes(
                 "Collection rows and collection definitions reject",
             ),
-        "family factory admission must remain Atom-or-Selector after State widens",
+        "family factory admission must remain limited to Atom, Selector, or ExternalAtom definitions",
     )
     assert(
         indexExtractor !== undefined &&
@@ -1569,6 +1620,70 @@ function assertCollectionContractAuthority(
             ),
         "index extraction must retain the synchronous present-row scalar boundary",
     )
+}
+
+function assertExternalAtomContract(
+    publicEntries: readonly PublicEntry[],
+    callbackEntries: readonly CallbackEntry[],
+): void {
+    const publicById = new Map(publicEntries.map(entry => [entry.id, entry]))
+    for (const [id, notes] of Object.entries(externalPublicNotes)) {
+        const entry = publicById.get(id)
+        assert(
+            entry?.notes === notes && entry.decisionStatus === "approved",
+            `${id} differs from the approved ExternalAtom construction, metadata, or occurrence contract`,
+        )
+    }
+    for (const [id, rules] of Object.entries(externalCallbackRules)) {
+        const entry = callbackEntries.find(candidate => candidate.id === id)
+        for (const [key, value] of Object.entries(rules)) {
+            assert(
+                entry?.[key as keyof typeof rules] === value,
+                `${id}.${key} differs from the approved ExternalAtom callback contract`,
+            )
+        }
+    }
+    const types = new Map([
+        ["core.type.external-source", "ExternalSource"],
+        ["core.type.external-atom", "ExternalAtom"],
+        ["core.type.external-atom-options", "ExternalAtomOptions"],
+    ])
+    for (const [id, name] of types) {
+        const entry = publicById.get(id)
+        assert(
+            entry?.kind === "type-export" &&
+                entry.target.package === "valdres" &&
+                entry.target.subpath === "." &&
+                entry.target.name === name &&
+                entry.target.status === "stable",
+            `${id} differs from the approved ExternalAtom type coordinate`,
+        )
+    }
+    const rootExternalTypes = publicEntries.filter(
+        entry =>
+            entry.kind === "type-export" &&
+            entry.target.package === "valdres" &&
+            entry.target.subpath === "." &&
+            entry.target.status === "stable" &&
+            entry.target.name?.startsWith("External"),
+    )
+    assert(
+        rootExternalTypes.length === types.size &&
+            rootExternalTypes.every(entry => types.has(entry.id)),
+        "ExternalAtom exports exactly ExternalSource, ExternalAtom, and ExternalAtomOptions; internal lifecycle types are not public",
+    )
+    for (const id of [
+        "core.invalid-synchronous-external-snapshot-error",
+        "core.external-source-operation-error",
+    ]) {
+        assert(
+            publicById
+                .get(id)
+                ?.contractIds.includes("external.frozen-error-metadata") ===
+                true,
+            `${id} must catalogue frozen public metadata`,
+        )
+    }
 }
 
 function assertStoreSubscriberContract(

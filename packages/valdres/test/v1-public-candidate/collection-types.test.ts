@@ -126,9 +126,9 @@ test("exports invariant readonly collection arms through root State", () => {
             key: "session",
         }
 
-        // @ts-expect-error family admission remains Atom-or-Selector.
+        // @ts-expect-error family admission excludes collection rows.
         family(() => row)
-        // @ts-expect-error family admission remains Atom-or-Selector.
+        // @ts-expect-error family admission excludes collections.
         family(() => rows)
         // @ts-expect-error the private State marker rejects structural fakes.
         const structuralFake: CollectionRow<string, Session> = fakeRow

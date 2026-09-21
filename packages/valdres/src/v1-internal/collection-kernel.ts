@@ -1,3 +1,4 @@
+import { StoreTreeCounterId } from "./committed-store-tree/counter-ids"
 import { OrderedMembership } from "./ordered-membership"
 import type {
     CollectionIndexHost,
@@ -687,7 +688,9 @@ export const createCollectionKernel = (
             }),
             inheritedFrom,
             inheritingChildren: new WeakHandleSet(() =>
-                scope.coordinator.recordCounter("deadRouteCompactions"),
+                scope.coordinator.recordCounter(
+                    StoreTreeCounterId.deadRouteCompactions,
+                ),
             ),
         }
         let rowViews = sidecar.rowViews
@@ -698,7 +701,9 @@ export const createCollectionKernel = (
         let liveRowViews = sidecar.liveRowViews
         if (liveRowViews === undefined) {
             liveRowViews = new WeakHandleSet(() =>
-                scope.coordinator.recordCounter("deadRouteCompactions"),
+                scope.coordinator.recordCounter(
+                    StoreTreeCounterId.deadRouteCompactions,
+                ),
             )
             sidecar.liveRowViews = liveRowViews
         }
@@ -712,7 +717,7 @@ export const createCollectionKernel = (
         )
         if (inheritedFrom !== undefined) {
             inheritedFrom.inheritingChildren.add(record)
-            scope.coordinator.recordCounter("routeAdds")
+            scope.coordinator.recordCounter(StoreTreeCounterId.routeAdds)
         }
         return record
     }
@@ -769,7 +774,7 @@ export const createCollectionKernel = (
         if (inheritedFrom === undefined) return
         inheritedFrom.inheritingChildren.delete(record)
         record.inheritedFrom = undefined
-        record.scope.coordinator.recordCounter("routeRemoves")
+        record.scope.coordinator.recordCounter(StoreTreeCounterId.routeRemoves)
     }
 
     const attachRowView = (
@@ -780,7 +785,7 @@ export const createCollectionKernel = (
         detachRowView(record)
         record.inheritedFrom = inheritedFrom
         inheritedFrom.inheritingChildren.add(record)
-        record.scope.coordinator.recordCounter("routeAdds")
+        record.scope.coordinator.recordCounter(StoreTreeCounterId.routeAdds)
     }
 
     const membershipRows = (
@@ -871,7 +876,9 @@ export const createCollectionKernel = (
             ),
             inheritedFrom: undefined,
             inheritingChildren: new WeakHandleSet(() =>
-                scope.coordinator.recordCounter("deadRouteCompactions"),
+                scope.coordinator.recordCounter(
+                    StoreTreeCounterId.deadRouteCompactions,
+                ),
             ),
         }
         let memberships = sidecar.memberships
@@ -882,7 +889,9 @@ export const createCollectionKernel = (
         let liveMemberships = sidecar.liveMemberships
         if (liveMemberships === undefined) {
             liveMemberships = new WeakHandleSet(() =>
-                scope.coordinator.recordCounter("deadRouteCompactions"),
+                scope.coordinator.recordCounter(
+                    StoreTreeCounterId.deadRouteCompactions,
+                ),
             )
             sidecar.liveMemberships = liveMemberships
         }
@@ -899,7 +908,7 @@ export const createCollectionKernel = (
         inheritedFrom.inheritingChildren.delete(record)
         inheritedFrom.indexedChildren?.delete(record)
         record.inheritedFrom = undefined
-        record.scope.coordinator.recordCounter("routeRemoves")
+        record.scope.coordinator.recordCounter(StoreTreeCounterId.routeRemoves)
     }
 
     const attachMembership = (
@@ -910,7 +919,7 @@ export const createCollectionKernel = (
         detachMembership(record)
         record.inheritedFrom = inheritedFrom
         inheritedFrom.inheritingChildren.add(record)
-        record.scope.coordinator.recordCounter("routeAdds")
+        record.scope.coordinator.recordCounter(StoreTreeCounterId.routeAdds)
     }
 
     const materializeMembership = (
@@ -2159,7 +2168,9 @@ export const createCollectionKernel = (
                 )
                 const children: RowViewRecord[] = []
                 record.inheritingChildren.forEach(child => {
-                    record.scope.coordinator.recordCounter("routeVisits")
+                    record.scope.coordinator.recordCounter(
+                        StoreTreeCounterId.routeVisits,
+                    )
                     children.push(child)
                 })
                 for (let index = children.length - 1; index >= 0; index--) {
@@ -2204,7 +2215,9 @@ export const createCollectionKernel = (
                 }
                 const children: MembershipPlanNode[] = []
                 node.existing?.inheritingChildren.forEach(child => {
-                    node.scope.coordinator.recordCounter("routeVisits")
+                    node.scope.coordinator.recordCounter(
+                        StoreTreeCounterId.routeVisits,
+                    )
                     const childNode = affected
                         ? nodeForRecord(child)
                         : nodesByRecord.get(child)

@@ -1,13 +1,23 @@
 import type {
+    ExternalRuntime,
+    ExternalOperationFailure,
+} from "./external-types"
+import type {
     SelectorDefinition,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
-import type { Atom, Collection, CollectionRow, Selector } from "./types"
+import type {
+    Atom,
+    Collection,
+    CollectionRow,
+    ExternalAtom,
+    Selector,
+} from "./types"
 
 /** Definition kinds a family factory may construct or return. */
-export type DefinitionState = Atom<any> | Selector<any>
+export type DefinitionState = Atom<any> | Selector<any> | ExternalAtom<any>
 /** Internal dispatch admits every public readonly State kind, while family
- * definition admission deliberately remains Atom-or-Selector. */
+ * definition admission deliberately excludes collection States. */
 export type AnyState =
     | DefinitionState
     | CollectionRow<any, any>
@@ -30,11 +40,48 @@ export interface AtomDefinition {
     readonly equal?: (previous: unknown, next: unknown) => boolean
 }
 
+export interface ExternalAtomDefinition {
+    readonly sample: (
+        session: ControlFaultSession,
+        serverPath?: readonly AnyState[],
+        onThenable?: () => void,
+    ) => SynchronousResult
+    readonly source: object
+    readonly getSnapshot: () => unknown
+    readonly getServerSnapshot?: () => unknown
+    readonly subscribe: (invalidate: () => void) => unknown
+    readonly name?: string
+}
+
+export type ExternalCallbackKind =
+    | "external-snapshot"
+    | "external-server-snapshot"
+    | "external-subscribe"
+    | "external-cleanup"
+
+/** Object.is equality for committed value/error outcomes, including controls. */
+export const sameOutcome = (
+    previous: {
+        readonly kind: string
+        readonly value?: unknown
+        readonly error?: unknown
+    },
+    next: {
+        readonly kind: string
+        readonly value?: unknown
+        readonly error?: unknown
+    },
+): boolean =>
+    previous.kind === next.kind &&
+    (previous.kind === "value"
+        ? Object.is(previous.value, next.value)
+        : Object.is(previous.error, next.error))
+
 export interface ControlFaultSession {
     latchControlFault(error: unknown): void
     getControlFault():
         | Readonly<{ kind: "none" }>
-        | Readonly<{ kind: "fault"; error: unknown }>
+        | Readonly<{ kind: "fault"; error: unknown; origin?: object }>
 }
 
 export interface DefinitionCallbackFrame {
@@ -82,6 +129,12 @@ export type RuntimeActivity =
           selectorActivity?: SelectorRuntimeActivity
       }>
     | Readonly<{
+          kind: ExternalCallbackKind
+          session: ControlFaultSession
+          selectorActivity?: SelectorRuntimeActivity
+          generation?: object
+      }>
+    | Readonly<{
           kind: "subscriber"
           session: ControlFaultSession
       }>
@@ -93,9 +146,17 @@ export interface RuntimeDomainRecords {
     /** Synchronous construction frame; restored before public work resumes. */
     [DEFINITION_CALLBACK_FRAME]?: DefinitionCallbackFrame
     /** Keyed definition helpers may opt exact Atoms into override retention. */
-    [REACQUIRABLE_ATOMS]?: WeakSet<object>
+    [REACQUIRABLE_ATOMS]?: WeakSet<object> & {
+        apply(
+            scope: import("./scope-node").StoreScopeNode,
+            intent: import("./tree-transaction").AtomIntent,
+        ): void
+    }
     readonly atoms: WeakMap<object, AtomDefinition>
     readonly selectors: WeakMap<object, SelectorDefinition<AnyState, any>>
+    /** Lazy registry keeps external-free domains on their existing path. */
+    externalAtoms?: WeakMap<object, ExternalAtomDefinition>
+    externalRuntime?: ExternalRuntime
     /** Exact same-domain Store facade recognition; values stay opaque here. */
     readonly stores: WeakMap<object, object>
     /** Exact same-domain Transaction cursor recognition; values stay opaque. */
@@ -170,6 +231,12 @@ abstract class ImmutableRuntimeError extends Error {
     }
 }
 
+// Brand only internally created mismatches. Public construction and prototype
+// hooks confer no classification; callers must also require current provenance.
+const runtimeMismatches = new WeakSet<object>()
+export const isInternalRuntimeMismatch = (error: unknown): boolean =>
+    runtimeMismatches.has(error as object)
+
 /** The stable owner failure re-exported by the public runtime facade. */
 export class RuntimeMismatchError extends ImmutableRuntimeError {
     readonly code = "VALDRES_RUNTIME_MISMATCH"
@@ -187,13 +254,20 @@ export class SubscriberNotificationError extends ImmutableRuntimeError {
     readonly causes: readonly unknown[]
     readonly committed = true
     readonly phase = "notifying"
-    readonly source = "owned-mutation"
+    readonly source: Exclude<
+        ExternalOperationFailure["source"],
+        "external-cleanup"
+    >
 
-    constructor(causes: readonly unknown[]) {
+    constructor(
+        causes: readonly unknown[],
+        source: SubscriberNotificationError["source"] = "owned-mutation",
+    ) {
         super("One or more Store subscribers threw during notification")
         this.name = "SubscriberNotificationError"
         this.causes = Object.freeze([...causes])
         this.cause = this.causes[0]
+        this.source = source
         this.seal()
     }
 }
@@ -406,7 +480,7 @@ export const runGuardedCallback = <Result>(
     const selectorActivity =
         previous?.kind === "selector"
             ? previous
-            : previous?.kind === "guarded-callback"
+            : previous !== undefined && "selectorActivity" in previous
               ? previous.selectorActivity
               : undefined
     const activity: RuntimeActivity =
@@ -418,14 +492,13 @@ export const runGuardedCallback = <Result>(
                   selectorActivity,
               })
     try {
-        const result = runInRuntimeActivity(domain, activity, operation)
-        const controlFault = session.getControlFault()
-        if (controlFault.kind === "fault") throw controlFault.error
-        return result
-    } catch (error) {
-        const controlFault = session.getControlFault()
-        if (controlFault.kind === "fault") throw controlFault.error
-        throw error
+        return runInRuntimeActivity(domain, activity, operation)
+    } finally {
+        const fault = session.getControlFault()
+        if (fault.kind === "fault") {
+            domain.externalRuntime?.guard(fault.error)
+            throw fault.error
+        }
     }
 }
 
@@ -435,18 +508,14 @@ export const runSubscriberActivity = <Result>(
     operation: () => Result,
 ): Result => {
     try {
-        const result = runInRuntimeActivity(
+        return runInRuntimeActivity(
             domain,
             Object.freeze({ kind: "subscriber", session }),
             operation,
         )
+    } finally {
         const controlFault = session.getControlFault()
         if (controlFault.kind === "fault") throw controlFault.error
-        return result
-    } catch (error) {
-        const controlFault = session.getControlFault()
-        if (controlFault.kind === "fault") throw controlFault.error
-        throw error
     }
 }
 
@@ -459,7 +528,7 @@ export const runSelectorActivity = <Result>(
     const currentSelectorActivity =
         previous?.kind === "selector"
             ? previous
-            : previous?.kind === "guarded-callback"
+            : previous !== undefined && "selectorActivity" in previous
               ? previous.selectorActivity
               : undefined
     // Recursive selectors ordinarily share one session. Skip that duplicate
@@ -498,19 +567,24 @@ export const runTransactionResultActivity = <Result>(
     operation: () => Result,
 ): Result => {
     try {
-        const result = runInRuntimeActivity(
+        return runInRuntimeActivity(
             domain,
             Object.freeze({ kind: "transaction-result", session }),
             operation,
         )
+    } finally {
         const controlFault = session.getControlFault()
         if (controlFault.kind === "fault") throw controlFault.error
-        return result
-    } catch (error) {
-        const controlFault = session.getControlFault()
-        if (controlFault.kind === "fault") throw controlFault.error
-        throw error
     }
+}
+
+/** Report an emitted guard only to an optional, currently active callback extent. */
+export const rejectCallbackOperation = (
+    domain: RuntimeDomainRecords,
+): never => {
+    const error = new CallbackCapabilityError()
+    domain.externalRuntime?.guard(error)
+    throw error
 }
 
 export const assertStoreOperationAllowed = (
@@ -528,26 +602,15 @@ export const assertStoreOperationAllowed = (
     ) {
         throw new TransactionPhaseError()
     }
-    throw new CallbackCapabilityError()
+    rejectCallbackOperation(domain)
 }
 
 export const assertStoreReadAllowed = (
     domain: RuntimeDomainRecords,
     operation: string,
 ): ControlFaultSession | undefined => {
-    const activity = domain.activity
-    if (activity === undefined) return undefined
-    if (activity.kind === "subscriber") return activity.session
-    if (activity.kind === "selector") {
-        throw new SelectorCapabilityError(operation)
-    }
-    if (
-        activity.kind === "transaction" ||
-        activity.kind === "transaction-result"
-    ) {
-        throw new TransactionPhaseError()
-    }
-    throw new CallbackCapabilityError()
+    if (domain.activity?.kind === "subscriber") return domain.activity.session
+    assertStoreOperationAllowed(domain, operation)
 }
 
 /** Reject a selector-supplied read borrowed by a nested guarded callback. */
@@ -571,18 +634,7 @@ export const rejectGuardedSelectorRead = (
 export const assertUnsubscribeAllowed = (
     domain: RuntimeDomainRecords,
 ): void => {
-    const activity = domain.activity
-    if (activity === undefined || activity.kind === "subscriber") return
-    if (activity.kind === "selector") {
-        throw new SelectorCapabilityError("Store unsubscribe")
-    }
-    if (
-        activity.kind === "transaction" ||
-        activity.kind === "transaction-result"
-    ) {
-        throw new TransactionPhaseError()
-    }
-    throw new CallbackCapabilityError()
+    assertStoreReadAllowed(domain, "Store unsubscribe")
 }
 
 export const assertCursorOperationAllowed = (
@@ -601,8 +653,11 @@ export const assertCursorOperationAllowed = (
     if (activity?.kind === "selector") {
         throw new SelectorCapabilityError("Transaction cursor operation")
     }
-    if (activity?.kind === "guarded-callback") {
-        throw new CallbackCapabilityError()
+    if (
+        activity?.kind === "guarded-callback" ||
+        activity?.kind.startsWith("external-")
+    ) {
+        rejectCallbackOperation(domain)
     }
     throw new TransactionPhaseError()
 }
@@ -617,24 +672,22 @@ const currentFaultSession = (
         : fallback
 }
 
+// Native weak membership rejects primitives and proxies without inspecting them.
 export const classifyOwner = (
     domain: RuntimeDomainRecords,
     value: unknown,
     session: ControlFaultSession,
 ): "local" | "invalid" => {
     if (
-        (typeof value === "object" || typeof value === "function") &&
-        value !== null &&
-        (domain.states.has(value) ||
-            domain.stores.has(value) ||
-            domain.transactionCursors.has(value))
+        domain.states.has(value as object) ||
+        domain.stores.has(value as object) ||
+        domain.transactionCursors.has(value as object)
     ) {
         return "local"
     }
-    if (
-        (typeof value === "object" || typeof value === "function") &&
-        value !== null
-    ) {
+    // Non-null primitives have no own runtime-owner symbol. The native
+    // descriptor lookup boxes them without invoking application callbacks.
+    if (value !== null && value !== undefined) {
         const ownerDescriptor = Object.getOwnPropertyDescriptor(
             value,
             RUNTIME_OWNER_KEY,
@@ -645,6 +698,9 @@ export const classifyOwner = (
             !Object.is(ownerDescriptor.value, domain.ownerToken)
         ) {
             const error = new RuntimeMismatchError()
+            runtimeMismatches.add(error)
+            // Sticky session provenance also reaches nested guarded callbacks;
+            // this occurrence needs no second callback-ledger registration.
             currentFaultSession(domain, session).latchControlFault(error)
             throw error
         }
@@ -658,11 +714,9 @@ export const classifyEntryOwner = (
     session: ControlFaultSession,
 ): "local" | "invalid" => {
     if (
-        (typeof value === "object" || typeof value === "function") &&
-        value !== null &&
-        (domain.states.has(value) ||
-            domain.stores.has(value) ||
-            domain.transactionCursors.has(value))
+        domain.states.has(value as object) ||
+        domain.stores.has(value as object) ||
+        domain.transactionCursors.has(value as object)
     ) {
         return "local"
     }
@@ -671,14 +725,10 @@ export const classifyEntryOwner = (
     const faultSession = currentFaultSession(domain, session)
     if (activity !== undefined && "session" in activity) {
         try {
-            const owner = classifyOwner(domain, value, faultSession)
+            return classifyOwner(domain, value, faultSession)
+        } finally {
             const fault = faultSession.getControlFault()
             if (fault.kind === "fault") throw fault.error
-            return owner
-        } catch (error) {
-            const fault = faultSession.getControlFault()
-            if (fault.kind === "fault") throw fault.error
-            throw error
         }
     }
     return runGuardedCallback(domain, faultSession, () =>

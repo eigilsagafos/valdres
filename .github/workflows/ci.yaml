@@ -77,6 +77,15 @@ jobs:
               # This first persistent host is also intentionally outside every
               # package entrypoint, so its dedicated tsconfig must run explicitly.
               run: bun --filter 'valdres' test:v1-committed-store-tree
+            - name: ExternalAtom installed-but-unrelated timing detector
+              # The StoreTree lane above is the primary blocking zero-plane /
+              # zero-operation certificate. Eight balanced B-P-P-B pairs per lane.
+              # Protected regression, unresolved bimodality or eight unanimous
+              # over-budget pairs block; baseline medians below 1000ns remain
+              # informational under the shared floor.
+              # Other inconclusive results do not prove <=10% slowdown.
+              # Fresh Bun/Node processes; never overlap benchmark jobs.
+              run: bun scripts/check-external-isolation.ts
             - name: Ban unchecked TypeScript suppressions in valdres
               run: |
                   if git grep -n -E '^[[:space:]]*//[[:space:]]*@ts-ignore([[:space:]]|$)' -- packages/valdres/src; then

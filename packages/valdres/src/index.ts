@@ -21,10 +21,18 @@ interface PresenceFactory {
     ): Selector<boolean>
 }
 
+interface ExternalAtomFactory {
+    <Value>(
+        source: ExternalSource<Value>,
+        options?: ExternalAtomOptions,
+    ): ExternalAtom<Value>
+}
+
 // Concrete entry-owned bindings avoid a Bun split-entry re-export bug while
 // preserving the exact constructor/function identities from src/v1.ts.
 export const atom: typeof v1.atom = v1.atom
 export const collection: CollectionFactory = v1.collection
+export const externalAtom: ExternalAtomFactory = v1.externalAtom
 export const family: typeof v1.family = v1.family
 export const presence: PresenceFactory = v1.presence
 export const selector: typeof v1.selector = v1.selector
@@ -89,6 +97,9 @@ export type CollectionRow<
 > = v1.CollectionRow<Key, Value>
 export type CollectionValue = v1.CollectionValue
 export type EqualFunc<Value> = v1.EqualFunc<Value>
+export type ExternalSource<Value> = v1.ExternalSource<Value>
+export type ExternalAtom<Value> = v1.ExternalAtom<Value>
+export type ExternalAtomOptions = v1.ExternalAtomOptions
 export type FamilyKey = v1.FamilyKey
 export type GetValue = v1.GetValue
 export type Selector<Value> = v1.Selector<Value>
@@ -146,4 +157,46 @@ export type TransactionPhaseError = InstanceType<
 >
 export type UndefinedCollectionValueError = InstanceType<
     typeof v1.UndefinedCollectionValueError
+>
+
+export const DormantExternalReadError: typeof v1.DormantExternalReadError =
+    v1.DormantExternalReadError
+export type DormantExternalReadError = InstanceType<
+    typeof v1.DormantExternalReadError
+>
+
+export const ExternalSourceDeliveryLimitError: typeof v1.ExternalSourceDeliveryLimitError =
+    v1.ExternalSourceDeliveryLimitError
+export type ExternalSourceDeliveryLimitError = InstanceType<
+    typeof v1.ExternalSourceDeliveryLimitError
+>
+
+export const ExternalSourceNonConvergenceError: typeof v1.ExternalSourceNonConvergenceError =
+    v1.ExternalSourceNonConvergenceError
+export type ExternalSourceNonConvergenceError = InstanceType<
+    typeof v1.ExternalSourceNonConvergenceError
+>
+
+export const ExternalSourceOperationError: typeof v1.ExternalSourceOperationError =
+    v1.ExternalSourceOperationError
+export type ExternalSourceOperationError = InstanceType<
+    typeof v1.ExternalSourceOperationError
+>
+
+export const InvalidExternalCleanupError: typeof v1.InvalidExternalCleanupError =
+    v1.InvalidExternalCleanupError
+export type InvalidExternalCleanupError = InstanceType<
+    typeof v1.InvalidExternalCleanupError
+>
+
+export const InvalidSynchronousExternalSnapshotError: typeof v1.InvalidSynchronousExternalSnapshotError =
+    v1.InvalidSynchronousExternalSnapshotError
+export type InvalidSynchronousExternalSnapshotError = InstanceType<
+    typeof v1.InvalidSynchronousExternalSnapshotError
+>
+
+export const ServerSnapshotUnavailableError: typeof v1.ServerSnapshotUnavailableError =
+    v1.ServerSnapshotUnavailableError
+export type ServerSnapshotUnavailableError = InstanceType<
+    typeof v1.ServerSnapshotUnavailableError
 >

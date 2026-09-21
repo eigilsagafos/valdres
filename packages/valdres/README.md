@@ -32,9 +32,17 @@ A store also exposes `sub`, `reset`, `txn`, `scope`, and `dispose`. Store operat
 
 `atom(initial, options)` and `atom.lazy(initialize, options)` create writable state. `selector(read, options)` creates synchronous derived state. Atom and selector options accept an inert diagnostic `name` and an `equal(previous, next)` comparator.
 
+## External sources
+
+`externalAtom(source, { name? })` creates read-only State from a synchronous external source. The source provides `getSnapshot`, optional `getServerSnapshot`, and `subscribe(invalidate)` returning synchronous cleanup. Every call creates a fresh definition; preserve snapshot identity until the source changes. Equality is always `Object.is`.
+
+Stores share one projection across scopes and attach once while consumers retain it. Transactions capture each source once. React SSR/hydration uses isolated server snapshots, and thenables are rejected rather than suspended. Family factories may construct ExternalAtoms.
+
+See the [ExternalAtom reference](https://github.com/eigilsagafos/valdres/blob/main/docs/external-atom.md) and [integration guide](https://github.com/eigilsagafos/valdres/blob/main/docs/howto-external-atom.md) for lifecycle, errors, and hydration examples.
+
 ## Parameterized State identity
 
-`family(factory)` memoizes one Atom or Selector per non-empty ordered tuple of primitive keys (`string`, `number`, `bigint`, `boolean`, `symbol`, `null`, or `undefined`). Keys use SameValueZero, so `NaN` matches `NaN` and `0` matches `-0`; tuple arity and order still matter.
+`family(factory)` memoizes one Atom, Selector, or ExternalAtom per non-empty ordered tuple of primitive keys (`string`, `number`, `bigint`, `boolean`, `symbol`, `null`, or `undefined`). Keys use SameValueZero, so `NaN` matches `NaN` and `0` matches `-0`; tuple arity and order still matter.
 
 ```ts
 import { atom, family } from "valdres"
@@ -52,7 +60,7 @@ stepProgress({ id: "step-1", title: "Draft" }) ===
     stepProgress({ id: "step-1", title: "Review" }) // true
 ```
 
-Structured arguments require a synchronous `encodeKey` that returns one canonical primitive key. The factory must construct and return its Atom or Selector during that member's construction, or return any member already published by a family. Returning an arbitrary pre-existing State is rejected.
+Structured arguments require a synchronous `encodeKey` that returns one canonical primitive key. The factory must construct and return its Atom, Selector, or ExternalAtom during that member's construction, or return any member already published by a family. Returning an arbitrary pre-existing State is rejected.
 
 The exported `FamilyKey` type names the primitive-key union for reusable APIs.
 
@@ -100,7 +108,7 @@ const report = inspect.export()
 inspect.reset()
 ```
 
-The report links labels to opaque operation, commit, evaluation, session, and search IDs. It records selector topology/search work, collection row and membership work, related counters, and propagation/notification totals. Summary/detail rings are bounded with explicit overflow. Exports are immutable and JSON-safe; collection keys, values, callbacks, errors, and live State handles are never recorded. Labels are metadata, not identity. The core inspection schema is version 7.
+The report links labels to opaque operation, commit, evaluation, session, and search IDs. It records selector topology/search work, collection row and membership work, external projection/lifecycle work, related counters, and propagation/notification totals. Summary/detail rings are bounded with explicit overflow. Exports are immutable and JSON-safe; collection keys, values, callbacks, errors, and live State handles are never recorded. Labels are metadata, not identity. The core inspection schema is version 7.
 
 Inspection adds recording and timing work only to the Store created by `createInspectableStore`. The recorder stays outside the ordinary root entry and ordinary consumer bundles remain within their existing size budget.
 

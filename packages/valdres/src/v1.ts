@@ -1,6 +1,16 @@
 import type { CollectionIndexSchema } from "./v1-internal/committed-store-tree/types"
+import { createInternalExternalAtom } from "./v1-internal/committed-store-tree/external-atom"
+import type {
+    ExternalAtom as InternalExternalAtom,
+    ExternalAtomOptions,
+    ExternalSource,
+} from "./v1-internal/committed-store-tree/types"
 import {
     assertDefinitionFamilyCallAllowed,
+    createDomainAtom,
+    createDomainLazyAtom,
+    createDomainSelector,
+    createDomainStore,
     assertDefinitionState,
     markReacquirableDefinitionState,
     runDefinitionCallback,
@@ -41,6 +51,8 @@ import type {
 
 export type Atom<Value> = InternalAtom<Value>
 export type Selector<Value> = InternalSelector<Value>
+export type ExternalAtom<Value> = InternalExternalAtom<Value>
+export type { ExternalSource, ExternalAtomOptions }
 export type State<Value> = InternalState<Value>
 export type CollectionKey = InternalCollectionKey
 export type CollectionValue = InternalCollectionValue
@@ -113,12 +125,12 @@ interface AtomFactory {
 const atomLazy = <Value>(
     initialize: () => Value,
     options: AtomOptions<Value> = {},
-): Atom<Value> => v1Domain.atomLazy(initialize, options)
+): Atom<Value> => createDomainLazyAtom(v1Domain, initialize, options)
 
 const atomEager = <Value>(
     initial: Value,
     options: AtomOptions<Value> = {},
-): Atom<Value> => v1Domain.atom(initial, options)
+): Atom<Value> => createDomainAtom(v1Domain, initial, options)
 
 Object.defineProperty(atomEager, "lazy", {
     configurable: false,
@@ -132,7 +144,11 @@ export const atom = Object.freeze(atomEager) as AtomFactory
 export const selector = <Value>(
     read: (get: StateRead) => Value,
     options: SelectorOptions<Value> = {},
-): Selector<Value> => v1Domain.selector(read, options)
+): Selector<Value> => createDomainSelector(v1Domain, read, options)
+
+export const externalAtom = <Value>(
+    ...args: [source: ExternalSource<Value>, options?: ExternalAtomOptions]
+): ExternalAtom<Value> => createInternalExternalAtom(v1Domain, ...args)
 
 export function collection<
     Key extends CollectionKey,
@@ -199,7 +215,10 @@ const defineFamily = (
         member =>
             markReacquirableDefinitionState(
                 v1Domain,
-                member as InternalAtom<unknown> | InternalSelector<unknown>,
+                member as
+                    | InternalAtom<unknown>
+                    | InternalSelector<unknown>
+                    | InternalExternalAtom<unknown>,
             ),
         () => assertDefinitionFamilyCallAllowed(v1Domain),
     )
@@ -211,7 +230,7 @@ export function store(): Store {
     if (arguments.length !== 0) {
         throw new TypeError("store() accepts no arguments")
     }
-    return v1Domain.createStoreTree()
+    return createDomainStore(v1Domain)
 }
 
 export {
@@ -238,3 +257,13 @@ export {
 }
 
 export { SelectorCircularDependencyError } from "./v1-internal/selector-evaluator/errors"
+
+export {
+    DormantExternalReadError,
+    ExternalSourceDeliveryLimitError,
+    ExternalSourceNonConvergenceError,
+    ExternalSourceOperationError,
+    InvalidExternalCleanupError,
+    InvalidSynchronousExternalSnapshotError,
+    ServerSnapshotUnavailableError,
+} from "./v1-internal/committed-store-tree/external-atom"

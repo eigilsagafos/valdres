@@ -1332,7 +1332,10 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         prefixProofSessionPublications = sessionPublicationsAfterServe
 
         if (served.outcome.kind === "control-error") {
-            session.latchControlFault(served.outcome.error)
+            session.latchControlFault(
+                served.outcome.error,
+                served.outcome.origin,
+            )
             const fault = session.getControlFault()
             if (fault.kind === "fault") throw fault.error
             throw served.outcome.error
@@ -1372,7 +1375,10 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             return makeProposal(
                 selector,
                 host.createOutcomeToken(),
-                { kind: "control-error", error: controlFault.error },
+                {
+                    ...controlFault,
+                    kind: "control-error",
+                },
                 dependencies,
             )
         }
@@ -1413,8 +1419,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 selector,
                 host.createOutcomeToken(),
                 {
+                    ...postResultControlFault,
                     kind: "control-error",
-                    error: postResultControlFault.error,
                 },
                 dependencies,
             )
@@ -1466,8 +1472,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                     selector,
                     host.createOutcomeToken(),
                     {
+                        ...comparatorControlFault,
                         kind: "control-error",
-                        error: comparatorControlFault.error,
                     },
                     dependencies,
                 )
@@ -1514,8 +1520,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                     selector,
                     host.createOutcomeToken(),
                     {
+                        ...postComparatorControlFault,
                         kind: "control-error",
-                        error: postComparatorControlFault.error,
                     },
                     dependencies,
                 )

@@ -303,12 +303,92 @@ assert.throws(() => foreignStore.get(firstPresence), isRuntimeMismatch)
 foreignAdapter.assertStore(foreignStore)
 assert.equal(foreignAdapter.read(foreignStore, foreignCount), 1)
 
+const externalTarget = core.store()
+const externalChild = externalTarget.scope("external-capture")
+const externalOwned = core.atom(0)
+let externalValue = 0, externalSamples = 0, externalServerSamples = 0
+let externalAttachments = 0, externalCleanups = 0, invalidateExternal
+const externalSource = {
+    getSnapshot() { externalSamples++; return externalValue },
+    getServerSnapshot() { externalServerSamples++; return -1 },
+    subscribe(invalidate) {
+        externalAttachments++
+        invalidateExternal = invalidate
+        return () => { externalCleanups++ }
+    },
+}
+const external = core.externalAtom(externalSource, { name: "packed-external" })
+assert.equal(external.kind, "external")
+assert.equal(Object.isFrozen(external), true)
+assert.notEqual(core.externalAtom(externalSource), external)
+assert.equal(Object.isFrozen(externalSource), false)
+const externalTwice = core.selector(get => get(external) + get(external))
+assert.equal(adapter.readHydrationSnapshot(externalTarget, externalTwice), -2)
+assert.deepEqual([externalSamples, externalServerSamples, externalAttachments], [0, 1, 0])
+assert.equal(externalTarget.get(external), 0)
+externalValue = 1
+const samplesBeforeCapture = externalSamples
+externalTarget.txn(transaction => {
+    assert.equal(transaction.get(external), 1)
+    externalValue = 2
+    transaction.set(externalOwned, 1)
+    assert.equal(transaction.get(externalTwice), 2)
+    assert.equal(transaction.scope(externalChild).get(external), 1)
+})
+assert.equal(externalSamples, samplesBeforeCapture + 1)
+assert.equal(externalTarget.get(external), 2)
+const seenExternal = []
+const stopExternal = externalTarget.sub(external, () => seenExternal.push(externalTarget.get(external)))
+assert.equal(externalAttachments, 1)
+const retainedSamples = externalSamples
+externalValue = 3
+assert.equal(externalTarget.get(external), 2)
+assert.equal(externalSamples, retainedSamples)
+invalidateExternal()
+assert.deepEqual(seenExternal, [3])
+const repeatedNotification = new Error("packed repeated external callback")
+const stopFailureA = externalTarget.sub(external, () => { throw repeatedNotification })
+const stopFailureB = externalTarget.sub(external, () => { throw repeatedNotification })
+externalValue = 4
+assert.throws(invalidateExternal, error => {
+    assert.ok(error instanceof core.SubscriberNotificationError)
+    assert.deepEqual(error.causes, [repeatedNotification, repeatedNotification])
+    assert.equal(error.source, "external-invalidation")
+    assert.equal(Object.isFrozen(error), true)
+    assert.equal(Object.isFrozen(error.causes), true)
+    return true
+})
+stopFailureA(); stopFailureB(); stopExternal(); stopExternal()
+assert.equal(externalCleanups, 1)
+const staleSamples = externalSamples
+invalidateExternal()
+assert.equal(externalSamples, staleSamples)
+const externalMembers = core.family(key => core.externalAtom({
+    getSnapshot: () => key.length,
+    subscribe: () => () => {},
+}))
+assert.equal(externalMembers("packed"), externalMembers("packed"))
+assert.equal(externalTarget.get(externalMembers("packed")), 6)
+assert.throws(() => externalTarget.set(external, 1), TypeError)
+assert.throws(() => core.externalAtom(externalSource, { equal: Object.is }), TypeError)
+let foreignExternalSamples = 0
+const foreignExternal = foreignCore.externalAtom({
+    getSnapshot() { foreignExternalSamples++; return 1 },
+    subscribe: () => () => {},
+})
+assert.throws(() => externalTarget.get(foreignExternal), isRuntimeMismatch)
+assert.throws(() => externalTarget.sub(foreignExternal, () => {}), isRuntimeMismatch)
+assert.throws(() => adapter.readHydrationSnapshot(externalTarget, foreignExternal), isRuntimeMismatch)
+assert.equal(foreignExternalSamples, 0)
+externalTarget.dispose()
+
 console.log(JSON.stringify({
     runtime: typeof Bun === "undefined" ? "node" : "bun",
     sharedRootAdapterDomain: true,
     crossCopyRejected: true,
     familyIdentity: true,
     collectionLifecycle: true,
+    externalLifecycleCaptureAndServer: true,
 }))
 `
 
@@ -629,6 +709,248 @@ console.log(JSON.stringify({
 }))
 `
 
+const externalReactProbe = String.raw`
+import { strict as assert } from "node:assert"
+import { GlobalRegistrator } from "@happy-dom/global-registrator"
+import {
+    atom, externalAtom, selector, store,
+    InvalidSynchronousExternalSnapshotError, ServerSnapshotUnavailableError,
+} from "valdres"
+import { createInspectableStore } from "valdres/inspect"
+
+GlobalRegistrator.register({ url: "https://external.valdres.test/" })
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+const [React, { renderToString }, { createRoot, hydrateRoot }, ordinary, { createInspectableReact }] =
+    await Promise.all([
+        import("react"), import("react-dom/server"), import("react-dom/client"),
+        import("valdres-react"), import("valdres-react/inspect"),
+    ])
+const { act, createElement: h, StrictMode, Suspense, Component } = React
+assert.equal(React.version.startsWith(process.env.EXPECTED_REACT_MAJOR + "."), true)
+const thrown = operation => {
+    try { operation() } catch (error) { return error }
+    throw new Error("Expected a synchronous error")
+}
+const sourceProbe = (liveValue, serverValue) => {
+    let live = liveValue
+    const listeners = new Set(), invalidators = []
+    const counts = { live: 0, server: 0, subscribe: 0, cleanup: 0, maxActive: 0 }
+    const state = externalAtom({
+        getSnapshot() { counts.live++; return live },
+        getServerSnapshot() { counts.server++; return serverValue },
+        subscribe(invalidate) {
+            counts.subscribe++
+            listeners.add(invalidate)
+            invalidators.push(invalidate)
+            counts.maxActive = Math.max(counts.maxActive, listeners.size)
+            return () => { counts.cleanup++; listeners.delete(invalidate) }
+        },
+    })
+    return { state, counts, listeners, invalidators, publish(value) {
+        live = value
+        for (const invalidate of [...listeners]) invalidate()
+    } }
+}
+class ErrorBoundary extends Component {
+    state = { error: undefined }
+    static getDerivedStateFromError(error) { return { error } }
+    componentDidCatch(error) { this.props.caught(error) }
+    render() { return this.state.error === undefined ? this.props.children : h("i", null, "caught-error") }
+}
+
+const results = []
+try {
+    for (const mode of ["ordinary", "inspect"]) {
+        const core = mode === "inspect" ? createInspectableStore() : undefined
+        const target = core?.store ?? store()
+        const binding = core === undefined ? ordinary : createInspectableReact(core)
+        const Boundary = binding.Provider
+        const read = binding.useValue
+        const wrap = (child, selected = target) => h(Boundary, { store: selected }, child)
+
+        // Use the real DOM hydration path with intentionally different snapshots.
+        const p = sourceProbe({ value: 9 }, { value: 4 })
+        const rendered = []
+        const View = () => {
+            const value = read(p.state)
+            rendered.push(value.value)
+            return h("output", null, value.value)
+        }
+        const tree = wrap(h(View))
+        const container = document.createElement("div")
+        container.innerHTML = renderToString(tree)
+        document.body.append(container)
+        assert.equal(container.textContent, "4")
+        assert.deepEqual([p.counts.live, p.counts.server, p.counts.subscribe], [0, 1, 0])
+        rendered.length = 0
+        const recoverable = []
+        let hydrated
+        await act(async () => {
+            hydrated = hydrateRoot(container, tree, { onRecoverableError: error => recoverable.push(error) })
+        })
+        assert.deepEqual(recoverable, [])
+        assert.equal(rendered[0], 4)
+        assert.equal(rendered.at(-1), 9)
+        assert.equal(container.textContent, "9")
+        assert.equal(p.counts.server, 2)
+        assert.equal(p.listeners.size, 1)
+        await act(async () => p.publish({ value: 12 }))
+        assert.equal(container.textContent, "12")
+        assert.equal(p.counts.server, 2)
+        await act(async () => hydrated.unmount())
+        assert.equal(p.listeners.size, 0)
+        assert.equal(p.counts.cleanup, p.counts.subscribe)
+        container.remove()
+
+        // StrictMode must replay attachment cleanly; both kinds of rebind use
+        // the actual hook and source generations, without patched subscriptions.
+        const a = sourceProbe(10, -10), b = sourceProbe(30, -30)
+        const offset = atom(1)
+        const childStore = target.scope("external-react-child")
+        childStore.set(offset, 2)
+        const stateA = selector(get => get(offset) + get(a.state))
+        const stateB = selector(get => get(offset) + get(b.state))
+        const reboundContainer = document.createElement("div")
+        document.body.append(reboundContainer)
+        const rebound = createRoot(reboundContainer)
+        const Rebound = ({ state, selected }) => h("output", null, read(state, selected))
+        const renderBound = (state, selected) => h(StrictMode, null, wrap(h(Rebound, { state, selected }), selected))
+        await act(async () => rebound.render(renderBound(stateA, target)))
+        assert.equal(reboundContainer.textContent, "11")
+        assert.equal(a.listeners.size, 1)
+        assert.ok(a.counts.subscribe >= 2, "StrictMode must replay source attachment")
+        assert.ok(a.counts.cleanup >= 1)
+        assert.equal(a.counts.maxActive, 1)
+        const staleA = a.invalidators[0]
+        const beforeStale = a.counts.live
+        staleA()
+        assert.equal(a.counts.live, beforeStale)
+        await act(async () => rebound.render(renderBound(stateB, target)))
+        assert.equal(reboundContainer.textContent, "31")
+        assert.equal(a.listeners.size, 0)
+        assert.equal(b.listeners.size, 1)
+        await act(async () => rebound.render(renderBound(stateB, childStore)))
+        assert.equal(reboundContainer.textContent, "32")
+        assert.equal(b.listeners.size, 1)
+        await act(async () => b.publish(40))
+        assert.equal(reboundContainer.textContent, "42")
+        assert.deepEqual([a.counts.server, b.counts.server], [0, 0])
+        await act(async () => rebound.unmount())
+        assert.equal(a.counts.cleanup, a.counts.subscribe)
+        assert.equal(b.counts.cleanup, b.counts.subscribe)
+        assert.equal(b.listeners.size, 0)
+        reboundContainer.remove()
+
+        // A missing server reader remains host-fatal even if a getter catches it.
+        let missingLiveReads = 0
+        const missing = externalAtom({
+            getSnapshot() { missingLiveReads++; return 1 },
+            subscribe() { throw new Error("SSR subscribed a missing source") },
+        })
+        const middle = selector(get => { try { return get(missing) } catch { return -1 } })
+        const requested = selector(get => get(middle))
+        const Missing = () => h("output", null, read(requested))
+        const missingError = thrown(() => renderToString(wrap(h(Missing))))
+        assert.ok(missingError instanceof ServerSnapshotUnavailableError)
+        assert.deepEqual(missingError.dependencyPath, [requested, middle, missing])
+        assert.equal(Object.isFrozen(missingError), true)
+        assert.equal(Object.isFrozen(missingError.dependencyPath), true)
+        assert.equal(missingLiveReads, 0)
+
+        for (const throws of [false, true]) {
+            let serverSamples = 0, serverContainments = 0
+            const serverThenable = { then() { serverContainments++ } }
+            const invalidServer = externalAtom({
+                getSnapshot: () => 1,
+                getServerSnapshot() {
+                    serverSamples++
+                    if (throws) throw serverThenable
+                    return serverThenable
+                },
+                subscribe() { throw new Error("SSR attached a thenable source") },
+            })
+            const InvalidServer = () => h("output", null, read(invalidServer))
+            const serverError = thrown(() => renderToString(wrap(h(InvalidServer))))
+            assert.ok(serverError instanceof InvalidSynchronousExternalSnapshotError)
+            assert.equal(serverError.code, "VALDRES_INVALID_SYNCHRONOUS_EXTERNAL_SNAPSHOT")
+            assert.equal(Object.isFrozen(serverError), true)
+            assert.deepEqual([serverSamples, serverContainments], [1, 1])
+
+            let liveSamples = 0, liveContainments = 0
+            const liveThenable = { then() { liveContainments++ } }
+            const invalidLive = externalAtom({
+                getSnapshot() {
+                    liveSamples++
+                    if (throws) throw liveThenable
+                    return liveThenable
+                },
+                subscribe: () => () => {},
+            })
+            const InvalidLive = () => h("output", null, read(invalidLive))
+            const invalidContainer = document.createElement("div")
+            document.body.append(invalidContainer)
+            const invalidRoot = createRoot(invalidContainer)
+            const caught = []
+            const originalConsoleError = console.error
+            try {
+                console.error = () => {}
+                await act(async () => invalidRoot.render(wrap(h(ErrorBoundary, { caught: error => caught.push(error) }, h(Suspense, { fallback: h("i", null, "pending") }, h(InvalidLive))))))
+                assert.equal(invalidContainer.textContent, "caught-error")
+                assert.ok(caught.length > 0)
+                assert.ok(caught.every(error => error instanceof InvalidSynchronousExternalSnapshotError))
+                assert.ok(liveSamples > 0)
+                assert.equal(liveContainments, liveSamples)
+            } finally {
+                console.error = originalConsoleError
+                await act(async () => invalidRoot.unmount())
+                invalidContainer.remove()
+            }
+        }
+        target.dispose()
+        results.push({ mode, hydration: true, strictMode: true, stateRebind: true, storeRebind: true, missingPath: true, synchronousThenables: true })
+    }
+} finally {
+    await GlobalRegistrator.unregister()
+}
+console.log(JSON.stringify({ runtime: typeof Bun === "undefined" ? "node" : "bun", react: React.version, external: results }))
+`
+
+const standaloneExternalEntry = String.raw`
+import { externalAtom, store } from "valdres"
+const check = (actual, expected, label) => {
+    if (!Object.is(actual, expected)) throw new Error(label + ": " + actual + " !== " + expected)
+}
+export const externalSmoke = () => {
+    let value = 1, samples = 0, serverSamples = 0, attaches = 0, cleanups = 0, invalidate
+    const source = externalAtom({
+        getSnapshot() { samples++; return value },
+        getServerSnapshot() { serverSamples++; return 0 },
+        subscribe(listener) { attaches++; invalidate = listener; return () => { cleanups++ } },
+    })
+    const target = store()
+    check(target.get(source), 1, "dormant read")
+    let notified = 0
+    const stop = target.sub(source, () => { notified++; check(target.get(source), value, "settled notification") })
+    check(attaches, 1, "one source attachment")
+    const before = samples
+    value = 2
+    check(target.get(source), 1, "retained read is installed")
+    check(samples, before, "retained reads do not poll")
+    invalidate()
+    check(target.get(source), 2, "synchronous invalidation")
+    check(notified, 1, "one notification")
+    stop(); stop()
+    check(cleanups, 1, "idempotent release")
+    const after = samples
+    invalidate()
+    check(samples, after, "stale callback is inert")
+    check(serverSamples, 0, "ordinary consumer does not sample server state")
+    target.dispose()
+    return { externalLifecycle: true, reactInstalled: false, serverSamples }
+}
+console.log(JSON.stringify(externalSmoke()))
+`
+
 const reactInspectProductionProbe = String.raw`
 import { strict as assert } from "node:assert"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
@@ -706,6 +1028,8 @@ const typeProbe = String.raw`
 import {
     atom,
     collection,
+    externalAtom,
+    ExternalSourceOperationError,
     family,
     presence,
     selector,
@@ -718,10 +1042,23 @@ import {
     type CollectionRow,
     type CollectionValue,
     type FamilyKey,
+    type ExternalSource,
+    type ExternalAtom,
+    type ExternalAtomOptions,
     type Selector,
     type State,
     type Store,
 } from "valdres"
+export type ExternalFailures = ConstructorParameters<typeof ExternalSourceOperationError>[0]
+export const externalFailures: ExternalFailures = [
+    { cause: new Error("application"), phase: "admitting", source: "external-startup", committed: false },
+] as const
+export const externalOperationError: ExternalSourceOperationError = new ExternalSourceOperationError(externalFailures)
+// @ts-expect-error Operation failures must be nonempty.
+new ExternalSourceOperationError([])
+// @ts-expect-error A possibly-empty array cannot satisfy the public constructor.
+new ExternalSourceOperationError([] as readonly ExternalFailures[number][])
+
 import {
     Provider,
     useAtom,
@@ -760,6 +1097,25 @@ void indexedRows
 const count = atom(0)
 const doubled = selector(get => get(count) * 2)
 const target: Store = store()
+export const packedExternalSource: ExternalSource<number> = {
+    getSnapshot: () => 1,
+    getServerSnapshot: () => 0,
+    subscribe: () => () => {},
+}
+export const packedExternalOptions: ExternalAtomOptions = { name: "packed external" }
+export const packedExternal = externalAtom(packedExternalSource, packedExternalOptions)
+export const definePackedExternal = <Value>(source: ExternalSource<Value>, options?: ExternalAtomOptions) =>
+    externalAtom(source, options)
+export const packedExternalFamily = family((key: string) => externalAtom({
+    getSnapshot: () => key.length,
+    subscribe: () => () => {},
+}))
+export const packedExternalMember: ExternalAtom<number> = packedExternalFamily("packed")
+const externalState: State<number> = packedExternal
+const externalKind: "external" = packedExternal.kind
+const externalValue: number = useValue(externalState, target)
+void externalKind
+void externalValue
 const state: State<number> = doubled
 const update: AtomUpdater<number> = current => current + 1
 
@@ -892,6 +1248,34 @@ target.delete(packedSessionRow)
 
 // @ts-expect-error Selectors are read-only and cannot be passed to Atom setters.
 useSetAtom(doubled, target)
+// @ts-expect-error ExternalAtom cannot enter any writable Store lane.
+target.set(packedExternal, 2)
+// @ts-expect-error ExternalAtom cannot enter updater writes.
+target.update(packedExternal, (value: number) => value + 1)
+// @ts-expect-error ExternalAtom has no reset behavior.
+target.reset(packedExternal)
+// @ts-expect-error ExternalAtom is not a collection row.
+target.delete(packedExternal)
+// @ts-expect-error Writable React hooks remain Atom-only.
+useAtom(packedExternal, target)
+// @ts-expect-error Setter hooks remain Atom-only.
+useSetAtom(packedExternal, target)
+// @ts-expect-error Updater hooks remain Atom-only.
+useUpdateAtom(packedExternal, target)
+// @ts-expect-error Reset hooks remain Atom-only.
+useResetAtom(packedExternal, target)
+// @ts-expect-error ExternalAtom is invariant in its value coordinate.
+const externalUnknown: ExternalAtom<unknown> = packedExternal
+// @ts-expect-error ExternalAtomOptions is closed.
+const invalidExternalOptions: ExternalAtomOptions = { equal: Object.is }
+target.txn(transaction => {
+    const snapshot: number = transaction.get(packedExternal)
+    void snapshot
+    // @ts-expect-error Transaction writes remain Atom-only.
+    transaction.set(packedExternal, 2)
+})
+void externalUnknown
+void invalidExternalOptions
 // @ts-expect-error Exact setters do not interpret functions as updater syntax.
 set(current => current + 1)
 // @ts-expect-error Structured family arguments require an explicit encoder.
@@ -1262,6 +1646,110 @@ try {
     )
     console.log(sizeCertification.stdout.trim())
 
+    const standaloneDirectory = join(workspace, "external-core-only")
+    await mkdir(standaloneDirectory, { recursive: true })
+    await writeJson(join(standaloneDirectory, "package.json"), {
+        name: "valdres-packed-external-core-only-probe",
+        private: true,
+        type: "module",
+    })
+    run(
+        "install only the packed core for the standalone ExternalAtom consumer",
+        [
+            "npm",
+            "install",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund",
+            "--no-package-lock",
+            coreTarball,
+        ],
+        standaloneDirectory,
+        { npm_config_loglevel: "error" },
+    )
+    for (const name of ["react", "react-dom", "valdres-react"]) {
+        assert.equal(
+            await Bun.file(
+                join(standaloneDirectory, "node_modules", name, "package.json"),
+            ).exists(),
+            false,
+            `standalone ExternalAtom consumer must not install ${name}`,
+        )
+    }
+    await writeFile(
+        join(standaloneDirectory, "external-entry.mjs"),
+        standaloneExternalEntry,
+    )
+    for (const runtime of ["node", "bun"]) {
+        run(
+            `${runtime} standalone ExternalAtom lifecycle`,
+            [runtime, "external-entry.mjs"],
+            standaloneDirectory,
+        )
+    }
+    run(
+        "bundle standalone ExternalAtom without React, adapter, inspection, or hydration implementation",
+        [
+            "node",
+            join(rootDirectory, "node_modules", "esbuild", "bin", "esbuild"),
+            "external-entry.mjs",
+            "--bundle",
+            "--minify",
+            "--platform=browser",
+            "--format=esm",
+            "--outfile=external-bundle.mjs",
+            "--metafile=external-meta.json",
+            "--log-level=warning",
+        ],
+        standaloneDirectory,
+    )
+    const standaloneInputs = Object.keys(
+        (
+            JSON.parse(
+                await readFile(
+                    join(standaloneDirectory, "external-meta.json"),
+                    "utf8",
+                ),
+            ) as { inputs: Record<string, unknown> }
+        ).inputs,
+    ).map(path => path.replaceAll("\\", "/"))
+    assert.equal(
+        standaloneInputs.some(
+            path =>
+                /\/node_modules\/(?:react(?:-dom)?|valdres-react)\//.test(
+                    "/" + path,
+                ) ||
+                path.includes("adapter-internals/") ||
+                path.endsWith("/dist/inspect.js"),
+        ),
+        false,
+        "standalone ExternalAtom bundle must not reach unrelated entry points",
+    )
+    const standaloneJavaScript = await readFile(
+        join(standaloneDirectory, "external-bundle.mjs"),
+        "utf8",
+    )
+    for (const sentinel of [
+        "useSyncExternalStore",
+        "react.transitional.element",
+        "readHydrationSnapshot requires a valid State",
+        "valdres.inspect",
+        "valdres.react.inspect",
+    ]) {
+        assert.equal(
+            standaloneJavaScript.includes(sentinel),
+            false,
+            `standalone ExternalAtom bundle retained ${sentinel}`,
+        )
+    }
+    for (const runtime of ["node", "bun"]) {
+        run(
+            `${runtime} bundled standalone ExternalAtom lifecycle`,
+            [runtime, "external-bundle.mjs"],
+            standaloneDirectory,
+        )
+    }
+
     for (const react of reactMatrix) {
         const consumerDirectory = join(workspace, `react-${react.major}`)
         await mkdir(consumerDirectory, { recursive: true })
@@ -1356,6 +1844,10 @@ try {
             writeFile(join(consumerDirectory, "core-probe.mjs"), coreProbe),
             writeFile(join(consumerDirectory, "react-probe.mjs"), reactProbe),
             writeFile(
+                join(consumerDirectory, "external-react-probe.mjs"),
+                externalReactProbe,
+            ),
+            writeFile(
                 join(consumerDirectory, "react-inspect-production-probe.mjs"),
                 reactInspectProductionProbe,
             ),
@@ -1419,6 +1911,14 @@ try {
                 NODE_ENV: "production",
             },
         )
+        for (const runtime of ["node", "bun"]) {
+            run(
+                `${runtime} React ${react.major} ExternalAtom hydration, StrictMode, and rebind probe`,
+                [runtime, "external-react-probe.mjs"],
+                consumerDirectory,
+                { EXPECTED_REACT_MAJOR: react.major, NODE_ENV: "development" },
+            )
+        }
 
         run(
             `TypeScript declaration emit with React ${react.major}`,
@@ -1438,10 +1938,16 @@ try {
         assert.match(emittedConsumerDeclaration, /richPackedSessions/)
         assert.match(emittedConsumerDeclaration, /defineDirectCollection/)
         assert.match(emittedConsumerDeclaration, /defineRichCollection/)
+        assert.match(emittedConsumerDeclaration, /packedExternal/)
+        assert.match(emittedConsumerDeclaration, /definePackedExternal/)
+        assert.match(emittedConsumerDeclaration, /packedExternalFamily/)
+        assert.match(emittedConsumerDeclaration, /ExternalSource/)
+        assert.match(emittedConsumerDeclaration, /ExternalAtom/)
+        assert.match(emittedConsumerDeclaration, /ExternalAtomOptions/)
         assert.equal(
             emittedConsumerDeclaration.includes("v1-internal"),
             false,
-            "installed collection declarations must remain publicly nameable",
+            "installed collection and ExternalAtom declarations must remain publicly nameable",
         )
         run(
             `esbuild browser bundle with React ${react.major}`,

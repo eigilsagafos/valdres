@@ -1,3 +1,5 @@
+import { StoreTreeCounterId } from "./counter-ids"
+import type { ExternalTreePlane } from "./external-types"
 import type {
     SelectorComparisonBaseline,
     SelectorDependencySnapshot,
@@ -35,6 +37,22 @@ export type StoreScopeEvaluationStrategy = SelectorEvaluationStrategy & {
     readonly recordExtension?: StoreScopeExtensionRecorder
 }
 export type StoreTreeCounter =
+    | "liveSamples"
+    | "serverSamples"
+    | "transactionCaptures"
+    | "externalClosureVisits"
+    | "projectionPublications"
+    | "lifecycleEdgeVisits"
+    | "lifecycleRetains"
+    | "lifecycleReleases"
+    | "adapterSubscriptions"
+    | "adapterCleanups"
+    | "dirtyRounds"
+    | "dirtySamples"
+    | "thenableContainments"
+    | "deliveryEntries"
+    | "deliveryLimitHits"
+    | "nonConvergenceTerminations"
     | "sourceEpoch"
     | "routeVisits"
     | "deadRouteCompactions"
@@ -71,7 +89,9 @@ export type StoreTreeCounter =
     | "familyOwnerRetains"
     | "familyOwnerReleases"
 
-interface SelectorRecord {
+export interface SelectorRecord {
+    readonly lifecycleInClosure?: boolean
+    readonly dormantExternalInClosure?: boolean
     readonly served: ServedSelectorOutcome<OutcomeToken>
     readonly dependencies: readonly SelectorDependencySnapshot<
         AnyState,
@@ -109,6 +129,8 @@ export interface StoreScopeCoordinator {
         atom: AnyAtom,
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken>
+    readonly external: ExternalTreePlane | undefined
+    reachExternal(): ExternalTreePlane
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean
     prepareSelectorRead(
         scope: StoreScopeNode,
@@ -116,8 +138,13 @@ export interface StoreScopeCoordinator {
         session: SelectorEvaluationSession<AnyState>,
     ): void
     reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void
-    latchPropagationControlFault(error: unknown): void
-    recordCounter(counter: StoreTreeCounter, amount?: number): void
+    latchPropagationControlFault(
+        outcome: Extract<
+            ServedSelectorOutcome<OutcomeToken>["outcome"],
+            { kind: "control-error" }
+        >,
+    ): void
+    recordCounter(counter: StoreTreeCounterId, amount?: number): void
 }
 
 /**
@@ -226,7 +253,9 @@ export class StoreScopeNode
     readonly children: WeakHandleSet<StoreScopeNode>
     readonly namedChildren = new Map<string, StoreScopeNode>()
     atomOverrides = new WeakMap<AnyAtom, unknown>();
-    [REACQUIRABLE_ATOMS] = undefined as Set<AnyAtom> | undefined
+    declare [REACQUIRABLE_ATOMS]:
+        | (Set<AnyAtom> & { release(coordinator: StoreScopeCoordinator): void })
+        | undefined
 
     #atomViews = new WeakMap<AnyAtom, AtomViewRecord>()
     readonly #liveAtomViews: WeakHandleSet<AtomViewRecord>
@@ -290,8 +319,8 @@ export class StoreScopeNode
     getMaterializedServedOutcome(
         state: AnyState,
     ): ServedSelectorOutcome<OutcomeToken> | undefined {
-        const atomView = this.#atomViews.get(state as AnyAtom)
-        if (atomView !== undefined) return atomView.served
+        if (state.kind !== "selector")
+            return this.#atomViews.get(state as AnyAtom)?.served
         const selector = state as AnySelector
         const selectorRecord = this.#selectorRecords.get(selector)
         return selectorRecord !== undefined &&
@@ -321,7 +350,7 @@ export class StoreScopeNode
         this.#liveAtomViews.add(record)
         if (inheritedFrom !== undefined) {
             inheritedFrom.inheritingChildren.add(record)
-            this.coordinator.recordCounter("routeAdds")
+            this.coordinator.recordCounter(StoreTreeCounterId.routeAdds)
         }
         return record
     }
@@ -334,14 +363,14 @@ export class StoreScopeNode
         this.detachAtomView(record)
         record.inheritedFrom = inheritedFrom
         inheritedFrom.inheritingChildren.add(record)
-        this.coordinator.recordCounter("routeAdds")
+        this.coordinator.recordCounter(StoreTreeCounterId.routeAdds)
     }
 
     detachAtomView(record: AtomViewRecord): void {
         if (record.inheritedFrom === undefined) return
         record.inheritedFrom.inheritingChildren.delete(record)
         record.inheritedFrom = undefined
-        this.coordinator.recordCounter("routeRemoves")
+        this.coordinator.recordCounter(StoreTreeCounterId.routeRemoves)
     }
 
     updateAtomView(record: AtomViewRecord, outcome: DraftAtomOutcome): void {
@@ -373,6 +402,16 @@ export class StoreScopeNode
         return this.#selectorRecords.get(selector)?.dependencies
     }
 
+    externalRecord(node: AnyState): SelectorRecord | undefined {
+        return this.#selectorRecords.get(node as AnySelector)
+    }
+    replaceExternalRecord(node: AnyState, record: SelectorRecord): void {
+        this.#selectorRecords.set(node as AnySelector, record)
+    }
+    externalDependents(node: AnyState): WeakHandleSet<AnySelector> | undefined {
+        return this.#reverseEdges.get(node)
+    }
+
     markDependents(node: AnyState): void {
         this.#reverseEdges.get(node)?.forEach(selector => {
             if (this.coordinator.enqueueSelector(this, selector)) {
@@ -389,13 +428,7 @@ export class StoreScopeNode
         })
         this.#liveAtomViews.clear()
         this.atomOverrides = new WeakMap()
-        const retainedFamilyAtoms = this[REACQUIRABLE_ATOMS]?.size ?? 0
-        if (retainedFamilyAtoms > 0) {
-            this.coordinator.recordCounter(
-                "familyOwnerReleases",
-                retainedFamilyAtoms,
-            )
-        }
+        this[REACQUIRABLE_ATOMS]?.release(this.coordinator)
         this[REACQUIRABLE_ATOMS] = undefined
         this.#atomViews = new WeakMap()
         this.#selectorRecords = new WeakMap()
@@ -434,6 +467,10 @@ export class StoreScopeNode
 
         const definition = domain.selectors.get(node)
         if (definition === undefined) {
+            if (domain.externalAtoms?.has(node))
+                return this.coordinator
+                    .reachExternal()
+                    .serve(this, node, session)
             const served = domain[COLLECTION_KERNEL]?.scope(this, node)
             if (served !== undefined) {
                 return served as ServedSelectorOutcome<OutcomeToken>
@@ -442,6 +479,13 @@ export class StoreScopeNode
         }
         const selector = node as AnySelector
         let current = this.#selectorRecords.get(selector)
+        if (
+            current?.lifecycleInClosure &&
+            !this.#dirtySelectors.has(selector)
+        ) {
+            this.coordinator.external?.refresh(this, selector, session)
+            current = this.#selectorRecords.get(selector)
+        }
         if (current !== undefined && this.coordinator.postSourceApply) {
             this.coordinator.prepareSelectorRead(this, selector, session)
             current = this.#selectorRecords.get(selector)
@@ -455,7 +499,8 @@ export class StoreScopeNode
         )
         if (
             proposal.outcome.kind === "control-error" &&
-            !this.coordinator.postSourceApply
+            (!this.coordinator.postSourceApply ||
+                this.coordinator.external?.dormantPull === true)
         ) {
             throw proposal.outcome.error
         }
@@ -588,7 +633,7 @@ export class StoreScopeNode
             token: proposal.token,
             outcome: proposal.outcome,
         })
-        const record: SelectorRecord = Object.freeze({
+        let record: SelectorRecord = {
             served,
             dependencies: proposal.dependencies,
             lastSuccess:
@@ -598,7 +643,10 @@ export class StoreScopeNode
                           token: proposal.token,
                       })
                     : previous?.lastSuccess,
-        })
+        }
+        record =
+            this.coordinator.external?.selectorRecord(this, record, session) ??
+            Object.freeze(record)
 
         const topologyChanged = this.#replaceReverseEdges(
             selector,
@@ -616,6 +664,12 @@ export class StoreScopeNode
         this.#selectorGraphVersion++
         session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(selector, record)
+        this.coordinator.external?.publishedSelector(
+            this,
+            selector,
+            previous,
+            record,
+        )
         this.#dirtySelectors.delete(selector)
         if (addedSelectorEdges !== undefined) {
             this.#appendObservedSelectorEdgeAdditions(addedSelectorEdges)
@@ -630,10 +684,10 @@ export class StoreScopeNode
         }
         if (proposal.outcome.kind === "control-error") {
             this.coordinator.latchPropagationControlFault(
-                proposal.outcome.error,
+                record.served.outcome as typeof proposal.outcome,
             )
         }
-        return served
+        return record.served
     }
 
     #replaceReverseEdges(
@@ -738,7 +792,10 @@ export class StoreScopeNode
     #weakRoutes<Value extends object>(): WeakHandleSet<Value> {
         return new WeakHandleSet(
             this.coordinator.instrumented
-                ? () => this.coordinator.recordCounter("deadRouteCompactions")
+                ? () =>
+                      this.coordinator.recordCounter(
+                          StoreTreeCounterId.deadRouteCompactions,
+                      )
                 : undefined,
         )
     }

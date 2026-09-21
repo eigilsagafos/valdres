@@ -62,16 +62,57 @@ intents and present-to-present changes never reorder an existing member.
 ## Deliberately not implemented yet
 
 The Store/transaction `ReferenceModel` itself still has no selector cache or
-graph, and external sources, hydration, runtime-domain validation, callback
-quarantine, React, query grammar, production structural indexes, and the beta
-cache companion remain outside this slice. In particular, `EffectiveRowDelta` is
+graph. Runtime-domain validation, React, query grammar, production structural
+indexes, and the beta cache companion remain outside this slice. In particular, `EffectiveRowDelta` is
 a test-model observation, not a frozen production ABI. The separate
 `test/api-spikes/collection-operations` prototype consumes its canonical
 before/after semantics without adding another mutation or transaction engine;
 that prototype does not make this model depend on index code.
+
+## External-source protocol and model
+
+`external-protocol.ts` and `external-model.ts` add a separate source-independent
+external observation/lifecycle oracle. Definitions, scopes, errors, and source
+callbacks are symbolic; scripts remain replayable without JavaScript closures.
+It reuses tagged values and the selector oracle's Object.is equivalent, and
+imports no production runtime. Strong maps and scans deliberately differ from
+the planned weak routes and sparse production lifecycle plane.
+
+The model covers dormant and retained observations, scope-transparent projection
+identity, independent trees sharing a source, provisional attachment and mandatory
+catch-up, ordered bounded dirty drains, cleanup, disposal, transaction capture
+across scopes/generations, isolated server reads, and callback quarantine. A small
+expression vocabulary covers dynamic dependencies, equal-result topology changes,
+and caught faults; the existing selector oracle remains responsible for full
+selector error/cycle/comparator semantics. Symbolic errors are not public class or
+code approvals. Public decisions are pending in
+`docs/designs/external-atom-implementation.md`.
+
+`ExternalProtocolDriver` is the comparison seam for later unexported and packed
+runtime drivers. The current seeded direct-source differential campaign compares
+3,200 operations with an independent scalar specification. Adversarial tests pin
+trace order, sample/capture identities, rollback, partial-round exhaustion,
+cross-tree entry limits, and later retry. Production differential drivers, weak
+retention/GC, foreign-runtime ownership, full source capability matrices, React,
+and package certification remain later slices; this oracle does not certify them.
+
+The frozen counter vocabulary distinguishes samples, captures, publications,
+lifecycle operations, delivery, and containment. Oracle counters count logical
+events; its exhaustive scans are not production performance measurements. Drain
+and source-delivery numbers are internal engineering defaults, not public timing
+promises.
 
 Run:
 
 ```sh
 bun run --cwd packages/valdres test:v1-model
 ```
+
+External error/control outcomes and failure records carry a `space` tag alongside
+their readable `identity`. Source, generated invalid-snapshot, non-convergence,
+control, and model-error spaces are disjoint. Generated faults also carry a
+per-model `occurrence` number; equality compares the space, label, and occurrence.
+Fresh errors with the same label are distinct, while forwarding, memoization,
+and shared terminal publication preserve the allocated occurrence. Source symbols
+omit the occurrence and keep their caller-assigned identity. Deterministic counters
+and plain data preserve exact trace equality across JSON replay.

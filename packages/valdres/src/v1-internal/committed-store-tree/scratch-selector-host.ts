@@ -14,15 +14,16 @@ type ScratchToken = Readonly<{ id: number }>
 
 export type ResolvedScratchState<Node> =
     | Readonly<{ kind: "atom" }>
-    | Readonly<{ kind: "ext" }>
+    | Readonly<{ kind: "collection" | "external" }>
     | Readonly<{
           kind: "selector"
           definition: SelectorDefinition<Node>
       }>
 
-export type ScratchSourceKind = "atom" | "ext"
+export type ScratchSourceKind = "atom" | "collection" | "external"
 
 export interface ScratchSelectorBindings<Node> {
+    readonly trackPath?: boolean
     resolve(
         node: Node,
         session: SelectorEvaluationSession<Node>,
@@ -31,6 +32,7 @@ export interface ScratchSelectorBindings<Node> {
         source: Node,
         kind: ScratchSourceKind,
         session: SelectorEvaluationSession<Node>,
+        path?: readonly Node[],
     ): DraftAtomOutcome
     baseline(selector: Node): Readonly<{ value: unknown }> | undefined
     run<Result>(
@@ -73,6 +75,7 @@ export class ScratchSelectorHost<Node extends object>
     #nextToken = 1
     #selectorGraphVersion = 0
     readonly #evaluate: SelectorEvaluationStrategy
+    readonly #path: Node[] | undefined
 
     constructor(
         bindings: ScratchSelectorBindings<Node>,
@@ -82,6 +85,7 @@ export class ScratchSelectorHost<Node extends object>
         this.#bindings = bindings
         this.#generation = generation
         this.#evaluate = evaluate
+        this.#path = bindings.trackPath ? [] : undefined
     }
 
     readSelector<Value>(selector: Node): Value {
@@ -111,6 +115,19 @@ export class ScratchSelectorHost<Node extends object>
         node: Node,
         session: SelectorEvaluationSession<Node>,
     ): ServedSelectorOutcome<ScratchToken> {
+        if (this.#path === undefined) return this.#serve(node, session)
+        this.#path.push(node)
+        try {
+            return this.#serve(node, session)
+        } finally {
+            this.#path.pop()
+        }
+    }
+
+    #serve(
+        node: Node,
+        session: SelectorEvaluationSession<Node>,
+    ): ServedSelectorOutcome<ScratchToken> {
         const bindings = this.#activeBindings()
         const resolved = bindings.resolve(node, session)
         if (resolved.kind !== "selector") {
@@ -118,7 +135,12 @@ export class ScratchSelectorHost<Node extends object>
             if (current !== undefined) return current
             const served = Object.freeze({
                 token: this.createOutcomeToken(),
-                outcome: bindings.read(node, resolved.kind, session),
+                outcome: bindings.read(
+                    node,
+                    resolved.kind,
+                    session,
+                    this.#path,
+                ),
             })
             this.#sourceRecords.set(node, served)
             return served

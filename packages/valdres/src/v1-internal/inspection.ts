@@ -1,3 +1,4 @@
+import { ExternalInspectionEvent } from "./committed-store-tree/external-inspection-protocol"
 import {
     COLLECTION_INDEX_MATERIALIZATIONS,
     COLLECTION_INDEX_ROUTE_VISITS,
@@ -113,6 +114,7 @@ export type InspectionReferenceKind =
     | "state"
     | "atom"
     | "selector"
+    | "external"
     | "collection-row"
     | "collection"
     | "scratch-host"
@@ -253,6 +255,22 @@ export interface InspectionCycleTotals {
 }
 
 export interface InspectionWorkTotals {
+    readonly externalLiveSamples: number
+    readonly externalServerSamples: number
+    readonly externalTransactionCaptures: number
+    readonly externalClosureVisits: number
+    readonly externalProjectionPublications: number
+    readonly externalLifecycleEdgeVisits: number
+    readonly externalAdapterSubscriptions: number
+    readonly externalAdapterCleanups: number
+    readonly externalDirtyRounds: number
+    readonly externalDirtySamples: number
+    readonly externalThenableContainments: number
+    readonly externalDeliveryEntries: number
+    readonly externalDeliveryLimitHits: number
+    readonly externalNonConvergenceTerminations: number
+    readonly externalLifecycleRetains: number
+    readonly externalLifecycleReleases: number
     readonly selectorEvaluations: number
     readonly proposedTopologyChanges: number
     readonly proposedTopologyIdentical: number
@@ -463,6 +481,20 @@ export interface CycleSearchInspectionDetail extends InspectionDetailLinks {
 }
 
 export type InspectionDetail =
+    | (InspectionDetailLinks &
+          Readonly<{
+              type: "external-source"
+              action:
+                  | "sample-live"
+                  | "attach"
+                  | "detach"
+                  | "invalidate"
+                  | "publish"
+                  | "drain"
+                  | "nonconvergence"
+                  | "delivery-limit"
+              state?: InspectionReference
+          }>)
     | IntentInspectionDetail
     | CollectionIntentInspectionDetail
     | CollectionEffectiveDeltaInspectionDetail
@@ -578,6 +610,7 @@ export interface InternalInspectionIntervalFinish {
 export interface InternalInspectionDetailInput {
     readonly type:
         | "intent"
+        | "external-source"
         | "collection-intent"
         | "collection-effective-delta"
         | "collection-membership"
@@ -769,6 +802,22 @@ interface MutableCycleTotals {
 }
 
 interface MutableWorkTotals {
+    externalLiveSamples: number
+    externalServerSamples: number
+    externalTransactionCaptures: number
+    externalClosureVisits: number
+    externalProjectionPublications: number
+    externalLifecycleEdgeVisits: number
+    externalAdapterSubscriptions: number
+    externalAdapterCleanups: number
+    externalDirtyRounds: number
+    externalDirtySamples: number
+    externalThenableContainments: number
+    externalDeliveryEntries: number
+    externalDeliveryLimitHits: number
+    externalNonConvergenceTerminations: number
+    externalLifecycleRetains: number
+    externalLifecycleReleases: number
     selectorEvaluations: number
     proposedTopologyChanges: number
     proposedTopologyIdentical: number
@@ -821,6 +870,22 @@ interface ActiveInterval {
 }
 
 type CounterSnapshot = Readonly<{
+    externalLiveSamples: number
+    externalServerSamples: number
+    externalTransactionCaptures: number
+    externalClosureVisits: number
+    externalProjectionPublications: number
+    externalLifecycleEdgeVisits: number
+    externalAdapterSubscriptions: number
+    externalAdapterCleanups: number
+    externalDirtyRounds: number
+    externalDirtySamples: number
+    externalThenableContainments: number
+    externalDeliveryEntries: number
+    externalDeliveryLimitHits: number
+    externalNonConvergenceTerminations: number
+    externalLifecycleRetains: number
+    externalLifecycleReleases: number
     sourceEpoch: number
     fallbackPublications: number
     transientSelectorHostsCreated: number
@@ -1250,6 +1315,22 @@ const createNewEdgeProofDiagnostics = (
 }
 
 const createMutableTotals = (): MutableWorkTotals => ({
+    externalLiveSamples: 0,
+    externalServerSamples: 0,
+    externalTransactionCaptures: 0,
+    externalClosureVisits: 0,
+    externalProjectionPublications: 0,
+    externalLifecycleEdgeVisits: 0,
+    externalAdapterSubscriptions: 0,
+    externalAdapterCleanups: 0,
+    externalDirtyRounds: 0,
+    externalDirtySamples: 0,
+    externalThenableContainments: 0,
+    externalDeliveryEntries: 0,
+    externalDeliveryLimitHits: 0,
+    externalNonConvergenceTerminations: 0,
+    externalLifecycleRetains: 0,
+    externalLifecycleReleases: 0,
     selectorEvaluations: 0,
     proposedTopologyChanges: 0,
     proposedTopologyIdentical: 0,
@@ -1330,6 +1411,23 @@ const createMutableTotals = (): MutableWorkTotals => ({
 
 const freezeTotals = (totals: MutableWorkTotals): InspectionWorkTotals =>
     Object.freeze({
+        externalLiveSamples: totals.externalLiveSamples,
+        externalServerSamples: totals.externalServerSamples,
+        externalTransactionCaptures: totals.externalTransactionCaptures,
+        externalClosureVisits: totals.externalClosureVisits,
+        externalProjectionPublications: totals.externalProjectionPublications,
+        externalLifecycleEdgeVisits: totals.externalLifecycleEdgeVisits,
+        externalAdapterSubscriptions: totals.externalAdapterSubscriptions,
+        externalAdapterCleanups: totals.externalAdapterCleanups,
+        externalDirtyRounds: totals.externalDirtyRounds,
+        externalDirtySamples: totals.externalDirtySamples,
+        externalThenableContainments: totals.externalThenableContainments,
+        externalDeliveryEntries: totals.externalDeliveryEntries,
+        externalDeliveryLimitHits: totals.externalDeliveryLimitHits,
+        externalNonConvergenceTerminations:
+            totals.externalNonConvergenceTerminations,
+        externalLifecycleRetains: totals.externalLifecycleRetains,
+        externalLifecycleReleases: totals.externalLifecycleReleases,
         selectorEvaluations: totals.selectorEvaluations,
         proposedTopologyChanges: totals.proposedTopologyChanges,
         proposedTopologyIdentical: totals.proposedTopologyIdentical,
@@ -1630,10 +1728,13 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             }
             const atom = domain.atoms.get(stateTarget)
             const selector = domain.selectors.get(stateTarget)
+            const external = domain.externalAtoms?.get(stateTarget)
             let referenceKind: InspectionReferenceKind | undefined =
                 atom === undefined
                     ? selector === undefined
-                        ? undefined
+                        ? external === undefined
+                            ? undefined
+                            : "external"
                         : "selector"
                     : "atom"
             if (
@@ -1661,7 +1762,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                     ? domain[COLLECTION_KERNEL]?.diagnosticName(stateTarget)
                     : undefined
             const definitionName =
-                atom?.name ?? selector?.name ?? collectionName
+                atom?.name ?? selector?.name ?? external?.name ?? collectionName
             stateReference = this.reference(
                 stateTarget,
                 referenceKind,
@@ -2186,6 +2287,39 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         third?: unknown,
     ): void {
         if (this.#fault !== undefined) return
+        if (
+            code >= ExternalInspectionEvent.sample &&
+            code <= ExternalInspectionEvent.deliveryLimit
+        ) {
+            const action = (
+                [
+                    "sample-live",
+                    "attach",
+                    "detach",
+                    "invalidate",
+                    "publish",
+                    "drain",
+                    "nonconvergence",
+                    "delivery-limit",
+                ] as const
+            )[code - ExternalInspectionEvent.sample]!
+            const state =
+                first === undefined
+                    ? undefined
+                    : this.reference(
+                          first as object,
+                          "external",
+                          typeof second === "string" ? second : undefined,
+                      )
+            this.record({
+                type: "external-source",
+                fields: {
+                    action,
+                    ...(state === undefined ? {} : { state }),
+                },
+            })
+            return
+        }
         const counterName = COLLECTION_COUNTER_NAME_BY_CODE[code]
         if (counterName !== undefined) {
             const amount = first === undefined ? 1 : first
@@ -2862,6 +2996,24 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const read = (counter: StoreTreeCounter): number =>
             this.#instrumentation.read(counter)
         return {
+            externalLiveSamples: read("liveSamples"),
+            externalServerSamples: read("serverSamples"),
+            externalTransactionCaptures: read("transactionCaptures"),
+            externalClosureVisits: read("externalClosureVisits"),
+            externalProjectionPublications: read("projectionPublications"),
+            externalLifecycleEdgeVisits: read("lifecycleEdgeVisits"),
+            externalAdapterSubscriptions: read("adapterSubscriptions"),
+            externalAdapterCleanups: read("adapterCleanups"),
+            externalDirtyRounds: read("dirtyRounds"),
+            externalDirtySamples: read("dirtySamples"),
+            externalThenableContainments: read("thenableContainments"),
+            externalDeliveryEntries: read("deliveryEntries"),
+            externalDeliveryLimitHits: read("deliveryLimitHits"),
+            externalNonConvergenceTerminations: read(
+                "nonConvergenceTerminations",
+            ),
+            externalLifecycleRetains: read("lifecycleRetains"),
+            externalLifecycleReleases: read("lifecycleReleases"),
             sourceEpoch: read("sourceEpoch"),
             fallbackPublications: read("fallbackPublications"),
             transientSelectorHostsCreated: read("scratchHostAllocations"),
@@ -2884,6 +3036,42 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         }
         const totals = frame.totals
         if (totals === undefined) return
+        totals.externalLiveSamples +=
+            end.externalLiveSamples - start.externalLiveSamples
+        totals.externalServerSamples +=
+            end.externalServerSamples - start.externalServerSamples
+        totals.externalTransactionCaptures +=
+            end.externalTransactionCaptures - start.externalTransactionCaptures
+        totals.externalClosureVisits +=
+            end.externalClosureVisits - start.externalClosureVisits
+        totals.externalProjectionPublications +=
+            end.externalProjectionPublications -
+            start.externalProjectionPublications
+        totals.externalLifecycleEdgeVisits +=
+            end.externalLifecycleEdgeVisits - start.externalLifecycleEdgeVisits
+        totals.externalAdapterSubscriptions +=
+            end.externalAdapterSubscriptions -
+            start.externalAdapterSubscriptions
+        totals.externalAdapterCleanups +=
+            end.externalAdapterCleanups - start.externalAdapterCleanups
+        totals.externalDirtyRounds +=
+            end.externalDirtyRounds - start.externalDirtyRounds
+        totals.externalDirtySamples +=
+            end.externalDirtySamples - start.externalDirtySamples
+        totals.externalThenableContainments +=
+            end.externalThenableContainments -
+            start.externalThenableContainments
+        totals.externalDeliveryEntries +=
+            end.externalDeliveryEntries - start.externalDeliveryEntries
+        totals.externalDeliveryLimitHits +=
+            end.externalDeliveryLimitHits - start.externalDeliveryLimitHits
+        totals.externalNonConvergenceTerminations +=
+            end.externalNonConvergenceTerminations -
+            start.externalNonConvergenceTerminations
+        totals.externalLifecycleRetains +=
+            end.externalLifecycleRetains - start.externalLifecycleRetains
+        totals.externalLifecycleReleases +=
+            end.externalLifecycleReleases - start.externalLifecycleReleases
         totals.transientSelectorHostsCreated +=
             end.transientSelectorHostsCreated -
             start.transientSelectorHostsCreated
