@@ -19,6 +19,21 @@ bun add @valdres/browser-reduced-data
 
 ## Usage
 
+Every read works through a store, with no adapter at all:
+
+```ts
+import { store } from "valdres"
+import { reducedDataAtom, prefersReducedDataSelector } from "@valdres/browser-reduced-data"
+
+const app = store()
+app.get(reducedDataAtom) // "no-preference" | "reduce" — reads without subscribing
+app.get(prefersReducedDataSelector) // boolean
+const stop = app.sub(reducedDataAtom, () => {
+    console.log(app.get(reducedDataAtom))
+})
+stop()
+```
+
 <FrameworkBlock fw="react">
 
 ```tsx
@@ -33,67 +48,18 @@ function Hero() {
 
 </FrameworkBlock>
 
-<FrameworkBlock fw="vue">
+<div className="callout callout-note">
+  <div className="callout-title">Adapter support in this beta</div>
 
-```vue
-<script setup>
-import { useValue } from "valdres-vue"
-import { prefersReducedDataSelector } from "@valdres/browser-reduced-data"
+  `valdres-react` is the only adapter migrated to the v1 core. The Vue, Svelte,
+  Solid and Angular adapters cannot read an external atom yet: `valdres-vue`'s
+  `useValue` and `valdres-angular`'s `injectValue` are typed for `Atom | Selector`
+  only, `valdres-solid`'s `createValue` still expects the pre-v1 two-parameter
+  `State`, and `valdres-svelte` exports `fromState`, not the `watch` these pages
+  used to show. Until those adapters ship, read this package with `store.get` /
+  `store.sub` as above.
 
-const reduced = useValue(prefersReducedDataSelector) // Ref<boolean>
-</script>
-
-<template>{{ reduced ? "Reduced" : "Full" }}</template>
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="svelte">
-
-```svelte
-<script>
-import { watch } from "valdres-svelte"
-import { prefersReducedDataSelector } from "@valdres/browser-reduced-data"
-
-const reduced = watch(prefersReducedDataSelector)
-</script>
-
-{reduced.value ? "Reduced" : "Full"}
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="solid">
-
-```tsx
-import { createValue } from "valdres-solid"
-import { prefersReducedDataSelector } from "@valdres/browser-reduced-data"
-
-function Hero() {
-    const reduced = createValue(prefersReducedDataSelector) // () => boolean
-    return reduced() ? <Poster /> : <Video />
-}
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="angular">
-
-```ts
-import { Component } from "@angular/core"
-import { injectValue } from "valdres-angular"
-import { prefersReducedDataSelector } from "@valdres/browser-reduced-data"
-
-@Component({
-    selector: "app-hero",
-    template: `{{ reduced() ? "Reduced" : "Full" }}`,
-})
-export class Hero {
-    reduced = injectValue(prefersReducedDataSelector) // Signal<boolean>
-}
-```
-
-</FrameworkBlock>
+</div>
 
 ## Exports
 
@@ -146,16 +112,14 @@ and a mutable process-wide seed would leak between requests. `useValue` renders
 the seed first and swaps to the live value after hydration, which is a normal
 two-pass render rather than a hydration mismatch.
 
-## Cross-framework
+## Lifetime and framework notes
 
-An external atom plus a derived selector — only the read primitive's name changes
-per framework (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` /
-`store.sub` in plain JS). In React, `useValue` reads the store from the nearest
-`<Provider store={…}>` or one you pass explicitly as its second argument; there
-is no implicit global store.
+The state is plain Valdres: an external atom plus a derived selector, readable from any store
+with `store.get` / `store.sub`. Adapter availability for this beta is listed
+under [Usage](#usage) — React today, the others once they migrate to the v1 core.
 
-The media-query listener starts when a store first subscribes to the source —
-directly or through the selector — and stops when that store's last subscriber
-leaves or the store is disposed. Each store tree owns its own listener; child
-scopes share their root's. Reads without a subscription report the current value
-without attaching anything.
+The media-query listener starts when a store tree first retains the source —
+through a direct subscription or a selector that reads it — and stops when that
+tree's last retaining subscriber leaves or the store is disposed. Each store tree
+owns its own listener; child scopes share their root's. Reads without a
+subscription report the current value without attaching anything.

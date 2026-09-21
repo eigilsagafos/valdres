@@ -16,6 +16,21 @@ bun add @valdres/browser-contrast
 
 ## Usage
 
+Every read works through a store, with no adapter at all:
+
+```ts
+import { store } from "valdres"
+import { contrastAtom, prefersMoreContrastSelector } from "@valdres/browser-contrast"
+
+const app = store()
+app.get(contrastAtom) // "no-preference" | "more" | "less" | "custom" — reads without subscribing
+app.get(prefersMoreContrastSelector) // boolean
+const stop = app.sub(contrastAtom, () => {
+    console.log(app.get(contrastAtom))
+})
+stop()
+```
+
 ```tsx
 import { useValue } from "valdres-react"
 import { contrastAtom, prefersMoreContrastSelector } from "@valdres/browser-contrast"
@@ -26,6 +41,16 @@ function ContrastBadge() {
     return <span data-high-contrast={more}>{contrast}</span>
 }
 ```
+
+> **Adapter support in this beta**
+>
+> `valdres-react` is the only adapter migrated to the v1 core. The Vue, Svelte,
+> Solid and Angular adapters cannot read an external atom yet: `valdres-vue`'s
+> `useValue` and `valdres-angular`'s `injectValue` are typed for `Atom | Selector`
+> only, `valdres-solid`'s `createValue` still expects the pre-v1 two-parameter
+> `State`, and `valdres-svelte` exports `fromState`, not the `watch` these pages
+> used to show. Until those adapters ship, read this package with `store.get` /
+> `store.sub` as above.
 
 ## Exports
 
@@ -90,21 +115,19 @@ setting, and a mutable process-wide seed would leak between requests. `useValue`
 renders the seed first and swaps to the live value after hydration, which is a
 normal two-pass render rather than a hydration mismatch.
 
-## Cross-framework
+## Lifetime and framework notes
 
-An external atom plus derived selectors — only the read primitive's name changes
-per framework (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` /
-`store.sub` in plain JS). In React, `useValue` reads the store from the nearest
-`<Provider store={…}>` or one you pass explicitly as its second argument; there
-is no implicit global store.
+The state is plain Valdres: an external atom plus derived selectors, readable from any store
+with `store.get` / `store.sub`. Adapter availability for this beta is listed
+under [Usage](#usage) — React today, the others once they migrate to the v1 core.
 
 Subscribing attaches one `change` listener per contrast query. Those listeners
-start when a store first subscribes to the source — directly or through a
-selector — and stop when that store's last subscriber leaves or the store is
-disposed. Each store tree owns its own set; child scopes share their root's. If
-attaching to one query fails, the listeners already installed are released
-before the error propagates. Reads without a subscription report the current
-value without attaching anything.
+start when a store tree first retains the source — through a direct subscription
+or a selector that reads it — and stop when that tree's last retaining subscriber
+leaves or the store is disposed. Each store tree owns its own set; child scopes
+share their root's. If attaching to one query fails, the listeners already
+installed are released before the error propagates. Reads without a subscription
+report the current value without attaching anything.
 
 ---
 

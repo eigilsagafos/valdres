@@ -16,6 +16,21 @@ bun add @valdres/browser-reduced-motion
 
 ## Usage
 
+Every read works through a store, with no adapter at all:
+
+```ts
+import { store } from "valdres"
+import { reducedMotionAtom, prefersReducedMotionSelector } from "@valdres/browser-reduced-motion"
+
+const app = store()
+app.get(reducedMotionAtom) // "no-preference" | "reduce" — reads without subscribing
+app.get(prefersReducedMotionSelector) // boolean
+const stop = app.sub(reducedMotionAtom, () => {
+    console.log(app.get(reducedMotionAtom))
+})
+stop()
+```
+
 ```tsx
 import { useValue } from "valdres-react"
 import { prefersReducedMotionSelector } from "@valdres/browser-reduced-motion"
@@ -25,6 +40,16 @@ function Banner() {
     return <div className={reduced ? "static" : "animated"} />
 }
 ```
+
+> **Adapter support in this beta**
+>
+> `valdres-react` is the only adapter migrated to the v1 core. The Vue, Svelte,
+> Solid and Angular adapters cannot read an external atom yet: `valdres-vue`'s
+> `useValue` and `valdres-angular`'s `injectValue` are typed for `Atom | Selector`
+> only, `valdres-solid`'s `createValue` still expects the pre-v1 two-parameter
+> `State`, and `valdres-svelte` exports `fromState`, not the `watch` these pages
+> used to show. Until those adapters ship, read this package with `store.get` /
+> `store.sub` as above.
 
 ## Exports
 
@@ -77,19 +102,17 @@ and a mutable process-wide seed would leak between requests. `useValue` renders
 the seed first and swaps to the live value after hydration, which is a normal
 two-pass render rather than a hydration mismatch.
 
-## Cross-framework
+## Lifetime and framework notes
 
-An external atom plus a derived selector — only the read primitive's name changes
-per framework (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` /
-`store.sub` in plain JS). In React, `useValue` reads the store from the nearest
-`<Provider store={…}>` or one you pass explicitly as its second argument; there
-is no implicit global store.
+The state is plain Valdres: an external atom plus a derived selector, readable from any store
+with `store.get` / `store.sub`. Adapter availability for this beta is listed
+under [Usage](#usage) — React today, the others once they migrate to the v1 core.
 
-The media-query listener starts when a store first subscribes to the source —
-directly or through the selector — and stops when that store's last subscriber
-leaves or the store is disposed. Each store tree owns its own listener; child
-scopes share their root's. Reads without a subscription report the current value
-without attaching anything.
+The media-query listener starts when a store tree first retains the source —
+through a direct subscription or a selector that reads it — and stops when that
+tree's last retaining subscriber leaves or the store is disposed. Each store tree
+owns its own listener; child scopes share their root's. Reads without a
+subscription report the current value without attaching anything.
 
 ---
 
