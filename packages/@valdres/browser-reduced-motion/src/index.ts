@@ -1,5 +1,3 @@
-export {
-    reducedMotionAtom,
-    type ReducedMotion,
-} from "./atoms/reducedMotionAtom"
+export { reducedMotionAtom } from "./atoms/reducedMotionAtom"
 export { prefersReducedMotionSelector } from "./selectors/prefersReducedMotionSelector"
+export type { ReducedMotion } from "./types/ReducedMotion"
