@@ -1,0 +1,16 @@
+{
+    // Type-checks everything the package ships or runs, not just the public
+    // entry: `tsconfig.json` deliberately narrows to `src/index.ts` for
+    // declaration emit, which would skip the `@ts-expect-error` assertions that
+    // enforce the source's read-only contract.
+    //
+    // `dev/server.ts` is excluded because the repo pins `@types/bun` 1.2.2,
+    // which predates `Bun.serve({ routes })`. See the migration handoff.
+    "extends": "../../../tsconfig.json",
+    "include": ["src", "test", "dev"],
+    "exclude": ["dist", "dev/server.ts"],
+    "compilerOptions": {
+        "noEmit": true,
+        "types": ["bun"]
+    }
+}
