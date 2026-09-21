@@ -1,21 +1,8 @@
-import { globalAtom } from "valdres"
-import { subscribe } from "../lib/subscribe"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { colorSchemeSource } from "../lib/colorSchemeSource"
+import type { ColorScheme } from "../types/ColorScheme"
 
-export type ColorScheme = "light" | "dark"
-
-export const COLOR_SCHEME_MEDIA = "(prefers-color-scheme: dark)"
-
-const getInitial = (): ColorScheme => {
-    if (
-        typeof window === "undefined" ||
-        typeof window.matchMedia !== "function"
-    ) {
-        return "light"
-    }
-    return window.matchMedia(COLOR_SCHEME_MEDIA).matches ? "dark" : "light"
-}
-
-export const colorSchemeAtom = globalAtom<ColorScheme>(getInitial, {
-    name: "@valdres/browser-color-scheme/colorScheme",
-    onMount: () => subscribe(),
-})
+export const colorSchemeAtom: ExternalAtom<ColorScheme> = externalAtom(
+    colorSchemeSource,
+    { name: "@valdres/browser-color-scheme/colorScheme" },
+)
