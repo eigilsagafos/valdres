@@ -121,13 +121,42 @@ describe("colorSchemeAtom", () => {
         expect(first.get(colorSchemeAtom)).toBe("dark")
         expect(second.get(colorSchemeAtom)).toBe("dark")
 
+        // Two stores registered two DISTINCT listener functions, not one
+        // invalidator attached twice.
+        expect(media.attachCalls(DARK)).toBe(2)
+
         stopFirst()
         expect(media.listeners(DARK)).toBe(1)
+
+        // The surviving store keeps receiving events after the other detaches.
+        seen.length = 0
+        media.set(DARK, false)
+        media.change(DARK)
+        expect(seen).toEqual(["second"])
+        expect(second.get(colorSchemeAtom)).toBe("light")
+
         stopSecond()
         expect(media.listeners(DARK)).toBe(0)
 
         first.dispose()
         second.dispose()
+    })
+
+    test("a dormant read observes a preference change the host never announced", () => {
+        const media = install(false)
+        const app = store()
+
+        expect(app.get(colorSchemeAtom)).toBe("light")
+        expect(media.listeners(DARK)).toBe(0)
+
+        // No event, no subscription: the preference simply is something else now.
+        media.set(DARK, true)
+        expect(app.get(colorSchemeAtom)).toBe("dark")
+        expect(app.get(isDarkSelector)).toBe(true)
+        expect(media.listeners(DARK)).toBe(0)
+        expect(media.created(DARK)).toBe(1)
+
+        app.dispose()
     })
 
     test("a child scope shares the tree projection instead of attaching again", () => {
@@ -237,6 +266,12 @@ describe("colorSchemeAtom", () => {
         expect(() =>
             (app as unknown as { reset: (...args: unknown[]) => void }).reset(
                 colorSchemeAtom,
+            ),
+        ).toThrow(TypeError)
+        expect(() =>
+            (app as unknown as { update: (...args: unknown[]) => void }).update(
+                colorSchemeAtom,
+                () => "dark",
             ),
         ).toThrow(TypeError)
         expect(app.get(colorSchemeAtom)).toBe("light")

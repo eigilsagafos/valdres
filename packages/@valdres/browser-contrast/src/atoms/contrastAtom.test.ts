@@ -145,13 +145,47 @@ describe("contrastAtom", () => {
         expect(first.get(contrastAtom)).toBe("more")
         expect(second.get(contrastAtom)).toBe("more")
 
+        // Two stores registered two DISTINCT listener functions per query, not
+        // one invalidator attached twice.
+        for (const query of ALL) expect(media.attachCalls(query)).toBe(2)
+
         stopFirst()
         expect(totalListeners(media)).toBe(3)
+
+        // The surviving store keeps receiving events after the other detaches.
+        seen.length = 0
+        media.set(MORE, false)
+        media.change(MORE)
+        expect(seen).toEqual(["second"])
+        expect(second.get(contrastAtom)).toBe("no-preference")
+
         stopSecond()
         expect(totalListeners(media)).toBe(0)
 
         first.dispose()
         second.dispose()
+    })
+
+    test("a dormant read observes a preference change the host never announced", () => {
+        const media = install()
+        const app = store()
+
+        expect(app.get(contrastAtom)).toBe("no-preference")
+        expect(totalListeners(media)).toBe(0)
+
+        // No event, no subscription: the preference simply is something else now.
+        media.set(LESS, true)
+        expect(app.get(contrastAtom)).toBe("less")
+        expect(app.get(prefersLessContrastSelector)).toBe(true)
+
+        // Precedence still resolves against the current state of every query.
+        media.set(MORE, true)
+        expect(app.get(contrastAtom)).toBe("more")
+
+        expect(totalListeners(media)).toBe(0)
+        for (const query of ALL) expect(media.created(query)).toBe(1)
+
+        app.dispose()
     })
 
     test("a child scope shares the tree projection instead of attaching again", () => {
@@ -228,7 +262,11 @@ describe("contrastAtom", () => {
             }
             expect(thrown).toBeInstanceOf(ExternalSourceOperationError)
             expect((thrown as ExternalSourceOperationError).cause).toBe(boom)
-            // `more` was attached and then released; nothing leaked.
+            // `more` was attached and then released; nothing leaked. The failed
+            // attach was attempted but never became a live listener identity.
+            expect(media.attachCalls(MORE)).toBe(1)
+            expect(media.attachCalls(LESS)).toBe(1)
+            expect(media.listeners(LESS)).toBe(0)
             expect(totalListeners(media)).toBe(0)
         } finally {
             media.failOnAttach(LESS, undefined)
@@ -287,6 +325,12 @@ describe("contrastAtom", () => {
         expect(() =>
             (app as unknown as { reset: (...args: unknown[]) => void }).reset(
                 contrastAtom,
+            ),
+        ).toThrow(TypeError)
+        expect(() =>
+            (app as unknown as { update: (...args: unknown[]) => void }).update(
+                contrastAtom,
+                () => "more",
             ),
         ).toThrow(TypeError)
         expect(app.get(contrastAtom)).toBe("no-preference")
