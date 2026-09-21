@@ -38,9 +38,10 @@ function Panel() {
 
 ## Ownership
 
-The preference belongs to the OS "reduce transparency" accessibility setting, so `reducedTransparencyAtom` is an **external atom**: it is
-read-only. Stores cannot write it, and `set`, `reset` and `update` reject it at
-compile time and at runtime.
+The preference belongs to the operating system — it is exposed as the OS "reduce
+transparency" accessibility setting — so `reducedTransparencyAtom` is an
+**external atom**: it is read-only. Stores cannot write it, and `set`, `reset`
+and `update` reject it at compile time and at runtime.
 
 Anything derived from it that the user can override — a per-app toggle, a
 remembered choice — is application state. Keep it in your own atom and resolve
@@ -52,20 +53,20 @@ import { reducedTransparencyAtom, type ReducedTransparency } from "@valdres/brow
 
 type Preference = ReducedTransparency | "system"
 
-export const preferenceAtom = atom<Preference>("system", {
-    name: "app/preference",
+export const transparencyPreferenceAtom = atom<Preference>("system", {
+    name: "app/transparencyPreference",
 })
 
-export const effectiveSelector = selector<ReducedTransparency>(
+export const effectiveTransparencySelector = selector<ReducedTransparency>(
     get => {
-        const preference = get(preferenceAtom)
+        const preference = get(transparencyPreferenceAtom)
         return preference === "system" ? get(reducedTransparencyAtom) : preference
     },
-    { name: "app/effective" },
+    { name: "app/effectiveTransparency" },
 )
 ```
 
-A picker sets `preferenceAtom`, never the resolved value. Persisting the choice
+A picker sets `transparencyPreferenceAtom`, never the resolved value. Persisting the choice
 and applying it to the DOM are application concerns; this package stores nothing
 and touches no DOM.
 

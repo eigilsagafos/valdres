@@ -36,7 +36,8 @@ function Banner() {
 
 ## Ownership
 
-The preference belongs to the OS "reduce motion" setting, so `reducedMotionAtom` is an **external atom**: it is
+The preference belongs to the operating system — it is exposed as the OS "reduce
+motion" setting — so `reducedMotionAtom` is an **external atom**: it is
 read-only. Stores cannot write it, and `set`, `reset` and `update` reject it at
 compile time and at runtime.
 
@@ -50,20 +51,20 @@ import { reducedMotionAtom, type ReducedMotion } from "@valdres/browser-reduced-
 
 type Preference = ReducedMotion | "system"
 
-export const preferenceAtom = atom<Preference>("system", {
-    name: "app/preference",
+export const motionPreferenceAtom = atom<Preference>("system", {
+    name: "app/motionPreference",
 })
 
-export const effectiveSelector = selector<ReducedMotion>(
+export const effectiveMotionSelector = selector<ReducedMotion>(
     get => {
-        const preference = get(preferenceAtom)
+        const preference = get(motionPreferenceAtom)
         return preference === "system" ? get(reducedMotionAtom) : preference
     },
-    { name: "app/effective" },
+    { name: "app/effectiveMotion" },
 )
 ```
 
-A picker sets `preferenceAtom`, never the resolved value. Persisting the choice
+A picker sets `motionPreferenceAtom`, never the resolved value. Persisting the choice
 and applying it to the DOM are application concerns; this package stores nothing
 and touches no DOM.
 

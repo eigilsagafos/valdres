@@ -36,9 +36,10 @@ function Hero() {
 
 ## Ownership
 
-The preference belongs to the OS or browser "reduce data usage" setting, so `reducedDataAtom` is an **external atom**: it is
-read-only. Stores cannot write it, and `set`, `reset` and `update` reject it at
-compile time and at runtime.
+The preference belongs to the operating system — it is exposed as the OS or
+browser "reduce data usage" setting — so `reducedDataAtom` is an **external
+atom**: it is read-only. Stores cannot write it, and `set`, `reset` and `update`
+reject it at compile time and at runtime.
 
 Anything derived from it that the user can override — a per-app toggle, a
 remembered choice — is application state. Keep it in your own atom and resolve
@@ -50,20 +51,20 @@ import { reducedDataAtom, type ReducedData } from "@valdres/browser-reduced-data
 
 type Preference = ReducedData | "system"
 
-export const preferenceAtom = atom<Preference>("system", {
-    name: "app/preference",
+export const dataPreferenceAtom = atom<Preference>("system", {
+    name: "app/dataPreference",
 })
 
-export const effectiveSelector = selector<ReducedData>(
+export const effectiveDataSelector = selector<ReducedData>(
     get => {
-        const preference = get(preferenceAtom)
+        const preference = get(dataPreferenceAtom)
         return preference === "system" ? get(reducedDataAtom) : preference
     },
-    { name: "app/effective" },
+    { name: "app/effectiveData" },
 )
 ```
 
-A picker sets `preferenceAtom`, never the resolved value. Persisting the choice
+A picker sets `dataPreferenceAtom`, never the resolved value. Persisting the choice
 and applying it to the DOM are application concerns; this package stores nothing
 and touches no DOM.
 
