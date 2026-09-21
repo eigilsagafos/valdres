@@ -1,28 +1,8 @@
-import { globalAtom } from "valdres"
-import { subscribe } from "../lib/subscribe"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { contrastSource } from "../lib/contrastSource"
+import type { Contrast } from "../types/Contrast"
 
-export type Contrast = "no-preference" | "more" | "less" | "custom"
-
-export const CONTRAST_QUERIES: { value: Contrast; query: string }[] = [
-    { value: "more", query: "(prefers-contrast: more)" },
-    { value: "less", query: "(prefers-contrast: less)" },
-    { value: "custom", query: "(prefers-contrast: custom)" },
-]
-
-export const readContrast = (): Contrast => {
-    if (
-        typeof window === "undefined" ||
-        typeof window.matchMedia !== "function"
-    ) {
-        return "no-preference"
-    }
-    for (const { value, query } of CONTRAST_QUERIES) {
-        if (window.matchMedia(query).matches) return value
-    }
-    return "no-preference"
-}
-
-export const contrastAtom = globalAtom<Contrast>(readContrast, {
-    name: "@valdres/browser-contrast/contrast",
-    onMount: () => subscribe(),
-})
+export const contrastAtom: ExternalAtom<Contrast> = externalAtom(
+    contrastSource,
+    { name: "@valdres/browser-contrast/contrast" },
+)
