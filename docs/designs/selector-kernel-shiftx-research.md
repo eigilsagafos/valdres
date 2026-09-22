@@ -1,6 +1,15 @@
 # Selector-kernel ShiftX research sidecar
 
-Status: non-promotional research tooling.
+> **Status: retired (historical record).** This sidecar and the
+> `scripts/selector-kernel-tournament/` runner it wrapped were removed together
+> with the rest of the selector-kernel tournament machinery; see
+> [`selector-kernel-tournament.md`](./selector-kernel-tournament.md). The
+> implementation is preserved in Git history. The ShiftX product gate that
+> remains active is the packed core-load harness in
+> `packages/valdres/test/performance/core-load/`, run by CI as
+> `test:core-load-harness`.
+
+Status: retired; formerly non-promotional research tooling.
 
 This sidecar compares the three preserved selector-kernel implementations in
 ShiftX without changing canonical tournament qualification. It admits only the

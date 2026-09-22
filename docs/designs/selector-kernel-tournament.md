@@ -1,6 +1,24 @@
 # Valdres selector-kernel tournament
 
-- Status: normative tournament specification and foundation work order
+> **Status: retired (historical record).** The tournament compared alternative
+> selector-kernel implementations during the 1.0 beta line. Its runners,
+> validators, schemas, fixtures and self-tests were removed from the
+> repository, along with the `test:selector-kernel-tournament` package script
+> and the `test:runtime` wiring, so they no longer run in ordinary development
+> or CI. The historical implementation is preserved in Git history (see the
+> commit that removed `scripts/selector-kernel-tournament/` and
+> `packages/valdres/test/selector-kernel-tournament/`). File links below point
+> at paths that no longer exist on `main`. The product-level selector
+> semantics the tournament's fixture corpus exercised now live in ordinary
+> core suites, primarily `packages/valdres/test/v1-public-candidate/`,
+> `packages/valdres/test/v1-model/`, `packages/valdres/test/v1-selector-evaluator/`
+> and `packages/valdres/test/v1-committed-store-tree/`.
+>
+> Nothing in this document is an active gate. Do not follow its operational
+> instructions.
+
+- Status: retired; formerly the normative tournament specification and
+  foundation work order
 - Control release: `valdres@1.0.0-beta.36`
 - Control source commit: `1c03f126ba714d0765c3386e613f4c892b89829b`
 - Control `packages/valdres/src` tree:
