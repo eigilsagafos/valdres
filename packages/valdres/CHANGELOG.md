@@ -1,5 +1,16 @@
 # valdres
 
+## 1.0.0-beta.40
+
+### Patch Changes
+
+- [#401](https://github.com/eigilsagafos/valdres/pull/401)
+  [`524ca4a`](https://github.com/eigilsagafos/valdres/commit/524ca4a9f30ebc5b70cf1c6142b6de935b4aba88)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Settle selectors
+  correctly when a mutation reverses dynamic dependencies, so subscribers
+  receive current values without stale results or false cycle errors. Propagate
+  genuine selector errors to affected downstream subscribers as well.
+
 ## 1.0.0-beta.39
 
 ### Minor Changes
