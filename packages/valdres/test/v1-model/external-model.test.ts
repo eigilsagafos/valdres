@@ -69,6 +69,75 @@ function notifications(instance: ExternalReferenceModel): string[] {
 }
 
 describe("external projection reference model", () => {
+    test("validates a dependency reversal against current branches, not the obsolete closure", () => {
+        const instance = new ExternalReferenceModel(
+            [],
+            [
+                { kind: "atom", id: "flipped", value: value.boolean(false) },
+                { kind: "atom", id: "one", value: value.number(1) },
+                { kind: "atom", id: "quarter", value: value.number(0.25) },
+                {
+                    kind: "selector",
+                    id: "inputA",
+                    expression: {
+                        kind: "choose",
+                        condition: "flipped",
+                        yes: "inputB",
+                        no: "one",
+                    },
+                },
+                {
+                    kind: "selector",
+                    id: "pathA",
+                    expression: { kind: "read", node: "inputA" },
+                },
+                {
+                    kind: "selector",
+                    id: "outputA",
+                    expression: { kind: "read", node: "pathA" },
+                },
+                {
+                    kind: "selector",
+                    id: "inputB",
+                    expression: {
+                        kind: "choose",
+                        condition: "flipped",
+                        yes: "quarter",
+                        no: "outputA",
+                    },
+                },
+            ],
+        )
+        instance.execute(tree)
+        instance.execute(subscribe("output", "outputA"))
+        instance.execute(subscribe("input", "inputB"))
+        for (const flipped of [true, false, true]) {
+            instance.clearTrace()
+            expect(
+                instance.execute({
+                    kind: "transaction",
+                    tree: "tree",
+                    steps: [
+                        {
+                            kind: "set",
+                            scope: "root",
+                            atom: "flipped",
+                            value: value.boolean(flipped),
+                        },
+                    ],
+                }).failures,
+            ).toEqual([])
+            const expected = number(flipped ? 0.25 : 1)
+            expect(
+                instance.trace.filter(event => event.kind === "notify"),
+            ).toEqual([
+                { kind: "notify", subscription: "output", outcome: expected },
+                { kind: "notify", subscription: "input", outcome: expected },
+            ])
+            expect(instance.execute(read("outputA")).outcome).toEqual(expected)
+        }
+    })
+
     test("a warm callback failure during admission drain releases the inaccessible new subscription", () => {
         const instance = new ExternalReferenceModel(
             [

@@ -1147,6 +1147,18 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(tree.get(newEdge)).toBe(1)
         expect(tree.get(cached)).toBe(1)
         expect(tree.get(later)).toBe(1)
+        const cachedErrors: unknown[] = []
+        const stop = tree.sub(cached, () => {
+            cachedErrors.push(thrownBy(() => tree.get(cached)))
+        })
+        const changedErrors: unknown[] = []
+        const stopChanged = tree.sub(changed, () => {
+            changedErrors.push(thrownBy(() => tree.get(changed)))
+        })
+        const newEdgeErrors: unknown[] = []
+        const stopNewEdge = tree.sub(newEdge, () => {
+            newEdgeErrors.push(thrownBy(() => tree.get(newEdge)))
+        })
 
         tree.txn(transaction => {
             transaction.set(parentGate, true)
@@ -1154,6 +1166,12 @@ describe("v1 persistent committed StoreTree host", () => {
             transaction.set(laterGate, true)
         })
 
+        // The cycle error must propagate through the previously clean cached
+        // dependent before delivery, just as a changed value would.
+        expect(cachedErrors).toHaveLength(1)
+        expect(cachedErrors[0]).toBeInstanceOf(SelectorGetterError)
+        expect(changedErrors).toHaveLength(1)
+        expect(newEdgeErrors).toHaveLength(1)
         const error = thrownBy(() => tree.get(parent))
         expect(error).toBeInstanceOf(SelectorCircularDependencyError)
         expect((error as SelectorCircularDependencyError).path).toEqual([
@@ -1166,11 +1184,19 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(tree.get(later)).toBe(1)
         expect(evaluations).toEqual({
             parent: 2,
-            changed: 2,
-            newEdge: 1,
-            cached: 1,
+            // cached's error invalidates changed's earlier evaluation, which
+            // must in turn publish the error to newEdge before notification.
+            changed: 3,
+            newEdge: 2,
+            cached: 2,
             later: 2,
         })
+        expect(thrownBy(() => tree.get(cached))).toBe(cachedErrors[0])
+        expect(thrownBy(() => tree.get(changed))).toBe(changedErrors[0])
+        expect(thrownBy(() => tree.get(newEdge))).toBe(newEdgeErrors[0])
+        stop()
+        stopChanged()
+        stopNewEdge()
     })
 
     test("does not carry an unused old dependency fault into a dynamic parent read", () => {

@@ -561,10 +561,12 @@ const readCollectionValue = (
     return outcome.value
 }
 
-const PROPAGATION_QUEUED = 1
-const PROPAGATION_SETTLING = 2
-const PROPAGATION_SETTLED = 4
-const PROPAGATION_EVALUATED = 8
+const enum PropagationStatus {
+    queued = 1,
+    settling = 2,
+    settled = 4,
+    walking = 8,
+}
 
 const createCommitWorksets = (onAllocation?: () => void): CommitWorksets => ({
     onAllocation,
@@ -2553,23 +2555,20 @@ class CommittedStoreTreeHost
         const queue = this.#propagationQueue
         if (queue === undefined) return false
         let status = this.#getPropagationStatus(scope, selector)
-        if (
-            this.#external &&
-            (status & PROPAGATION_SETTLED) !== 0 &&
-            (status & PROPAGATION_EVALUATED) === 0
-        ) {
+        if ((status & PropagationStatus.settled) !== 0) {
+            // An old-dependency walk can settle this selector before an upstream
+            // evaluation finishes. A later changed token invalidates that settlement
+            // even if this selector already evaluated once. Reopen and requeue it.
             this.#updatePropagationStatus(
                 scope,
                 selector,
                 0,
-                PROPAGATION_SETTLED | PROPAGATION_QUEUED,
+                PropagationStatus.settled | PropagationStatus.queued,
             )
-            status &= ~(PROPAGATION_SETTLED | PROPAGATION_QUEUED)
+            status &= ~(PropagationStatus.settled | PropagationStatus.queued)
         }
-        if ((status & PROPAGATION_QUEUED) !== 0) {
-            return true
-        }
-        this.#updatePropagationStatus(scope, selector, PROPAGATION_QUEUED)
+        if ((status & PropagationStatus.queued) !== 0) return true
+        this.#updatePropagationStatus(scope, selector, PropagationStatus.queued)
         queue.push(scope, selector)
         return true
     }
@@ -2590,15 +2589,28 @@ class CommittedStoreTreeHost
         session?: SelectorEvaluationSession<AnyState>,
     ): void {
         const status = this.#getPropagationStatus(scope, selector)
-        if ((status & (PROPAGATION_SETTLED | PROPAGATION_SETTLING)) !== 0) {
+        if (
+            (status &
+                (PropagationStatus.settled | PropagationStatus.settling)) !==
+            0
+        ) {
             return
         }
-        this.#updatePropagationStatus(scope, selector, PROPAGATION_SETTLING)
+        this.#updatePropagationStatus(
+            scope,
+            selector,
+            PropagationStatus.walking,
+        )
         try {
             const graphVersionBeforeDependencies =
                 scope.getSelectorGraphVersion()
+            // A dynamic read can return to a selector whose OLD dependencies
+            // are still being walked. Evaluate its new branch before using that
+            // old closure as evidence of a cycle; do not repeat the old walk.
             const dependencies =
-                scope.getCommittedSelectorDependencies(selector)
+                (status & PropagationStatus.walking) !== 0
+                    ? undefined
+                    : scope.getCommittedSelectorDependencies(selector)
             if (dependencies !== undefined) {
                 for (const dependency of dependencies) {
                     if (this.#domain.selectors.has(dependency.node)) {
@@ -2612,18 +2624,17 @@ class CommittedStoreTreeHost
                 }
             }
             if (scope.isSelectorDirty(selector)) {
-                if (this.#external)
-                    this.#updatePropagationStatus(
-                        scope,
-                        selector,
-                        PROPAGATION_EVALUATED,
-                    )
+                this.#updatePropagationStatus(
+                    scope,
+                    selector,
+                    PropagationStatus.settling,
+                )
                 const graphStayedCurrent =
                     graphVersionBeforeDependencies ===
                     scope.getSelectorGraphVersion()
                 if (session !== undefined && graphStayedCurrent) {
-                    // Reuse the dynamically active session only when no old
-                    // dependency published first. Its own publication is then
+                    // Reuse the dynamically active session only when this
+                    // dependency walk published nothing. Its publication is then
                     // attributable without changing base settlement ordering.
                     scope.serve(selector, session)
                 } else {
@@ -2633,22 +2644,28 @@ class CommittedStoreTreeHost
                     )
                 }
             }
-            this.#updatePropagationStatus(scope, selector, PROPAGATION_SETTLED)
+            this.#updatePropagationStatus(
+                scope,
+                selector,
+                PropagationStatus.settled,
+            )
         } catch (error) {
             if (this.#external?.recordSelectorFault(scope, selector, error)) {
                 this.#updatePropagationStatus(
                     scope,
                     selector,
-                    PROPAGATION_SETTLED,
+                    PropagationStatus.settled,
                 )
             }
             throw error
         } finally {
+            // A reentrant evaluation does not own the outer dependency walk.
             this.#updatePropagationStatus(
                 scope,
                 selector,
                 0,
-                PROPAGATION_SETTLING,
+                (PropagationStatus.settling | PropagationStatus.walking) &
+                    ~status,
             )
         }
     }
