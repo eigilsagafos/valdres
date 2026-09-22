@@ -261,11 +261,12 @@ jobs:
 
     browser-media:
         name: Browser media packages
-        # Deliberately a job of its own, not steps inside `test`. `test` is the
-        # certified core + React beta train and gates `publish`; these five
-        # migrated browser packages are tested but NOT release-eligible, and
-        # they must not be able to hold up or authorise a core release. The
-        # `publish` job's `needs:` list is unchanged for exactly that reason.
+        # A job of its own rather than steps inside `test`, so a browser-package
+        # failure does not stop the certified core + React suite from reporting.
+        # Both jobs now gate `publish`: these five packages are release-eligible,
+        # so the revision that publishes them must have passed their suites, both
+        # tsconfig type-checks and the packed-consumer gate. The remaining eleven
+        # browser packages stay ignored and are covered by neither.
         runs-on: ubuntu-22.04
         permissions:
             contents: read
@@ -365,7 +366,10 @@ jobs:
               run: bun run test:v1-beta:packed
 
     publish:
-        needs: [test, valdres-package]
+        # browser-media joined this list when its five packages stopped being
+        # release-ignored: the revision that publishes them must have passed
+        # their suites, both tsconfig type-checks and the packed-consumer gate.
+        needs: [test, valdres-package, browser-media]
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         runs-on: ubuntu-22.04
         environment: npm-publish
@@ -406,11 +410,16 @@ jobs:
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
-            - name: Build certified v1-beta packages
-              run: bun run build
+            - name: Build publishable packages
+              # The release cohort, not the certified v1-beta pair: every
+              # package scripts/publishable-packages.json lists gets prepacked
+              # below, and prepack rewrites `exports` to ./dist/… — so a
+              # package built on some other job's runner would be published as
+              # an empty tarball. Artifacts do not cross jobs.
+              run: bun run build:release
 
-            - name: Build types
-              run: bun run build:types
+            - name: Build publishable declarations
+              run: bun run build:types:release
 
             - name: Verify publish pipeline
               run: bun run verify-publish

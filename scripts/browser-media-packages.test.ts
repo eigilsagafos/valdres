@@ -16,11 +16,35 @@ import {
     BROWSER_MEDIA_PACKAGES,
     browserMediaPackageNames,
 } from "./lib/browser-media-packages"
+import { PUBLISHABLE_PACKAGE_DIRS } from "./lib/publishable-packages"
 
 const ROOT = join(import.meta.dir, "..")
 const packageDirectory = (dir: string) =>
     join(ROOT, "packages", "@valdres", dir)
 const read = (...parts: string[]) => readFileSync(join(...parts), "utf8")
+
+/** Every changeset markdown file, including the consumed ones under pre/. */
+const changesetFiles = (): string[] => {
+    const found: string[] = []
+    const walk = (dir: string) => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            const path = join(dir, entry.name)
+            if (entry.isDirectory()) walk(path)
+            else if (entry.name.endsWith(".md") && entry.name !== "README.md")
+                found.push(path)
+        }
+    }
+    walk(join(ROOT, ".changeset"))
+    return found
+}
+
+/** The package names a changeset's YAML front matter releases. */
+const frontMatterNames = (file: string): string[] => {
+    const source = readFileSync(file, "utf8")
+    const match = source.match(/^---\n([\s\S]*?)\n---/)
+    if (match === null) return []
+    return [...match[1]!.matchAll(/^"([^"]+)":/gm)].map(entry => entry[1]!)
+}
 
 describe("browser media package list", () => {
     test("is non-empty, unique and covers only real packages", () => {
@@ -122,11 +146,41 @@ describe("browser media package list", () => {
                 expect(source).toContain(media.query)
             })
 
-            test("remains release-ignored — testing is not publishing", () => {
+            test("is release-eligible in both halves of the pipeline", () => {
+                // These two must move together. `changeset publish` publishes
+                // every non-ignored, non-private package with an unpublished
+                // version, but only packages on the publishable list are
+                // prepacked — so a package that left `ignore` without joining
+                // the list would ship its workspace manifest, whose `exports`
+                // still points at ./src/index.ts while `files` ships only dist.
                 const changesets = JSON.parse(
                     read(ROOT, ".changeset", "config.json"),
                 )
-                expect(changesets.ignore).toContain(`@valdres/${media.dir}`)
+                expect(changesets.ignore).not.toContain(
+                    `@valdres/${media.dir}`,
+                )
+                expect(PUBLISHABLE_PACKAGE_DIRS).toContain(
+                    `packages/@valdres/${media.dir}`,
+                )
+            })
+
+            test("carries no unreleasable changeset entry", () => {
+                // Changesets rejects a changeset naming both ignored and
+                // non-ignored packages outright ("Mixed changesets … are not
+                // allowed"), which would break `changeset status` for the whole
+                // repository — not just this package.
+                const ignored: string[] = JSON.parse(
+                    read(ROOT, ".changeset", "config.json"),
+                ).ignore
+                const name = `@valdres/${media.dir}`
+                for (const file of changesetFiles()) {
+                    const front = frontMatterNames(file)
+                    if (!front.includes(name)) continue
+                    const mixedWith = front.filter(other =>
+                        ignored.includes(other),
+                    )
+                    expect({ file, mixedWith }).toEqual({ file, mixedWith: [] })
+                }
             })
         })
     }

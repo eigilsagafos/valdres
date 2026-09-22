@@ -102,6 +102,37 @@ code but intentionally don't release (refactors, internal cleanup), run
 or CHANGELOGs — the Version Packages bot does that on merge. Repo is in `beta`
 prerelease mode.
 
+**Which packages actually release** is two lists that must stay complements:
+
+- `scripts/publishable-packages.json` — the directories the release pipeline
+  builds (`build:release`, `build:types:release`), prepacks, verifies and
+  publishes. Read by `scripts/ci-publish.sh`, `scripts/verify-publish.ts` and
+  `scripts/build-release.ts`.
+- `.changeset/config.json` `ignore` — everything that does *not* release.
+
+`changeset publish` publishes every non-ignored, non-private package with an
+unpublished version, but only listed packages are prepacked — so a package in
+neither list would ship its workspace manifest, whose `exports` still points at
+`./src/index.ts` while `files` ships only `dist`. `scripts/publishable-packages.test.ts`
+asserts the complement holds. Move a package between them in one change.
+
+Today that is `valdres`, `valdres-react` and the five migrated
+`@valdres/browser-{color-scheme,contrast,reduced-motion,reduced-data,reduced-transparency}`
+packages. The remaining browser packages and both color-mode packages are still
+ignored.
+
+A changeset may not name both ignored and non-ignored packages — Changesets
+rejects the whole repository's `changeset status` with "Mixed changesets …".
+When a package becomes releasable, remove it from the deferred changesets under
+`.changeset/pre/` in the same change.
+
+`bun run verify` deliberately skips the publish dry-run and its cleanup
+assertion, because the dry-run rewrites real manifests in your working tree. To
+exercise the release path, do it in a throwaway copy: `bun run build:release &&
+bun run build:types:release && bun run verify-publish && DRY_RUN=1 bash
+scripts/ci-publish.sh`, then check `git diff --exit-code -- 'packages/**/package.json'`
+and that no `package.tmp.json` remains.
+
 ## Documentation
 
 - Docs site = repo-root `docs/` custom build (`bun run docs:dev` at
