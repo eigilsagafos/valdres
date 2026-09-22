@@ -1,23 +1,8 @@
-import { globalAtom } from "valdres"
-import { subscribe } from "../lib/subscribe"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { reducedDataSource } from "../lib/reducedDataSource"
+import type { ReducedData } from "../types/ReducedData"
 
-export type ReducedData = "no-preference" | "reduce"
-
-export const REDUCED_DATA_MEDIA = "(prefers-reduced-data: reduce)"
-
-const getInitial = (): ReducedData => {
-    if (
-        typeof window === "undefined" ||
-        typeof window.matchMedia !== "function"
-    ) {
-        return "no-preference"
-    }
-    return window.matchMedia(REDUCED_DATA_MEDIA).matches
-        ? "reduce"
-        : "no-preference"
-}
-
-export const reducedDataAtom = globalAtom<ReducedData>(getInitial, {
-    name: "@valdres/browser-reduced-data/reducedData",
-    onMount: () => subscribe(),
-})
+export const reducedDataAtom: ExternalAtom<ReducedData> = externalAtom(
+    reducedDataSource,
+    { name: "@valdres/browser-reduced-data/reducedData" },
+)

@@ -259,6 +259,42 @@ jobs:
               if: steps.test.outcome == 'failure'
               run: exit 1
 
+    browser-media:
+        name: Browser media packages
+        # Deliberately a job of its own, not steps inside `test`. `test` is the
+        # certified core + React beta train and gates `publish`; these five
+        # migrated browser packages are tested but NOT release-eligible, and
+        # they must not be able to hold up or authorise a core release. The
+        # `publish` job's `needs:` list is unchanged for exactly that reason.
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.0
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Browser media suites and typechecks
+              # Runs each package's `bun test` plus BOTH tsconfigs. The second
+              # one matters: a package's publish-facing tsconfig.json narrows to
+              # src/index.ts so declaration emit stays clean, and `bun test`
+              # erases types entirely -- so the @ts-expect-error assertions that
+              # keep an external source unwritable only hold if
+              # tsconfig.tests.json is actually type-checked.
+              run: bun run test:browser-media
+            - name: Validate packed browser media consumers
+              # Shadow-packs each package against a built core and installs the
+              # tarballs into an isolated consumer: declarations, export
+              # resolution, peer ranges, browserless import, get/sub and
+              # read-only enforcement against the artifact rather than src/.
+              run: bun run test:browser-media:packed
+
     valdres-package:
         name: Valdres published-package gate
         runs-on: ubuntu-22.04

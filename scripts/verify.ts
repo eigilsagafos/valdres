@@ -15,10 +15,12 @@
  * covered jobs executes, in the jobs' order, under `bash -e` the way the runner
  * does it.
  *
- * SCOPE: both pull-request jobs in ci.yaml — `test` and `valdres-package` (the
- * published-tarball gate: publint, ATTW, size budgets; ~13s). It does NOT cover
- * the manual-only legacy docs workflows or the Bencher gate;
- * those are listed under NOT_COVERED and printed on every run, because a
+ * SCOPE: every pull-request job in ci.yaml — `test`, `browser-media` (the five
+ * migrated browser media packages: suites, both tsconfigs, packed consumers)
+ * and `valdres-package` (the published-tarball gate: publint, ATTW, size
+ * budgets; ~13s). It does NOT cover the manual-only legacy docs workflows or
+ * the Bencher gate; those are listed under NOT_COVERED and printed on every
+ * run, because a
  * "pre-PR command" that silently covers some of the gates is the same class of
  * problem verify exists to fix.
  *
@@ -73,7 +75,7 @@ const WORKFLOW = ".github/workflows/ci.yaml"
  *  `valdres-package` is path-filtered on GitHub (`packages/valdres/**`) but
  *  takes seconds locally, so verify always runs it rather than reasoning about
  *  your diff. */
-const JOBS = ["test", "valdres-package"]
+const JOBS = ["test", "browser-media", "valdres-package"]
 
 /** Jobs verify deliberately does not run, and why. Every job declared in
  *  ci.yaml must appear either here or in JOBS — a new job is otherwise outside
@@ -159,6 +161,18 @@ const SKIPPED_ACTIONS: Record<
         // only after re-reading the script and confirming any new failure path
         // has a local equivalent.
         config: TEST_REPORT_CONFIG,
+    },
+    "browser-media / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "browser-media / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "browser-media / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
     },
     "valdres-package / actions/checkout": {
         action: "actions/checkout",

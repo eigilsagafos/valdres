@@ -23,7 +23,7 @@ const workflowSource = read(".github/workflows/ci.yaml")
 
 /** The jobs verify claims to cover. Kept here as a literal so that widening
  *  verify's scope is a deliberate edit in both files. */
-const COVERED_JOBS = ["test", "valdres-package"]
+const COVERED_JOBS = ["test", "browser-media", "valdres-package"]
 
 /** The `run:` steps of a job, in file order — read with an independent scanner
  *  so the coverage assertions below are a real cross-check and not the plan
@@ -239,6 +239,18 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             ...skippedStepYaml("test"),
             ...steps,
             ...realStepYaml("Test Report"),
+            // Tested but not release-eligible, so it is its own job and does
+            // not gate `publish`. Its action layout is mirrored here for the
+            // same reason as the others: SKIPPED_ACTIONS is keyed by job and
+            // step, and an unmatched entry is a stale-entry failure.
+            "    browser-media:",
+            "        runs-on: ubuntu-22.04",
+            "        steps:",
+            "            - uses: actions/checkout@v6",
+            "            - uses: oven-sh/setup-bun@v2",
+            "            - uses: actions/setup-node@v6",
+            "            - name: Browser media gate",
+            "              run: bun run test:browser-media",
             "    valdres-package:",
             "        runs-on: ubuntu-22.04",
             "        steps:",
@@ -271,6 +283,7 @@ describe("verify refuses to run a job it cannot reproduce", () => {
         const plan = buildPlan(fixture(step("Gate", ["run: echo ok"])))
         expect(plan.steps.map(s => bareName(s.name))).toEqual([
             "Gate",
+            "Browser media gate",
             "Package gate",
         ])
     })
