@@ -4,10 +4,18 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-PUBLIC_PACKAGES=(
-  packages/valdres
-  packages/valdres-react
-)
+# One source of truth, shared with scripts/lib/publishable-packages.ts and the
+# release build. `while read` rather than `mapfile` because macOS still ships
+# bash 3.2 and `bun run verify` replays these steps locally.
+PUBLIC_PACKAGES=()
+while IFS= read -r package_dir; do
+  [ -n "$package_dir" ] && PUBLIC_PACKAGES+=("$package_dir")
+done < <(node -p "require('$ROOT_DIR/scripts/publishable-packages.json').join('\n')")
+
+if [ "${#PUBLIC_PACKAGES[@]}" -eq 0 ]; then
+  echo "::error::scripts/publishable-packages.json resolved to no packages"
+  exit 1
+fi
 
 # Restore prepacked package.json files even if the script aborts midway.
 restore_packages() {
@@ -71,7 +79,13 @@ for (const packageDir of packageDirs) {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(rootDir, packageDir, "package.json"), "utf8"),
   )
-  const expectedName = path.basename(packageDir)
+  // Scope-aware: packages/valdres -> valdres, and
+  // packages/@valdres/browser-contrast -> @valdres/browser-contrast. Plain
+  // basename() silently expected "browser-contrast" and aborted the whole
+  // release on the first scoped package.
+  const base = path.basename(packageDir)
+  const parent = path.basename(path.dirname(packageDir))
+  const expectedName = parent.startsWith("@") ? `${parent}/${base}` : base
   if (manifest.name !== expectedName) {
     throw new Error(
       `Refusing to publish ${packageDir}: expected package name ${expectedName}, received ${manifest.name}`,

@@ -2,7 +2,9 @@
     "$schema": "https://unpkg.com/@changesets/config@4.0.0/schema.json",
     "changelog": [
         "@changesets/changelog-github",
-        { "repo": "eigilsagafos/valdres" }
+        {
+            "repo": "eigilsagafos/valdres"
+        }
     ],
     "commit": false,
     "fixed": [],
@@ -18,8 +20,6 @@
         "valdres-svelte",
         "valdres-vue",
         "@valdres/bandwidth",
-        "@valdres/browser-color-scheme",
-        "@valdres/browser-contrast",
         "@valdres/browser-device-motion",
         "@valdres/browser-device-orientation",
         "@valdres/browser-focus",
@@ -27,9 +27,6 @@
         "@valdres/browser-keyboard",
         "@valdres/browser-online",
         "@valdres/browser-presence",
-        "@valdres/browser-reduced-data",
-        "@valdres/browser-reduced-motion",
-        "@valdres/browser-reduced-transparency",
         "@valdres/browser-screen",
         "@valdres/browser-screen-details",
         "@valdres/browser-visibility",

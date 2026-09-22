@@ -15,18 +15,42 @@ was written, `.changeset/pre.json` has `"mode": "pre"` and `"tag": "beta"`. Do
 not assume that merging a Version Packages PR will publish to `latest` while
 that is true: Changesets publishes prereleases to the tag in this file.
 
-The v1 beta release cohort is exactly `valdres` and `valdres-react`. Angular,
-Vue, Svelte, Solid, feature packages, and compatibility packages stay on their
-last legacy beta versions until each is migrated and certified. The cohort is
-enforced in `.changeset/config.json`, `scripts/ci-publish.sh`, and
-`scripts/verify-publish.ts`; widening any one list is not a release decision.
+The release cohort is `valdres`, `valdres-react` and the five migrated browser
+media packages: `@valdres/browser-color-scheme`, `@valdres/browser-contrast`,
+`@valdres/browser-reduced-motion`, `@valdres/browser-reduced-data` and
+`@valdres/browser-reduced-transparency`. Angular, Vue, Svelte, Solid, the
+remaining feature packages, and the compatibility packages stay on their last
+legacy beta versions until each is migrated and certified.
+
+The cohort is two lists that must stay exact complements:
+
+- `scripts/publishable-packages.json` — what the pipeline builds
+  (`build:release`, `build:types:release`), prepacks, verifies and publishes.
+  `scripts/ci-publish.sh`, `scripts/verify-publish.ts` and
+  `scripts/build-release.ts` all read this one file.
+- `.changeset/config.json` `ignore` — everything that does not release.
+
+`changeset publish` publishes every non-ignored, non-private package with an
+unpublished version, while only listed packages are prepacked, so a package in
+neither list would ship its workspace manifest — `exports` still pointing at
+`./src/index.ts` while `files` ships only `dist`.
+`scripts/publishable-packages.test.ts` fails if the complement breaks. Moving a
+package between the lists is one change, and it is not a release decision.
+
+A changeset may not name both ignored and non-ignored packages; Changesets
+rejects the repository's whole `changeset status` with "Mixed changesets …". A
+package becoming releasable must also be removed from the deferred changesets
+under `.changeset/pre/` in the same change.
 
 This release intentionally continues the existing `1.0.0-beta.N` train with a
 breaking runtime and API cutover. Already-published legacy packages commonly
 declare ranges such as `^1.0.0-beta.19`, which npm may satisfy with the new core
 even though those packages are incompatible with it. The release cohort is a
-certification boundary, not a semver-resolution boundary: only the new core and
-React packages are supported together. Do not combine beta.24 or later with a
+certification boundary, not a semver-resolution boundary: only the packages in
+the cohort above are supported together. The migrated media packages declare
+`^1.0.0-beta.39` — the release that first shipped `externalAtom` — and
+`scripts/browser-media-packages.test.ts` pins that floor by equality, because a
+`satisfies` check alone would also accept the old `^1.0.0-beta.19`. Do not combine beta.24 or later with a
 deferred adapter, plugin, or compatibility package until that package is
 migrated.
 

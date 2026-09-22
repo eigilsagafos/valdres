@@ -17,6 +17,8 @@
         "build:types": "bun run build:types:v1-beta",
         "build:types:v1-beta": "bun --filter 'valdres' build:types && bun --filter 'valdres-react' build:types",
         "build:types:all": "bun --filter '*' build:types",
+        "build:release": "bun run scripts/build-release.ts build",
+        "build:types:release": "bun run scripts/build-release.ts build:types",
         "typecheck": "bun run typecheck:v1-beta",
         "typecheck:v1-beta": "bun run scripts/typecheck.ts",
         "typecheck:all": "bun run scripts/typecheck.ts --all",

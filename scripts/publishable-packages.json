@@ -1,0 +1,9 @@
+[
+  "packages/valdres",
+  "packages/valdres-react",
+  "packages/@valdres/browser-color-scheme",
+  "packages/@valdres/browser-contrast",
+  "packages/@valdres/browser-reduced-motion",
+  "packages/@valdres/browser-reduced-data",
+  "packages/@valdres/browser-reduced-transparency"
+]

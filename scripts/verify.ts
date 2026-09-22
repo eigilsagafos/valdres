@@ -309,7 +309,7 @@ export const SKIPPED_STEPS: Record<
     "Verify publish (dry-run)": {
         job: "test",
         run: "DRY_RUN=1 bash scripts/ci-publish.sh",
-        reason: "runs the real release script (scripts/ci-publish.sh) — DRY_RUN=1 still rewrites both certified package manifests in place, which is fine on a throwaway runner and not on your working tree",
+        reason: "runs the real release script (scripts/ci-publish.sh) — DRY_RUN=1 still rewrites every publishable package manifest in place (scripts/publishable-packages.json), which is fine on a throwaway runner and not on your working tree",
     },
     "Verify publish cleanup": {
         job: "test",

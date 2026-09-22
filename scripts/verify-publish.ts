@@ -1,7 +1,8 @@
 /**
  * Verifies the publish pipeline produces valid, publishable packages.
  *
- * Runs: build → build:types → prepack for the certified v1-beta packages, then checks:
+ * Runs: build → build:types → prepack for every publishable package
+ * (scripts/publishable-packages.json), then checks:
  *   1. Exports are types-first and point to real files in dist/
  *   2. Types files exist for each export
  *   3. Legacy main/types and engines metadata is present
@@ -24,8 +25,9 @@
  */
 
 import { CORE_SIDE_EFFECTS, NODE_ENGINE_RANGE } from "./publish-metadata.ts"
+import { PUBLISHABLE_PACKAGE_DIRS } from "./lib/publishable-packages.ts"
 
-const PUBLIC_PACKAGES = ["packages/valdres", "packages/valdres-react"]
+const PUBLIC_PACKAGES = PUBLISHABLE_PACKAGE_DIRS
 
 const errors: string[] = []
 const warnings: string[] = []
@@ -42,8 +44,8 @@ const rootDir = import.meta.dir + "/.."
 const prepackScript = `${import.meta.dir}/prepack.ts`
 
 // Step 1: Build only the certified release cohort.
-console.log("Building the v1-beta release cohort...")
-const buildResult = Bun.spawnSync(["bun", "run", "build:v1-beta"], {
+console.log("Building the release cohort...")
+const buildResult = Bun.spawnSync(["bun", "run", "build:release"], {
     cwd: rootDir,
     stdio: ["inherit", "inherit", "inherit"],
 })
@@ -53,7 +55,7 @@ if (buildResult.exitCode !== 0) {
 }
 
 console.log("Building types...")
-const typesResult = Bun.spawnSync(["bun", "run", "build:types:v1-beta"], {
+const typesResult = Bun.spawnSync(["bun", "run", "build:types:release"], {
     cwd: rootDir,
     stdio: ["inherit", "inherit", "inherit"],
 })

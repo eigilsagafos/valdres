@@ -472,6 +472,93 @@ const validateReleaseFixture = (fixture: ReleaseFixture) => {
     }
 }
 
+/** Runs the release script's inline validation over one arbitrary package
+ *  directory, so scoped names can be exercised the same way the two certified
+ *  packages are. */
+const validateOnePackage = (packageDir: string, manifest: unknown) => {
+    const directory = mkdtempSync(join(tmpdir(), "valdres-release-scope-"))
+    try {
+        mkdirSync(join(directory, ".changeset"), { recursive: true })
+        mkdirSync(join(directory, packageDir), { recursive: true })
+        writeFileSync(
+            join(directory, ".changeset", "pre.json"),
+            JSON.stringify({ mode: "pre", tag: "beta" }),
+        )
+        writeFileSync(
+            join(directory, packageDir, "package.json"),
+            JSON.stringify(manifest),
+        )
+        return spawnSync("node", ["-", directory, packageDir], {
+            encoding: "utf8",
+            input: publishValidationSource(),
+        })
+    } finally {
+        rmSync(directory, { recursive: true, force: true })
+    }
+}
+
+describe("release validation accepts scoped package directories", () => {
+    // `path.basename("packages/@valdres/browser-contrast")` is
+    // "browser-contrast", so the original guard rejected every scoped package —
+    // and because validation runs before any prepack, one scoped entry aborted
+    // the release for the certified packages too.
+    test("accepts a scoped package whose manifest matches its directory", () => {
+        const result = validateOnePackage(
+            "packages/@valdres/browser-contrast",
+            { name: "@valdres/browser-contrast", version: "1.0.0-beta.9" },
+        )
+
+        expect({ status: result.status, stderr: result.stderr }).toEqual({
+            status: 0,
+            stderr: "",
+        })
+    })
+
+    test("still rejects a scoped manifest whose name drifted", () => {
+        const result = validateOnePackage(
+            "packages/@valdres/browser-contrast",
+            { name: "@valdres/browser-contrasty", version: "1.0.0-beta.9" },
+        )
+
+        expect(result.status).not.toBe(0)
+        expect(result.stderr).toContain(
+            "expected package name @valdres/browser-contrast",
+        )
+    })
+
+    test("still rejects a scoped manifest that drops its scope", () => {
+        const result = validateOnePackage(
+            "packages/@valdres/browser-contrast",
+            { name: "browser-contrast", version: "1.0.0-beta.9" },
+        )
+
+        expect(result.status).not.toBe(0)
+        expect(result.stderr).toContain(
+            "expected package name @valdres/browser-contrast",
+        )
+    })
+
+    test("still rejects a non-canonical version on a scoped package", () => {
+        const result = validateOnePackage(
+            "packages/@valdres/browser-contrast",
+            { name: "@valdres/browser-contrast", version: "1.0.0" },
+        )
+
+        expect(result.status).not.toBe(0)
+        expect(result.stderr).toContain("canonical x.y.z-beta.N version")
+    })
+
+    test("still rejects an unscoped manifest that gained a scope", () => {
+        const result = validateOnePackage("packages/valdres", {
+            name: "@valdres/valdres",
+            version: "1.0.0-beta.39",
+        })
+
+        expect(result.status).not.toBe(0)
+        expect(result.stderr).toContain("expected package name valdres")
+    })
+})
+
 describe("release versions follow checked-in manifests", () => {
     test("accepts any canonical beta counter without editing release scripts", () => {
         const result = validateReleaseFixture({
