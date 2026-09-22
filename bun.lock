@@ -158,7 +158,7 @@
     },
     "packages/@valdres/browser-color-scheme": {
       "name": "@valdres/browser-color-scheme",
-      "version": "1.0.0-beta.8",
+      "version": "1.0.0-beta.9",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -176,7 +176,7 @@
     },
     "packages/@valdres/browser-contrast": {
       "name": "@valdres/browser-contrast",
-      "version": "1.0.0-beta.8",
+      "version": "1.0.0-beta.9",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -315,7 +315,7 @@
     },
     "packages/@valdres/browser-reduced-data": {
       "name": "@valdres/browser-reduced-data",
-      "version": "1.0.0-beta.8",
+      "version": "1.0.0-beta.9",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -333,7 +333,7 @@
     },
     "packages/@valdres/browser-reduced-motion": {
       "name": "@valdres/browser-reduced-motion",
-      "version": "1.0.0-beta.8",
+      "version": "1.0.0-beta.9",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -351,7 +351,7 @@
     },
     "packages/@valdres/browser-reduced-transparency": {
       "name": "@valdres/browser-reduced-transparency",
-      "version": "1.0.0-beta.8",
+      "version": "1.0.0-beta.9",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -486,7 +486,7 @@
     },
     "packages/valdres": {
       "name": "valdres",
-      "version": "1.0.0-beta.39",
+      "version": "1.0.0-beta.40",
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
         "@testing-library/react": "16.3.0",

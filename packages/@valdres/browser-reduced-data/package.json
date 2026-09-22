@@ -1,7 +1,7 @@
 {
     "name": "@valdres/browser-reduced-data",
     "description": "Reactive prefers-reduced-data media query",
-    "version": "1.0.0-beta.8",
+    "version": "1.0.0-beta.9",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"

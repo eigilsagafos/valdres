@@ -1,7 +1,7 @@
 {
     "name": "@valdres/browser-contrast",
     "description": "Reactive prefers-contrast preference from the OS",
-    "version": "1.0.0-beta.8",
+    "version": "1.0.0-beta.9",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
