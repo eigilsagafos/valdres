@@ -1,7 +1,7 @@
-import { selector } from "valdres"
-import { pressedKeysAtom } from "../atoms/pressedKeysAtom"
+import { selector, type Selector } from "valdres"
+import { pressedKeysAtom } from "./pressedKeysAtom"
 
-export const pressedCodesSelector = selector(
+export const pressedCodesSelector: Selector<string[]> = selector(
     get => get(pressedKeysAtom).map(k => k.code),
     { name: "@valdres/browser-keyboard/pressedCodes" },
 )
