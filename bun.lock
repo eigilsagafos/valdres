@@ -278,6 +278,19 @@
         "valdres": "^1.0.0-beta.19",
       },
     },
+    "packages/@valdres/browser-mouse": {
+      "name": "@valdres/browser-mouse",
+      "version": "1.0.0-beta.0",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "happy-dom": "20.0.5",
+        "typescript": "5.9.2",
+        "valdres": "workspace:^",
+      },
+      "peerDependencies": {
+        "valdres": "^1.0.0-beta.7",
+      },
+    },
     "packages/@valdres/browser-online": {
       "name": "@valdres/browser-online",
       "version": "1.0.0-beta.8",
@@ -1122,6 +1135,8 @@
     "@valdres/browser-geolocation": ["@valdres/browser-geolocation@workspace:packages/@valdres/browser-geolocation"],
 
     "@valdres/browser-keyboard": ["@valdres/browser-keyboard@workspace:packages/@valdres/browser-keyboard"],
+
+    "@valdres/browser-mouse": ["@valdres/browser-mouse@workspace:packages/@valdres/browser-mouse"],
 
     "@valdres/browser-online": ["@valdres/browser-online@workspace:packages/@valdres/browser-online"],
 
@@ -2400,6 +2415,10 @@
     "@valdres/browser-geolocation/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
     "@valdres/browser-geolocation/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
+    "@valdres/browser-mouse/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-mouse/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
 
     "@valdres/browser-online/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
