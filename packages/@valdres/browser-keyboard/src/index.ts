@@ -6,6 +6,7 @@ export { pressedKeyValuesSelector } from "./selectors/pressedKeyValuesSelector"
 export { modifierSelector } from "./selectors/modifierSelector"
 export { isCodePressedSelector } from "./selectors/isCodePressedSelector"
 export { isKeyPressedSelector } from "./selectors/isKeyPressedSelector"
+export { activateKeyboard } from "./utils/activateKeyboard"
 
 export type { KeyboardSnapshot } from "./types/KeyboardSnapshot"
 export type { PressedKey } from "./types/PressedKey"

@@ -85,6 +85,25 @@ derives from it, so one event can never leave pressed keys and locks out of step
 An event that changes nothing — a repeat, releasing a key that was not tracked —
 keeps the same snapshot object, and nothing downstream is notified.
 
+### Activation
+
+```ts
+function activateKeyboard(): void
+```
+
+Starts tracking for the current document now. Without this call, tracking starts
+at the first store subscription. Call it from your client entry when keys pressed
+before the first component mounts matter, or when you only read with `store.get`.
+It is idempotent, returns nothing because there is nothing to stop, and does
+nothing where there is no `document`, so shared server/client entry code can call
+it.
+
+```ts
+// client entry
+import { activateKeyboard } from "@valdres/browser-keyboard"
+activateKeyboard()
+```
+
 ### Pressed keys
 
 ```ts
@@ -165,9 +184,11 @@ One persistent listener set per document — `keydown`, `keyup` and
 `visibilitychange` on the document, `blur` on its window — shared by every store.
 
 - **Importing and reading never start it.** A `store.get` before the hub has
-  started reports the empty snapshot.
-- **The first store subscription starts it** — directly to `keyboardAtom` or
-  through any selector derived from it.
+  started reports the empty snapshot; after it has started, a `store.get` reports
+  the current keys without subscribing.
+- **`activateKeyboard()` or the first store subscription starts it**, whichever
+  comes first. A subscription counts whether it is to `keyboardAtom` directly or
+  to any selector derived from it.
 - **Once started, it keeps tracking.** Unsubscribing, unmounting or disposing a
   store only removes that store's subscription. Key state is not cleared and the
   listeners stay attached, so a store that subscribes later sees the keys held now.
@@ -181,9 +202,9 @@ notified, and the error is reported from the native event listener.
 
 On the server — and in any runtime without a `document` — every read returns one
 fixed empty snapshot: no pressed keys, every lock `null`. Server rendering never
-starts the hub. During hydration `useValue` renders that same empty value first,
-then switches to the live keyboard state: a normal two-pass render, not a
-hydration mismatch.
+starts the hub, and `activateKeyboard()` does nothing there. During hydration
+`useValue` renders that same empty value first, then switches to the live keyboard
+state: a normal two-pass render, not a hydration mismatch.
 
 ## Keyboard state versus shortcuts
 

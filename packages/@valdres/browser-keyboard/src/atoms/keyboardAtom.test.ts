@@ -41,7 +41,7 @@ describe("activation", () => {
         app.dispose()
     })
 
-    test("a store subscription activates one physical hub [pending activation API]", () => {
+    test("a store subscription activates one physical hub", () => {
         const app = store()
         const stop = app.sub(keyboardAtom, () => {})
 

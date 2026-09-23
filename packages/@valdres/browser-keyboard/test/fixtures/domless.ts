@@ -7,6 +7,7 @@
 import { strict as assert } from "node:assert"
 import { store } from "valdres"
 import {
+    activateKeyboard,
     keyboardAtom,
     modifierSelector,
     pressedCodesSelector,
@@ -31,6 +32,10 @@ assert.deepEqual(app.get(pressedKeysSelector), [])
 assert.deepEqual(app.get(pressedCodesSelector), [])
 assert.equal(app.get(modifierSelector("shift")), false)
 assert.equal(app.get(toggleKeySelector("CapsLock")), null)
+
+// Explicit activation is a no-op without a document.
+activateKeyboard()
+assert.equal(app.get(keyboardAtom), empty)
 
 // Subscribing is a no-op that still returns a callable cleanup.
 const unsub = app.sub(keyboardAtom, () => {

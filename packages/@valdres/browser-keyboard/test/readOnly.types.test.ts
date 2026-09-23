@@ -7,6 +7,7 @@
 import { expect, test } from "bun:test"
 import { store, type ExternalAtom, type Selector, type Store } from "valdres"
 import {
+    activateKeyboard,
     isCodePressedSelector,
     isKeyPressedSelector,
     keyboardAtom,
@@ -56,6 +57,8 @@ test("reads keep their declared value domains", () => {
     const caps: boolean | null = app.get(toggleKeySelector("CapsLock"))
     expect([codes, keys, code, key, shift, caps]).toEqual([[], [], false, false, false, null])
     expect(app.get(source).pressed).toBe(app.get(pressed))
+    const started: void = activateKeyboard()
+    expect(started).toBeUndefined()
     expect(typeof rejectedWrites).toBe("function")
     app.dispose()
 })
