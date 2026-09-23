@@ -58,7 +58,7 @@ describe("activation", () => {
 
     test("a transitive selector subscription reaches the same hub", () => {
         const app = store()
-        const seen: string[][] = []
+        const seen: (readonly string[])[] = []
         const stop = app.sub(pressedCodesSelector, () =>
             seen.push(app.get(pressedCodesSelector)),
         )
@@ -154,7 +154,7 @@ describe("persistent hub lifetime", () => {
         kb.down("ShiftLeft", "Shift")
         kb.down("KeyA", "A")
 
-        const seen: string[][] = []
+        const seen: (readonly string[])[] = []
         const stop = app.sub(pressedCodesSelector, () =>
             seen.push(app.get(pressedCodesSelector)),
         )

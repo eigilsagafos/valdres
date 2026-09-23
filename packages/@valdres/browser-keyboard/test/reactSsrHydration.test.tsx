@@ -4,7 +4,7 @@ import { hydrateRoot, type Root } from "react-dom/client"
 import { renderToString } from "react-dom/server"
 import { store, type Store } from "valdres"
 import { Provider, useValue } from "valdres-react"
-import { pressedCodesSelector, toggleKeyAtom } from "../src/index"
+import { pressedCodesSelector, toggleKeySelector } from "../src/index"
 import { activateKeyboardHub, peekKeyboardHub } from "../src/lib/keyboardHubs"
 import { installKeyboardHarness, type KeyboardHarness } from "./setup/keyboardHarness"
 
@@ -20,7 +20,7 @@ afterEach(() => {
 
 const Keys = ({ onRender }: { onRender: (value: string) => void }) => {
     const codes = useValue(pressedCodesSelector)
-    const caps = useValue(toggleKeyAtom("CapsLock"))
+    const caps = useValue(toggleKeySelector("CapsLock"))
     const text = `${codes.join("+") || "none"}|caps:${caps}`
     onRender(text)
     return <span id="keys">{text}</span>

@@ -26,16 +26,16 @@ assert.deepEqual(attached, [], "importing attached listeners")
 
 const app = store()
 app.get(kb.keyboardAtom)
-app.get(kb.pressedKeysAtom)
+app.get(kb.pressedKeysSelector)
 app.get(kb.pressedCodesSelector)
 app.get(kb.pressedKeyValuesSelector)
 app.get(kb.modifierSelector("meta"))
 app.get(kb.isCodePressedSelector("KeyA"))
 app.get(kb.isKeyPressedSelector("a"))
-app.get(kb.toggleKeyAtom("CapsLock"))
+app.get(kb.toggleKeySelector("CapsLock"))
 assert.deepEqual(attached, [], "a dormant read attached listeners")
 
-const stop = app.sub(kb.toggleKeyAtom("CapsLock"), () => {})
+const stop = app.sub(kb.toggleKeySelector("CapsLock"), () => {})
 assert.deepEqual(attached.sort(), [
     "document:keydown",
     "document:keyup",

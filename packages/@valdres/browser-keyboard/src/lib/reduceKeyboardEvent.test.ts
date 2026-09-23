@@ -15,7 +15,6 @@ const event = (
         type,
         code,
         key,
-        target: null,
         keyCode: 0,
         isComposing: false,
         timeStamp: 1,
@@ -41,13 +40,13 @@ describe("reduceKeyboardEvent", () => {
         expect(codes(state)).toEqual(["KeyB"])
     })
 
-    test("records key, code, first timeStamp and target", () => {
+    test("records key, code and first timeStamp", () => {
         const state = apply([
             event("keydown", "KeyA", "a", { timeStamp: 5 }),
             event("keydown", "KeyA", "a", { timeStamp: 9, repeat: true }),
         ])
         expect(state.pressed).toEqual([
-            { code: "KeyA", key: "a", timeStamp: 5, target: null },
+            { code: "KeyA", key: "a", timeStamp: 5 },
         ])
     })
 

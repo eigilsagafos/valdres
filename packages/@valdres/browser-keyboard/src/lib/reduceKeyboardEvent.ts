@@ -64,7 +64,6 @@ const nextPressed = (
             code,
             key: event.key,
             timeStamp: event.timeStamp,
-            target: event.target,
         })
     return [...next, pressed]
 }

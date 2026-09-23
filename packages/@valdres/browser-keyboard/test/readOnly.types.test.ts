@@ -12,9 +12,9 @@ import {
     keyboardAtom,
     modifierSelector,
     pressedCodesSelector,
-    pressedKeysAtom,
+    pressedKeysSelector,
     pressedKeyValuesSelector,
-    toggleKeyAtom,
+    toggleKeySelector,
     type KeyboardSnapshot,
     type PressedKey,
 } from "../src/index"
@@ -27,11 +27,11 @@ const rejectedWrites = (app: Store, snapshot: KeyboardSnapshot) => {
     // @ts-expect-error an external source cannot be updated
     app.update(keyboardAtom, () => snapshot)
     // @ts-expect-error pressed keys are derived, not writable
-    app.set(pressedKeysAtom, [])
+    app.set(pressedKeysSelector, [])
     // @ts-expect-error lock state is derived, not writable
-    app.set(toggleKeyAtom("CapsLock"), true)
+    app.set(toggleKeySelector("CapsLock"), true)
     // @ts-expect-error snapshots are readonly
-    snapshot.pressed.push({ code: "KeyA", key: "a", timeStamp: 0, target: null })
+    snapshot.pressed.push({ code: "KeyA", key: "a", timeStamp: 0 })
     // @ts-expect-error snapshot entries are readonly
     snapshot.pressed[0]!.code = "KeyB"
     // @ts-expect-error lock records are readonly
@@ -41,19 +41,19 @@ const rejectedWrites = (app: Store, snapshot: KeyboardSnapshot) => {
     // @ts-expect-error only the four modifiers exist
     modifierSelector("hyper")
     // @ts-expect-error only the three lock keys exist
-    toggleKeyAtom("KanaMode")
+    toggleKeySelector("KanaMode")
 }
 
 test("reads keep their declared value domains", () => {
     const app = store()
     const source: ExternalAtom<KeyboardSnapshot> = keyboardAtom
-    const pressed: Selector<readonly PressedKey[]> = pressedKeysAtom
-    const codes: string[] = app.get(pressedCodesSelector)
-    const keys: string[] = app.get(pressedKeyValuesSelector)
+    const pressed: Selector<readonly PressedKey[]> = pressedKeysSelector
+    const codes: readonly string[] = app.get(pressedCodesSelector)
+    const keys: readonly string[] = app.get(pressedKeyValuesSelector)
     const code: boolean = app.get(isCodePressedSelector("KeyA"))
     const key: boolean = app.get(isKeyPressedSelector("a"))
     const shift: boolean = app.get(modifierSelector("shift"))
-    const caps: boolean | null = app.get(toggleKeyAtom("CapsLock"))
+    const caps: boolean | null = app.get(toggleKeySelector("CapsLock"))
     expect([codes, keys, code, key, shift, caps]).toEqual([[], [], false, false, false, null])
     expect(app.get(source).pressed).toBe(app.get(pressed))
     expect(typeof rejectedWrites).toBe("function")

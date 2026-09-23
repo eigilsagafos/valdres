@@ -1,5 +1,5 @@
 import { family, selector, type Selector } from "valdres"
-import { pressedKeysAtom } from "./pressedKeysAtom"
+import { pressedKeysSelector } from "./pressedKeysSelector"
 
 export type Modifier = "shift" | "ctrl" | "alt" | "meta"
 
@@ -20,7 +20,7 @@ export const modifierSelector: (modifier: Modifier) => Selector<boolean> = famil
         selector(
             get => {
                 const [left, right] = modifierCodes[modifier]
-                return get(pressedKeysAtom).some(k => k.code === left || k.code === right)
+                return get(pressedKeysSelector).some(k => k.code === left || k.code === right)
             },
             { name: `@valdres/browser-keyboard/modifier/${modifier}` },
         ),

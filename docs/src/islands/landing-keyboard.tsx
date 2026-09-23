@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { createRoot } from "react-dom/client"
 import { Provider, useValue } from "valdres-react"
-import { pressedCodesSelector, toggleKeyAtom } from "@valdres/browser-keyboard"
+import { pressedCodesSelector, toggleKeySelector } from "@valdres/browser-keyboard"
 import type { KeyboardCode } from "@valdres/browser-keyboard"
 import { docsStore } from "./shared-store"
 
@@ -114,7 +114,7 @@ function Key({
 
 function Keyboard() {
     const pressed = useValue(pressedCodesSelector)
-    const capsLock = useValue(toggleKeyAtom("CapsLock"))
+    const capsLock = useValue(toggleKeySelector("CapsLock"))
     const pressedSet = new Set(pressed)
     const containerRef = useRef<HTMLDivElement | null>(null)
 

@@ -1,7 +1,7 @@
 import { selector, type Selector } from "valdres"
-import { pressedKeysAtom } from "./pressedKeysAtom"
+import { pressedKeysSelector } from "./pressedKeysSelector"
 
-export const pressedKeyValuesSelector: Selector<string[]> = selector(
-    get => get(pressedKeysAtom).map(k => k.key.toLowerCase()),
+export const pressedKeyValuesSelector: Selector<readonly string[]> = selector<readonly string[]>(
+    get => get(pressedKeysSelector).map(k => k.key.toLowerCase()),
     { name: "@valdres/browser-keyboard/pressedKeyValues" },
 )

@@ -6,13 +6,8 @@ description: Reactive pressed-key state from keydown / keyup
 # browser-keyboard
 
 Tracks which keys are currently held down, from the document's `keydown` / `keyup`
-events. Exposes one immutable keyboard snapshot plus selectors for codes, key
-values, modifiers, per-key checks and lock keys.
-
-Keyboard state belongs to the browser, so `keyboardAtom` is an **external atom**:
-it is read-only, and everything else is a selector derived from it. Stores cannot
-write any of them — `set`, `reset` and `update` reject them at compile time and at
-runtime.
+events. One read-only external atom holds the keyboard snapshot; every other export
+is a selector derived from it.
 
 ## Live example
 
@@ -35,7 +30,7 @@ import { store } from "valdres"
 import {
     pressedCodesSelector,
     modifierSelector,
-    toggleKeyAtom,
+    toggleKeySelector,
 } from "@valdres/browser-keyboard"
 
 const app = store()
@@ -43,7 +38,7 @@ const stop = app.sub(pressedCodesSelector, () => {
     console.log(app.get(pressedCodesSelector)) // e.g. ["ShiftLeft", "KeyA"]
 })
 app.get(modifierSelector("shift")) // boolean
-app.get(toggleKeyAtom("CapsLock")) // boolean | null — null until observed
+app.get(toggleKeySelector("CapsLock")) // boolean | null — null until observed
 stop() // removes this store's subscription; tracking continues
 ```
 
@@ -51,11 +46,11 @@ stop() // removes this store's subscription; tracking continues
 
 ```tsx
 import { useValue } from "valdres-react"
-import { pressedCodesSelector, isCodePressedSelector } from "@valdres/browser-keyboard"
+import { pressedCodesSelector, modifierSelector } from "@valdres/browser-keyboard"
 
 function Keys() {
-    const codes = useValue(pressedCodesSelector) // string[]
-    const shift = useValue(isCodePressedSelector("ShiftLeft"))
+    const codes = useValue(pressedCodesSelector) // readonly string[]
+    const shift = useValue(modifierSelector("shift")) // boolean
     return <span>{codes.join(" + ")}</span>
 }
 ```
@@ -74,28 +69,74 @@ you pass explicitly as its second argument. There is no implicit global store.
 
 </div>
 
-## Exports
+## API
 
-| Export | Kind | Type |
-|--------|------|------|
-| `keyboardAtom` | external atom (read-only) | `KeyboardSnapshot` |
-| `pressedKeysAtom` | selector (read-only) | `readonly PressedKey[]` |
-| `pressedCodesSelector` | selector | `string[]` |
-| `pressedKeyValuesSelector` | selector | `string[]` (lowercased `key` values) |
-| `modifierSelector(modifier)` | selector family | `boolean` |
-| `isCodePressedSelector(code)` | selector family | `boolean` |
-| `isKeyPressedSelector(key)` | selector family | `boolean` (case-insensitive) |
-| `toggleKeyAtom(key)` | selector family (read-only) | `boolean \| null` |
-| `KeyboardSnapshot`, `PressedKey`, `KeyboardCode`, `Modifier`, `ToggleKey` | types | |
+Everything is read-only browser truth. `set`, `reset` and `update` reject every
+export below, at compile time and at runtime.
 
-`pressedKeysAtom` and `toggleKeyAtom` keep their pre-v1 names, but they are
-read-only selectors now.
+### Source
 
-`keyboardAtom`'s value is a frozen `{ pressed, locks }` object. `pressed` lists held
-keys in press order as `{ code, key, timeStamp, target }`, where `timeStamp` and
-`target` come from the keydown that first observed the press — repeats do not
-replace it. An event that changes nothing (a repeat, releasing an untracked key)
-keeps the same snapshot object, so nothing downstream is notified.
+```ts
+const keyboardAtom: ExternalAtom<KeyboardSnapshot>
+```
+
+The whole observed keyboard state as one frozen snapshot. Every selector below
+derives from it, so one event can never leave pressed keys and locks out of step.
+An event that changes nothing — a repeat, releasing a key that was not tracked —
+keeps the same snapshot object, and nothing downstream is notified.
+
+### Pressed keys
+
+```ts
+const pressedKeysSelector: Selector<readonly PressedKey[]>
+const pressedCodesSelector: Selector<readonly string[]>
+const pressedKeyValuesSelector: Selector<readonly string[]>
+```
+
+Held keys in press order: full entries, their physical `code`s
+(`"ShiftLeft"`, `"KeyA"`), or their lowercased `key` values (`"shift"`, `"a"`).
+`code` names the physical key regardless of layout; `key` is what the layout and
+modifiers produced for the keydown that pressed it.
+
+### Per-key checks
+
+```ts
+function isCodePressedSelector(code: KeyboardCode): Selector<boolean>
+function isKeyPressedSelector(key: string): Selector<boolean> // case-insensitive
+function modifierSelector(modifier: Modifier): Selector<boolean>
+```
+
+`modifierSelector` is true while either side of the modifier is held —
+`"shift"` covers `ShiftLeft` and `ShiftRight`. Each family returns the same
+selector for the same argument.
+
+### Lock keys
+
+```ts
+function toggleKeySelector(key: ToggleKey): Selector<boolean | null>
+```
+
+Whether `CapsLock`, `NumLock` or `ScrollLock` is on, as of the last observed key
+event. `null` means unknown: nothing observed yet, or a focus-loss reset since.
+
+### Types
+
+```ts
+type KeyboardSnapshot = Readonly<{
+    pressed: readonly PressedKey[]
+    locks: Readonly<Record<ToggleKey, boolean | null>>
+}>
+
+type PressedKey = Readonly<{
+    code: string
+    key: string
+    timeStamp: number // of the keydown that first pressed it; repeats keep it
+}>
+
+type Modifier = "shift" | "ctrl" | "alt" | "meta"
+type ToggleKey = "CapsLock" | "NumLock" | "ScrollLock"
+type KeyboardCode = "KeyA" | "Digit1" | "ShiftLeft" | "ArrowUp" | "F1" | … // common KeyboardEvent.code values
+```
 
 ## What is observed
 
@@ -107,10 +148,9 @@ to infer presses.
 - **Focus loss resets.** When the window loses focus or the page becomes hidden,
   keyups can be missed, so every pressed key is cleared and every lock returns to
   `null`.
-- **Lock keys** (`CapsLock`, `NumLock`, `ScrollLock`) are reported only through
-  `toggleKeyAtom`, never as pressed keys. All three are read together from the
-  first accepted event after start or a reset; after that, a lock updates when its
-  own key is pressed or released.
+- **Lock keys** are reported only through `toggleKeySelector`, never as pressed
+  keys. All three are read together from the first event after start or a reset;
+  after that, a lock updates when its own key is pressed or released.
 - **IME composition** keydowns (`isComposing`, or the legacy `keyCode` 229) are
   ignored. A keyup during composition still releases a key that was already held.
 - **macOS Command.** macOS does not send keyup for keys pressed while Command is
@@ -149,6 +189,5 @@ hydration mismatch.
 
 This package reports **state**: which keys are held. Store notifications are not
 the native event, so they cannot call `preventDefault()` or react to a single
-event such as a repeat. For "press this combination → run this callback"
-shortcuts, handle the native event: add your own `keydown` listener, or use
-`@valdres/hotkeys`, which has not been migrated to the v1 core yet.
+event such as a repeat. For "press this combination → run this callback", handle
+the native `keydown` event yourself.

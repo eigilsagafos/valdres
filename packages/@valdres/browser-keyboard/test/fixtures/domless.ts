@@ -10,8 +10,8 @@ import {
     keyboardAtom,
     modifierSelector,
     pressedCodesSelector,
-    pressedKeysAtom,
-    toggleKeyAtom,
+    pressedKeysSelector,
+    toggleKeySelector,
 } from "../../src/index"
 
 assert.equal(typeof globalThis.document, "undefined")
@@ -27,10 +27,10 @@ assert.deepEqual(empty, {
 })
 assert.ok(Object.isFrozen(empty))
 assert.equal(app.get(keyboardAtom), empty)
-assert.deepEqual(app.get(pressedKeysAtom), [])
+assert.deepEqual(app.get(pressedKeysSelector), [])
 assert.deepEqual(app.get(pressedCodesSelector), [])
 assert.equal(app.get(modifierSelector("shift")), false)
-assert.equal(app.get(toggleKeyAtom("CapsLock")), null)
+assert.equal(app.get(toggleKeySelector("CapsLock")), null)
 
 // Subscribing is a no-op that still returns a callable cleanup.
 const unsub = app.sub(keyboardAtom, () => {

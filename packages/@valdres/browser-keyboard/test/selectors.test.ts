@@ -11,9 +11,9 @@ import {
     keyboardAtom,
     modifierSelector,
     pressedCodesSelector,
-    pressedKeysAtom,
+    pressedKeysSelector,
     pressedKeyValuesSelector,
-    toggleKeyAtom,
+    toggleKeySelector,
     type PressedKey,
 } from "../src/index"
 import { installKeyboardHarness, type KeyboardHarness } from "./setup/keyboardHarness"
@@ -37,8 +37,8 @@ const record = <Value>(state: State<Value>) => {
 
 describe("pressed keys", () => {
     test("codes and lowercased key values follow presses and releases", () => {
-        const codes = record<string[]>(pressedCodesSelector)
-        const keys = record<string[]>(pressedKeyValuesSelector)
+        const codes = record<readonly string[]>(pressedCodesSelector)
+        const keys = record<readonly string[]>(pressedKeyValuesSelector)
 
         kb.down("ShiftLeft", "Shift")
         kb.down("KeyA", "A", { shiftKey: true })
@@ -51,15 +51,15 @@ describe("pressed keys", () => {
         keys.stop()
     })
 
-    test("pressedKeysAtom keeps the first press's entry across repeats", () => {
-        const pressed = record<readonly PressedKey[]>(pressedKeysAtom)
+    test("pressedKeysSelector keeps the first press's entry across repeats", () => {
+        const pressed = record<readonly PressedKey[]>(pressedKeysSelector)
         const first = kb.down("KeyA", "a")
         kb.down("KeyA", "a", { repeat: true })
         kb.down("KeyA", "a", { repeat: true })
 
         expect(pressed.seen).toHaveLength(1)
         expect(pressed.seen[0]).toEqual([
-            { code: "KeyA", key: "a", timeStamp: first.timeStamp, target: document },
+            { code: "KeyA", key: "a", timeStamp: first.timeStamp },
         ])
         pressed.stop()
     })
@@ -78,8 +78,8 @@ describe("pressed keys", () => {
 
     test("a lock-only change does not notify pressed-key subscribers", () => {
         kb.setLock("CapsLock", false)
-        const codes = record<string[]>(pressedCodesSelector)
-        const caps = record<boolean | null>(toggleKeyAtom("CapsLock"))
+        const codes = record<readonly string[]>(pressedCodesSelector)
+        const caps = record<boolean | null>(toggleKeySelector("CapsLock"))
         kb.down("KeyA", "a")
         kb.setLock("CapsLock", true)
         kb.down("CapsLock", "CapsLock")
@@ -137,14 +137,14 @@ describe("modifierSelector", () => {
     })
 })
 
-describe("toggleKeyAtom", () => {
+describe("toggleKeySelector", () => {
     test("null until the first event, seeded together, reset by focus loss", () => {
         kb.setLock("CapsLock", true)
         kb.setLock("NumLock", true)
-        const caps = record<boolean | null>(toggleKeyAtom("CapsLock"))
-        const num = record<boolean | null>(toggleKeyAtom("NumLock"))
-        const scroll = record<boolean | null>(toggleKeyAtom("ScrollLock"))
-        expect(app.get(toggleKeyAtom("CapsLock"))).toBe(null)
+        const caps = record<boolean | null>(toggleKeySelector("CapsLock"))
+        const num = record<boolean | null>(toggleKeySelector("NumLock"))
+        const scroll = record<boolean | null>(toggleKeySelector("ScrollLock"))
+        expect(app.get(toggleKeySelector("CapsLock"))).toBe(null)
 
         kb.down("KeyA", "A")
         kb.blur()
@@ -160,8 +160,8 @@ describe("toggleKeyAtom", () => {
     })
 
     test("lock keys update their own lock and never count as pressed", () => {
-        const caps = record<boolean | null>(toggleKeyAtom("CapsLock"))
-        const codes = record<string[]>(pressedCodesSelector)
+        const caps = record<boolean | null>(toggleKeySelector("CapsLock"))
+        const codes = record<readonly string[]>(pressedCodesSelector)
         kb.down("KeyA", "a")
 
         kb.setLock("CapsLock", true)
@@ -189,7 +189,7 @@ describe("macOS Meta recovery through the hub", () => {
 
     test("keys pressed under Meta are truncated and Meta keyup clears all", () => {
         withPlatform("MacIntel", () => {
-            const codes = record<string[]>(pressedCodesSelector)
+            const codes = record<readonly string[]>(pressedCodesSelector)
             kb.down("MetaLeft", "Meta")
             kb.down("KeyA", "a")
             kb.down("KeyB", "b")
@@ -206,7 +206,7 @@ describe("macOS Meta recovery through the hub", () => {
 
     test("other platforms keep every key", () => {
         withPlatform("Win32", () => {
-            const codes = record<string[]>(pressedCodesSelector)
+            const codes = record<readonly string[]>(pressedCodesSelector)
             kb.down("MetaLeft", "Meta")
             kb.down("KeyA", "a")
             kb.down("KeyB", "b")
@@ -218,7 +218,7 @@ describe("macOS Meta recovery through the hub", () => {
 
 describe("IME composition through the hub", () => {
     test("composing keydowns are ignored; a composing keyup releases a tracked key", () => {
-        const codes = record<string[]>(pressedCodesSelector)
+        const codes = record<readonly string[]>(pressedCodesSelector)
         kb.down("ShiftLeft", "Shift")
         kb.down("KeyA", "Process", { keyCode: 229 })
         kb.down("KeyB", "b", { isComposing: true })
@@ -233,10 +233,9 @@ describe("events from focused elements", () => {
         const input = document.createElement("input")
         document.body.append(input)
         try {
-            const codes = record<string[]>(pressedCodesSelector)
+            const codes = record<readonly string[]>(pressedCodesSelector)
             kb.down("KeyA", "a", { target: input })
             expect(codes.seen).toEqual([["KeyA"]])
-            expect(app.get(pressedKeysAtom)[0]?.target).toBe(input)
             codes.stop()
         } finally {
             input.remove()
