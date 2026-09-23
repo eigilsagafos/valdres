@@ -59,7 +59,13 @@ export const createKeyboardHub = (doc: Document): KeyboardHub => {
     }
 
     const onKey = (event: Event) =>
-        publish(reduceKeyboardEvent(snapshot, event as KeyboardEvent, isAppleLike()))
+        publish(
+            reduceKeyboardEvent(
+                snapshot,
+                event as KeyboardEvent,
+                isAppleLike(),
+            ),
+        )
     // Focus loss can swallow keyups, so what is still held is unknown.
     const onBlur = () => publish(EMPTY_KEYBOARD_SNAPSHOT)
     const onVisibilityChange = () => {
@@ -71,7 +77,11 @@ export const createKeyboardHub = (doc: Document): KeyboardHub => {
         for (const [target, type, listener] of attached.splice(0))
             target.removeEventListener(type, listener)
     }
-    const attach = (target: EventTarget, type: string, listener: (event: Event) => void) => {
+    const attach = (
+        target: EventTarget,
+        type: string,
+        listener: (event: Event) => void,
+    ) => {
         target.addEventListener(type, listener)
         attached.push([target, type, listener])
     }

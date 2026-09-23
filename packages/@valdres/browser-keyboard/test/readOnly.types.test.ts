@@ -55,7 +55,14 @@ test("reads keep their declared value domains", () => {
     const key: boolean = app.get(isKeyPressedSelector("a"))
     const shift: boolean = app.get(modifierSelector("shift"))
     const caps: boolean | null = app.get(toggleKeySelector("CapsLock"))
-    expect([codes, keys, code, key, shift, caps]).toEqual([[], [], false, false, false, null])
+    expect([codes, keys, code, key, shift, caps]).toEqual([
+        [],
+        [],
+        false,
+        false,
+        false,
+        null,
+    ])
     expect(app.get(source).pressed).toBe(app.get(pressed))
     const started: void = activateKeyboard()
     expect(started).toBeUndefined()

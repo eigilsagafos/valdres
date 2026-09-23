@@ -12,5 +12,6 @@ export const keyboardSource: ExternalSource<KeyboardSnapshot> = {
     getServerSnapshot: () => EMPTY_KEYBOARD_SNAPSHOT,
     // A store subscription activates the hub. The unsubscribe removes only
     // this invalidator; the hub keeps tracking.
-    subscribe: invalidate => activateKeyboardHub()?.subscribe(invalidate) ?? noop,
+    subscribe: invalidate =>
+        activateKeyboardHub()?.subscribe(invalidate) ?? noop,
 }

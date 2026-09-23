@@ -93,8 +93,12 @@ describe("activation", () => {
     test("the source's server snapshot is the one stable empty snapshot", () => {
         activateKeyboardHub()
         kb.down("KeyA", "a")
-        expect(keyboardSource.getServerSnapshot?.()).toBe(EMPTY_KEYBOARD_SNAPSHOT)
-        expect(keyboardSource.getServerSnapshot?.()).toBe(EMPTY_KEYBOARD_SNAPSHOT)
+        expect(keyboardSource.getServerSnapshot?.()).toBe(
+            EMPTY_KEYBOARD_SNAPSHOT,
+        )
+        expect(keyboardSource.getServerSnapshot?.()).toBe(
+            EMPTY_KEYBOARD_SNAPSHOT,
+        )
         expect(keyboardSource.getSnapshot()).not.toBe(EMPTY_KEYBOARD_SNAPSHOT)
     })
 })
@@ -112,7 +116,11 @@ describe("persistent hub lifetime", () => {
         kb.down("KeyA", "a")
         kb.down("KeyB", "b")
         kb.up("KeyA", "a")
-        expect(peekKeyboardHub()?.snapshot().pressed.map(k => k.code)).toEqual(["KeyB"])
+        expect(
+            peekKeyboardHub()
+                ?.snapshot()
+                .pressed.map(k => k.code),
+        ).toEqual(["KeyB"])
 
         // A dormant read reports what the hub observed, without re-attaching.
         expect(codesOf(app)()).toEqual(["KeyB"])
@@ -273,9 +281,9 @@ describe("hub-owned fan-out", () => {
         const reported = kb.reported()
         expect(reported).toHaveLength(1)
         expect((reported[0] as Error).name).toBe("SubscriberNotificationError")
-        expect(String((reported[0] as { causes?: unknown[] }).causes?.[0])).toContain(
-            "subscriber exploded",
-        )
+        expect(
+            String((reported[0] as { causes?: unknown[] }).causes?.[0]),
+        ).toContain("subscriber exploded")
 
         // The next native event is still delivered to both stores.
         kb.down("KeyB", "b")
@@ -354,7 +362,8 @@ describe("hub-owned fan-out", () => {
         let stopLate = () => {}
         const stopFirst = hub.subscribe(() => {
             seen.push("first")
-            if (seen.length === 1) stopLate = hub.subscribe(() => seen.push("late"))
+            if (seen.length === 1)
+                stopLate = hub.subscribe(() => seen.push("late"))
         })
 
         kb.down("KeyA", "a")
@@ -378,7 +387,9 @@ describe("hub-owned fan-out", () => {
 
         kb.down("KeyA", "a")
         expect(seen).toEqual(["first"])
-        expect((kb.reported()[0] as Error).name).toBe("SubscriberNotificationError")
+        expect((kb.reported()[0] as Error).name).toBe(
+            "SubscriberNotificationError",
+        )
         expect(kb.invalidators()).toBe(1)
 
         first.dispose()
@@ -395,7 +406,9 @@ describe("hub-owned fan-out", () => {
             seenFirst.push(codes.join())
             if (codes.length === 1) kb.down("KeyB", "b")
         })
-        second.sub(keyboardAtom, () => seenSecond.push(codesOf(second)().join()))
+        second.sub(keyboardAtom, () =>
+            seenSecond.push(codesOf(second)().join()),
+        )
 
         kb.down("KeyA", "a")
 
@@ -470,12 +483,17 @@ describe("focus loss", () => {
 describe("read-only browser truth", () => {
     test("store writes are rejected at runtime", () => {
         const app = store()
-        const loose = app as unknown as Record<string, (...args: unknown[]) => void>
-        expect(() => loose.set!(keyboardAtom, EMPTY_KEYBOARD_SNAPSHOT)).toThrow(TypeError)
-        expect(() => loose.reset!(keyboardAtom)).toThrow(TypeError)
-        expect(() => loose.update!(keyboardAtom, () => EMPTY_KEYBOARD_SNAPSHOT)).toThrow(
+        const loose = app as unknown as Record<
+            string,
+            (...args: unknown[]) => void
+        >
+        expect(() => loose.set!(keyboardAtom, EMPTY_KEYBOARD_SNAPSHOT)).toThrow(
             TypeError,
         )
+        expect(() => loose.reset!(keyboardAtom)).toThrow(TypeError)
+        expect(() =>
+            loose.update!(keyboardAtom, () => EMPTY_KEYBOARD_SNAPSHOT),
+        ).toThrow(TypeError)
         expect(() => loose.set!(pressedCodesSelector, [])).toThrow(TypeError)
         app.dispose()
     })

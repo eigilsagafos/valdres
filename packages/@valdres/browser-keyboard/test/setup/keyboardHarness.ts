@@ -73,7 +73,11 @@ export const installKeyboardHarness = (): KeyboardHarness => {
     const track = (name: Target, target: EventTarget) => {
         const add = target.addEventListener
         const remove = target.removeEventListener
-        target.addEventListener = function (type: string, listener, ...rest: unknown[]) {
+        target.addEventListener = function (
+            type: string,
+            listener,
+            ...rest: unknown[]
+        ) {
             const key = `${name}:${type}`
             if (failures.has(key)) {
                 const error = failures.get(key)
@@ -85,11 +89,25 @@ export const installKeyboardHarness = (): KeyboardHarness => {
                 set.add(listener)
                 registered.set(key, set)
             }
-            return (add as (...args: unknown[]) => void).call(this, type, listener, ...rest)
+            return (add as (...args: unknown[]) => void).call(
+                this,
+                type,
+                listener,
+                ...rest,
+            )
         }
-        target.removeEventListener = function (type: string, listener, ...rest: unknown[]) {
+        target.removeEventListener = function (
+            type: string,
+            listener,
+            ...rest: unknown[]
+        ) {
             if (listener) registered.get(`${name}:${type}`)?.delete(listener)
-            return (remove as (...args: unknown[]) => void).call(this, type, listener, ...rest)
+            return (remove as (...args: unknown[]) => void).call(
+                this,
+                type,
+                listener,
+                ...rest,
+            )
         }
         restorers.push(() => {
             target.addEventListener = add
@@ -152,11 +170,17 @@ export const installKeyboardHarness = (): KeyboardHarness => {
             visibility = state
             document.dispatchEvent(new Event("visibilitychange"))
         },
-        listeners: (target, type) => registered.get(`${target}:${type}`)?.size ?? 0,
+        listeners: (target, type) =>
+            registered.get(`${target}:${type}`)?.size ?? 0,
         physical: () =>
-            HUB_TYPES.reduce((sum, key) => sum + (registered.get(key)?.size ?? 0), 0),
+            HUB_TYPES.reduce(
+                (sum, key) => sum + (registered.get(key)?.size ?? 0),
+                0,
+            ),
         attached: () =>
-            Object.fromEntries([...registered].map(([key, set]) => [key, set.size])),
+            Object.fromEntries(
+                [...registered].map(([key, set]) => [key, set.size]),
+            ),
         invalidators: () => peekKeyboardHub()?.invalidators() ?? 0,
         reported: () => [...reported],
         failOnAttach: (target, type, error) => {

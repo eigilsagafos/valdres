@@ -18,7 +18,8 @@ const event = (
         keyCode: 0,
         isComposing: false,
         timeStamp: 1,
-        getModifierState: (name: string) => locks[name as keyof typeof locks] ?? false,
+        getModifierState: (name: string) =>
+            locks[name as keyof typeof locks] ?? false,
         ...overrides,
     }) as unknown as KeyboardEvent
 
@@ -26,7 +27,10 @@ const apply = (
     events: KeyboardEvent[],
     { apple = false, from = EMPTY_KEYBOARD_SNAPSHOT } = {},
 ): KeyboardSnapshot =>
-    events.reduce((state, next) => reduceKeyboardEvent(state, next, apple), from)
+    events.reduce(
+        (state, next) => reduceKeyboardEvent(state, next, apple),
+        from,
+    )
 
 const codes = (state: KeyboardSnapshot) => state.pressed.map(k => k.code)
 
@@ -52,27 +56,48 @@ describe("reduceKeyboardEvent", () => {
 
     test("a repeat returns the same snapshot object", () => {
         const pressed = apply([event("keydown", "KeyA", "a")])
-        expect(reduceKeyboardEvent(pressed, event("keydown", "KeyA", "a", { repeat: true }), false)).toBe(pressed)
+        expect(
+            reduceKeyboardEvent(
+                pressed,
+                event("keydown", "KeyA", "a", { repeat: true }),
+                false,
+            ),
+        ).toBe(pressed)
     })
 
     test("releasing an untracked key returns the same snapshot object", () => {
         const pressed = apply([event("keydown", "KeyA", "a")])
-        expect(reduceKeyboardEvent(pressed, event("keyup", "KeyZ", "z"), false)).toBe(pressed)
+        expect(
+            reduceKeyboardEvent(pressed, event("keyup", "KeyZ", "z"), false),
+        ).toBe(pressed)
     })
 
     test("other event types change nothing", () => {
         const pressed = apply([event("keydown", "KeyA", "a")])
-        expect(reduceKeyboardEvent(pressed, event("keypress" as "keydown", "KeyB", "b"), false)).toBe(pressed)
+        expect(
+            reduceKeyboardEvent(
+                pressed,
+                event("keypress" as "keydown", "KeyB", "b"),
+                false,
+            ),
+        ).toBe(pressed)
     })
 
     test("keyup removes by code regardless of key case", () => {
-        const state = apply([event("keydown", "KeyA", "A"), event("keyup", "KeyA", "a")])
+        const state = apply([
+            event("keydown", "KeyA", "A"),
+            event("keyup", "KeyA", "a"),
+        ])
         expect(state.pressed).toEqual([])
     })
 
     test("modifier flags on an event never invent unobserved presses", () => {
         const state = apply([
-            event("keydown", "KeyS", "s", { ctrlKey: true, metaKey: true, shiftKey: true }),
+            event("keydown", "KeyS", "s", {
+                ctrlKey: true,
+                metaKey: true,
+                shiftKey: true,
+            }),
         ])
         expect(codes(state)).toEqual(["KeyS"])
     })
@@ -88,12 +113,12 @@ describe("reduceKeyboardEvent", () => {
 
     describe("IME composition", () => {
         test("ignores composing keydowns", () => {
-            expect(apply([event("keydown", "KeyA", "a", { isComposing: true })])).toBe(
-                EMPTY_KEYBOARD_SNAPSHOT,
-            )
-            expect(apply([event("keydown", "KeyA", "Process", { keyCode: 229 })])).toBe(
-                EMPTY_KEYBOARD_SNAPSHOT,
-            )
+            expect(
+                apply([event("keydown", "KeyA", "a", { isComposing: true })]),
+            ).toBe(EMPTY_KEYBOARD_SNAPSHOT)
+            expect(
+                apply([event("keydown", "KeyA", "Process", { keyCode: 229 })]),
+            ).toBe(EMPTY_KEYBOARD_SNAPSHOT)
         })
 
         test("a composing keyup still releases a key tracked before composition", () => {
@@ -107,7 +132,11 @@ describe("reduceKeyboardEvent", () => {
         test("a composing keyup of an untracked key changes nothing", () => {
             const pressed = apply([event("keydown", "KeyA", "a")])
             expect(
-                reduceKeyboardEvent(pressed, event("keyup", "KeyB", "b", { isComposing: true }), false),
+                reduceKeyboardEvent(
+                    pressed,
+                    event("keyup", "KeyB", "b", { isComposing: true }),
+                    false,
+                ),
             ).toBe(pressed)
         })
     })
@@ -178,10 +207,7 @@ describe("reduceKeyboardEvent", () => {
     })
 
     describe("lock keys", () => {
-        const withLocks = (
-            values: Partial<typeof locks>,
-            fn: () => void,
-        ) => {
+        const withLocks = (values: Partial<typeof locks>, fn: () => void) => {
             const saved = { ...locks }
             Object.assign(locks, values)
             try {
@@ -199,17 +225,33 @@ describe("reduceKeyboardEvent", () => {
             })
             withLocks({ CapsLock: true, NumLock: true }, () => {
                 const state = apply([event("keydown", "KeyA", "a")])
-                expect(state.locks).toEqual({ CapsLock: true, NumLock: true, ScrollLock: false })
+                expect(state.locks).toEqual({
+                    CapsLock: true,
+                    NumLock: true,
+                    ScrollLock: false,
+                })
             })
         })
 
         test("after seeding, only the lock's own key updates it", () => {
             const seeded = apply([event("keydown", "KeyA", "a")])
             withLocks({ CapsLock: true }, () => {
-                const other = reduceKeyboardEvent(seeded, event("keydown", "KeyB", "b"), false)
+                const other = reduceKeyboardEvent(
+                    seeded,
+                    event("keydown", "KeyB", "b"),
+                    false,
+                )
                 expect(other.locks).toBe(seeded.locks)
-                const caps = reduceKeyboardEvent(other, event("keydown", "CapsLock", "CapsLock"), false)
-                expect(caps.locks).toEqual({ CapsLock: true, NumLock: false, ScrollLock: false })
+                const caps = reduceKeyboardEvent(
+                    other,
+                    event("keydown", "CapsLock", "CapsLock"),
+                    false,
+                )
+                expect(caps.locks).toEqual({
+                    CapsLock: true,
+                    NumLock: false,
+                    ScrollLock: false,
+                })
             })
         })
 
@@ -223,7 +265,9 @@ describe("reduceKeyboardEvent", () => {
         })
 
         test("composing events do not seed locks", () => {
-            const state = apply([event("keydown", "KeyA", "a", { isComposing: true })])
+            const state = apply([
+                event("keydown", "KeyA", "a", { isComposing: true }),
+            ])
             expect(state.locks.CapsLock).toBe(null)
         })
     })

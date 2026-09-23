@@ -85,9 +85,14 @@ export const reduceKeyboardEvent = (
     // tracked before it began, or that key would stay pressed until a reset.
     if (event.isComposing || event.keyCode === 229) {
         if (event.type !== "keyup") return current
-        const pressed = current.pressed.filter(entry => entry.code !== event.code)
+        const pressed = current.pressed.filter(
+            entry => entry.code !== event.code,
+        )
         if (pressed.length === current.pressed.length) return current
-        return Object.freeze({ pressed: Object.freeze(pressed), locks: current.locks })
+        return Object.freeze({
+            pressed: Object.freeze(pressed),
+            locks: current.locks,
+        })
     }
 
     const locks = nextLocks(current.locks, event)

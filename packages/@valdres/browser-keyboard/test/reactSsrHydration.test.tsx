@@ -6,9 +6,13 @@ import { store, type Store } from "valdres"
 import { Provider, useValue } from "valdres-react"
 import { pressedCodesSelector, toggleKeySelector } from "../src/index"
 import { activateKeyboardHub, peekKeyboardHub } from "../src/lib/keyboardHubs"
-import { installKeyboardHarness, type KeyboardHarness } from "./setup/keyboardHarness"
-
-;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+import {
+    installKeyboardHarness,
+    type KeyboardHarness,
+} from "./setup/keyboardHarness"
+;(
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true
 
 let kb: KeyboardHarness
 beforeEach(() => {
@@ -69,15 +73,21 @@ describe("React server render and hydration", () => {
         let root: Root | undefined
         try {
             await act(async () => {
-                root = hydrateRoot(container, tree(app, value => rendered.push(value)), {
-                    onRecoverableError: error => recoverable.push(error),
-                })
+                root = hydrateRoot(
+                    container,
+                    tree(app, value => rendered.push(value)),
+                    {
+                        onRecoverableError: error => recoverable.push(error),
+                    },
+                )
             })
 
             expect(recoverable).toEqual([])
             expect(rendered[0]).toBe("none|caps:null")
             expect(rendered.at(-1)).toBe("ShiftLeft|caps:true")
-            expect(container.querySelector("#keys")?.textContent).toBe("ShiftLeft|caps:true")
+            expect(container.querySelector("#keys")?.textContent).toBe(
+                "ShiftLeft|caps:true",
+            )
             // StrictMode's extra effect cycle leaves one registration.
             expect(kb.invalidators()).toBe(1)
             expect(kb.physical()).toBe(4)
@@ -91,12 +101,16 @@ describe("React server render and hydration", () => {
             await act(async () => {
                 kb.down("KeyK", "k")
             })
-            expect(container.querySelector("#keys")?.textContent).toBe("ShiftLeft+KeyK|caps:true")
+            expect(container.querySelector("#keys")?.textContent).toBe(
+                "ShiftLeft+KeyK|caps:true",
+            )
 
             await act(async () => {
                 kb.blur()
             })
-            expect(container.querySelector("#keys")?.textContent).toBe("none|caps:null")
+            expect(container.querySelector("#keys")?.textContent).toBe(
+                "none|caps:null",
+            )
         } finally {
             if (root !== undefined) await act(async () => root!.unmount())
             container.remove()
@@ -119,9 +133,13 @@ describe("React server render and hydration", () => {
         let root: Root | undefined
         try {
             await act(async () => {
-                root = hydrateRoot(container, tree(app, () => {}), {
-                    onRecoverableError: error => recoverable.push(error),
-                })
+                root = hydrateRoot(
+                    container,
+                    tree(app, () => {}),
+                    {
+                        onRecoverableError: error => recoverable.push(error),
+                    },
+                )
             })
             expect(recoverable).toEqual([])
             expect(kb.physical()).toBe(4)
@@ -129,7 +147,9 @@ describe("React server render and hydration", () => {
             await act(async () => {
                 kb.down("KeyA", "a")
             })
-            expect(container.querySelector("#keys")?.textContent).toBe("KeyA|caps:false")
+            expect(container.querySelector("#keys")?.textContent).toBe(
+                "KeyA|caps:false",
+            )
         } finally {
             if (root !== undefined) await act(async () => root!.unmount())
             container.remove()

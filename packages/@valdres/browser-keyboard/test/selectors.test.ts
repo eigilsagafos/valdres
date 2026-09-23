@@ -16,7 +16,10 @@ import {
     toggleKeySelector,
     type PressedKey,
 } from "../src/index"
-import { installKeyboardHarness, type KeyboardHarness } from "./setup/keyboardHarness"
+import {
+    installKeyboardHarness,
+    type KeyboardHarness,
+} from "./setup/keyboardHarness"
 
 let kb: KeyboardHarness
 let app: Store
@@ -45,7 +48,12 @@ describe("pressed keys", () => {
         kb.up("ShiftLeft", "Shift")
         kb.up("KeyA", "a")
 
-        expect(codes.seen).toEqual([["ShiftLeft"], ["ShiftLeft", "KeyA"], ["KeyA"], []])
+        expect(codes.seen).toEqual([
+            ["ShiftLeft"],
+            ["ShiftLeft", "KeyA"],
+            ["KeyA"],
+            [],
+        ])
         expect(keys.seen).toEqual([["shift"], ["shift", "a"], ["a"], []])
         codes.stop()
         keys.stop()
@@ -100,7 +108,9 @@ describe("pressed keys", () => {
 
         expect(code.seen).toEqual([true, false])
         expect(key.seen).toEqual([true, false])
-        expect(isCodePressedSelector("KeyA")).toBe(isCodePressedSelector("KeyA"))
+        expect(isCodePressedSelector("KeyA")).toBe(
+            isCodePressedSelector("KeyA"),
+        )
         code.stop()
         key.stop()
     })
@@ -179,11 +189,17 @@ describe("toggleKeySelector", () => {
 describe("macOS Meta recovery through the hub", () => {
     const withPlatform = (platform: string, fn: () => void) => {
         const original = navigator.platform
-        Object.defineProperty(navigator, "platform", { value: platform, configurable: true })
+        Object.defineProperty(navigator, "platform", {
+            value: platform,
+            configurable: true,
+        })
         try {
             fn()
         } finally {
-            Object.defineProperty(navigator, "platform", { value: original, configurable: true })
+            Object.defineProperty(navigator, "platform", {
+                value: original,
+                configurable: true,
+            })
         }
     }
 
