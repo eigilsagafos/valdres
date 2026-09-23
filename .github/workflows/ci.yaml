@@ -296,6 +296,39 @@ jobs:
               # read-only enforcement against the artifact rather than src/.
               run: bun run test:browser-media:packed
 
+    browser-keyboard:
+        name: Browser keyboard package
+        # Its own job, not a sixth entry in browser-media: keyboard is not a
+        # media query. It owns one persistent listener hub per document that
+        # outlives store subscriptions, so its suites and packed fixtures are
+        # different in kind. Gates `publish` for the same reason browser-media
+        # does: the revision that publishes it must have passed its suite, both
+        # tsconfig type-checks and the packed-consumer gate.
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.0
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Browser keyboard suite and typechecks
+              # `bun test` plus BOTH tsconfigs: tsconfig.tests.json is what
+              # holds the @ts-expect-error read-only contracts.
+              run: bun run test:browser-keyboard
+            - name: Validate packed browser keyboard consumer
+              # Shadow-packs the package against a built core, installs the
+              # tarballs into an isolated consumer and checks the artifact:
+              # browserless import, persistent-hub listener accounting,
+              # declarations, read-only enforcement and the peer floor.
+              run: bun run test:browser-keyboard:packed
+
     valdres-package:
         name: Valdres published-package gate
         runs-on: ubuntu-22.04
@@ -366,10 +399,11 @@ jobs:
               run: bun run test:v1-beta:packed
 
     publish:
-        # browser-media joined this list when its five packages stopped being
-        # release-ignored: the revision that publishes them must have passed
-        # their suites, both tsconfig type-checks and the packed-consumer gate.
-        needs: [test, valdres-package, browser-media]
+        # browser-media and browser-keyboard joined this list when their
+        # packages stopped being release-ignored: the revision that publishes
+        # them must have passed their suites, both tsconfig type-checks and the
+        # packed-consumer gate.
+        needs: [test, valdres-package, browser-media, browser-keyboard]
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         runs-on: ubuntu-22.04
         environment: npm-publish

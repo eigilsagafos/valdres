@@ -15,10 +15,11 @@ was written, `.changeset/pre.json` has `"mode": "pre"` and `"tag": "beta"`. Do
 not assume that merging a Version Packages PR will publish to `latest` while
 that is true: Changesets publishes prereleases to the tag in this file.
 
-The release cohort is `valdres`, `valdres-react` and the five migrated browser
+The release cohort is `valdres`, `valdres-react`, the five migrated browser
 media packages: `@valdres/browser-color-scheme`, `@valdres/browser-contrast`,
 `@valdres/browser-reduced-motion`, `@valdres/browser-reduced-data` and
-`@valdres/browser-reduced-transparency`. Angular, Vue, Svelte, Solid, the
+`@valdres/browser-reduced-transparency` — plus `@valdres/browser-keyboard`.
+Angular, Vue, Svelte, Solid, the
 remaining feature packages, and the compatibility packages stay on their last
 legacy beta versions until each is migrated and certified.
 
@@ -50,7 +51,9 @@ certification boundary, not a semver-resolution boundary: only the packages in
 the cohort above are supported together. The migrated media packages declare
 `^1.0.0-beta.39` — the release that first shipped `externalAtom` — and
 `scripts/browser-media-packages.test.ts` pins that floor by equality, because a
-`satisfies` check alone would also accept the old `^1.0.0-beta.19`. Do not combine beta.24 or later with a
+`satisfies` check alone would also accept the old `^1.0.0-beta.19`. The keyboard
+package declares `^1.0.0-beta.40`, pinned the same way by
+`scripts/browser-keyboard-package.test.ts`. Do not combine beta.24 or later with a
 deferred adapter, plugin, or compatibility package until that package is
 migrated.
 
