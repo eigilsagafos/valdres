@@ -14,5 +14,8 @@ that keydown when it was `code`, and `null` once another key goes down. Both are
 rendering. Keyups and IME composition keydowns are not reported.
 
 They share the existing listeners: no new native listener is added. Repeats
-still cost nothing for stores that read only held-key state, and for one event
-held-key state is updated before `lastKeyDown` subscribers are notified.
+still cost nothing for stores that read only held-key state. A store reading
+both is updated once per atom; the last keydown is updated first, so an
+intermediate value pairs the keydown with the keys held just before it, never
+new held keys with an older keydown. Events dispatched from inside a subscriber
+are applied after the current one.

@@ -3,8 +3,9 @@
 # browser-keyboard
 
 Tracks which keys are currently held down, from the document's `keydown` / `keyup`
-events. One read-only external atom holds the keyboard snapshot; every other export
-is a selector derived from it.
+events. Two read-only external atoms hold the observed state — held keys and
+locks in `keyboardAtom`, the most recent keydown in `lastKeyDownAtom` — and every
+other export is a selector derived from one of them.
 
 ## Live example
 
@@ -70,8 +71,9 @@ export below, at compile time and at runtime.
 const keyboardAtom: ExternalAtom<KeyboardSnapshot>
 ```
 
-The whole observed keyboard state as one frozen snapshot. Every selector below
-derives from it, so one event can never leave pressed keys and locks out of step.
+Held keys and locks as one frozen snapshot. The pressed-key, per-key and lock
+selectors below all derive from it, so one event can never leave pressed keys and
+locks out of step.
 An event that changes nothing — a repeat, releasing a key that was not tracked —
 keeps the same snapshot object, and nothing downstream is notified.
 
@@ -149,11 +151,20 @@ const stop = app.sub(lastKeyDownSelector("ArrowDown"), () => {
 `lastKeyDownAtom` is the most recent keydown of any key. `lastKeyDownSelector(code)`
 is that keydown when it was `code`, and `null` once a different key goes down.
 Both are `null` before the first keydown and after a focus-loss reset. Keyups and
-IME composition keydowns are not reported. Modifier and lock keydowns are.
+IME composition keydowns are not reported. Modifier and lock keydowns are — but
+lock keys may not send a keydown for every press: on macOS, for example, CapsLock
+may report turning on as a keydown and turning off as a keyup.
 
 Repeats cost nothing for stores that read only held-key state: those stores are
-not notified or re-evaluated. For one event, held-key state is updated first, so
-a `lastKeyDown` subscriber reads the key state that includes that keydown.
+not notified or re-evaluated.
+
+A store that reads both held-key state and the last keydown is updated once for
+each, so it settles twice per event. The last keydown is updated first, so in
+between a selector sees the new keydown with the keys held **just before** it —
+the modifiers held for a shortcut, but not yet the key itself — and never the new
+held keys with an older keydown. A selector like "Shift is held and ArrowDown was
+the last keydown" therefore fires only for an ArrowDown pressed while Shift is
+down. After a focus-loss reset, the last keydown is cleared first as well.
 
 A store notification is not the native event: it cannot call `preventDefault()`
 and does not know which element had focus. For shortcuts that need either, handle
@@ -218,15 +229,17 @@ One persistent listener set per document — `keydown`, `keyup` and
   started reports the empty snapshot; after it has started, a `store.get` reports
   the current keys without subscribing.
 - **`activateKeyboard()` or the first store subscription starts it**, whichever
-  comes first. A subscription counts whether it is to `keyboardAtom` directly or
-  to any selector derived from it.
+  comes first. A subscription counts whether it is to `keyboardAtom`,
+  `lastKeyDownAtom` or any selector derived from them.
 - **Once started, it keeps tracking.** Unsubscribing, unmounting or disposing a
   store only removes that store's subscription. Key state is not cleared and the
   listeners stay attached, so a store that subscribes later sees the keys held now.
   With no store subscribed, events only update the snapshot; no store does work.
 
-Each store tree registers once, however many subscribers and child scopes read
-the keyboard. When one store's subscriber throws, the other stores are still
+Each store tree registers once per atom it reads (`keyboardAtom`,
+`lastKeyDownAtom`), however many subscribers and child scopes read them. Events
+are applied one at a time: a key event or blur dispatched from inside a subscriber
+is applied after the current event has updated both atoms. When one store's subscriber throws, the other stores are still
 notified, and the error is reported from the native event listener.
 
 ## Server rendering

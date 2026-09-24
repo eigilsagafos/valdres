@@ -6,6 +6,8 @@ import {
 } from "../../test/setup/keyboardHarness"
 import { activateKeyboardHub, peekKeyboardHub } from "../lib/keyboardHubs"
 import { lastKeyDownSource } from "../lib/lastKeyDownSource"
+import { lastKeyDownSelector } from "../selectors/lastKeyDownSelector"
+import { modifierSelector } from "../selectors/modifierSelector"
 import { pressedCodesSelector } from "../selectors/pressedCodesSelector"
 import type { KeyDown } from "../types/KeyDown"
 import { keyboardAtom } from "./keyboardAtom"
@@ -107,16 +109,57 @@ describe("lastKeyDownAtom", () => {
         keyDowns.dispose()
     })
 
-    test("key state for the same event is settled before lastKeyDown notifies", () => {
+    test("lastKeyDown is delivered before key state for the same event", () => {
         const app = store()
         const seen: string[] = []
         app.sub(pressedCodesSelector, () => {})
         app.sub(lastKeyDownAtom, () =>
-            seen.push(app.get(pressedCodesSelector).join("+")),
+            seen.push(app.get(pressedCodesSelector).join("+") || "none"),
         )
         kb.down("ShiftLeft", "Shift")
         kb.down("KeyA", "A")
-        expect(seen).toEqual(["ShiftLeft", "ShiftLeft+KeyA"])
+        // Each keydown is observed with the keys held just before it.
+        expect(seen).toEqual(["none", "ShiftLeft"])
+        expect(app.get(pressedCodesSelector)).toEqual(["ShiftLeft", "KeyA"])
+        app.dispose()
+    })
+
+    test("a selector over both atoms never pairs new key state with a stale keydown", () => {
+        const app = store()
+        const shiftArrow = selector(get =>
+            get(modifierSelector("shift"))
+                ? (get(lastKeyDownSelector("ArrowDown"))?.sequence ?? null)
+                : null,
+        )
+        const seen: (number | null)[] = []
+        app.sub(shiftArrow, () => seen.push(app.get(shiftArrow)))
+
+        // ArrowDown before Shift must not count as Shift+ArrowDown.
+        kb.down("ArrowDown", "ArrowDown")
+        kb.up("ArrowDown", "ArrowDown")
+        kb.down("ShiftLeft", "Shift")
+        expect(seen).toEqual([])
+
+        // Shift then ArrowDown, with a repeat, does.
+        kb.down("ArrowDown", "ArrowDown")
+        kb.down("ArrowDown", "ArrowDown", { repeat: true })
+        expect(seen).toEqual([3, 4])
+        app.dispose()
+    })
+
+    test("after a reset no subscriber sees the old keydown with the empty key state", () => {
+        const app = store()
+        const held = selector(get => {
+            const keyDown = get(lastKeyDownAtom)
+            return keyDown === null
+                ? "none"
+                : `${keyDown.code}/${get(pressedCodesSelector).join("+")}`
+        })
+        const seen: string[] = []
+        app.sub(held, () => seen.push(app.get(held)))
+        kb.down("KeyA", "a")
+        kb.blur()
+        expect(seen).toEqual(["KeyA/", "KeyA/KeyA", "none"])
         app.dispose()
     })
 
@@ -196,6 +239,69 @@ describe("lastKeyDownAtom", () => {
         expect(seen).toEqual(["KeyA:false:1", "KeyA:true:2"])
         failing.dispose()
         healthy.dispose()
+    })
+
+    test("a keydown dispatched from a subscriber is applied after the current event", () => {
+        const app = store()
+        const keyDowns: string[] = []
+        let nested = false
+        app.sub(keyboardAtom, () => {
+            if (!nested) {
+                nested = true
+                kb.down("KeyB", "b")
+            }
+        })
+        app.sub(lastKeyDownAtom, () => {
+            const keyDown = app.get(lastKeyDownAtom)!
+            keyDowns.push(`${keyDown.code}:${keyDown.sequence}`)
+        })
+
+        kb.down("KeyA", "a")
+
+        expect(keyDowns).toEqual(["KeyA:1", "KeyB:2"])
+        expect(app.get(pressedCodesSelector)).toEqual(["KeyA", "KeyB"])
+        expect(app.get(lastKeyDownAtom)?.code).toBe("KeyB")
+        expect(kb.reported()).toEqual([])
+        app.dispose()
+    })
+
+    test("a blur dispatched from a subscriber leaves both channels reset", () => {
+        const app = store()
+        let blurred = false
+        app.sub(keyboardAtom, () => {
+            if (!blurred) {
+                blurred = true
+                kb.blur()
+            }
+        })
+        app.sub(lastKeyDownAtom, () => {})
+
+        kb.down("KeyA", "a")
+
+        expect(app.get(pressedCodesSelector)).toEqual([])
+        expect(app.get(lastKeyDownAtom)).toBe(null)
+        app.dispose()
+    })
+
+    test("failures from both channels are reported together", () => {
+        const keyState = store()
+        const keyDowns = store()
+        keyState.sub(keyboardAtom, () => {
+            throw new Error("key state")
+        })
+        keyDowns.sub(lastKeyDownAtom, () => {
+            throw new Error("key down")
+        })
+
+        kb.down("KeyA", "a")
+
+        const [reported] = kb.reported()
+        expect(reported).toBeInstanceOf(AggregateError)
+        expect((reported as AggregateError).errors).toHaveLength(2)
+        expect(keyState.get(keyboardAtom).pressed).toHaveLength(1)
+        expect(keyDowns.get(lastKeyDownAtom)?.code).toBe("KeyA")
+        keyState.dispose()
+        keyDowns.dispose()
     })
 
     test("the server snapshot is null", () => {
