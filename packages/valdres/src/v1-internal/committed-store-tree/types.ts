@@ -193,6 +193,15 @@ export interface CommittedStoreTree {
         state: State<Value>,
         callback: () => void,
     ) => () => void
+    /**
+     * Registers a reaction: when a settlement changes `state`, `run` executes
+     * as its own synchronous transaction after derived state propagates and
+     * before ordinary subscribers are notified. Never runs on registration.
+     */
+    readonly react: <Value, Result = void>(
+        state: State<Value>,
+        run: TransactionCallback<Result>,
+    ) => () => void
     readonly set: {
         <Key extends CollectionKey, Value extends CollectionValue>(
             row: CollectionRow<Key, Value>,

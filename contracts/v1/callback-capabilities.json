@@ -559,6 +559,42 @@
             "decisionStatus": "approved"
         },
         {
+            "id": "callback.store-reaction",
+            "apiEntryId": "core.store.react",
+            "role": "Run one synchronous state-changing command after its trigger's settled change, before ordinary subscribers observe the settlement.",
+            "phase": "reacting",
+            "suppliedCapabilities": [
+                "active Transaction cursor bound to the registration scope",
+                "latest committed reads including earlier reaction commits in the boundary",
+                "draft-overlay reads and mutation intents"
+            ],
+            "allowedExternalWork": [
+                "ordinary synchronous application work that does not require rollback",
+                "synchronous cancellation of the live native event that caused the settlement"
+            ],
+            "rejectedCapturedOperations": [
+                "captured Store read or mutation",
+                "nested Store transaction",
+                "subscription or reaction registration",
+                "unsubscribe",
+                "scope topology mutation",
+                "Store disposal",
+                "same-domain source invalidation"
+            ],
+            "guardDomain": "active-transaction",
+            "errorRule": "Captured Store work throws TransactionPhaseError; same-domain source invalidation throws CallbackCapabilityError, as in any transaction callback. An escaping error, or a failure staging or preflighting the draft, aborts only that reaction's draft; later reactions still run and earlier reaction commits remain. A failure after apply leaves that reaction's writes committed; its sources still propagate before the boundary delivers, and the failure is reported afterwards. Failures are reported after the one ordinary delivery as SubscriberNotificationError causes ahead of subscriber throws; RuntimeMismatchError precedence is unchanged.",
+            "thenableRule": "A returned thenable is rejected as InvalidTransactionCallbackResultError after its synchronous prefix, receives one rejection-containment handler, and aborts the draft; a thrown value is inspected, and a thrown thenable contained once, under transaction-result guards after the cursor closes, and kept as the exact cause. The cursor closes when the callback returns, so it cannot be used after an await.",
+            "resultBoundary": "The callback result is ignored. A successful draft commits and propagates inside the running boundary without delivering; ordinary subscribers are notified once after the last reaction wave.",
+            "requiredContractIds": [
+                "reaction.pre-notification-boundary",
+                "reaction.bounded-waves",
+                "reaction.draft-failure-isolation",
+                "transaction.one-tree-draft",
+                "error.stable-name-and-code"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
             "id": "callback.beta-cache-loader",
             "apiEntryId": "beta.cache-companion",
             "role": "Acquire one keyed async cache entry generation outside the Valdres State contract.",

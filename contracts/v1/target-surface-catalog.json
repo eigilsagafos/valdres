@@ -52,6 +52,7 @@
         "core.query-definition.offset",
         "core.query-definition.order-by",
         "core.query-definition.where",
+        "core.reaction-limit-error",
         "core.runtime-mismatch-error",
         "core.missing-collection-row-error",
         "core.scope-not-found-error",
@@ -69,6 +70,7 @@
         "core.store.dispose",
         "core.store.get",
         "core.store.on-dispose",
+        "core.store.react",
         "core.store.reset",
         "core.store.scope",
         "core.store.set",
@@ -173,6 +175,7 @@
         "callback.materialization-status-listener",
         "callback.selector-comparator",
         "callback.selector-getter",
+        "callback.store-reaction",
         "callback.store-subscriber",
         "callback.transaction",
         "callback.transaction-scope"
@@ -558,6 +561,14 @@
             "errorCode": "VALDRES_RUNTIME_MISMATCH"
         },
         {
+            "id": "core.reaction-limit-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ReactionLimitError",
+            "errorCode": "VALDRES_REACTION_LIMIT"
+        },
+        {
             "id": "core.missing-collection-row-error",
             "kind": "error",
             "package": "valdres",
@@ -674,6 +685,13 @@
             "package": "valdres",
             "subpath": ".",
             "name": "Store.sub"
+        },
+        {
+            "id": "core.store.react",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.react"
         },
         {
             "id": "core.subscriber-notification-error",

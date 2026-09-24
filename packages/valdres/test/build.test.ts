@@ -221,6 +221,7 @@ describe("v1 build output", () => {
                 "InvalidTransactionCallbackResultError",
                 "InvalidTransactionTargetError",
                 "MissingCollectionRowError",
+                "ReactionLimitError",
                 "RuntimeMismatchError",
                 "ScopeNotFoundError",
                 "SelectorCapabilityError",

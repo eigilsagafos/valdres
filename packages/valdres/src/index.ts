@@ -54,6 +54,8 @@ export const InvalidTransactionTargetError: typeof v1.InvalidTransactionTargetEr
     v1.InvalidTransactionTargetError
 export const MissingCollectionRowError: typeof v1.MissingCollectionRowError =
     v1.MissingCollectionRowError
+export const ReactionLimitError: typeof v1.ReactionLimitError =
+    v1.ReactionLimitError
 export const RuntimeMismatchError: typeof v1.RuntimeMismatchError =
     v1.RuntimeMismatchError
 export const ScopeNotFoundError: typeof v1.ScopeNotFoundError =
@@ -134,6 +136,7 @@ export type InvalidTransactionTargetError = InstanceType<
 export type MissingCollectionRowError = InstanceType<
     typeof v1.MissingCollectionRowError
 >
+export type ReactionLimitError = InstanceType<typeof v1.ReactionLimitError>
 export type RuntimeMismatchError = InstanceType<typeof v1.RuntimeMismatchError>
 export type ScopeNotFoundError = InstanceType<typeof v1.ScopeNotFoundError>
 export type SelectorCapabilityError = InstanceType<

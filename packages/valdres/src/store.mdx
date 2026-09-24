@@ -213,6 +213,104 @@ synchronously, so it cannot await anything.
     performance.
 </div>
 
+## Reactions
+
+<div className="callout callout-note">
+    <div className="callout-title">Experimental</div>
+    `store.react` is experimental during the beta.
+</div>
+
+A reaction writes state in response to a settled change, before subscribers are
+notified. Use it for commands whose result must appear together with the input
+that caused it, such as a keyboard shortcut that sets a flag:
+
+```ts
+const saving = atom(false)
+const saveRequest = atom<{ seq: number } | null>(null)
+
+const stop = myStore.react(hotkeyMatch, tx => {
+    const match = tx.get(hotkeyMatch)
+    if (match.command !== "save") return
+    tx.set(saving, true)
+    tx.set(saveRequest, { seq: match.seq })
+})
+
+// Later: stop reacting. Calling it again does nothing.
+stop()
+```
+
+- **Explicit trigger.** The reaction runs when the served value of the State you
+  pass changes. Reads through `tx.get` do not add triggers.
+- **No initial run.** Registering never runs the reaction, not even when
+  registration attaches an external source whose value then changes. Only later
+  changes do.
+- **Latest state.** No triggering value is passed. `tx.get` reads the latest
+  committed state, including commits of reactions that ran earlier in the same
+  settlement, plus the reaction's own staged writes. An earlier reaction can
+  therefore change whether a later one is still eligible, and among reactions
+  that are eligible when their turn comes, registration order decides which runs
+  first. Recording that an input was handled, in the same transaction as the
+  command's writes, stops later reactions from also succeeding for it; it does
+  not freeze eligibility or pick a winner. When a decision must reflect the
+  moment the input happened, make it once and store it explicitly.
+- **One publication.** Each reaction is its own synchronous transaction. Its
+  commit updates selectors immediately, and may trigger further reactions in a
+  following round. Subscribers, including React components, are notified once,
+  after the last round, and only ever see the final state.
+- **Order.** Reactions run in the order their triggers changed, then in
+  registration order. A reaction whose trigger changes again after it has run
+  runs again in the next round. At most 64 rounds run; after that the settlement
+  fails with a `ReactionLimitError` cause.
+- **Failure isolation.** A reaction that throws, or returns a promise, discards
+  its own staged writes. Other reactions still run, and earlier commits stay.
+  Failures are reported after subscribers run, as causes of a
+  `SubscriberNotificationError`. A failure after its writes were applied does
+  not undo them; derived state still updates before subscribers are notified.
+
+A reaction is not a database transaction around the whole settlement. It cannot
+undo work outside Valdres. Keep I/O, DOM work, and anything that can
+synchronously re-enter an external source (`focus()`, dispatching events) out of
+the reaction. Do that work in an ordinary subscriber, which runs after the one
+publication, and report completion as a separate operation:
+
+```ts
+myStore.sub(saveRequest, () => {
+    const request = myStore.get(saveRequest)
+    if (request === null) return
+    api.save(myStore.get(documentAtom)).then(
+        () =>
+            myStore.txn(tx => {
+                tx.set(saving, false)
+                tx.set(saveRequest, null)
+            }),
+        error =>
+            myStore.txn(tx => {
+                tx.set(saving, false)
+                tx.set(saveRequest, null)
+                tx.set(saveError, error)
+            }),
+    )
+})
+```
+
+Work that needs a newly rendered DOM node belongs after the framework's own
+commit. Notification alone does not mean the DOM is ready. Cancelling the live
+native event (`event.preventDefault()`) is safe inside a reaction because the
+reaction runs synchronously while the event dispatches.
+
+Reactions belong to the store, or scope, they were registered on. They cannot
+write another store. Reactions and subscribers differ in what they may do:
+
+|                    | `sub`                          | `react`                                      |
+| ------------------ | ------------------------------ | -------------------------------------------- |
+| Runs               | after the settlement, once     | during the settlement, before subscribers    |
+| Can write state    | no                             | yes, through its transaction                 |
+| Reads              | `store.get` of committed state | `tx.get` of the latest state plus its writes |
+| Unsubscribe inside | allowed                        | not allowed                                  |
+
+The guarantee holds per settlement and per store. Two external sources that are
+invalidated one after the other for the same DOM event produce two settlements.
+
 ## Disposing request stores
 
 Global atoms remember each store that has materialized them so writes can fan

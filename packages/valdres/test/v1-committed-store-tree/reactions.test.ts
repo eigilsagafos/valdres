@@ -1,0 +1,1036 @@
+import { describe, expect, test } from "bun:test"
+import {
+    CallbackCapabilityError,
+    InvalidSynchronousAtomValueError,
+    InvalidTransactionCallbackResultError,
+    ReactionLimitError,
+    RuntimeMismatchError,
+    SelectorCapabilityError,
+    StoreDisposedError,
+    SubscriberNotificationError,
+    TransactionClosedError,
+    TransactionPhaseError,
+    createCommittedStoreTreeDomain,
+    createInternalStoreTreeInstrumentation,
+    type RootTransaction,
+} from "../../src/v1-internal/committed-store-tree/committed-store-tree"
+import { createInternalExternalAtom } from "../../src/v1-internal/committed-store-tree/external-atom"
+
+const thrownBy = (operation: () => unknown): unknown => {
+    try {
+        operation()
+    } catch (error) {
+        return error
+    }
+    throw new Error("Expected operation to throw")
+}
+
+const fixture = () => {
+    const counters = createInternalStoreTreeInstrumentation()
+    const domain = createCommittedStoreTreeDomain(counters)
+    const tree = domain.createStoreTree()
+    const read = (name: string): number =>
+        counters.read(name as Parameters<typeof counters.read>[0])
+    return { domain, tree, read }
+}
+
+/** A synchronous source whose invalidators run only when `publish` is called. */
+const source = <Value>(initial: Value) => {
+    let value = initial
+    const listeners = new Set<() => void>()
+    let subscribes = 0
+    let cleanups = 0
+    return {
+        definition: {
+            getSnapshot: () => value,
+            subscribe(invalidate: () => void) {
+                subscribes++
+                listeners.add(invalidate)
+                return () => {
+                    cleanups++
+                    listeners.delete(invalidate)
+                }
+            },
+        },
+        publish(next: Value) {
+            value = next
+            for (const invalidate of [...listeners]) invalidate()
+        },
+        silently(next: Value) {
+            value = next
+        },
+        get listeners() {
+            return listeners.size
+        },
+        get subscribes() {
+            return subscribes
+        },
+        get cleanups() {
+            return cleanups
+        },
+    }
+}
+
+describe("Store reactions: registration and retention", () => {
+    test("never runs on registration, including external admission catch-up", () => {
+        const { domain, tree } = fixture()
+        const count = domain.atom(0)
+        const doubled = domain.selector(get => get(count) * 2)
+        let value = 0
+        const external = createInternalExternalAtom(domain, {
+            getSnapshot: () => value,
+            subscribe() {
+                // A startup change produces admission catch-up.
+                value = 10
+                return () => {}
+            },
+        })
+        const runs: string[] = []
+        const ordinary: number[] = []
+        tree.react(count, () => void runs.push("atom"))
+        tree.react(doubled, () => void runs.push("selector"))
+        tree.react(external, () => void runs.push("external"))
+        // An ordinary subscriber admitted the same way does get catch-up.
+        const otherValue = { current: 0 }
+        const other = createInternalExternalAtom(domain, {
+            getSnapshot: () => otherValue.current,
+            subscribe() {
+                otherValue.current = 5
+                return () => {}
+            },
+        })
+        tree.sub(other, () => ordinary.push(tree.get(other)))
+
+        expect(runs).toEqual([])
+        expect(ordinary).toEqual([5])
+        expect(tree.get(external)).toBe(10)
+        tree.set(count, 1)
+        expect(runs).toEqual(["atom", "selector"])
+    })
+
+    test("retains an external closure without ordinary subscribers and releases it on removal", () => {
+        const { domain, tree } = fixture()
+        const keys = source(0)
+        const external = createInternalExternalAtom(domain, keys.definition)
+        const derived = domain.selector(get => get(external) + 1)
+        const seen: number[] = []
+
+        const stopReaction = tree.react(derived, tx => {
+            seen.push(tx.get(derived))
+        })
+        expect(keys.subscribes).toBe(1)
+        expect(keys.listeners).toBe(1)
+        keys.publish(1)
+        expect(seen).toEqual([2])
+
+        const stopSubscriber = tree.sub(derived, () => undefined)
+        stopReaction()
+        stopReaction()
+        expect(keys.cleanups).toBe(0)
+        keys.publish(2)
+        expect(seen).toEqual([2])
+        stopSubscriber()
+        expect(keys.cleanups).toBe(1)
+        expect(keys.listeners).toBe(0)
+    })
+
+    test("binds the cursor to the registering scope and disposal drops reactions", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const result = domain.atom("root")
+        const child = tree.scope("child")
+        const runs: string[] = []
+
+        child.react(trigger, tx => {
+            runs.push(`child:${tx.get(result)}`)
+            tx.set(result, `child:${tx.get(trigger)}`)
+        })
+        const stopRoot = tree.react(trigger, tx => {
+            runs.push(`root:${tx.get(result)}`)
+        })
+        tree.set(trigger, 1)
+        // The child inherits the root write, so both reactions run; each
+        // cursor reads and writes its own registration scope.
+        expect(runs).toEqual(["root:root", "child:root"])
+        expect(child.get(result)).toBe("child:1")
+        expect(tree.get(result)).toBe("root")
+
+        runs.length = 0
+        child.dispose()
+        tree.set(trigger, 2)
+        expect(runs).toEqual(["root:root"])
+        stopRoot()
+        tree.set(trigger, 3)
+        expect(runs).toEqual(["root:root"])
+    })
+
+    test("validates like Store.sub, with its own operation name", () => {
+        const { domain, tree } = fixture()
+        const foreign = createCommittedStoreTreeDomain()
+        const count = domain.atom(0)
+        const disposed = domain.createStoreTree()
+        disposed.dispose()
+
+        const invalid = thrownBy(() =>
+            tree.react(Object.freeze({ kind: "atom" }) as never, () => {}),
+        )
+        expect(invalid).toBeInstanceOf(TypeError)
+        expect((invalid as Error).message).toBe(
+            "StoreTree.react requires a valid State",
+        )
+        const callback = thrownBy(() => tree.react(count, 1 as never))
+        expect((callback as Error).message).toBe(
+            "StoreTree.react requires a callback function",
+        )
+        expect(
+            thrownBy(() => tree.react(foreign.atom(0), () => {})),
+        ).toBeInstanceOf(RuntimeMismatchError)
+        expect(thrownBy(() => disposed.react(count, () => {}))).toBeInstanceOf(
+            StoreDisposedError,
+        )
+
+        const errors: unknown[] = []
+        const probeInput = domain.atom(0)
+        const probe = domain.selector(get => {
+            get(probeInput)
+            errors.push(thrownBy(() => tree.react(count, () => {})))
+            return 1
+        })
+        tree.get(probe)
+        tree.txn(() => {
+            errors.push(thrownBy(() => tree.react(count, () => {})))
+        })
+        const stop = tree.sub(count, () => {
+            errors.push(thrownBy(() => tree.react(count, () => {})))
+        })
+        tree.react(count, () => {
+            errors.push(thrownBy(() => tree.react(count, () => {})))
+        })
+        tree.set(count, 1)
+        stop()
+        expect(errors.map(error => (error as Error).name)).toEqual([
+            "SelectorCapabilityError",
+            "TransactionPhaseError",
+            "TransactionPhaseError",
+            "CallbackCapabilityError",
+        ])
+        expect(errors[0]).toBeInstanceOf(SelectorCapabilityError)
+    })
+
+    test("rolls back a failed admission without registering", () => {
+        const { domain, tree, read } = fixture()
+        const foreign = createCommittedStoreTreeDomain()
+        const foreignCount = foreign.atom(0)
+        const contaminated = domain.selector(get => {
+            tree.get(foreignCount)
+            return 1
+        })
+        const failing = createInternalExternalAtom(domain, {
+            getSnapshot: () => 0,
+            subscribe() {
+                throw new Error("attach failed")
+            },
+        })
+        const before = read("activeSubscriptions")
+        let runs = 0
+
+        expect(
+            thrownBy(() => tree.react(contaminated, () => void runs++)),
+        ).toBeInstanceOf(RuntimeMismatchError)
+        expect(read("activeSubscriptions")).toBe(before)
+        expect(
+            thrownBy(() => tree.react(failing, () => void runs++)),
+        ).toBeDefined()
+        expect(read("activeSubscriptions")).toBe(before)
+        expect(runs).toBe(0)
+    })
+})
+
+describe("Store reactions: one publication boundary", () => {
+    const commandGraph = () => {
+        const f = fixture()
+        const keys = source<Readonly<{ key: string; seq: number }>>(
+            Object.freeze({ key: "", seq: 0 }),
+        )
+        const keyboard = createInternalExternalAtom(f.domain, keys.definition)
+        const saving = f.domain.atom(false)
+        const saves = f.domain.atom(0)
+        const key = f.domain.selector(get => get(keyboard).key)
+        const combined = f.domain.selector(get =>
+            Object.freeze([get(key), get(saving), get(saves)] as const),
+        )
+        const observations: unknown[] = []
+        f.tree.sub(combined, () => observations.push(f.tree.get(combined)))
+        return { ...f, keys, keyboard, saving, saves, observations }
+    }
+
+    test("an external trigger publishes input and command result together", () => {
+        const g = commandGraph()
+        let runs = 0
+        g.tree.react(g.keyboard, tx => {
+            runs++
+            if (tx.get(g.keyboard).key !== "s") return
+            tx.set(g.saving, true)
+            tx.update(g.saves, value => value + 1)
+        })
+        const propagation = g.read("propagationSettlements")
+        const snapshots = g.read("notificationSnapshots")
+        const callbacks = g.read("subscriberCallbacksAttempted")
+
+        g.keys.publish(Object.freeze({ key: "s", seq: 1 }))
+
+        expect(g.observations).toEqual([["s", true, 1]])
+        expect(runs).toBe(1)
+        expect(g.read("propagationSettlements") - propagation).toBe(2)
+        expect(g.read("notificationSnapshots") - snapshots).toBe(1)
+        expect(g.read("subscriberCallbacksAttempted") - callbacks).toBe(1)
+    })
+
+    test("an owned trigger publishes input and command result together", () => {
+        const { domain, tree, read } = fixture()
+        const input = domain.atom(0)
+        const result = domain.atom(0)
+        const pair = domain.selector(get => [get(input), get(result)])
+        const observations: unknown[] = []
+        tree.sub(pair, () => observations.push(tree.get(pair)))
+        tree.react(input, tx => tx.set(result, tx.get(input) * 10))
+        const snapshots = read("notificationSnapshots")
+
+        tree.set(input, 2)
+        tree.txn(tx => tx.set(input, 3))
+
+        expect(observations).toEqual([
+            [2, 20],
+            [3, 30],
+        ])
+        expect(read("notificationSnapshots") - snapshots).toBe(2)
+    })
+
+    test("a command changing its own eligibility converges; runs exceed commands", () => {
+        const g = commandGraph()
+        const eligible = g.domain.selector(get =>
+            Object.freeze({
+                seq: get(g.keyboard).seq,
+                save: get(g.keyboard).key === "s" && !get(g.saving),
+            }),
+        )
+        let lastSeq = g.tree.get(eligible).seq
+        let runs = 0
+        let commands = 0
+        g.tree.react(eligible, tx => {
+            runs++
+            const current = tx.get(eligible)
+            if (current.seq === lastSeq) return
+            lastSeq = current.seq
+            if (!current.save) return
+            commands++
+            tx.set(g.saving, true)
+            tx.update(g.saves, value => value + 1)
+        })
+
+        g.keys.publish(Object.freeze({ key: "s", seq: 1 }))
+
+        expect(g.observations).toEqual([["s", true, 1]])
+        expect(commands).toBe(1)
+        expect(runs).toBe(2)
+    })
+
+    test("runs pending reactions once on newer state and reschedules already-run ones", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const extra = domain.atom(0)
+        const sum = domain.selector(get => get(trigger) + get(extra))
+        const late1 = domain.selector(get => get(trigger))
+        const late = domain.selector(get => get(late1))
+        const log: string[] = []
+
+        // Wave 1 reach order: trigger, sum, late.
+        tree.react(trigger, tx => {
+            log.push(`t:${tx.get(sum)}`)
+            if (tx.get(trigger) === 1) tx.set(extra, 10)
+        })
+        tree.react(sum, tx => void log.push(`sum:${tx.get(sum)}`))
+        tree.react(late, tx => {
+            log.push(`late:${tx.get(sum)}`)
+            if (tx.get(extra) === 10) tx.set(extra, 20)
+        })
+
+        tree.set(trigger, 1)
+        // `sum` was pending when the trigger reaction changed it: it runs once,
+        // reading 11. `late`'s write then changes `sum` again after sum ran, so
+        // sum runs once more in wave 2.
+        expect(log).toEqual(["t:1", "sum:11", "late:11", "sum:21"])
+    })
+
+    test("orders chained and conflicting writes by execution order", () => {
+        const { domain, tree } = fixture()
+        const a = domain.atom(0)
+        const b = domain.atom(0)
+        const c = domain.atom(0)
+        const winner = domain.atom("none")
+        const total = domain.atom(0)
+        const all = domain.selector(get => [
+            get(a),
+            get(b),
+            get(c),
+            get(winner),
+            get(total),
+        ])
+        const observations: unknown[] = []
+        const log: string[] = []
+        tree.sub(all, () => observations.push(tree.get(all)))
+        tree.react(a, tx => {
+            log.push("a->b")
+            tx.set(b, tx.get(a) + 1)
+        })
+        tree.react(b, tx => {
+            log.push("b->c")
+            tx.set(c, tx.get(b) + 1)
+        })
+        tree.react(a, tx => {
+            log.push("first")
+            tx.set(winner, "first")
+            tx.update(total, value => value + 1)
+        })
+        tree.react(a, tx => {
+            log.push(`second saw ${tx.get(winner)}`)
+            tx.set(winner, "second")
+            tx.update(total, value => value * 10)
+        })
+
+        tree.set(a, 1)
+
+        expect(log).toEqual(["a->b", "first", "second saw first", "b->c"])
+        expect(observations).toEqual([[1, 2, 3, "second", 10]])
+    })
+
+    test("reads its own staged writes and derived values through the cursor", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const value = domain.atom(1)
+        const doubled = domain.selector(get => get(value) * 2)
+        const reads: number[] = []
+        tree.react(trigger, tx => {
+            reads.push(tx.get(doubled))
+            tx.set(value, 5)
+            reads.push(tx.get(value), tx.get(doubled))
+        })
+        tree.set(trigger, 1)
+        expect(reads).toEqual([2, 5, 10])
+        expect(tree.get(doubled)).toBe(10)
+    })
+
+    test("a diamond reaches its reaction and observer once per boundary", () => {
+        const { domain, tree } = fixture()
+        const root = domain.atom(1)
+        const left = domain.selector(get => get(root) + 1)
+        const right = domain.selector(get => get(root) * 2)
+        const joined = domain.selector(get => `${get(left)}/${get(right)}`)
+        const note = domain.atom("")
+        const view = domain.selector(get => [get(joined), get(note)])
+        const observations: unknown[] = []
+        let runs = 0
+        tree.sub(view, () => observations.push(tree.get(view)))
+        tree.react(joined, tx => {
+            runs++
+            tx.set(note, `seen ${tx.get(joined)}`)
+        })
+
+        tree.set(root, 2)
+
+        expect(runs).toBe(1)
+        expect(observations).toEqual([["3/4", "seen 3/4"]])
+    })
+
+    test("keeps invalidation semantics when a reaction restores the value", () => {
+        const { domain, tree } = fixture()
+        const input = domain.atom(0)
+        const observed: number[] = []
+        tree.sub(input, () => observed.push(tree.get(input)))
+        tree.react(input, tx => {
+            if (tx.get(input) !== 0) tx.set(input, 0)
+        })
+
+        tree.set(input, 1)
+
+        expect(observed).toEqual([0])
+        expect(tree.get(input)).toBe(0)
+    })
+
+    test("a lifecycle catch-up in the same settlement runs the reaction once", () => {
+        const { domain, tree } = fixture()
+        const keys = source(0)
+        const external = createInternalExternalAtom(domain, keys.definition)
+        const useExternal = domain.atom(false)
+        const branch = domain.selector(get =>
+            get(useExternal) ? get(external) : -1,
+        )
+        const mirrored = domain.atom(-1)
+        const view = domain.selector(get => [get(branch), get(mirrored)])
+        const observations: unknown[] = []
+        tree.sub(view, () => observations.push(tree.get(view)))
+        let runs = 0
+        tree.react(branch, tx => {
+            runs++
+            tx.set(mirrored, tx.get(branch))
+        })
+        expect(tree.get(external)).toBe(0)
+        keys.silently(7)
+
+        tree.set(useExternal, true)
+
+        expect(runs).toBe(1)
+        expect(observations).toEqual([[7, 7]])
+        expect(keys.subscribes).toBe(1)
+        keys.publish(8)
+        expect(observations).toEqual([
+            [7, 7],
+            [8, 8],
+        ])
+    })
+
+    test("an invalidation deferred by a subscriber is a later boundary", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const keys = source(0)
+        const external = createInternalExternalAtom(domain, keys.definition)
+        const mirrored = domain.atom(0)
+        const view = domain.selector(get => [
+            get(trigger),
+            get(external),
+            get(mirrored),
+        ])
+        const observations: unknown[] = []
+        tree.sub(view, () => observations.push(tree.get(view)))
+        tree.react(external, tx => tx.set(mirrored, tx.get(external)))
+        tree.sub(trigger, () => keys.publish(tree.get(trigger) * 100))
+
+        tree.set(trigger, 1)
+
+        expect(observations).toEqual([
+            [1, 0, 0],
+            [1, 100, 100],
+        ])
+    })
+
+    test("independent trees sharing a source settle independently", () => {
+        const { domain } = fixture()
+        const keys = source(0)
+        const external = createInternalExternalAtom(domain, keys.definition)
+        const result = domain.atom(0)
+        const first = domain.createStoreTree()
+        const second = domain.createStoreTree()
+        const crossTree: unknown[] = []
+        first.react(external, tx => {
+            tx.set(result, tx.get(external) + 1)
+            crossTree.push(thrownBy(() => second.set(result, 99)))
+        })
+        second.react(external, tx => tx.set(result, tx.get(external) + 2))
+
+        keys.publish(10)
+
+        expect(first.get(result)).toBe(11)
+        expect(second.get(result)).toBe(12)
+        expect(crossTree[0]).toBeInstanceOf(TransactionPhaseError)
+    })
+})
+
+describe("Store reactions: failures and limits", () => {
+    test("a throw aborts only that reaction's draft", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const a = domain.atom("a0")
+        const b = domain.atom("b0")
+        const view = domain.selector(get => [get(trigger), get(a), get(b)])
+        const observations: unknown[] = []
+        const cause = new Error("reaction failed")
+        tree.sub(view, () => observations.push(tree.get(view)))
+        tree.react(trigger, tx => {
+            tx.set(a, "a1")
+            if (tx.get(trigger) === 1) throw cause
+        })
+        tree.react(trigger, tx => tx.set(b, "b1"))
+
+        const error = thrownBy(() => tree.set(trigger, 1))
+
+        expect(error).toBeInstanceOf(SubscriberNotificationError)
+        expect(error).toMatchObject({
+            cause,
+            causes: [cause],
+            committed: true,
+            source: "owned-mutation",
+        })
+        expect(observations).toEqual([[1, "a0", "b1"]])
+        tree.set(trigger, 2)
+        expect(tree.get(a)).toBe("a1")
+    })
+
+    test("an async reaction is rejected, aborted and cannot use its cursor later", async () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const a = domain.atom(0)
+        let later: unknown
+        let unhandled = 0
+        const onUnhandled = () => void unhandled++
+        process.on("unhandledRejection", onUnhandled)
+        tree.react(trigger, (async (tx: RootTransaction) => {
+            tx.set(a, 1)
+            await Promise.resolve()
+            later = thrownBy(() => tx.set(a, 2))
+        }) as never)
+
+        const error = thrownBy(() => tree.set(trigger, 1))
+        await new Promise(resolve => setTimeout(resolve, 0))
+        process.off("unhandledRejection", onUnhandled)
+
+        expect(error).toBeInstanceOf(SubscriberNotificationError)
+        expect((error as SubscriberNotificationError).cause).toBeInstanceOf(
+            InvalidTransactionCallbackResultError,
+        )
+        expect(tree.get(a)).toBe(0)
+        expect(later).toBeInstanceOf(TransactionClosedError)
+        expect(unhandled).toBe(0)
+    })
+
+    test("keeps a thrown thenable as the exact contained cause", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        let containments = 0
+        const thenable = Object.freeze({
+            then(_resolve: unknown, _reject: unknown) {
+                containments++
+            },
+        })
+        tree.react(trigger, () => {
+            throw thenable
+        })
+
+        const error = thrownBy(() => tree.set(trigger, 1))
+
+        expect((error as SubscriberNotificationError).causes).toEqual([
+            thenable,
+        ])
+        expect(containments).toBe(1)
+    })
+
+    test("a staging failure aborts the draft", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const a = domain.atom<unknown>(0)
+        tree.react(trigger, tx => {
+            tx.set(a, 1)
+            tx.set(a, Promise.resolve(2))
+        })
+
+        const error = thrownBy(() => tree.set(trigger, 1))
+
+        expect((error as SubscriberNotificationError).cause).toBeInstanceOf(
+            InvalidSynchronousAtomValueError,
+        )
+        expect(tree.get(a)).toBe(0)
+    })
+
+    test("a comparator failure while staging aborts the draft", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const other = domain.atom(0)
+        const failure = new Error("comparator")
+        const strict = domain.atom(0, {
+            equal: () => {
+                throw failure
+            },
+        })
+        tree.react(trigger, tx => {
+            tx.set(other, 1)
+            tx.set(strict, 1)
+        })
+
+        const error = thrownBy(() => tree.set(trigger, 1))
+
+        expect((error as SubscriberNotificationError).cause).toBe(failure)
+        expect(tree.get(other)).toBe(0)
+        expect(tree.get(strict)).toBe(0)
+    })
+
+    test("a failure after apply propagates before the one publication and is reported", () => {
+        const { domain } = fixture()
+        const instrumentation = new Error("instrumentation failed after apply")
+        let inReaction = false
+        let failOnce = true
+        const tree = domain.createStoreTree(
+            undefined,
+            Object.assign((code: number) => {
+                if (code === 3) inReaction = true
+                if (code === 4) inReaction = false
+                if (code === 2 && inReaction && failOnce) {
+                    failOnce = false
+                    throw instrumentation
+                }
+            }, {}),
+        )
+        const trigger = domain.atom(0)
+        const written = domain.atom(0)
+        const later = domain.atom(0)
+        const derived = domain.selector(get => get(written) * 10)
+        const combined = domain.selector(get => [
+            get(trigger),
+            get(written),
+            get(derived),
+        ])
+        const seen: unknown[] = []
+        const calls = { written: 0, derived: 0 }
+        tree.sub(trigger, () =>
+            seen.push([
+                tree.get(trigger),
+                tree.get(written),
+                tree.get(derived),
+                tree.get(combined),
+            ]),
+        )
+        tree.sub(written, () => void calls.written++)
+        tree.sub(derived, () => void calls.derived++)
+        tree.react(trigger, tx => tx.set(written, tx.get(trigger)))
+        tree.react(trigger, tx => tx.set(later, 1))
+
+        const error = thrownBy(() => tree.set(trigger, 1))
+
+        expect(error).toBeInstanceOf(SubscriberNotificationError)
+        expect((error as SubscriberNotificationError).causes).toEqual([
+            instrumentation,
+        ])
+        // Applied writes stay, and their dependents propagated before the
+        // ordinary callbacks read them.
+        expect(seen).toEqual([[1, 1, 10, [1, 1, 10]]])
+        expect(calls).toEqual({ written: 1, derived: 1 })
+        expect(tree.get(later)).toBe(1)
+
+        // An equal write and a changed write both stay coherent afterwards.
+        tree.set(later, 0)
+        tree.txn(tx => tx.set(written, 1))
+        tree.set(trigger, 2)
+        expect(seen.at(-1)).toEqual([2, 2, 20, [2, 2, 20]])
+    })
+
+    for (const shape of ["then getter", "callable then"] as const)
+        test(`a thrown ${shape} is inspected under transaction-result guards`, () => {
+            const { domain, tree } = fixture()
+            const sibling = domain.createStoreTree()
+            const trigger = domain.atom(0)
+            const staged = domain.atom(0)
+            const value = domain.atom(0)
+            const keys = source(0)
+            const external = createInternalExternalAtom(domain, keys.definition)
+            tree.sub(external, () => undefined)
+            const view = domain.selector(get => [
+                get(trigger),
+                get(staged),
+                get(value),
+                get(external),
+            ])
+            const observed: unknown[] = []
+            tree.sub(view, () => observed.push(tree.get(view)))
+            const attempts: Record<string, string> = {}
+            let stopNeighbor = () => {}
+            const hook = () => {
+                const operations: Record<string, () => unknown> = {
+                    read: () => tree.get(value),
+                    write: () => tree.set(value, 10),
+                    sibling: () => sibling.set(value, 20),
+                    txn: () => tree.txn(tx => tx.set(value, 30)),
+                    unsubscribe: () => stopNeighbor(),
+                    invalidate: () => keys.publish(40),
+                }
+                for (const [name, operation] of Object.entries(operations))
+                    attempts[name] = (thrownBy(operation) as Error).name
+            }
+            const thrown =
+                shape === "then getter"
+                    ? {
+                          get then() {
+                              hook()
+                              return undefined
+                          },
+                      }
+                    : {
+                          then() {
+                              hook()
+                          },
+                      }
+            tree.react(trigger, tx => {
+                tx.set(staged, 1)
+                throw thrown
+            })
+            let neighborRuns = 0
+            stopNeighbor = tree.react(trigger, () => void neighborRuns++)
+
+            const error = thrownBy(() => tree.set(trigger, 1))
+
+            expect(attempts).toEqual({
+                read: "TransactionPhaseError",
+                write: "TransactionPhaseError",
+                sibling: "TransactionPhaseError",
+                txn: "TransactionPhaseError",
+                unsubscribe: "TransactionPhaseError",
+                invalidate: "CallbackCapabilityError",
+            })
+            expect((error as SubscriberNotificationError).causes).toEqual([
+                thrown,
+            ])
+            expect(neighborRuns).toBe(1)
+            expect(observed).toEqual([[1, 0, 0, 0]])
+            expect(sibling.get(value)).toBe(0)
+            // The next operation recovers, and the neighbor stayed registered.
+            tree.set(value, 5)
+            expect(observed.at(-1)).toEqual([1, 0, 5, 0])
+            thrownBy(() => tree.set(trigger, 2))
+            expect(neighborRuns).toBe(2)
+        })
+
+    for (const code of [3, 4] as const)
+        test(`an escaping trace hook (${code}) leaves later reactions runnable`, () => {
+            const { domain } = fixture()
+            let fail = true
+            const tree = domain.createStoreTree(
+                undefined,
+                Object.assign((traceCode: number) => {
+                    if (traceCode === code && fail) {
+                        fail = false
+                        throw new Error("trace hook fault")
+                    }
+                }, {}),
+            )
+            const input = domain.atom(0)
+            const result = domain.atom(0)
+            const runs = [0, 0]
+            tree.react(input, () => void runs[0]!++)
+            tree.react(input, tx => {
+                runs[1]!++
+                tx.set(result, tx.get(input))
+            })
+
+            expect(thrownBy(() => tree.set(input, 1))).toBeInstanceOf(
+                SubscriberNotificationError,
+            )
+            expect(runs[1]).toBe(1)
+            tree.set(input, 2)
+            tree.set(input, 3)
+            expect(runs).toEqual([code === 3 ? 2 : 3, 3])
+            expect(tree.get(result)).toBe(3)
+        })
+
+    test("a post-apply control fault stays authoritative and the reaction's writes remain", () => {
+        const { domain, tree } = fixture()
+        const foreign = createCommittedStoreTreeDomain()
+        const foreignCount = foreign.atom(0)
+        const sibling = domain.createStoreTree()
+        const trigger = domain.atom(0)
+        const written = domain.atom(0)
+        const contaminated = domain.selector(get => {
+            const value = get(written)
+            if (value !== 0) {
+                try {
+                    sibling.get(foreignCount)
+                } catch {}
+            }
+            return value
+        })
+        const calls: string[] = []
+        tree.sub(contaminated, () => calls.push("contaminated"))
+        tree.sub(trigger, () => calls.push("trigger"))
+        tree.react(trigger, tx => tx.set(written, tx.get(trigger)))
+
+        const direct = thrownBy(() => tree.set(trigger, 1))
+        expect(direct).toBeInstanceOf(RuntimeMismatchError)
+        expect(calls).toEqual(["trigger", "contaminated"])
+        expect(tree.get(written)).toBe(1)
+
+        const subscriberFailure = new Error("subscriber failed")
+        tree.sub(trigger, () => {
+            throw subscriberFailure
+        })
+        const wrapped = thrownBy(() => tree.set(trigger, 2))
+        expect(wrapped).toBeInstanceOf(SubscriberNotificationError)
+        expect((wrapped as SubscriberNotificationError).cause).toBeInstanceOf(
+            RuntimeMismatchError,
+        )
+        expect((wrapped as SubscriberNotificationError).causes[1]).toBe(
+            subscriberFailure,
+        )
+    })
+
+    test("orders reaction causes before subscriber causes and fires every subscriber", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const reactionFailure = new Error("reaction")
+        const subscriberFailure = new Error("subscriber")
+        const calls: string[] = []
+        tree.sub(trigger, () => {
+            calls.push("first")
+            throw subscriberFailure
+        })
+        tree.sub(trigger, () => void calls.push("second"))
+        tree.react(trigger, () => {
+            calls.push("reaction")
+            throw reactionFailure
+        })
+
+        const error = thrownBy(() => tree.set(trigger, 1))
+
+        expect(calls).toEqual(["reaction", "first", "second"])
+        expect((error as SubscriberNotificationError).causes).toEqual([
+            reactionFailure,
+            subscriberFailure,
+        ])
+    })
+
+    test("converges on the final permitted wave", () => {
+        const { domain, tree } = fixture()
+        const counter = domain.atom(0)
+        const observed: number[] = []
+        tree.sub(counter, () => observed.push(tree.get(counter)))
+        let runs = 0
+        tree.react(counter, tx => {
+            runs++
+            const value = tx.get(counter)
+            if (value < 64) tx.set(counter, value + 1)
+        })
+
+        tree.set(counter, 1)
+
+        expect(runs).toBe(64)
+        expect(observed).toEqual([64])
+    })
+
+    test("fails once when another wave remains, clears pending work, and later work proceeds", () => {
+        const { domain, tree } = fixture()
+        const ping = domain.atom(0)
+        const pong = domain.atom(0)
+        const unrelated = domain.atom(0)
+        const observed: unknown[] = []
+        const view = domain.selector(get => [get(ping), get(pong)])
+        tree.sub(view, () => observed.push(tree.get(view)))
+        let runs = 0
+        tree.react(ping, tx => {
+            runs++
+            tx.set(pong, tx.get(ping) + 1)
+        })
+        tree.react(pong, tx => {
+            runs++
+            tx.set(ping, tx.get(pong) + 1)
+        })
+
+        const error = thrownBy(() => tree.set(ping, 1))
+
+        expect(runs).toBe(64)
+        expect(error).toBeInstanceOf(SubscriberNotificationError)
+        expect((error as SubscriberNotificationError).causes).toHaveLength(1)
+        expect((error as SubscriberNotificationError).cause).toBeInstanceOf(
+            ReactionLimitError,
+        )
+        expect(error).toMatchObject({ committed: true })
+        // Wave k writes k + 1; wave 64 wrote ping = 65 and wave 65 remained.
+        expect(observed).toEqual([[65, 64]])
+        const limit = (error as SubscriberNotificationError)
+            .cause as ReactionLimitError
+        expect(limit).toMatchObject({
+            name: "ReactionLimitError",
+            code: "VALDRES_REACTION_LIMIT",
+        })
+        expect(Object.isFrozen(limit)).toBe(true)
+
+        tree.set(unrelated, 1)
+        expect(runs).toBe(64)
+    })
+
+    test("reports an external-source boundary failure through the invalidation", () => {
+        const { domain, tree } = fixture()
+        const keys = source(0)
+        const external = createInternalExternalAtom(domain, keys.definition)
+        const cause = new Error("reaction failed")
+        tree.react(external, () => {
+            throw cause
+        })
+
+        const error = thrownBy(() => keys.publish(1))
+
+        expect(error).toBeInstanceOf(SubscriberNotificationError)
+        expect(error).toMatchObject({
+            cause,
+            source: "external-invalidation",
+            committed: true,
+        })
+        expect(tree.get(external)).toBe(1)
+    })
+})
+
+describe("Store reactions: callback capabilities", () => {
+    test("keeps transaction-phase guards and read-only external atoms", () => {
+        const { domain, tree } = fixture()
+        const sibling = domain.createStoreTree()
+        const keys = source(0)
+        const external = createInternalExternalAtom(domain, keys.definition)
+        const other = source(0)
+        const otherExternal = createInternalExternalAtom(
+            domain,
+            other.definition,
+        )
+        const trigger = domain.atom(0)
+        const a = domain.atom(0)
+        tree.sub(otherExternal, () => undefined)
+        const errors: Record<string, unknown> = {}
+        let captured: RootTransaction | undefined
+        tree.react(trigger, tx => {
+            captured = tx
+            errors.get = thrownBy(() => tree.get(a))
+            errors.set = thrownBy(() => tree.set(a, 1))
+            errors.txn = thrownBy(() => tree.txn(() => undefined))
+            errors.sub = thrownBy(() => tree.sub(a, () => undefined))
+            errors.sibling = thrownBy(() => sibling.set(a, 1))
+            errors.dispose = thrownBy(() => tree.dispose())
+            errors.external = thrownBy(() =>
+                tx.set(external as never, 1 as never),
+            )
+            errors.invalidate = thrownBy(() => other.publish(1))
+        })
+
+        tree.set(trigger, 1)
+
+        expect(errors.get).toBeInstanceOf(TransactionPhaseError)
+        expect(errors.set).toBeInstanceOf(TransactionPhaseError)
+        expect(errors.txn).toBeInstanceOf(TransactionPhaseError)
+        expect(errors.sub).toBeInstanceOf(TransactionPhaseError)
+        expect(errors.sibling).toBeInstanceOf(TransactionPhaseError)
+        expect(errors.dispose).toBeInstanceOf(TransactionPhaseError)
+        expect(errors.external).toBeInstanceOf(TypeError)
+        expect(errors.invalidate).toBeInstanceOf(CallbackCapabilityError)
+        expect(thrownBy(() => captured!.get(a))).toBeInstanceOf(
+            TransactionClosedError,
+        )
+    })
+
+    test("unsubscribe is rejected inside a reaction and honored from a subscriber", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const keys = source(0)
+        const external = createInternalExternalAtom(domain, keys.definition)
+        let runs = 0
+        let rejected: unknown
+        const stop = tree.react(external, () => {
+            runs++
+        })
+        tree.react(trigger, () => {
+            rejected = thrownBy(stop)
+        })
+        tree.sub(trigger, () => {
+            stop()
+            // Deferred to a later round of this operation.
+            keys.publish(1)
+        })
+
+        tree.set(trigger, 1)
+
+        expect(rejected).toBeInstanceOf(TransactionPhaseError)
+        expect(runs).toBe(0)
+        expect(tree.get(external)).toBe(1)
+    })
+})

@@ -382,6 +382,49 @@ assert.throws(() => adapter.readHydrationSnapshot(externalTarget, foreignExterna
 assert.equal(foreignExternalSamples, 0)
 externalTarget.dispose()
 
+// Store.react: one coherent publication for input and reaction result.
+let reactionInput = 0
+let invalidateReactionInput = () => {}
+const reactionSource = core.externalAtom({
+    getSnapshot: () => reactionInput,
+    subscribe(invalidate) {
+        invalidateReactionInput = invalidate
+        return () => { invalidateReactionInput = () => {} }
+    },
+})
+const reactionResult = core.atom(0)
+const reactionView = core.selector(get => [get(reactionSource), get(reactionResult)])
+const reactionTarget = core.store()
+const reactionSeen = []
+reactionTarget.sub(reactionView, () => reactionSeen.push(reactionTarget.get(reactionView)))
+let reactionRuns = 0
+let reactionCursor
+const stopReaction = reactionTarget.react(reactionSource, transaction => {
+    reactionRuns++
+    reactionCursor = transaction
+    transaction.set(reactionResult, transaction.get(reactionSource) * 10)
+})
+assert.equal(reactionRuns, 0)
+reactionInput = 2
+invalidateReactionInput()
+assert.deepEqual(reactionSeen, [[2, 20]])
+assert.throws(() => reactionCursor.get(reactionResult), core.TransactionClosedError)
+stopReaction(); stopReaction()
+reactionInput = 3
+invalidateReactionInput()
+assert.equal(reactionRuns, 1)
+const pingAtom = core.atom(0)
+const pongAtom = core.atom(0)
+reactionTarget.react(pingAtom, transaction => transaction.set(pongAtom, transaction.get(pingAtom) + 1))
+reactionTarget.react(pongAtom, transaction => transaction.set(pingAtom, transaction.get(pongAtom) + 1))
+assert.throws(() => reactionTarget.set(pingAtom, 1), error => {
+    assert.ok(error instanceof core.SubscriberNotificationError)
+    assert.ok(error.cause instanceof core.ReactionLimitError)
+    assert.equal(error.cause.code, "VALDRES_REACTION_LIMIT")
+    return true
+})
+reactionTarget.dispose()
+
 console.log(JSON.stringify({
     runtime: typeof Bun === "undefined" ? "node" : "bun",
     sharedRootAdapterDomain: true,
@@ -389,6 +432,7 @@ console.log(JSON.stringify({
     familyIdentity: true,
     collectionLifecycle: true,
     externalLifecycleCaptureAndServer: true,
+    reactionCoherentPublication: true,
 }))
 `
 
@@ -1032,8 +1076,10 @@ import {
     ExternalSourceOperationError,
     family,
     presence,
+    ReactionLimitError,
     selector,
     store,
+    type Transaction,
     type Atom,
     type AtomUpdater,
     type Collection,
@@ -1097,6 +1143,13 @@ void indexedRows
 const count = atom(0)
 const doubled = selector(get => get(count) * 2)
 const target: Store = store()
+const stopPackedReaction: () => void = target.react(doubled, (transaction: Transaction) => {
+    transaction.set(count, transaction.get(doubled))
+})
+stopPackedReaction()
+// @ts-expect-error Store reactions are synchronous transactions.
+target.react(count, async transaction => transaction.set(count, 1))
+export const packedReactionLimit: ReactionLimitError = new ReactionLimitError()
 export const packedExternalSource: ExternalSource<number> = {
     getSnapshot: () => 1,
     getServerSnapshot: () => 0,

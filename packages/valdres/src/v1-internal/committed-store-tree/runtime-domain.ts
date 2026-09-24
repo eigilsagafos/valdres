@@ -292,6 +292,16 @@ export class SelectorCapabilityError extends ImmutableRuntimeError {
     }
 }
 
+export class ReactionLimitError extends ImmutableRuntimeError {
+    readonly code = "VALDRES_REACTION_LIMIT"
+
+    constructor() {
+        super("Store reactions did not settle")
+        this.name = "ReactionLimitError"
+        this.seal()
+    }
+}
+
 export class TransactionPhaseError extends ImmutableRuntimeError {
     readonly code = "VALDRES_TRANSACTION_PHASE"
 

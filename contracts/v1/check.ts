@@ -545,9 +545,9 @@ const frozenLegacyProvenanceInventorySha256 =
 const frozenReviewedLegacyDispositionSha256 =
     "e59fc2432d3402205d77cf96095b4b57ca870044d9db6c64bc908752d8fa01f8"
 const frozenTargetCoordinateInventorySha256 =
-    "dbe67b7027639165ed72360893bd2c6b54834d781ba8d0fdf461cc42542c05a2"
+    "ec16aa0a7239266f927830d51c54f0f6b31537b26e36afaf1caa7a23397ccf5c"
 const frozenReleaseTrackOwnershipSha256 =
-    "5634f4948a8911ac7a2f1ee7964858856e885e4f451919b6f012cafde7d61033"
+    "74edc3d7129d556d8428cf60647ec3878e70b07d78d2ee444bb6021e881e2484"
 const frozenWorkspaceBaseline = Object.freeze({
     commit: "ff1424bde13445eba07fcb426f5493dd43898f72",
     packageVersion: "1.0.0-beta.22",
@@ -976,6 +976,7 @@ const requiredFrozenErrorCodes = new Map([
         "VALDRES_INVALID_TRANSACTION_TARGET",
     ],
     ["core.missing-collection-row-error", "VALDRES_MISSING_COLLECTION_ROW"],
+    ["core.reaction-limit-error", "VALDRES_REACTION_LIMIT"],
     ["core.runtime-mismatch-error", "VALDRES_RUNTIME_MISMATCH"],
     ["core.scope-not-found-error", "VALDRES_SCOPE_NOT_FOUND"],
     [
@@ -1180,7 +1181,7 @@ const storeSubscriberContract = Object.freeze({
     typeNotes:
         "SubscribeFn is exactly <Value>(state: State<Value>, callback: () => void) => () => void. State includes Atom, Selector, ExternalAtom, collection-row, and collection inputs. It returns one idempotent unsubscribe; family callback and deep-equality parameters are removed.",
     errorNotes:
-        'SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION is the immutable post-commit delivery wrapper for subscriber throws. Without an already-authoritative post-apply RuntimeMismatchError, cause is the exact first thrown value and causes is a frozen readonly array of all subscriber-thrown values in deterministic delivery order; committed is exactly true; phase is exactly notifying; source is exactly owned-mutation for the lifecycle-free slice. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. Pure external notification failures also use SubscriberNotificationError, with source external-read | external-startup | external-invalidation | external-drain; the full notification source set is owned-mutation | external-read | external-startup | external-invalidation | external-drain. The primary occurrence supplies source. Preserve every failure occurrence without deduplication by error identity, including equal causes from different callbacks or rounds. Mixed-phase and setup/cleanup aggregation use ExternalSourceOperationError. The error, cause/causes metadata, committed, phase, and source are immutable; application error objects are not mutated. Message is exactly "One or more Store subscribers threw during notification".',
+        'SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION is the immutable post-commit delivery wrapper for subscriber throws. Without an already-authoritative post-apply RuntimeMismatchError, cause is the exact first thrown value and causes is a frozen readonly array of all subscriber-thrown values in deterministic delivery order; committed is exactly true; phase is exactly notifying; source is exactly owned-mutation for the lifecycle-free slice. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. Pure external notification failures also use SubscriberNotificationError, with source external-read | external-startup | external-invalidation | external-drain; the full notification source set is owned-mutation | external-read | external-startup | external-invalidation | external-drain. The primary occurrence supplies source. Preserve every failure occurrence without deduplication by error identity, including equal causes from different callbacks or rounds. Mixed-phase and setup/cleanup aggregation use ExternalSourceOperationError. The error, cause/causes metadata, committed, phase, and source are immutable; application error objects are not mutated. Message is exactly "One or more Store subscribers threw during notification". With Store.react, a boundary that ran Store reactions reports reaction failures (callback throws, invalid thenable results, staging or post-apply commit failures, and ReactionLimitError) as causes ahead of subscriber throws, in reaction execution order. Those causes arose before ordinary notification; phase stays notifying because it names the boundary that reports them, not the moment each cause occurred.',
 })
 const runtimeOwnedExternalErrorNames = [
     "ExternalSourceNonConvergenceError",

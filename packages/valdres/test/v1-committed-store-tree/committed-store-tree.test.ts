@@ -1768,6 +1768,7 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(Object.keys(tree)).toEqual([
             "get",
             "sub",
+            "react",
             "set",
             "update",
             "reset",

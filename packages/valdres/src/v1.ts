@@ -239,6 +239,7 @@ export {
     InvalidSynchronousAtomValueError,
     InvalidTransactionCallbackResultError,
     InvalidTransactionTargetError,
+    ReactionLimitError,
     RuntimeMismatchError,
     ScopeNotFoundError,
     SelectorCapabilityError,

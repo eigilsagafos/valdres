@@ -43,6 +43,7 @@ describe("v1 public root", () => {
                 "InvalidTransactionCallbackResultError",
                 "InvalidTransactionTargetError",
                 "MissingCollectionRowError",
+                "ReactionLimitError",
                 "RuntimeMismatchError",
                 "ScopeNotFoundError",
                 "SelectorCapabilityError",
@@ -207,6 +208,7 @@ describe("v1 public root", () => {
         const operations = [
             "get",
             "sub",
+            "react",
             "set",
             "update",
             "reset",

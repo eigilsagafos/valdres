@@ -350,7 +350,15 @@ export interface OperationInspection extends InspectionIntervalBase {
 export interface CommitInspection extends InspectionIntervalBase {
     readonly type: "commit"
     readonly commitId: number
+    /** 0 when a reaction commit ran outside a recorded Store operation. */
     readonly operationId: number
+    /** Present on a Store reaction's own commit inside a settlement boundary. */
+    readonly reaction?: true
+    /** The reaction's registration scope. */
+    readonly scope?: InspectionReference
+    /** A reaction's own completion: `threw` covers an aborted draft and a
+     * failure after apply. Absent on other commits. */
+    readonly result?: "returned" | "threw"
     readonly spanId?: number
     readonly intents: number
     readonly changedSources: number
@@ -867,6 +875,9 @@ interface ActiveInterval {
     commitFailurePhase: "propagate" | "notify" | undefined
     operationIntents: number
     counterStart: CounterSnapshot | undefined
+    /** A reaction commit; `true` until its draft begins committing. */
+    reaction?: boolean
+    reactionDraft?: boolean
 }
 
 type CounterSnapshot = Readonly<{
@@ -2257,6 +2268,11 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             return
         }
         if (code === 2) {
+            const reaction = this.#findActive("commit")
+            if (reaction?.reaction && !reaction.reactionDraft) {
+                reaction.reactionDraft = true
+                return
+            }
             const operation = this.#findActive("operation")
             if (operation !== undefined) this.beginStoreCommit(operation.token)
             return
@@ -2269,7 +2285,10 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             }
             return
         }
-        const operation = this.#findActive("operation")
+        const commit = this.#findActive("commit")
+        const operation = commit?.reaction
+            ? commit
+            : this.#findActive("operation")
         if (operation !== undefined) operation.operationIntents++
         this.recordStoreIntent({
             intent: event[1] === 0 ? "set" : "reset",
@@ -2496,6 +2515,40 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
 
     hasActiveStoreOperation(): boolean {
         return this.#findActive("operation") !== undefined
+    }
+
+    /** Opens one reaction's commit span. Its draft commit, intents and changed
+     * sources attach to it; the triggering operation keeps its own commit. */
+    beginReactionCommit(scope: StoreScopeNode): void {
+        const operation = this.#findActive("operation")
+        const commitId = operation?.commitId
+        const token = this.beginInterval({
+            type: "commit",
+            fields: {
+                reaction: true,
+                scope: this.reference(scope, "scope", scope.name),
+            },
+        })
+        if (operation !== undefined) operation.commitId = commitId
+        const frame = this.#active[this.#active.length - 1]
+        if (frame !== undefined && Object.is(frame.token, token))
+            frame.reaction = true
+    }
+
+    finishReactionCommit(failed: boolean): void {
+        const commit = this.#findActive("commit")
+        if (!commit?.reaction) return
+        this.#addCounterDelta(commit)
+        this.finishInterval(commit.token, {
+            result: failed ? "threw" : "returned",
+            fields: {
+                intents: commit.operationIntents,
+                changedSources: commit.commitChangedSources ?? 0,
+                ownershipChanged: commit.commitOwnershipChanged ?? false,
+                sourceApplied: commit.commitSourceApplied,
+                notificationsCompleted: false,
+            },
+        })
     }
 
     beginDraftCommit(
@@ -2970,6 +3023,9 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 ownershipChanged: fields.ownershipChanged ?? false,
                 sourceApplied: fields.sourceApplied ?? true,
                 notificationsCompleted: fields.notificationsCompleted ?? true,
+                ...(frame.reaction === true
+                    ? { result: result === "threw" ? "threw" : "returned" }
+                    : {}),
                 totals: freezeTotals(frame.totals as MutableWorkTotals),
             }) as CommitInspection
         }
@@ -3213,7 +3269,13 @@ const createStoreTrace = (
         }
         if (code === 2) {
             recorder.recordStoreEvent(3, first as number)
+            return
         }
+        if (code === 3) {
+            recorder.beginReactionCommit(first as StoreScopeNode)
+            return
+        }
+        if (code === 4) recorder.finishReactionCommit(first as boolean)
     }) as InternalStoreTreeTrace
 
     const evaluate: SelectorEvaluationStrategy = <
