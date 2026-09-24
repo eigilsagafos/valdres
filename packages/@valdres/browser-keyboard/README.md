@@ -112,7 +112,7 @@ modifiers produced for the keydown that pressed it.
 ### Per-key checks
 
 ```ts
-function isCodePressedSelector(code: KeyboardCode): Selector<boolean>
+function isCodePressedSelector(code: KeyboardCode | (string & {})): Selector<boolean>
 function isKeyPressedSelector(key: string): Selector<boolean> // case-insensitive
 function modifierSelector(modifier: Modifier): Selector<boolean>
 ```
@@ -134,7 +134,7 @@ event. `null` means unknown: nothing observed yet, or a focus-loss reset since.
 
 ```ts
 const lastKeyDownAtom: ExternalAtom<KeyDown | null>
-function lastKeyDownSelector(code: KeyboardCode): Selector<KeyDown | null>
+function lastKeyDownSelector(code: KeyboardCode | (string & {})): Selector<KeyDown | null>
 ```
 
 Every other export reports held keys, so holding a key down notifies once. These
@@ -194,8 +194,13 @@ type KeyDown = Readonly<{
 
 type Modifier = "shift" | "ctrl" | "alt" | "meta"
 type ToggleKey = "CapsLock" | "NumLock" | "ScrollLock"
-type KeyboardCode = "KeyA" | "Digit1" | "ShiftLeft" | "ArrowUp" | "F1" | … // common KeyboardEvent.code values
+type KeyboardCode = "KeyA" | "Digit1" | "ShiftLeft" | "PageUp" | "Numpad0" | … // every UI Events code
 ```
+
+`KeyboardCode` lists every `KeyboardEvent.code` value defined by the
+[UI Events KeyboardEvent code spec](https://www.w3.org/TR/uievents-code/), plus
+`F13`–`F24`, so editors autocomplete them. Selectors that take a code accept any
+other string too, for codes outside that list.
 
 ## What is observed
 

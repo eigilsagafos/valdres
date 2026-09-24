@@ -19,6 +19,7 @@ import {
     pressedKeyValuesSelector,
     toggleKeySelector,
     type KeyboardSnapshot,
+    type KeyboardCode,
     type KeyDown,
     type PressedKey,
 } from "../src/index"
@@ -44,8 +45,6 @@ const rejectedWrites = (app: Store, snapshot: KeyboardSnapshot) => {
     snapshot.pressed[0]!.code = "KeyB"
     // @ts-expect-error lock records are readonly
     snapshot.locks.CapsLock = true
-    // @ts-expect-error codes outside the known union are rejected by this family
-    isCodePressedSelector("NotACode")
     // @ts-expect-error only the four modifiers exist
     modifierSelector("hyper")
     // @ts-expect-error only the three lock keys exist
@@ -71,6 +70,18 @@ test("reads keep their declared value domains", () => {
         null,
     ])
     expect(app.get(source).pressed).toBe(app.get(pressed))
+    // Every standard code is in the union; anything else is still accepted.
+    const standard: KeyboardCode[] = [
+        "PageUp",
+        "Insert",
+        "Numpad0",
+        "NumLock",
+        "F24",
+        "IntlBackslash",
+    ]
+    for (const code of [...standard, "VendorSpecificKey"])
+        expect(app.get(isCodePressedSelector(code))).toBe(false)
+    expect(app.get(lastKeyDownSelector("PageUp"))).toBe(null)
     const keyDown: KeyDown | null = app.get(lastKeyDownAtom)
     const arrow: KeyDown | null = app.get(lastKeyDownSelector("ArrowDown"))
     expect([keyDown, arrow]).toEqual([null, null])

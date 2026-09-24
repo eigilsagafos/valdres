@@ -8,8 +8,8 @@ import type { KeyDown } from "../types/KeyDown"
  * different key goes down, and after a focus-loss reset.
  */
 export const lastKeyDownSelector: (
-    code: KeyboardCode,
-) => Selector<KeyDown | null> = family((code: KeyboardCode) =>
+    code: KeyboardCode | (string & {}),
+) => Selector<KeyDown | null> = family((code: KeyboardCode | (string & {})) =>
     selector(
         get => {
             const keyDown = get(lastKeyDownAtom)
