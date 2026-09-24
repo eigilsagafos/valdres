@@ -18,4 +18,6 @@ still cost nothing for stores that read only held-key state. A store reading
 both is updated once per atom; the last keydown is updated first, so an
 intermediate value pairs the keydown with the keys held just before it, never
 new held keys with an older keydown. Events dispatched from inside a subscriber
-are applied after the current one.
+are applied after the current one. At most 64 events are applied per native
+event, so a subscriber that keeps dispatching keydowns is stopped with a
+reported `RangeError` rather than hanging the page.

@@ -239,8 +239,11 @@ One persistent listener set per document — `keydown`, `keyup` and
 Each store tree registers once per atom it reads (`keyboardAtom`,
 `lastKeyDownAtom`), however many subscribers and child scopes read them. Events
 are applied one at a time: a key event or blur dispatched from inside a subscriber
-is applied after the current event has updated both atoms. When one store's subscriber throws, the other stores are still
-notified, and the error is reported from the native event listener.
+is applied after the current event has updated both atoms. At most 64 events are
+applied per native event; if subscribers keep dispatching more, the rest are
+dropped and a `RangeError` is reported instead of hanging the page. When one
+store's subscriber throws, the other stores are still notified, and the error is
+reported from the native event listener.
 
 ## Server rendering
 

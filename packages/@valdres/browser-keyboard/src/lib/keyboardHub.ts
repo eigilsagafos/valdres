@@ -71,6 +71,12 @@ const createChannel = <Value>(initial: Value): Channel<Value> => {
     }
 }
 
+/**
+ * Events applied per native event, counting the native one and every event a
+ * subscriber dispatches while it is being delivered.
+ */
+const MAX_EVENTS_PER_DISPATCH = 64
+
 const rethrow = (failures: readonly unknown[]) => {
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1)
@@ -124,9 +130,27 @@ export const createKeyboardHub = (doc: Document): KeyboardHub => {
         delivering = true
         const failures: unknown[] = []
         try {
-            job(failures)
-            for (let next = queue.shift(); next; next = queue.shift())
-                next(failures)
+            let processed = 0
+            for (let next: Job | undefined = job; next; next = queue.shift()) {
+                // Subscribers that keep dispatching events would otherwise
+                // drain forever: nested events are queued, so they never nest
+                // deep enough for Valdres's own delivery limit to stop them.
+                if (++processed > MAX_EVENTS_PER_DISPATCH) {
+                    failures.push(
+                        new RangeError(
+                            `More than ${MAX_EVENTS_PER_DISPATCH} keyboard events were dispatched from subscribers during one native event; the rest were dropped`,
+                        ),
+                    )
+                    break
+                }
+                // One job failing outside channel delivery must not drop the
+                // events queued behind it or the failures already collected.
+                try {
+                    next(failures)
+                } catch (error) {
+                    failures.push(error)
+                }
+            }
         } finally {
             delivering = false
             queue.length = 0
@@ -137,19 +161,18 @@ export const createKeyboardHub = (doc: Document): KeyboardHub => {
     const onKey = (event: Event) =>
         run(failures => {
             const keyEvent = event as KeyboardEvent
+            // Reduce first: if the event is malformed, nothing is published.
+            const nextKeyboard = reduceKeyboardEvent(
+                keyboard.current(),
+                keyEvent,
+                isAppleLike(),
+            )
             const keyDown = toKeyDown(keyEvent, sequence + 1)
             if (keyDown !== null) {
                 sequence = keyDown.sequence
                 lastKeyDown.publish(keyDown, failures)
             }
-            keyboard.publish(
-                reduceKeyboardEvent(
-                    keyboard.current(),
-                    keyEvent,
-                    isAppleLike(),
-                ),
-                failures,
-            )
+            keyboard.publish(nextKeyboard, failures)
         })
     // Focus loss can swallow keyups, so what is still held is unknown, and a
     // keydown from before the reset should not be acted on afterwards.

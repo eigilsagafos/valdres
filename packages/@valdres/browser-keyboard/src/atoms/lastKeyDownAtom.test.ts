@@ -304,6 +304,47 @@ describe("lastKeyDownAtom", () => {
         keyDowns.dispose()
     })
 
+    test("a subscriber that keeps dispatching keydowns is stopped, not hung", () => {
+        const app = store()
+        let fired = 0
+        app.sub(lastKeyDownAtom, () => {
+            fired++
+            kb.down("KeyA", "a", { repeat: true })
+        })
+
+        kb.down("KeyA", "a")
+
+        expect(fired).toBe(64)
+        const [reported] = kb.reported()
+        expect(reported).toBeInstanceOf(RangeError)
+        // The hub still works on the next native event.
+        fired = 0
+        app.dispose()
+        const next = store()
+        const seen: number[] = []
+        next.sub(lastKeyDownAtom, () =>
+            seen.push(next.get(lastKeyDownAtom)!.sequence),
+        )
+        kb.down("KeyB", "b")
+        // 64 keydowns were applied (1–64); dropped ones take no number.
+        expect(seen).toEqual([65])
+        next.dispose()
+    })
+
+    test("a malformed event publishes nothing and does not drop queued events", () => {
+        const app = store()
+        app.sub(lastKeyDownAtom, () => {})
+        app.sub(keyboardAtom, () => {})
+        kb.down("KeyA", "a")
+        const malformed = new Event("keydown")
+        Object.defineProperty(malformed, "code", { value: "CapsLock" })
+        document.dispatchEvent(malformed)
+
+        expect(app.get(lastKeyDownAtom)?.code).toBe("KeyA")
+        expect(kb.reported()).toHaveLength(1)
+        app.dispose()
+    })
+
     test("the server snapshot is null", () => {
         expect(lastKeyDownSource.getServerSnapshot?.()).toBe(null)
     })
