@@ -1,0 +1,13 @@
+{
+    // Type-checks everything the package ships or runs, not just the public
+    // entry: `tsconfig.json` deliberately narrows to `src/index.ts` for
+    // declaration emit, which would skip the `@ts-expect-error` assertions that
+    // enforce the source's read-only contract.
+    "extends": "../../../tsconfig.json",
+    "include": ["src", "test"],
+    "exclude": ["dist"],
+    "compilerOptions": {
+        "noEmit": true,
+        "types": ["bun"]
+    }
+}

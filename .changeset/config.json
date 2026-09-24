@@ -24,7 +24,6 @@
         "@valdres/browser-device-orientation",
         "@valdres/browser-focus",
         "@valdres/browser-geolocation",
-        "@valdres/browser-keyboard",
         "@valdres/browser-online",
         "@valdres/browser-presence",
         "@valdres/browser-screen",

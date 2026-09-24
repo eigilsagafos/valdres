@@ -16,8 +16,9 @@
  * does it.
  *
  * SCOPE: every pull-request job in ci.yaml — `test`, `browser-media` (the five
- * migrated browser media packages: suites, both tsconfigs, packed consumers)
- * and `valdres-package` (the published-tarball gate: publint, ATTW, size
+ * migrated browser media packages: suites, both tsconfigs, packed consumers),
+ * `browser-keyboard` (the same three gates for the keyboard package) and
+ * `valdres-package` (the published-tarball gate: publint, ATTW, size
  * budgets; ~13s). It does NOT cover the manual-only legacy docs workflows or
  * the Bencher gate; those are listed under NOT_COVERED and printed on every
  * run, because a
@@ -75,7 +76,7 @@ const WORKFLOW = ".github/workflows/ci.yaml"
  *  `valdres-package` is path-filtered on GitHub (`packages/valdres/**`) but
  *  takes seconds locally, so verify always runs it rather than reasoning about
  *  your diff. */
-const JOBS = ["test", "browser-media", "valdres-package"]
+const JOBS = ["test", "browser-media", "browser-keyboard", "valdres-package"]
 
 /** Jobs verify deliberately does not run, and why. Every job declared in
  *  ci.yaml must appear either here or in JOBS — a new job is otherwise outside
@@ -171,6 +172,18 @@ const SKIPPED_ACTIONS: Record<
         reason: SETUP_BUN,
     },
     "browser-media / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
+    "browser-keyboard / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "browser-keyboard / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "browser-keyboard / actions/setup-node": {
         action: "actions/setup-node",
         reason: SETUP_NODE,
     },

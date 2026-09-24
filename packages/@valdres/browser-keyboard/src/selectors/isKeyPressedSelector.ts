@@ -1,10 +1,15 @@
-import { selectorFamily } from "valdres"
-import { pressedKeysAtom } from "../atoms/pressedKeysAtom"
+import { family, selector, type Selector } from "valdres"
+import { pressedKeysSelector } from "./pressedKeysSelector"
 
-export const isKeyPressedSelector = selectorFamily<boolean, [string]>(
-    (key: string) => get => {
+export const isKeyPressedSelector: (key: string) => Selector<boolean> = family(
+    (key: string) => {
         const lower = key.toLowerCase()
-        return get(pressedKeysAtom).some(k => k.key.toLowerCase() === lower)
+        return selector(
+            get =>
+                get(pressedKeysSelector).some(
+                    k => k.key.toLowerCase() === lower,
+                ),
+            { name: `@valdres/browser-keyboard/isKeyPressed/${key}` },
+        )
     },
-    { name: "@valdres/browser-keyboard/isKeyPressed" },
 )

@@ -8,7 +8,6 @@
 "@valdres/browser-device-orientation": patch
 "@valdres/browser-focus": patch
 "@valdres/browser-geolocation": patch
-"@valdres/browser-keyboard": patch
 "@valdres/browser-online": patch
 "@valdres/browser-presence": patch
 "@valdres/browser-screen": patch

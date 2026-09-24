@@ -116,10 +116,10 @@ neither list would ship its workspace manifest, whose `exports` still points at
 `./src/index.ts` while `files` ships only `dist`. `scripts/publishable-packages.test.ts`
 asserts the complement holds. Move a package between them in one change.
 
-Today that is `valdres`, `valdres-react` and the five migrated
+Today that is `valdres`, `valdres-react`, the five migrated
 `@valdres/browser-{color-scheme,contrast,reduced-motion,reduced-data,reduced-transparency}`
-packages. The remaining browser packages and both color-mode packages are still
-ignored.
+packages and `@valdres/browser-keyboard`. The remaining browser packages and both
+color-mode packages are still ignored.
 
 A changeset may not name both ignored and non-ignored packages — Changesets
 rejects the whole repository's `changeset status` with "Mixed changesets …".

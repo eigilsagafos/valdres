@@ -5,7 +5,9 @@ description: Reactive pressed-key state from keydown / keyup
 
 # browser-keyboard
 
-Tracks which keys are currently held down, from the document's `keydown` / `keyup` events. Exposes the raw pressed keys plus selectors for codes, modifiers, and per-key checks.
+Tracks which keys are currently held down, from the document's `keydown` / `keyup`
+events. One read-only external atom holds the keyboard snapshot; every other export
+is a selector derived from it.
 
 ## Live example
 
@@ -21,77 +23,194 @@ bun add @valdres/browser-keyboard
 
 ## Usage
 
+Every read works through a store, with no adapter at all:
+
+```ts
+import { store } from "valdres"
+import {
+    pressedCodesSelector,
+    modifierSelector,
+    toggleKeySelector,
+} from "@valdres/browser-keyboard"
+
+const app = store()
+const stop = app.sub(pressedCodesSelector, () => {
+    console.log(app.get(pressedCodesSelector)) // e.g. ["ShiftLeft", "KeyA"]
+})
+app.get(modifierSelector("shift")) // boolean
+app.get(toggleKeySelector("CapsLock")) // boolean | null — null until observed
+stop() // removes this store's subscription; tracking continues
+```
+
 <FrameworkBlock fw="react">
 
 ```tsx
 import { useValue } from "valdres-react"
-import { pressedCodesSelector, isCodePressedSelector } from "@valdres/browser-keyboard"
+import { pressedCodesSelector, modifierSelector } from "@valdres/browser-keyboard"
 
 function Keys() {
-    const codes = useValue(pressedCodesSelector) // KeyboardCode[]
-    const shift = useValue(isCodePressedSelector("ShiftLeft"))
+    const codes = useValue(pressedCodesSelector) // readonly string[]
+    const shift = useValue(modifierSelector("shift")) // boolean
     return <span>{codes.join(" + ")}</span>
 }
 ```
 
+`useValue` reads the store provided by the nearest `<Provider store={…}>`, or one
+you pass explicitly as its second argument. There is no implicit global store.
+
 </FrameworkBlock>
 
-<FrameworkBlock fw="vue">
+<div className="callout callout-note">
+  <div className="callout-title">Adapter support in this beta</div>
+
+  `valdres-react` is the only adapter migrated to the v1 core. The Vue, Svelte,
+  Solid and Angular adapters cannot read an external atom yet. Until they ship,
+  read this package with `store.get` / `store.sub` as above.
+
+</div>
+
+## API
+
+Everything is read-only browser truth. `set`, `reset` and `update` reject every
+export below, at compile time and at runtime.
+
+### Source
 
 ```ts
-import { useValue } from "valdres-vue"
-import { pressedCodesSelector } from "@valdres/browser-keyboard"
-
-const codes = useValue(pressedCodesSelector) // Ref<KeyboardCode[]>
+const keyboardAtom: ExternalAtom<KeyboardSnapshot>
 ```
 
-</FrameworkBlock>
+The whole observed keyboard state as one frozen snapshot. Every selector below
+derives from it, so one event can never leave pressed keys and locks out of step.
+An event that changes nothing — a repeat, releasing a key that was not tracked —
+keeps the same snapshot object, and nothing downstream is notified.
 
-<FrameworkBlock fw="svelte">
+### Activation
 
 ```ts
-import { watch } from "valdres-svelte"
-import { pressedCodesSelector } from "@valdres/browser-keyboard"
-
-const codes = watch(pressedCodesSelector) // codes.value
+function activateKeyboard(): void
 ```
 
-</FrameworkBlock>
-
-<FrameworkBlock fw="solid">
+Starts tracking for the current document now. Without this call, tracking starts
+at the first store subscription. Call it from your client entry when keys pressed
+before the first component mounts matter, or when you only read with `store.get`.
+It is idempotent, returns nothing because there is nothing to stop, and does
+nothing where there is no `document`, so shared server/client entry code can call
+it.
 
 ```ts
-import { createValue } from "valdres-solid"
-import { pressedCodesSelector } from "@valdres/browser-keyboard"
-
-const codes = createValue(pressedCodesSelector) // codes()
+// client entry
+import { activateKeyboard } from "@valdres/browser-keyboard"
+activateKeyboard()
 ```
 
-</FrameworkBlock>
-
-<FrameworkBlock fw="angular">
+### Pressed keys
 
 ```ts
-import { injectValue } from "valdres-angular"
-import { pressedCodesSelector } from "@valdres/browser-keyboard"
-
-codes = injectValue(pressedCodesSelector) // ValueState<KeyboardCode[]> — read codes.value()
+const pressedKeysSelector: Selector<readonly PressedKey[]>
+const pressedCodesSelector: Selector<readonly string[]>
+const pressedKeyValuesSelector: Selector<readonly string[]>
 ```
 
-</FrameworkBlock>
+Held keys in press order: full entries, their physical `code`s
+(`"ShiftLeft"`, `"KeyA"`), or their lowercased `key` values (`"shift"`, `"a"`).
+`code` names the physical key regardless of layout; `key` is what the layout and
+modifiers produced for the keydown that pressed it.
 
-## Exports
+### Per-key checks
 
-| Export | Kind | Type |
-|--------|------|------|
-| `pressedKeysAtom` | atom (read-only) | `PressedKey[]` |
-| `pressedCodesSelector` | selector | `KeyboardCode[]` |
-| `pressedKeyValuesSelector` | selector | `string[]` |
-| `modifierSelector` | selector | `Modifier[]` |
-| `isCodePressedSelector(code)` | selector family | `boolean` |
-| `isKeyPressedSelector(key)` | selector family | `boolean` |
-| `toggleKeyAtom(key)` | atom family (settable) | `boolean` |
+```ts
+function isCodePressedSelector(code: KeyboardCode): Selector<boolean>
+function isKeyPressedSelector(key: string): Selector<boolean> // case-insensitive
+function modifierSelector(modifier: Modifier): Selector<boolean>
+```
 
-## Cross-framework
+`modifierSelector` is true while either side of the modifier is held —
+`"shift"` covers `ShiftLeft` and `ShiftRight`. Each family returns the same
+selector for the same argument.
 
-Global atoms and selectors — works in every framework. For higher-level "press this combination → run this callback" hotkeys (rather than raw key state), use `@valdres/hotkeys`.
+### Lock keys
+
+```ts
+function toggleKeySelector(key: ToggleKey): Selector<boolean | null>
+```
+
+Whether `CapsLock`, `NumLock` or `ScrollLock` is on, as of the last observed key
+event. `null` means unknown: nothing observed yet, or a focus-loss reset since.
+
+### Types
+
+```ts
+type KeyboardSnapshot = Readonly<{
+    pressed: readonly PressedKey[]
+    locks: Readonly<Record<ToggleKey, boolean | null>>
+}>
+
+type PressedKey = Readonly<{
+    code: string
+    key: string
+    timeStamp: number // of the keydown that first pressed it; repeats keep it
+}>
+
+type Modifier = "shift" | "ctrl" | "alt" | "meta"
+type ToggleKey = "CapsLock" | "NumLock" | "ScrollLock"
+type KeyboardCode = "KeyA" | "Digit1" | "ShiftLeft" | "ArrowUp" | "F1" | … // common KeyboardEvent.code values
+```
+
+## What is observed
+
+Tracking covers events observed since the keyboard hub started — the platform
+cannot list keys already held before then. Only a key's own `keydown` makes it
+pressed; modifier flags on other events (`ctrlKey`, `metaKey`, …) are never used
+to infer presses.
+
+- **Focus loss resets.** When the window loses focus or the page becomes hidden,
+  keyups can be missed, so every pressed key is cleared and every lock returns to
+  `null`.
+- **Lock keys** are reported only through `toggleKeySelector`, never as pressed
+  keys. All three are read together from the first event after start or a reset;
+  after that, a lock updates when its own key is pressed or released.
+- **IME composition** keydowns (`isComposing`, or the legacy `keyCode` 229) are
+  ignored. A keyup during composition still releases a key that was already held.
+- **macOS Command.** macOS does not send keyup for keys pressed while Command is
+  held. On Apple platforms each new keydown drops the non-modifier keys pressed
+  after Command, and releasing Command clears every non-modifier key. Modifiers
+  still get their keyups, so a held Shift (Cmd+Shift+Z) or the other Command key
+  stays pressed.
+- **Propagation.** The listeners are on `document` in the bubbling phase. An event
+  stopped before it reaches `document` is not observed.
+
+## Lifetime
+
+One persistent listener set per document — `keydown`, `keyup` and
+`visibilitychange` on the document, `blur` on its window — shared by every store.
+
+- **Importing and reading never start it.** A `store.get` before the hub has
+  started reports the empty snapshot; after it has started, a `store.get` reports
+  the current keys without subscribing.
+- **`activateKeyboard()` or the first store subscription starts it**, whichever
+  comes first. A subscription counts whether it is to `keyboardAtom` directly or
+  to any selector derived from it.
+- **Once started, it keeps tracking.** Unsubscribing, unmounting or disposing a
+  store only removes that store's subscription. Key state is not cleared and the
+  listeners stay attached, so a store that subscribes later sees the keys held now.
+  With no store subscribed, events only update the snapshot; no store does work.
+
+Each store tree registers once, however many subscribers and child scopes read
+the keyboard. When one store's subscriber throws, the other stores are still
+notified, and the error is reported from the native event listener.
+
+## Server rendering
+
+On the server — and in any runtime without a `document` — every read returns one
+fixed empty snapshot: no pressed keys, every lock `null`. Server rendering never
+starts the hub, and `activateKeyboard()` does nothing there. During hydration
+`useValue` renders that same empty value first, then switches to the live keyboard
+state: a normal two-pass render, not a hydration mismatch.
+
+## Keyboard state versus shortcuts
+
+This package reports **state**: which keys are held. Store notifications are not
+the native event, so they cannot call `preventDefault()` or react to a single
+event such as a repeat. For "press this combination → run this callback", handle
+the native `keydown` event yourself.
