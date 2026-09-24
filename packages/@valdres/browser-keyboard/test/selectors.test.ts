@@ -72,6 +72,20 @@ describe("pressed keys", () => {
         pressed.stop()
     })
 
+    test("derived code and key arrays are frozen", () => {
+        const codes = record<readonly string[]>(pressedCodesSelector)
+        const keys = record<readonly string[]>(pressedKeyValuesSelector)
+        kb.down("KeyA", "a")
+        expect(Object.isFrozen(codes.seen[0])).toBe(true)
+        expect(Object.isFrozen(keys.seen[0])).toBe(true)
+        expect(() => (codes.seen[0] as string[]).push("KeyZ")).toThrow(
+            TypeError,
+        )
+        expect(app.get(pressedCodesSelector)).toEqual(["KeyA"])
+        codes.stop()
+        keys.stop()
+    })
+
     test("a repeat publishes nothing and keeps snapshot identity", () => {
         let notifications = 0
         const stop = app.sub(keyboardAtom, () => notifications++)
@@ -217,6 +231,19 @@ describe("macOS Meta recovery through the hub", () => {
                 [],
             ])
             codes.stop()
+        })
+    })
+
+    test("Cmd+Shift+Z keeps Shift held for modifierSelector", () => {
+        withPlatform("MacIntel", () => {
+            const shift = record<boolean>(modifierSelector("shift"))
+            kb.down("MetaLeft", "Meta")
+            kb.down("ShiftLeft", "Shift")
+            kb.down("KeyZ", "z", { metaKey: true, shiftKey: true })
+            kb.up("MetaLeft", "Meta")
+            kb.up("ShiftLeft", "Shift")
+            expect(shift.seen).toEqual([true, false])
+            shift.stop()
         })
     })
 

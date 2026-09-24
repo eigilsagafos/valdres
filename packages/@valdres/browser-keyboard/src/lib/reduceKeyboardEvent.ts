@@ -31,6 +31,19 @@ const nextLocks = (current: Locks, event: KeyboardEvent): Locks => {
     return changed ? Object.freeze(next) : current
 }
 
+// Modifier keyups still reach the page on macOS while Meta is held, so a
+// modifier's entry is never stale; only other keys lose their keyup.
+const MODIFIER_CODES = new Set([
+    "ShiftLeft",
+    "ShiftRight",
+    "ControlLeft",
+    "ControlRight",
+    "AltLeft",
+    "AltRight",
+    "MetaLeft",
+    "MetaRight",
+])
+
 const nextPressed = (
     current: readonly PressedKey[],
     event: KeyboardEvent,
@@ -38,21 +51,27 @@ const nextPressed = (
 ): readonly PressedKey[] => {
     const { code } = event
     if (event.type === "keyup") {
-        // On macOS, releasing Meta clears everything: the OS swallows keyup for
-        // keys pressed while Meta was held, so what is still down is unknown.
-        if (appleLike && isMeta(code)) return []
+        // On macOS, releasing Meta clears every non-modifier key: the OS
+        // swallows their keyups while Meta is held, so whether they are still
+        // down is unknown. Modifiers still held, such as the other Meta, stay.
+        if (appleLike && isMeta(code))
+            return current.filter(
+                entry => entry.code !== code && MODIFIER_CODES.has(entry.code),
+            )
         return current.filter(entry => entry.code !== code)
     }
 
     let next = current
-    // On macOS, keyup never fires for keys pressed while Meta is held, so each
-    // new keydown truncates back to the held Meta.
+    // On macOS, keyup never fires for non-modifier keys pressed while Meta is
+    // held, so each new keydown drops those; modifiers pressed after Meta and
+    // everything pressed before it stay.
     if (appleLike) {
-        const meta = Math.max(
-            current.findIndex(entry => entry.code === "MetaLeft"),
-            current.findIndex(entry => entry.code === "MetaRight"),
-        )
-        if (meta !== -1) next = current.slice(0, meta + 1)
+        const meta = current.findIndex(entry => isMeta(entry.code))
+        if (meta !== -1)
+            next = current.filter(
+                (entry, index) =>
+                    index <= meta || MODIFIER_CODES.has(entry.code),
+            )
     }
     if (next.some(entry => entry.code === code)) return next
     // A repeat, or the same key re-pressed after truncation, keeps the entry of

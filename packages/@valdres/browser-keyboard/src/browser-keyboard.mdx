@@ -173,8 +173,10 @@ to infer presses.
 - **IME composition** keydowns (`isComposing`, or the legacy `keyCode` 229) are
   ignored. A keyup during composition still releases a key that was already held.
 - **macOS Command.** macOS does not send keyup for keys pressed while Command is
-  held. On Apple platforms each new keydown drops the keys pressed after Command,
-  and releasing Command clears every key.
+  held. On Apple platforms each new keydown drops the non-modifier keys pressed
+  after Command, and releasing Command clears every non-modifier key. Modifiers
+  still get their keyups, so a held Shift (Cmd+Shift+Z) or the other Command key
+  stays pressed.
 - **Propagation.** The listeners are on `document` in the bubbling phase. An event
   stopped before it reaches `document` is not observed.
 

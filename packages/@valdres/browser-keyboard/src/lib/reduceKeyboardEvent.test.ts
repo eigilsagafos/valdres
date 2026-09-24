@@ -179,6 +179,46 @@ describe("reduceKeyboardEvent", () => {
             expect(state.pressed).toEqual([])
         })
 
+        test("modifiers pressed after Meta survive the next keydown (Cmd+Shift+Z)", () => {
+            const state = apply(
+                [
+                    event("keydown", "MetaLeft", "Meta"),
+                    event("keydown", "ShiftLeft", "Shift"),
+                    event("keydown", "KeyA", "a"),
+                    event("keydown", "KeyZ", "z"),
+                ],
+                { apple: true },
+            )
+            expect(codes(state)).toEqual(["MetaLeft", "ShiftLeft", "KeyZ"])
+        })
+
+        test("keys pressed between two held Metas are dropped; both Metas stay", () => {
+            const state = apply(
+                [
+                    event("keydown", "MetaLeft", "Meta"),
+                    event("keydown", "KeyA", "a"),
+                    event("keydown", "MetaRight", "Meta"),
+                    event("keydown", "KeyB", "b"),
+                ],
+                { apple: true },
+            )
+            expect(codes(state)).toEqual(["MetaLeft", "MetaRight", "KeyB"])
+        })
+
+        test("releasing one Meta keeps the other Meta and other held modifiers", () => {
+            const state = apply(
+                [
+                    event("keydown", "MetaLeft", "Meta"),
+                    event("keydown", "ShiftLeft", "Shift"),
+                    event("keydown", "MetaRight", "Meta"),
+                    event("keydown", "KeyK", "k"),
+                    event("keyup", "MetaLeft", "Meta"),
+                ],
+                { apple: true },
+            )
+            expect(codes(state)).toEqual(["ShiftLeft", "MetaRight"])
+        })
+
         test("a repeat while Meta is held keeps the snapshot and first press", () => {
             const held = apply(
                 [

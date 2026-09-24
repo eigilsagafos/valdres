@@ -35,6 +35,11 @@ current core. It is rebuilt on the public `externalAtom` primitive.
   still notified; the failure is reported from the native event listener.
 - **IME:** a keyup during composition now releases a key held before composition
   began, instead of leaving it pressed until the next reset.
+- **macOS Command recovery keeps held modifiers.** Keys pressed while Command is
+  held lose their keyup on macOS, so they are still dropped, but modifiers are
+  no longer dropped with them: Shift stays pressed through Cmd+Shift+Z, and
+  releasing one Command key keeps the other Command key and any held Shift,
+  Control or Alt.
 - **Server rendering.** Every read without a `document` returns one fixed empty
   snapshot, including the `getServerSnapshot` React hydrates against.
 - **Minimum core.** The `valdres` peer range is now `^1.0.0-beta.40`.
