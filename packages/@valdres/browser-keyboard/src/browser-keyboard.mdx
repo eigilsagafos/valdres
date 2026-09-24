@@ -138,6 +138,37 @@ function toggleKeySelector(key: ToggleKey): Selector<boolean | null>
 Whether `CapsLock`, `NumLock` or `ScrollLock` is on, as of the last observed key
 event. `null` means unknown: nothing observed yet, or a focus-loss reset since.
 
+### Key downs, repeats included
+
+```ts
+const lastKeyDownAtom: ExternalAtom<KeyDown | null>
+function lastKeyDownSelector(code: KeyboardCode): Selector<KeyDown | null>
+```
+
+Every other export reports held keys, so holding a key down notifies once. These
+two change on **every** observed keydown, auto-repeats included. Subscribe to them
+to act once per keydown, for example moving a selection while an arrow key is
+held:
+
+```ts
+const stop = app.sub(lastKeyDownSelector("ArrowDown"), () => {
+    if (app.get(lastKeyDownSelector("ArrowDown")) !== null) moveSelectionDown()
+})
+```
+
+`lastKeyDownAtom` is the most recent keydown of any key. `lastKeyDownSelector(code)`
+is that keydown when it was `code`, and `null` once a different key goes down.
+Both are `null` before the first keydown and after a focus-loss reset. Keyups and
+IME composition keydowns are not reported. Modifier and lock keydowns are.
+
+Repeats cost nothing for stores that read only held-key state: those stores are
+not notified or re-evaluated. For one event, held-key state is updated first, so
+a `lastKeyDown` subscriber reads the key state that includes that keydown.
+
+A store notification is not the native event: it cannot call `preventDefault()`
+and does not know which element had focus. For shortcuts that need either, handle
+the native `keydown` event.
+
 ### Types
 
 ```ts
@@ -150,6 +181,14 @@ type PressedKey = Readonly<{
     code: string
     key: string
     timeStamp: number // of the keydown that first pressed it; repeats keep it
+}>
+
+type KeyDown = Readonly<{
+    code: string
+    key: string
+    repeat: boolean // true for an auto-repeat of a held key
+    timeStamp: number
+    sequence: number // +1 per observed keydown, never reset
 }>
 
 type Modifier = "shift" | "ctrl" | "alt" | "meta"
@@ -165,8 +204,8 @@ pressed; modifier flags on other events (`ctrlKey`, `metaKey`, …) are never us
 to infer presses.
 
 - **Focus loss resets.** When the window loses focus or the page becomes hidden,
-  keyups can be missed, so every pressed key is cleared and every lock returns to
-  `null`.
+  keyups can be missed, so every pressed key is cleared, every lock returns to
+  `null`, and the last keydown returns to `null`.
 - **Lock keys** are reported only through `toggleKeySelector`, never as pressed
   keys. All three are read together from the first event after start or a reset;
   after that, a lock updates when its own key is pressed or released.
@@ -203,14 +242,14 @@ notified, and the error is reported from the native event listener.
 ## Server rendering
 
 On the server — and in any runtime without a `document` — every read returns one
-fixed empty snapshot: no pressed keys, every lock `null`. Server rendering never
-starts the hub, and `activateKeyboard()` does nothing there. During hydration
-`useValue` renders that same empty value first, then switches to the live keyboard
-state: a normal two-pass render, not a hydration mismatch.
+fixed empty snapshot: no pressed keys, every lock `null`, no last keydown. Server
+rendering never starts the hub, and `activateKeyboard()` does nothing there.
+During hydration `useValue` renders that same empty value first, then switches to
+the live keyboard state: a normal two-pass render, not a hydration mismatch.
 
 ## Keyboard state versus shortcuts
 
-This package reports **state**: which keys are held. Store notifications are not
-the native event, so they cannot call `preventDefault()` or react to a single
-event such as a repeat. For "press this combination → run this callback", handle
-the native `keydown` event yourself.
+This package reports **state**: which keys are held, and the last keydown. Store
+notifications are not the native event, so they cannot call `preventDefault()` or
+tell which element had focus. For "press this combination → run this callback",
+handle the native `keydown` event yourself.

@@ -11,12 +11,15 @@ import {
     isCodePressedSelector,
     isKeyPressedSelector,
     keyboardAtom,
+    lastKeyDownAtom,
+    lastKeyDownSelector,
     modifierSelector,
     pressedCodesSelector,
     pressedKeysSelector,
     pressedKeyValuesSelector,
     toggleKeySelector,
     type KeyboardSnapshot,
+    type KeyDown,
     type PressedKey,
 } from "../src/index"
 
@@ -25,6 +28,10 @@ const rejectedWrites = (app: Store, snapshot: KeyboardSnapshot) => {
     app.set(keyboardAtom, snapshot)
     // @ts-expect-error an external source cannot be reset
     app.reset(keyboardAtom)
+    // @ts-expect-error the last keydown cannot be written
+    app.set(lastKeyDownAtom, null)
+    // @ts-expect-error the per-code keydown is derived, not writable
+    app.set(lastKeyDownSelector("KeyA"), null)
     // @ts-expect-error an external source cannot be updated
     app.update(keyboardAtom, () => snapshot)
     // @ts-expect-error pressed keys are derived, not writable
@@ -64,6 +71,9 @@ test("reads keep their declared value domains", () => {
         null,
     ])
     expect(app.get(source).pressed).toBe(app.get(pressed))
+    const keyDown: KeyDown | null = app.get(lastKeyDownAtom)
+    const arrow: KeyDown | null = app.get(lastKeyDownSelector("ArrowDown"))
+    expect([keyDown, arrow]).toEqual([null, null])
     const started: void = activateKeyboard()
     expect(started).toBeUndefined()
     expect(typeof rejectedWrites).toBe("function")

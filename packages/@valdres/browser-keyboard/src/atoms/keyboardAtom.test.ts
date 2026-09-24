@@ -118,7 +118,7 @@ describe("persistent hub lifetime", () => {
         kb.up("KeyA", "a")
         expect(
             peekKeyboardHub()
-                ?.snapshot()
+                ?.keyboard.current()
                 .pressed.map(k => k.code),
         ).toEqual(["KeyB"])
 
@@ -360,10 +360,10 @@ describe("hub-owned fan-out", () => {
         const hub = activateKeyboardHub()!
         const seen: string[] = []
         let stopLate = () => {}
-        const stopFirst = hub.subscribe(() => {
+        const stopFirst = hub.keyboard.subscribe(() => {
             seen.push("first")
             if (seen.length === 1)
-                stopLate = hub.subscribe(() => seen.push("late"))
+                stopLate = hub.keyboard.subscribe(() => seen.push("late"))
         })
 
         kb.down("KeyA", "a")
