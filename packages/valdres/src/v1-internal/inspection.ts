@@ -350,14 +350,15 @@ export interface OperationInspection extends InspectionIntervalBase {
 export interface CommitInspection extends InspectionIntervalBase {
     readonly type: "commit"
     readonly commitId: number
-    /** 0 when a reaction commit ran outside a recorded Store operation. */
+    /** 0 when a settle commit ran outside a recorded Store operation. */
     readonly operationId: number
-    /** Present on a Store reaction's own commit inside a settlement boundary. */
-    readonly reaction?: true
-    /** The reaction's registration scope. */
+    /** Present on a `Store.sub` settle handler's own commit inside a
+     * settlement boundary. */
+    readonly settle?: true
+    /** The settle handler's registration scope. */
     readonly scope?: InspectionReference
-    /** A reaction's own completion: `threw` covers an aborted draft and a
-     * failure after apply. Absent on other commits. */
+    /** A settle handler's own completion: `threw` covers an aborted draft and
+     * a failure after apply. Absent on other commits. */
     readonly result?: "returned" | "threw"
     readonly spanId?: number
     readonly intents: number
@@ -2525,7 +2526,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         const token = this.beginInterval({
             type: "commit",
             fields: {
-                reaction: true,
+                settle: true,
                 scope: this.reference(scope, "scope", scope.name),
             },
         })

@@ -382,7 +382,7 @@ assert.throws(() => adapter.readHydrationSnapshot(externalTarget, foreignExterna
 assert.equal(foreignExternalSamples, 0)
 externalTarget.dispose()
 
-// Store.react: one coherent publication for input and reaction result.
+// Store.sub settle handlers: one coherent publication for input and settled write.
 let reactionInput = 0
 let invalidateReactionInput = () => {}
 const reactionSource = core.externalAtom({
@@ -399,28 +399,35 @@ const reactionSeen = []
 reactionTarget.sub(reactionView, () => reactionSeen.push(reactionTarget.get(reactionView)))
 let reactionRuns = 0
 let reactionCursor
-const stopReaction = reactionTarget.react(reactionSource, transaction => {
-    reactionRuns++
-    reactionCursor = transaction
-    transaction.set(reactionResult, transaction.get(reactionSource) * 10)
+const reactionNotified = []
+const stopReaction = reactionTarget.sub(reactionSource, {
+    settle: transaction => {
+        reactionRuns++
+        reactionCursor = transaction
+        transaction.set(reactionResult, transaction.get(reactionSource) * 10)
+    },
+    notify: () => reactionNotified.push(reactionTarget.get(reactionResult)),
 })
 assert.equal(reactionRuns, 0)
 reactionInput = 2
 invalidateReactionInput()
 assert.deepEqual(reactionSeen, [[2, 20]])
+assert.deepEqual(reactionNotified, [20])
 assert.throws(() => reactionCursor.get(reactionResult), core.TransactionClosedError)
 stopReaction(); stopReaction()
 reactionInput = 3
 invalidateReactionInput()
 assert.equal(reactionRuns, 1)
+assert.deepEqual(reactionNotified, [20])
+assert.throws(() => reactionTarget.sub(reactionSource, { setle: () => {} }), TypeError)
 const pingAtom = core.atom(0)
 const pongAtom = core.atom(0)
-reactionTarget.react(pingAtom, transaction => transaction.set(pongAtom, transaction.get(pingAtom) + 1))
-reactionTarget.react(pongAtom, transaction => transaction.set(pingAtom, transaction.get(pongAtom) + 1))
+reactionTarget.sub(pingAtom, { settle: transaction => transaction.set(pongAtom, transaction.get(pingAtom) + 1) })
+reactionTarget.sub(pongAtom, { settle: transaction => transaction.set(pingAtom, transaction.get(pongAtom) + 1) })
 assert.throws(() => reactionTarget.set(pingAtom, 1), error => {
     assert.ok(error instanceof core.SubscriberNotificationError)
-    assert.ok(error.cause instanceof core.ReactionLimitError)
-    assert.equal(error.cause.code, "VALDRES_REACTION_LIMIT")
+    assert.ok(error.cause instanceof core.SettleLimitError)
+    assert.equal(error.cause.code, "VALDRES_SETTLE_LIMIT")
     return true
 })
 reactionTarget.dispose()
@@ -1076,7 +1083,7 @@ import {
     ExternalSourceOperationError,
     family,
     presence,
-    ReactionLimitError,
+    SettleLimitError,
     selector,
     store,
     type Transaction,
@@ -1143,13 +1150,18 @@ void indexedRows
 const count = atom(0)
 const doubled = selector(get => get(count) * 2)
 const target: Store = store()
-const stopPackedReaction: () => void = target.react(doubled, (transaction: Transaction) => {
-    transaction.set(count, transaction.get(doubled))
+const stopPackedReaction: () => void = target.sub(doubled, {
+    settle: (transaction: Transaction) => {
+        transaction.set(count, transaction.get(doubled))
+    },
+    notify: () => undefined,
 })
 stopPackedReaction()
-// @ts-expect-error Store reactions are synchronous transactions.
-target.react(count, async transaction => transaction.set(count, 1))
-export const packedReactionLimit: ReactionLimitError = new ReactionLimitError()
+// @ts-expect-error settle handlers are synchronous transactions.
+target.sub(count, { settle: async transaction => transaction.set(count, 1) })
+// @ts-expect-error at least one handler is required.
+target.sub(count, {})
+export const packedSettleLimit: SettleLimitError = new SettleLimitError()
 export const packedExternalSource: ExternalSource<number> = {
     getSnapshot: () => 1,
     getServerSnapshot: () => 0,

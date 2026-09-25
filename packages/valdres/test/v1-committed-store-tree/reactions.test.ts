@@ -3,7 +3,7 @@ import {
     CallbackCapabilityError,
     InvalidSynchronousAtomValueError,
     InvalidTransactionCallbackResultError,
-    ReactionLimitError,
+    SettleLimitError,
     RuntimeMismatchError,
     SelectorCapabilityError,
     StoreDisposedError,
@@ -76,7 +76,7 @@ const source = <Value>(initial: Value) => {
     }
 }
 
-describe("Store reactions: registration and retention", () => {
+describe("Store settle handlers: registration and retention", () => {
     test("never runs on registration, including external admission catch-up", () => {
         const { domain, tree } = fixture()
         const count = domain.atom(0)
@@ -92,9 +92,9 @@ describe("Store reactions: registration and retention", () => {
         })
         const runs: string[] = []
         const ordinary: number[] = []
-        tree.react(count, () => void runs.push("atom"))
-        tree.react(doubled, () => void runs.push("selector"))
-        tree.react(external, () => void runs.push("external"))
+        tree.sub(count, { settle: () => void runs.push("atom") })
+        tree.sub(doubled, { settle: () => void runs.push("selector") })
+        tree.sub(external, { settle: () => void runs.push("external") })
         // An ordinary subscriber admitted the same way does get catch-up.
         const otherValue = { current: 0 }
         const other = createInternalExternalAtom(domain, {
@@ -113,6 +113,96 @@ describe("Store reactions: registration and retention", () => {
         expect(runs).toEqual(["atom", "selector"])
     })
 
+    test("one registration runs settle inside the update and notify after it", () => {
+        const { domain, tree, read } = fixture()
+        const trigger = domain.atom(0)
+        const result = domain.atom(0)
+        const log: string[] = []
+        tree.sub(result, () => log.push(`observer:${tree.get(result)}`))
+
+        const before = read("activeSubscriptions")
+        const stop = tree.sub(trigger, {
+            settle: tx => {
+                log.push(`settle:${tx.get(result)}`)
+                tx.set(result, tx.get(trigger) * 10)
+            },
+            notify: () => log.push(`notify:${tree.get(result)}`),
+        })
+        expect(read("activeSubscriptions")).toBe(before + 1)
+        tree.set(trigger, 1)
+        // Ordinary delivery is target-reaching order; both see the settled write.
+        expect(log).toEqual(["settle:0", "notify:10", "observer:10"])
+
+        log.length = 0
+        stop()
+        stop()
+        expect(read("activeSubscriptions")).toBe(before)
+        tree.set(trigger, 2)
+        expect(log).toEqual([])
+        expect(tree.get(result)).toBe(10)
+    })
+
+    test("admission catch-up runs a notify handler but never settle", () => {
+        const { domain, tree } = fixture()
+        const runs: string[] = []
+        const external = (label: string) => {
+            let value = 0
+            return createInternalExternalAtom(domain, {
+                getSnapshot: () => value,
+                subscribe() {
+                    value = 1
+                    runs.push(`startup:${label}`)
+                    return () => {}
+                },
+            })
+        }
+        tree.sub(external("both"), {
+            settle: () => void runs.push("settle:both"),
+            notify: () => void runs.push("notify:both"),
+        })
+        tree.sub(external("notify"), {
+            notify: () => void runs.push("notify:notify"),
+        })
+        expect(runs).toEqual([
+            "startup:both",
+            "notify:both",
+            "startup:notify",
+            "notify:notify",
+        ])
+    })
+
+    test("reads each handler once, settle first, and keeps them", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const reads: string[] = []
+        const runs: string[] = []
+        const handlers = {
+            get settle() {
+                reads.push("settle")
+                return () => void runs.push("settle")
+            },
+            get notify() {
+                reads.push("notify")
+                return () => void runs.push("notify")
+            },
+        }
+        tree.sub(trigger, handlers)
+        expect(reads).toEqual(["settle", "notify"])
+        tree.set(trigger, 1)
+        expect(reads).toEqual(["settle", "notify"])
+        expect(runs).toEqual(["settle", "notify"])
+
+        const failure = new Error("getter")
+        const throwing = {
+            get settle(): () => void {
+                throw failure
+            },
+        }
+        expect(thrownBy(() => tree.sub(trigger, throwing))).toBe(failure)
+        tree.set(trigger, 2)
+        expect(runs).toEqual(["settle", "notify", "settle", "notify"])
+    })
+
     test("retains an external closure without ordinary subscribers and releases it on removal", () => {
         const { domain, tree } = fixture()
         const keys = source(0)
@@ -120,8 +210,10 @@ describe("Store reactions: registration and retention", () => {
         const derived = domain.selector(get => get(external) + 1)
         const seen: number[] = []
 
-        const stopReaction = tree.react(derived, tx => {
-            seen.push(tx.get(derived))
+        const stopReaction = tree.sub(derived, {
+            settle: tx => {
+                seen.push(tx.get(derived))
+            },
         })
         expect(keys.subscribes).toBe(1)
         expect(keys.listeners).toBe(1)
@@ -146,12 +238,16 @@ describe("Store reactions: registration and retention", () => {
         const child = tree.scope("child")
         const runs: string[] = []
 
-        child.react(trigger, tx => {
-            runs.push(`child:${tx.get(result)}`)
-            tx.set(result, `child:${tx.get(trigger)}`)
+        child.sub(trigger, {
+            settle: tx => {
+                runs.push(`child:${tx.get(result)}`)
+                tx.set(result, `child:${tx.get(trigger)}`)
+            },
         })
-        const stopRoot = tree.react(trigger, tx => {
-            runs.push(`root:${tx.get(result)}`)
+        const stopRoot = tree.sub(trigger, {
+            settle: tx => {
+                runs.push(`root:${tx.get(result)}`)
+            },
         })
         tree.set(trigger, 1)
         // The child inherits the root write, so both reactions run; each
@@ -169,47 +265,69 @@ describe("Store reactions: registration and retention", () => {
         expect(runs).toEqual(["root:root"])
     })
 
-    test("validates like Store.sub, with its own operation name", () => {
-        const { domain, tree } = fixture()
+    test("validates handlers with Store.sub admission and precedence", () => {
+        const { domain, tree, read } = fixture()
         const foreign = createCommittedStoreTreeDomain()
         const count = domain.atom(0)
         const disposed = domain.createStoreTree()
         disposed.dispose()
 
         const invalid = thrownBy(() =>
-            tree.react(Object.freeze({ kind: "atom" }) as never, () => {}),
+            tree.sub(Object.freeze({ kind: "atom" }) as never, {
+                settle: () => {},
+            }),
         )
         expect(invalid).toBeInstanceOf(TypeError)
         expect((invalid as Error).message).toBe(
-            "StoreTree.react requires a valid State",
+            "StoreTree.sub requires a valid State",
         )
-        const callback = thrownBy(() => tree.react(count, 1 as never))
-        expect((callback as Error).message).toBe(
-            "StoreTree.react requires a callback function",
-        )
+        const noop = () => {}
+        for (const handlers of [
+            undefined,
+            null,
+            1,
+            {},
+            { settle: undefined },
+            { settle: 1 },
+            { notify: null },
+            { settle: noop, notify: 1 },
+            { settle: noop, notfy: noop },
+            { setle: noop },
+        ]) {
+            const callback = thrownBy(() => tree.sub(count, handlers as never))
+            expect(callback).toBeInstanceOf(TypeError)
+            expect((callback as Error).message).toBe(
+                "StoreTree.sub requires a callback function or settle/notify handlers",
+            )
+        }
+        expect(read("activeSubscriptions")).toBe(0)
         expect(
-            thrownBy(() => tree.react(foreign.atom(0), () => {})),
+            thrownBy(() => tree.sub(foreign.atom(0), { settle: () => {} })),
         ).toBeInstanceOf(RuntimeMismatchError)
-        expect(thrownBy(() => disposed.react(count, () => {}))).toBeInstanceOf(
-            StoreDisposedError,
-        )
+        expect(
+            thrownBy(() => disposed.sub(count, { settle: () => {} })),
+        ).toBeInstanceOf(StoreDisposedError)
 
         const errors: unknown[] = []
         const probeInput = domain.atom(0)
         const probe = domain.selector(get => {
             get(probeInput)
-            errors.push(thrownBy(() => tree.react(count, () => {})))
+            errors.push(thrownBy(() => tree.sub(count, { settle: () => {} })))
             return 1
         })
         tree.get(probe)
         tree.txn(() => {
-            errors.push(thrownBy(() => tree.react(count, () => {})))
+            errors.push(thrownBy(() => tree.sub(count, { settle: () => {} })))
         })
         const stop = tree.sub(count, () => {
-            errors.push(thrownBy(() => tree.react(count, () => {})))
+            errors.push(thrownBy(() => tree.sub(count, { settle: () => {} })))
         })
-        tree.react(count, () => {
-            errors.push(thrownBy(() => tree.react(count, () => {})))
+        tree.sub(count, {
+            settle: () => {
+                errors.push(
+                    thrownBy(() => tree.sub(count, { settle: () => {} })),
+                )
+            },
         })
         tree.set(count, 1)
         stop()
@@ -240,18 +358,20 @@ describe("Store reactions: registration and retention", () => {
         let runs = 0
 
         expect(
-            thrownBy(() => tree.react(contaminated, () => void runs++)),
+            thrownBy(() =>
+                tree.sub(contaminated, { settle: () => void runs++ }),
+            ),
         ).toBeInstanceOf(RuntimeMismatchError)
         expect(read("activeSubscriptions")).toBe(before)
         expect(
-            thrownBy(() => tree.react(failing, () => void runs++)),
+            thrownBy(() => tree.sub(failing, { settle: () => void runs++ })),
         ).toBeDefined()
         expect(read("activeSubscriptions")).toBe(before)
         expect(runs).toBe(0)
     })
 })
 
-describe("Store reactions: one publication boundary", () => {
+describe("Store settle handlers: one publication boundary", () => {
     const commandGraph = () => {
         const f = fixture()
         const keys = source<Readonly<{ key: string; seq: number }>>(
@@ -272,11 +392,13 @@ describe("Store reactions: one publication boundary", () => {
     test("an external trigger publishes input and command result together", () => {
         const g = commandGraph()
         let runs = 0
-        g.tree.react(g.keyboard, tx => {
-            runs++
-            if (tx.get(g.keyboard).key !== "s") return
-            tx.set(g.saving, true)
-            tx.update(g.saves, value => value + 1)
+        g.tree.sub(g.keyboard, {
+            settle: tx => {
+                runs++
+                if (tx.get(g.keyboard).key !== "s") return
+                tx.set(g.saving, true)
+                tx.update(g.saves, value => value + 1)
+            },
         })
         const propagation = g.read("propagationSettlements")
         const snapshots = g.read("notificationSnapshots")
@@ -298,7 +420,7 @@ describe("Store reactions: one publication boundary", () => {
         const pair = domain.selector(get => [get(input), get(result)])
         const observations: unknown[] = []
         tree.sub(pair, () => observations.push(tree.get(pair)))
-        tree.react(input, tx => tx.set(result, tx.get(input) * 10))
+        tree.sub(input, { settle: tx => tx.set(result, tx.get(input) * 10) })
         const snapshots = read("notificationSnapshots")
 
         tree.set(input, 2)
@@ -322,15 +444,17 @@ describe("Store reactions: one publication boundary", () => {
         let lastSeq = g.tree.get(eligible).seq
         let runs = 0
         let commands = 0
-        g.tree.react(eligible, tx => {
-            runs++
-            const current = tx.get(eligible)
-            if (current.seq === lastSeq) return
-            lastSeq = current.seq
-            if (!current.save) return
-            commands++
-            tx.set(g.saving, true)
-            tx.update(g.saves, value => value + 1)
+        g.tree.sub(eligible, {
+            settle: tx => {
+                runs++
+                const current = tx.get(eligible)
+                if (current.seq === lastSeq) return
+                lastSeq = current.seq
+                if (!current.save) return
+                commands++
+                tx.set(g.saving, true)
+                tx.update(g.saves, value => value + 1)
+            },
         })
 
         g.keys.publish(Object.freeze({ key: "s", seq: 1 }))
@@ -350,14 +474,18 @@ describe("Store reactions: one publication boundary", () => {
         const log: string[] = []
 
         // Wave 1 reach order: trigger, sum, late.
-        tree.react(trigger, tx => {
-            log.push(`t:${tx.get(sum)}`)
-            if (tx.get(trigger) === 1) tx.set(extra, 10)
+        tree.sub(trigger, {
+            settle: tx => {
+                log.push(`t:${tx.get(sum)}`)
+                if (tx.get(trigger) === 1) tx.set(extra, 10)
+            },
         })
-        tree.react(sum, tx => void log.push(`sum:${tx.get(sum)}`))
-        tree.react(late, tx => {
-            log.push(`late:${tx.get(sum)}`)
-            if (tx.get(extra) === 10) tx.set(extra, 20)
+        tree.sub(sum, { settle: tx => void log.push(`sum:${tx.get(sum)}`) })
+        tree.sub(late, {
+            settle: tx => {
+                log.push(`late:${tx.get(sum)}`)
+                if (tx.get(extra) === 10) tx.set(extra, 20)
+            },
         })
 
         tree.set(trigger, 1)
@@ -384,23 +512,31 @@ describe("Store reactions: one publication boundary", () => {
         const observations: unknown[] = []
         const log: string[] = []
         tree.sub(all, () => observations.push(tree.get(all)))
-        tree.react(a, tx => {
-            log.push("a->b")
-            tx.set(b, tx.get(a) + 1)
+        tree.sub(a, {
+            settle: tx => {
+                log.push("a->b")
+                tx.set(b, tx.get(a) + 1)
+            },
         })
-        tree.react(b, tx => {
-            log.push("b->c")
-            tx.set(c, tx.get(b) + 1)
+        tree.sub(b, {
+            settle: tx => {
+                log.push("b->c")
+                tx.set(c, tx.get(b) + 1)
+            },
         })
-        tree.react(a, tx => {
-            log.push("first")
-            tx.set(winner, "first")
-            tx.update(total, value => value + 1)
+        tree.sub(a, {
+            settle: tx => {
+                log.push("first")
+                tx.set(winner, "first")
+                tx.update(total, value => value + 1)
+            },
         })
-        tree.react(a, tx => {
-            log.push(`second saw ${tx.get(winner)}`)
-            tx.set(winner, "second")
-            tx.update(total, value => value * 10)
+        tree.sub(a, {
+            settle: tx => {
+                log.push(`second saw ${tx.get(winner)}`)
+                tx.set(winner, "second")
+                tx.update(total, value => value * 10)
+            },
         })
 
         tree.set(a, 1)
@@ -415,10 +551,12 @@ describe("Store reactions: one publication boundary", () => {
         const value = domain.atom(1)
         const doubled = domain.selector(get => get(value) * 2)
         const reads: number[] = []
-        tree.react(trigger, tx => {
-            reads.push(tx.get(doubled))
-            tx.set(value, 5)
-            reads.push(tx.get(value), tx.get(doubled))
+        tree.sub(trigger, {
+            settle: tx => {
+                reads.push(tx.get(doubled))
+                tx.set(value, 5)
+                reads.push(tx.get(value), tx.get(doubled))
+            },
         })
         tree.set(trigger, 1)
         expect(reads).toEqual([2, 5, 10])
@@ -436,9 +574,11 @@ describe("Store reactions: one publication boundary", () => {
         const observations: unknown[] = []
         let runs = 0
         tree.sub(view, () => observations.push(tree.get(view)))
-        tree.react(joined, tx => {
-            runs++
-            tx.set(note, `seen ${tx.get(joined)}`)
+        tree.sub(joined, {
+            settle: tx => {
+                runs++
+                tx.set(note, `seen ${tx.get(joined)}`)
+            },
         })
 
         tree.set(root, 2)
@@ -452,8 +592,10 @@ describe("Store reactions: one publication boundary", () => {
         const input = domain.atom(0)
         const observed: number[] = []
         tree.sub(input, () => observed.push(tree.get(input)))
-        tree.react(input, tx => {
-            if (tx.get(input) !== 0) tx.set(input, 0)
+        tree.sub(input, {
+            settle: tx => {
+                if (tx.get(input) !== 0) tx.set(input, 0)
+            },
         })
 
         tree.set(input, 1)
@@ -475,9 +617,11 @@ describe("Store reactions: one publication boundary", () => {
         const observations: unknown[] = []
         tree.sub(view, () => observations.push(tree.get(view)))
         let runs = 0
-        tree.react(branch, tx => {
-            runs++
-            tx.set(mirrored, tx.get(branch))
+        tree.sub(branch, {
+            settle: tx => {
+                runs++
+                tx.set(mirrored, tx.get(branch))
+            },
         })
         expect(tree.get(external)).toBe(0)
         keys.silently(7)
@@ -507,7 +651,7 @@ describe("Store reactions: one publication boundary", () => {
         ])
         const observations: unknown[] = []
         tree.sub(view, () => observations.push(tree.get(view)))
-        tree.react(external, tx => tx.set(mirrored, tx.get(external)))
+        tree.sub(external, { settle: tx => tx.set(mirrored, tx.get(external)) })
         tree.sub(trigger, () => keys.publish(tree.get(trigger) * 100))
 
         tree.set(trigger, 1)
@@ -526,11 +670,15 @@ describe("Store reactions: one publication boundary", () => {
         const first = domain.createStoreTree()
         const second = domain.createStoreTree()
         const crossTree: unknown[] = []
-        first.react(external, tx => {
-            tx.set(result, tx.get(external) + 1)
-            crossTree.push(thrownBy(() => second.set(result, 99)))
+        first.sub(external, {
+            settle: tx => {
+                tx.set(result, tx.get(external) + 1)
+                crossTree.push(thrownBy(() => second.set(result, 99)))
+            },
         })
-        second.react(external, tx => tx.set(result, tx.get(external) + 2))
+        second.sub(external, {
+            settle: tx => tx.set(result, tx.get(external) + 2),
+        })
 
         keys.publish(10)
 
@@ -540,7 +688,7 @@ describe("Store reactions: one publication boundary", () => {
     })
 })
 
-describe("Store reactions: failures and limits", () => {
+describe("Store settle handlers: failures and limits", () => {
     test("a throw aborts only that reaction's draft", () => {
         const { domain, tree } = fixture()
         const trigger = domain.atom(0)
@@ -550,11 +698,13 @@ describe("Store reactions: failures and limits", () => {
         const observations: unknown[] = []
         const cause = new Error("reaction failed")
         tree.sub(view, () => observations.push(tree.get(view)))
-        tree.react(trigger, tx => {
-            tx.set(a, "a1")
-            if (tx.get(trigger) === 1) throw cause
+        tree.sub(trigger, {
+            settle: tx => {
+                tx.set(a, "a1")
+                if (tx.get(trigger) === 1) throw cause
+            },
         })
-        tree.react(trigger, tx => tx.set(b, "b1"))
+        tree.sub(trigger, { settle: tx => tx.set(b, "b1") })
 
         const error = thrownBy(() => tree.set(trigger, 1))
 
@@ -578,11 +728,13 @@ describe("Store reactions: failures and limits", () => {
         let unhandled = 0
         const onUnhandled = () => void unhandled++
         process.on("unhandledRejection", onUnhandled)
-        tree.react(trigger, (async (tx: RootTransaction) => {
-            tx.set(a, 1)
-            await Promise.resolve()
-            later = thrownBy(() => tx.set(a, 2))
-        }) as never)
+        tree.sub(trigger, {
+            settle: (async (tx: RootTransaction) => {
+                tx.set(a, 1)
+                await Promise.resolve()
+                later = thrownBy(() => tx.set(a, 2))
+            }) as never,
+        })
 
         const error = thrownBy(() => tree.set(trigger, 1))
         await new Promise(resolve => setTimeout(resolve, 0))
@@ -606,8 +758,10 @@ describe("Store reactions: failures and limits", () => {
                 containments++
             },
         })
-        tree.react(trigger, () => {
-            throw thenable
+        tree.sub(trigger, {
+            settle: () => {
+                throw thenable
+            },
         })
 
         const error = thrownBy(() => tree.set(trigger, 1))
@@ -622,9 +776,11 @@ describe("Store reactions: failures and limits", () => {
         const { domain, tree } = fixture()
         const trigger = domain.atom(0)
         const a = domain.atom<unknown>(0)
-        tree.react(trigger, tx => {
-            tx.set(a, 1)
-            tx.set(a, Promise.resolve(2))
+        tree.sub(trigger, {
+            settle: tx => {
+                tx.set(a, 1)
+                tx.set(a, Promise.resolve(2))
+            },
         })
 
         const error = thrownBy(() => tree.set(trigger, 1))
@@ -645,9 +801,11 @@ describe("Store reactions: failures and limits", () => {
                 throw failure
             },
         })
-        tree.react(trigger, tx => {
-            tx.set(other, 1)
-            tx.set(strict, 1)
+        tree.sub(trigger, {
+            settle: tx => {
+                tx.set(other, 1)
+                tx.set(strict, 1)
+            },
         })
 
         const error = thrownBy(() => tree.set(trigger, 1))
@@ -694,8 +852,8 @@ describe("Store reactions: failures and limits", () => {
         )
         tree.sub(written, () => void calls.written++)
         tree.sub(derived, () => void calls.derived++)
-        tree.react(trigger, tx => tx.set(written, tx.get(trigger)))
-        tree.react(trigger, tx => tx.set(later, 1))
+        tree.sub(trigger, { settle: tx => tx.set(written, tx.get(trigger)) })
+        tree.sub(trigger, { settle: tx => tx.set(later, 1) })
 
         const error = thrownBy(() => tree.set(trigger, 1))
 
@@ -761,12 +919,16 @@ describe("Store reactions: failures and limits", () => {
                               hook()
                           },
                       }
-            tree.react(trigger, tx => {
-                tx.set(staged, 1)
-                throw thrown
+            tree.sub(trigger, {
+                settle: tx => {
+                    tx.set(staged, 1)
+                    throw thrown
+                },
             })
             let neighborRuns = 0
-            stopNeighbor = tree.react(trigger, () => void neighborRuns++)
+            stopNeighbor = tree.sub(trigger, {
+                settle: () => void neighborRuns++,
+            })
 
             const error = thrownBy(() => tree.set(trigger, 1))
 
@@ -807,10 +969,12 @@ describe("Store reactions: failures and limits", () => {
             const input = domain.atom(0)
             const result = domain.atom(0)
             const runs = [0, 0]
-            tree.react(input, () => void runs[0]!++)
-            tree.react(input, tx => {
-                runs[1]!++
-                tx.set(result, tx.get(input))
+            tree.sub(input, { settle: () => void runs[0]!++ })
+            tree.sub(input, {
+                settle: tx => {
+                    runs[1]!++
+                    tx.set(result, tx.get(input))
+                },
             })
 
             expect(thrownBy(() => tree.set(input, 1))).toBeInstanceOf(
@@ -842,7 +1006,7 @@ describe("Store reactions: failures and limits", () => {
         const calls: string[] = []
         tree.sub(contaminated, () => calls.push("contaminated"))
         tree.sub(trigger, () => calls.push("trigger"))
-        tree.react(trigger, tx => tx.set(written, tx.get(trigger)))
+        tree.sub(trigger, { settle: tx => tx.set(written, tx.get(trigger)) })
 
         const direct = thrownBy(() => tree.set(trigger, 1))
         expect(direct).toBeInstanceOf(RuntimeMismatchError)
@@ -874,9 +1038,11 @@ describe("Store reactions: failures and limits", () => {
             throw subscriberFailure
         })
         tree.sub(trigger, () => void calls.push("second"))
-        tree.react(trigger, () => {
-            calls.push("reaction")
-            throw reactionFailure
+        tree.sub(trigger, {
+            settle: () => {
+                calls.push("reaction")
+                throw reactionFailure
+            },
         })
 
         const error = thrownBy(() => tree.set(trigger, 1))
@@ -894,10 +1060,12 @@ describe("Store reactions: failures and limits", () => {
         const observed: number[] = []
         tree.sub(counter, () => observed.push(tree.get(counter)))
         let runs = 0
-        tree.react(counter, tx => {
-            runs++
-            const value = tx.get(counter)
-            if (value < 64) tx.set(counter, value + 1)
+        tree.sub(counter, {
+            settle: tx => {
+                runs++
+                const value = tx.get(counter)
+                if (value < 64) tx.set(counter, value + 1)
+            },
         })
 
         tree.set(counter, 1)
@@ -915,13 +1083,17 @@ describe("Store reactions: failures and limits", () => {
         const view = domain.selector(get => [get(ping), get(pong)])
         tree.sub(view, () => observed.push(tree.get(view)))
         let runs = 0
-        tree.react(ping, tx => {
-            runs++
-            tx.set(pong, tx.get(ping) + 1)
+        tree.sub(ping, {
+            settle: tx => {
+                runs++
+                tx.set(pong, tx.get(ping) + 1)
+            },
         })
-        tree.react(pong, tx => {
-            runs++
-            tx.set(ping, tx.get(pong) + 1)
+        tree.sub(pong, {
+            settle: tx => {
+                runs++
+                tx.set(ping, tx.get(pong) + 1)
+            },
         })
 
         const error = thrownBy(() => tree.set(ping, 1))
@@ -930,16 +1102,16 @@ describe("Store reactions: failures and limits", () => {
         expect(error).toBeInstanceOf(SubscriberNotificationError)
         expect((error as SubscriberNotificationError).causes).toHaveLength(1)
         expect((error as SubscriberNotificationError).cause).toBeInstanceOf(
-            ReactionLimitError,
+            SettleLimitError,
         )
         expect(error).toMatchObject({ committed: true })
         // Wave k writes k + 1; wave 64 wrote ping = 65 and wave 65 remained.
         expect(observed).toEqual([[65, 64]])
         const limit = (error as SubscriberNotificationError)
-            .cause as ReactionLimitError
+            .cause as SettleLimitError
         expect(limit).toMatchObject({
-            name: "ReactionLimitError",
-            code: "VALDRES_REACTION_LIMIT",
+            name: "SettleLimitError",
+            code: "VALDRES_SETTLE_LIMIT",
         })
         expect(Object.isFrozen(limit)).toBe(true)
 
@@ -952,8 +1124,10 @@ describe("Store reactions: failures and limits", () => {
         const keys = source(0)
         const external = createInternalExternalAtom(domain, keys.definition)
         const cause = new Error("reaction failed")
-        tree.react(external, () => {
-            throw cause
+        tree.sub(external, {
+            settle: () => {
+                throw cause
+            },
         })
 
         const error = thrownBy(() => keys.publish(1))
@@ -1095,13 +1269,15 @@ const recomputation = (external: boolean, fault: Fault) => {
     tree.sub(written, () => void calls.written++)
     tree.sub(derived, () => void calls.derived++)
     tree.sub(combined, () => void calls.combined++)
-    tree.react(input, tx =>
-        tx.set(written, tx.get(input) === 2 ? 1 : tx.get(input)),
-    )
+    tree.sub(input, {
+        settle: tx => tx.set(written, tx.get(input) === 2 ? 1 : tx.get(input)),
+    })
     let neighborRuns = 0
-    tree.react(input, tx => {
-        neighborRuns++
-        tx.set(neighbor, tx.get(input) + 100)
+    tree.sub(input, {
+        settle: tx => {
+            neighborRuns++
+            tx.set(neighbor, tx.get(input) + 100)
+        },
     })
     const publish = (next: number) => {
         if (external) {
@@ -1149,7 +1325,7 @@ const expectFailedBranch = (
     expect((dependencyError as SelectorDependencyError).cause).toBe(cause)
 }
 
-describe("Store reactions: selector recomputation failures", () => {
+describe("Store settle handlers: selector recomputation failures", () => {
     for (const external of [false, true])
         for (const fault of ["before evaluation", "after evaluation"] as const)
             test(`${external ? "external" : "owned"} trigger, failure ${fault}: the failed branch publishes a coherent failure`, () => {
@@ -1227,7 +1403,7 @@ describe("Store reactions: selector recomputation failures", () => {
         )
         const combined = domain.selector(get => get(derived) + 1)
         tree.sub(combined, () => undefined)
-        tree.react(input, tx => tx.set(written, tx.get(input)))
+        tree.sub(input, { settle: tx => tx.set(written, tx.get(input)) })
         failing = true
 
         expect(thrownBy(() => tree.set(input, 1))).toBeInstanceOf(
@@ -1293,7 +1469,7 @@ describe("Store reactions: selector recomputation failures", () => {
     })
 })
 
-describe("Store reactions: callback capabilities", () => {
+describe("Store settle handlers: callback capabilities", () => {
     test("keeps transaction-phase guards and read-only external atoms", () => {
         const { domain, tree } = fixture()
         const sibling = domain.createStoreTree()
@@ -1309,18 +1485,20 @@ describe("Store reactions: callback capabilities", () => {
         tree.sub(otherExternal, () => undefined)
         const errors: Record<string, unknown> = {}
         let captured: RootTransaction | undefined
-        tree.react(trigger, tx => {
-            captured = tx
-            errors.get = thrownBy(() => tree.get(a))
-            errors.set = thrownBy(() => tree.set(a, 1))
-            errors.txn = thrownBy(() => tree.txn(() => undefined))
-            errors.sub = thrownBy(() => tree.sub(a, () => undefined))
-            errors.sibling = thrownBy(() => sibling.set(a, 1))
-            errors.dispose = thrownBy(() => tree.dispose())
-            errors.external = thrownBy(() =>
-                tx.set(external as never, 1 as never),
-            )
-            errors.invalidate = thrownBy(() => other.publish(1))
+        tree.sub(trigger, {
+            settle: tx => {
+                captured = tx
+                errors.get = thrownBy(() => tree.get(a))
+                errors.set = thrownBy(() => tree.set(a, 1))
+                errors.txn = thrownBy(() => tree.txn(() => undefined))
+                errors.sub = thrownBy(() => tree.sub(a, () => undefined))
+                errors.sibling = thrownBy(() => sibling.set(a, 1))
+                errors.dispose = thrownBy(() => tree.dispose())
+                errors.external = thrownBy(() =>
+                    tx.set(external as never, 1 as never),
+                )
+                errors.invalidate = thrownBy(() => other.publish(1))
+            },
         })
 
         tree.set(trigger, 1)
@@ -1345,11 +1523,15 @@ describe("Store reactions: callback capabilities", () => {
         const external = createInternalExternalAtom(domain, keys.definition)
         let runs = 0
         let rejected: unknown
-        const stop = tree.react(external, () => {
-            runs++
+        const stop = tree.sub(external, {
+            settle: () => {
+                runs++
+            },
         })
-        tree.react(trigger, () => {
-            rejected = thrownBy(stop)
+        tree.sub(trigger, {
+            settle: () => {
+                rejected = thrownBy(stop)
+            },
         })
         tree.sub(trigger, () => {
             stop()

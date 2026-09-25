@@ -1101,7 +1101,7 @@
                 "notification.after-stability"
             ],
             "decisionStatus": "approved",
-            "notes": "SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION is the immutable post-commit delivery wrapper for subscriber throws. Without an already-authoritative post-apply RuntimeMismatchError, cause is the exact first thrown value and causes is a frozen readonly array of all subscriber-thrown values in deterministic delivery order; committed is exactly true; phase is exactly notifying; source is exactly owned-mutation for the lifecycle-free slice. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. Pure external notification failures also use SubscriberNotificationError, with source external-read | external-startup | external-invalidation | external-drain; the full notification source set is owned-mutation | external-read | external-startup | external-invalidation | external-drain. The primary occurrence supplies source. Preserve every failure occurrence without deduplication by error identity, including equal causes from different callbacks or rounds. Mixed-phase and setup/cleanup aggregation use ExternalSourceOperationError. The error, cause/causes metadata, committed, phase, and source are immutable; application error objects are not mutated. Message is exactly \"One or more Store subscribers threw during notification\". With Store.react, a boundary that ran Store reactions reports reaction failures (callback throws, invalid thenable results, staging or post-apply commit failures, and ReactionLimitError) as causes ahead of subscriber throws, in reaction execution order. Those causes arose before ordinary notification; phase stays notifying because it names the boundary that reports them, not the moment each cause occurred."
+            "notes": "SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION is the immutable post-commit delivery wrapper for subscriber throws. Without an already-authoritative post-apply RuntimeMismatchError, cause is the exact first thrown value and causes is a frozen readonly array of all subscriber-thrown values in deterministic delivery order; committed is exactly true; phase is exactly notifying; source is exactly owned-mutation for the lifecycle-free slice. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. Pure external notification failures also use SubscriberNotificationError, with source external-read | external-startup | external-invalidation | external-drain; the full notification source set is owned-mutation | external-read | external-startup | external-invalidation | external-drain. The primary occurrence supplies source. Preserve every failure occurrence without deduplication by error identity, including equal causes from different callbacks or rounds. Mixed-phase and setup/cleanup aggregation use ExternalSourceOperationError. The error, cause/causes metadata, committed, phase, and source are immutable; application error objects are not mutated. Message is exactly \"One or more Store subscribers threw during notification\". With Store.sub settle handlers, a boundary that ran settle handlers reports their failures (callback throws, invalid thenable results, staging or post-apply commit failures, and SettleLimitError) as causes ahead of subscriber throws, in settle execution order. Those causes arose before ordinary notification; phase stays notifying because it names the boundary that reports them, not the moment each cause occurred."
         },
         {
             "id": "core.dormant-external-read-error",
@@ -1455,32 +1455,32 @@
             "notes": "The exact root class/code pair is MissingCollectionRowError / VALDRES_MISSING_COLLECTION_ROW. Its diagnostic shape is immutable and retains no row key or application value."
         },
         {
-            "id": "core.reaction-limit-error",
+            "id": "core.settle-limit-error",
             "kind": "error",
             "owner": "core",
-            "errorCode": "VALDRES_REACTION_LIMIT",
+            "errorCode": "VALDRES_SETTLE_LIMIT",
             "legacy": [],
             "target": {
                 "package": "valdres",
                 "subpath": ".",
-                "name": "ReactionLimitError",
+                "name": "SettleLimitError",
                 "status": "experimental"
             },
             "migration": {
                 "mode": "add",
                 "replacementIds": [],
                 "semver": "new",
-                "codemod": "Treat ReactionLimitError as a cause inside SubscriberNotificationError: the boundary did not converge within 64 reaction waves; committed state was delivered once.",
-                "typeError": "Reaction limit failures are runtime causes, not thrown directly by Store.react.",
+                "codemod": "Treat SettleLimitError as a cause inside SubscriberNotificationError: the boundary did not converge within 64 settle-handler waves; committed state was delivered once.",
+                "typeError": "Reaction limit failures are runtime causes, not thrown directly by Store.sub.",
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
             },
             "contractIds": [
-                "reaction.bounded-waves",
+                "settle.bounded-waves",
                 "error.stable-name-and-code"
             ],
             "decisionStatus": "approved",
-            "notes": "ReactionLimitError / VALDRES_REACTION_LIMIT is immutable, takes no arguments, and has message \"Store reactions did not settle\". It is reported once, as a SubscriberNotificationError cause after the one ordinary delivery, when a 65th reaction wave would be needed; pending reactions are cleared and nothing runs on a later unrelated operation."
+            "notes": "SettleLimitError / VALDRES_SETTLE_LIMIT is immutable, takes no arguments, and has message \"Store updates did not settle\". It is reported once, as a SubscriberNotificationError cause after the one ordinary delivery, when a 65th settle-handler wave would be needed; pending settle handlers are cleared and nothing runs on a later unrelated operation."
         },
         {
             "id": "core.runtime-mismatch-error",
@@ -2144,40 +2144,14 @@
             },
             "contractIds": [
                 "notification.after-stability",
-                "callback.subscriber-quarantine"
-            ],
-            "decisionStatus": "approved",
-            "notes": "Store.sub(state, callback: () => void): () => void creates one independent synchronous zero-argument invalidation registration, even when callback identity repeats. Registration performs the same outcome materialization as get, but internally catches the public read throw of a successfully materialized ordinary current error outcome so it can register; only admission, disposal, or internal-publication failure registers nothing. A lifecycle-free registration does not notify. Changed target callback sets enter the frozen post-stability settlement snapshot in first-reaching order; callbacks within each target retain subscription insertion order; delivery is all-fire and each registration runs at most once. Without an already-authoritative post-apply RuntimeMismatchError, the first subscriber throw becomes the SubscriberNotificationError cause and later subscriber throws remain ordered causes. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. The returned unsubscribe is idempotent, removes future eligibility immediately, and cannot edit the current snapshot."
-        },
-        {
-            "id": "core.store.react",
-            "kind": "method",
-            "owner": "core",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "Store.react",
-                "status": "experimental"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Move a command that writes Store state in response to a settled State change from a post-notification queue or render effect into store.react(trigger, transaction => ...); keep I/O in an ordinary subscriber.",
-                "typeError": "Reactions are synchronous transactions: thenable-returning callbacks, non-State triggers, and captured Store writes reject.",
-                "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": [
-                "reaction.pre-notification-boundary",
-                "reaction.bounded-waves",
-                "reaction.draft-failure-isolation",
-                "notification.after-stability",
+                "callback.subscriber-quarantine",
+                "settle.pre-notification-boundary",
+                "settle.bounded-waves",
+                "settle.draft-failure-isolation",
                 "transaction.one-tree-draft"
             ],
             "decisionStatus": "approved",
-            "notes": "Store.react(state, run: (transaction) => void): () => void registers one reaction on the receiving Store scope, with the same admission, validation, retention and idempotent unsubscribe as Store.sub; registration and its admission catch-up never run it. When a notification boundary changes the target's served token, run executes as its own synchronous TreeTransaction bound to the registration scope, after selector propagation and before the ordinary frozen notification snapshot is captured. Reads see the latest committed state, including earlier reaction commits in the boundary, plus the callback's own staged writes; no triggering value is passed. Reactions run in waves: first-reaching target order, then registration order; one reached again while still pending reads the newer state, one already run joins the next wave. At most 64 nonempty waves run; if another is needed, pending work is cleared and ReactionLimitError is reported. Each reaction commit joins the boundary: targets reached across the initial settlement and every reaction commit are delivered to ordinary subscribers once, deduplicated, with final committed state. The guarantee is per settlement boundary and per StoreTree; it is not cross-tree atomicity or once per DOM event. A reaction that throws, returns a thenable, or fails staging aborts only its own draft; earlier reaction commits and the initiating update remain. A failure after apply keeps that reaction's writes and propagates them before delivery. Failures are reported after the one ordinary delivery as SubscriberNotificationError causes ahead of subscriber throws."
+            "notes": "Store.sub(state, callback: () => void): () => void creates one independent synchronous zero-argument invalidation registration, even when callback identity repeats. Registration performs the same outcome materialization as get, but internally catches the public read throw of a successfully materialized ordinary current error outcome so it can register; only admission, disposal, or internal-publication failure registers nothing. A lifecycle-free registration does not notify. Changed target callback sets enter the frozen post-stability settlement snapshot in first-reaching order; callbacks within each target retain subscription insertion order; delivery is all-fire and each registration runs at most once. Without an already-authoritative post-apply RuntimeMismatchError, the first subscriber throw becomes the SubscriberNotificationError cause and later subscriber throws remain ordered causes. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. The returned unsubscribe is idempotent, removes future eligibility immediately, and cannot edit the current snapshot. Store.sub(state, handlers: { settle?: (transaction) => void; notify?: () => void }): () => void is the phase-keyed form; its settle phase is experimental during the beta. handlers must be an object with at least one of settle and notify and no other own enumerable keys, and each present handler must be a function; each is read once at registration, settle first, and any other value throws TypeError after state validation, registering nothing. notify is exactly the callback form. One registration holds both handlers, and its one idempotent unsubscribe removes both. Registration and its admission catch-up never run settle. When a notification boundary changes the target's served token, settle executes as its own synchronous TreeTransaction bound to the registration scope, after selector propagation and before the ordinary frozen notification snapshot is captured. Reads see the latest committed state, including earlier settle commits in the boundary, plus the callback's own staged writes; no triggering value is passed. settle handlers run in waves: first-reaching target order, then registration order; one reached again while still pending reads the newer state, one already run joins the next wave. At most 64 nonempty waves run; if another is needed, pending work is cleared and SettleLimitError is reported. Each settle commit joins the boundary: targets reached across the initial settlement and every settle commit are delivered to ordinary subscribers, including notify handlers, once, deduplicated, with final committed state. The guarantee is per settlement boundary and per StoreTree; it is not cross-tree atomicity or once per DOM event. A settle handler that throws, returns a thenable, or fails staging aborts only its own draft; earlier settle commits and the initiating update remain. A failure after apply keeps that handler's writes and propagates them before delivery. Failures are reported after the one ordinary delivery as SubscriberNotificationError causes ahead of subscriber throws."
         },
         {
             "id": "core.store.txn",

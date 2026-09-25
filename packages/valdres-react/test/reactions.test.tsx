@@ -70,14 +70,16 @@ const scenario = async (path: Path, order: ObserverOrder, strict: boolean) => {
     })
     const target: Store = store()
     let lastSeq = target.get(dispatch).seq
-    target.react(dispatch, tx => {
-        const current = tx.get(dispatch)
-        if (current.seq === lastSeq) return
-        lastSeq = current.seq
-        if (!current.save) return
-        live?.preventDefault()
-        tx.set(saving, true)
-        tx.update(saves, count => count + 1)
+    target.sub(dispatch, {
+        settle: tx => {
+            const current = tx.get(dispatch)
+            if (current.seq === lastSeq) return
+            lastSeq = current.seq
+            if (!current.save) return
+            live?.preventDefault()
+            tx.set(saving, true)
+            tx.update(saves, count => count + 1)
+        },
     })
     const combined = selector(get => [get(key), get(saving), get(saves)])
     const observed: unknown[] = []

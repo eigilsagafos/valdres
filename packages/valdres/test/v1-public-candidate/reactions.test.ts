@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
-    ReactionLimitError,
+    SettleLimitError,
     SubscriberNotificationError,
     atom,
     collection,
@@ -22,39 +22,49 @@ const thrownBy = (operation: () => unknown): unknown => {
     throw new Error("Expected operation to throw")
 }
 
-describe("v1 public Store.react", () => {
-    test("is a stable bound Store field and exports its limit error", () => {
+describe("v1 public Store.sub settle handlers", () => {
+    test("extends Store.sub without a new Store field and exports its limit error", () => {
         const target = store()
-        expect(target.react).toBe(target.react)
-        expect(Object.getOwnPropertyDescriptor(target, "react")).toMatchObject({
-            writable: false,
-            configurable: false,
-        })
-        const error = new ReactionLimitError()
+        expect("react" in target).toBe(false)
+        const error = new SettleLimitError()
         expect(error).toMatchObject({
-            name: "ReactionLimitError",
-            code: "VALDRES_REACTION_LIMIT",
+            name: "SettleLimitError",
+            code: "VALDRES_SETTLE_LIMIT",
         })
         expect(Object.isFrozen(error)).toBe(true)
     })
 
-    test("types the cursor and rejects asynchronous reactions", () => {
+    test("types the cursor and rejects asynchronous settle handlers", () => {
         const count = atom(0)
         const label = atom("")
         const target: Store = store()
-        const stop: () => void = target.react(count, (tx: Transaction) => {
-            tx.set(label, `count ${tx.get(count)}`)
+        const stop: () => void = target.sub(count, {
+            settle: (tx: Transaction) => {
+                tx.set(label, `count ${tx.get(count)}`)
+            },
         })
         target.set(count, 1)
         expect(target.get(label)).toBe("count 1")
         stop()
         stop()
 
+        const both = target.sub(count, {
+            settle: tx => tx.set(label, `both ${tx.get(count)}`),
+            notify: () => undefined,
+        })
+        both()
+
         if (false as boolean) {
-            // @ts-expect-error reactions are synchronous transactions.
-            target.react(count, async tx => tx.set(label, "late"))
+            // @ts-expect-error settle handlers are synchronous transactions.
+            target.sub(count, { settle: async tx => tx.set(label, "late") })
             // @ts-expect-error the trigger must be a State.
-            target.react("count", () => undefined)
+            target.sub("count", { settle: () => undefined })
+            // @ts-expect-error at least one handler is required.
+            target.sub(count, {})
+            // @ts-expect-error unknown handler keys are rejected.
+            target.sub(count, { setle: () => undefined })
+            // @ts-expect-error notify receives no transaction.
+            target.sub(count, { notify: (tx: Transaction) => tx.get(count) })
         }
     })
 
@@ -72,13 +82,15 @@ describe("v1 public Store.react", () => {
         ])
         const observations: unknown[] = []
         target.sub(view, () => observations.push(target.get(view)))
-        target.react(tasks("a"), tx => {
-            const task = tx.get(tasks("a"))
-            if (task?.done) {
-                tx.update(completed, count => count + 1)
-                tx.set(tasks("archive:a"), task)
-                tx.delete(tasks("a"))
-            }
+        target.sub(tasks("a"), {
+            settle: tx => {
+                const task = tx.get(tasks("a"))
+                if (task?.done) {
+                    tx.update(completed, count => count + 1)
+                    tx.set(tasks("archive:a"), task)
+                    tx.delete(tasks("a"))
+                }
+            },
         })
 
         target.set(tasks("a"), { title: "write", done: false })
@@ -94,14 +106,14 @@ describe("v1 public Store.react", () => {
         const ping = atom(0)
         const pong = atom(0)
         const target = store()
-        target.react(ping, tx => tx.set(pong, tx.get(ping) + 1))
-        target.react(pong, tx => tx.set(ping, tx.get(pong) + 1))
+        target.sub(ping, { settle: tx => tx.set(pong, tx.get(ping) + 1) })
+        target.sub(pong, { settle: tx => tx.set(ping, tx.get(pong) + 1) })
 
         const error = thrownBy(() => target.set(ping, 1))
 
         expect(error).toBeInstanceOf(SubscriberNotificationError)
         expect((error as SubscriberNotificationError).cause).toBeInstanceOf(
-            ReactionLimitError,
+            SettleLimitError,
         )
         expect(target.get(ping)).toBe(65)
     })
@@ -225,15 +237,17 @@ const hotkeyApp = () => {
         run: (tx: Transaction, seq: number) => void,
     ) => {
         let lastSeq = target.get(dispatch).seq // no replay at registration
-        return target.react(dispatch, tx => {
-            const current = tx.get(dispatch)
-            if (current.seq === lastSeq) return
-            lastSeq = current.seq // consumed even if this attempt fails
-            if (current.command !== name) return
-            commands.push(`${name}@${current.seq}`)
-            tx.set(handled, current.seq)
-            keys.live()?.preventDefault()
-            run(tx, current.seq)
+        return target.sub(dispatch, {
+            settle: tx => {
+                const current = tx.get(dispatch)
+                if (current.seq === lastSeq) return
+                lastSeq = current.seq // consumed even if this attempt fails
+                if (current.command !== name) return
+                commands.push(`${name}@${current.seq}`)
+                tx.set(handled, current.seq)
+                keys.live()?.preventDefault()
+                run(tx, current.seq)
+            },
         })
     }
     return {
@@ -385,11 +399,13 @@ describe("hotkey occurrence fixture", () => {
                 if (name === "flip") {
                     // Closes the modal without handling the occurrence.
                     let flipSeq = 0
-                    target.react(app.dispatch, tx => {
-                        const { seq } = tx.get(app.dispatch)
-                        if (seq === flipSeq) return
-                        flipSeq = seq
-                        tx.set(app.modalOpen, false)
+                    target.sub(app.dispatch, {
+                        settle: tx => {
+                            const { seq } = tx.get(app.dispatch)
+                            if (seq === flipSeq) return
+                            flipSeq = seq
+                            tx.set(app.modalOpen, false)
+                        },
                     })
                 } else
                     app.command(name, tx =>
@@ -434,14 +450,16 @@ describe("hotkey occurrence fixture", () => {
         const fired: string[] = []
         const gate = (name: string, eligible: (tx: Transaction) => boolean) => {
             let lastSeq = 0
-            target.react(escape, tx => {
-                const k = tx.get(escape)
-                if (k.seq === lastSeq || k.key !== "Escape") return
-                lastSeq = k.seq
-                if (!eligible(tx)) return
-                fired.push(name)
-                if (name === "close") tx.set(modalOpen, false)
-                else tx.set(selection, [])
+            target.sub(escape, {
+                settle: tx => {
+                    const k = tx.get(escape)
+                    if (k.seq === lastSeq || k.key !== "Escape") return
+                    lastSeq = k.seq
+                    if (!eligible(tx)) return
+                    fired.push(name)
+                    if (name === "close") tx.set(modalOpen, false)
+                    else tx.set(selection, [])
+                },
             })
         }
         gate("close", tx => tx.get(modalOpen))

@@ -290,7 +290,6 @@ describe("valdres/inspect public contract", () => {
             "delete",
             "dispose",
             "get",
-            "react",
             "reset",
             "scope",
             "set",

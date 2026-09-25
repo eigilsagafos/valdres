@@ -24,7 +24,7 @@ const operations = (report: InspectionExport): readonly OperationInspection[] =>
             summary.type === "operation",
     )
 
-describe("valdres/inspect: Store reactions", () => {
+describe("valdres/inspect: Store settle handlers", () => {
     test("records reaction commits inside the initiating operation", () => {
         const input = atom(0, { name: "reaction-inspect/input" })
         const result = atom(0, { name: "reaction-inspect/result" })
@@ -32,11 +32,13 @@ describe("valdres/inspect: Store reactions", () => {
         const { store: target, inspect } = createInspectableStore()
         const notified: number[] = []
         target.sub(result, () => notified.push(target.get(result)))
-        target.react(input, tx => {
-            tx.set(result, tx.get(input) * 10)
-            tx.set(other, 1)
+        target.sub(input, {
+            settle: tx => {
+                tx.set(result, tx.get(input) * 10)
+                tx.set(other, 1)
+            },
         })
-        target.react(input, () => undefined) // no intents
+        target.sub(input, { settle: () => undefined }) // no intents
 
         inspect.reset()
         target.set(input, 2)
@@ -60,8 +62,8 @@ describe("valdres/inspect: Store reactions", () => {
             intents: 1,
             notificationsCompleted: true,
         })
-        expect(initiating!.reaction).toBeUndefined()
-        const reactions = all.filter(commit => commit.reaction === true)
+        expect(initiating!.settle).toBeUndefined()
+        const reactions = all.filter(commit => commit.settle === true)
         expect(reactions).toHaveLength(2)
         expect(reactions[0]).toMatchObject({
             operationId: operation!.operationId,
@@ -88,9 +90,11 @@ describe("valdres/inspect: Store reactions", () => {
         const input = atom(0)
         const result = atom(0)
         const { store: target, inspect } = createInspectableStore()
-        target.react(input, tx => {
-            tx.set(result, 1)
-            throw new Error("reaction failed")
+        target.sub(input, {
+            settle: tx => {
+                tx.set(result, 1)
+                throw new Error("reaction failed")
+            },
         })
 
         inspect.reset()
@@ -99,7 +103,7 @@ describe("valdres/inspect: Store reactions", () => {
         const report = inspect.export()
 
         expect(report.fault).toBeUndefined()
-        const failed = commits(report).find(commit => commit.reaction === true)
+        const failed = commits(report).find(commit => commit.settle === true)
         // The aborted draft never reached commit: no intents, nothing applied.
         expect(failed).toMatchObject({
             result: "threw",
@@ -124,7 +128,7 @@ describe("valdres/inspect: Store reactions", () => {
         })
         const mirrored = atom(0)
         const { store: target, inspect } = createInspectableStore()
-        target.react(source, tx => tx.set(mirrored, tx.get(source)))
+        target.sub(source, { settle: tx => tx.set(mirrored, tx.get(source)) })
 
         inspect.reset()
         value = 3
@@ -135,7 +139,7 @@ describe("valdres/inspect: Store reactions", () => {
         expect(operations(report)).toHaveLength(0)
         expect(commits(report)).toEqual([
             expect.objectContaining({
-                reaction: true,
+                settle: true,
                 operationId: 0,
                 intents: 1,
                 sourceApplied: true,
@@ -155,8 +159,10 @@ describe("valdres/inspect: Store reactions", () => {
                 },
             })
             const { store: target, inspect } = createInspectableStore()
-            target.react(source, () => {
-                if (fail) throw new Error("reaction failed")
+            target.sub(source, {
+                settle: () => {
+                    if (fail) throw new Error("reaction failed")
+                },
             })
             inspect.reset()
             value = 1
@@ -174,10 +180,10 @@ describe("valdres/inspect: Store reactions", () => {
 
         expect([succeeded.threw, failed.threw]).toEqual([false, true])
         expect(succeeded.commits).toEqual([
-            expect.objectContaining({ reaction: true, result: "returned" }),
+            expect.objectContaining({ settle: true, result: "returned" }),
         ])
         expect(failed.commits).toEqual([
-            expect.objectContaining({ reaction: true, result: "threw" }),
+            expect.objectContaining({ settle: true, result: "threw" }),
         ])
     })
 
@@ -188,8 +194,8 @@ describe("valdres/inspect: Store reactions", () => {
         const { store: inspected, inspect } = createInspectableStore()
         let notifications = 0
         inspected.sub(doubled, () => notifications++)
-        inspected.react(input, () => undefined)
-        ordinary.react(input, () => undefined)
+        inspected.sub(input, { settle: () => undefined })
+        ordinary.sub(input, { settle: () => undefined })
 
         ordinary.set(input, 1)
         inspected.set(input, 1)

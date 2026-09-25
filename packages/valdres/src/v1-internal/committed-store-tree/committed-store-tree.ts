@@ -23,7 +23,7 @@ import {
     FAMILY_DEFINITIONS,
     RuntimeMismatchError,
     REACQUIRABLE_ATOMS,
-    ReactionLimitError,
+    SettleLimitError,
     ScopeNotFoundError,
     SelectorCapabilityError,
     StoreDisposedError,
@@ -98,6 +98,7 @@ import type {
     SelectorOptions,
     State,
     StateRead,
+    SubscriptionHandlers,
     TransactionCallback,
 } from "./types"
 
@@ -148,8 +149,9 @@ interface SubscriptionTarget {
     reactions: number
 }
 
-/** One ordinary subscriber or reaction. A reaction keeps `callback` undefined,
- * so ordinary snapshot capture skips it without an extra branch. */
+/** One `sub` registration. A `settle` handler is its `reaction`; without a
+ * `notify` handler `callback` stays undefined, so ordinary snapshot capture
+ * skips it without an extra branch. */
 export interface SubscriptionRegistration {
     status?: "provisional" | "active" | "rolled-back"
     admissionToken?: OutcomeToken
@@ -926,10 +928,8 @@ class CommittedStoreTreeHost
     sub<Value>(
         scope: StoreScopeNode,
         state: State<Value>,
-        callback: () => void,
-        reaction?: boolean,
+        handlers: SubscriberCallback | SubscriptionHandlers<unknown>,
     ): () => void {
-        const operation = reaction ? "StoreTree.react" : "StoreTree.sub"
         const node = state as unknown as AnyState
         let session: SelectorEvaluationSession<AnyState> | undefined
         const ownerStatus = this.#domain.states.has(node)
@@ -939,7 +939,7 @@ class CommittedStoreTreeHost
                   node,
                   (session = new SelectorEvaluationSession<AnyState>()),
               )
-        this.#assertScopeLive(scope, operation)
+        this.#assertScopeLive(scope, "StoreTree.sub")
         if (
             ownerStatus === "invalid" ||
             (!this.#domain.atoms.has(node) &&
@@ -947,10 +947,28 @@ class CommittedStoreTreeHost
                 !this.#domain.externalAtoms?.has(node) &&
                 !collectionSource(this.#domain, node))
         ) {
-            throw new TypeError(`${operation} requires a valid State`)
+            throw new TypeError("StoreTree.sub requires a valid State")
         }
-        if (typeof callback !== "function") {
-            throw new TypeError(`${operation} requires a callback function`)
+        let callback = handlers as SubscriberCallback | undefined
+        let reaction: ReactionCallback | undefined
+        if (typeof handlers !== "function") {
+            // Any other key rejects, so a misspelled handler cannot pass.
+            let rest: object
+            ;({
+                settle: reaction,
+                notify: callback,
+                ...rest
+            } = (handlers ?? {}) as SubscriptionHandlers<unknown>)
+            if (
+                Object.keys(rest).length !== 0 ||
+                (reaction ?? callback) === undefined ||
+                (reaction !== undefined && typeof reaction !== "function") ||
+                (callback !== undefined && typeof callback !== "function")
+            ) {
+                throw new TypeError(
+                    "StoreTree.sub requires a callback function or settle/notify handlers",
+                )
+            }
         }
         const current = scope.getMaterializedServedOutcome(node)
         const outer =
@@ -1017,8 +1035,8 @@ class CommittedStoreTreeHost
                 }
             }
             const registration: SubscriptionRegistration = {
-                callback: reaction ? undefined : callback,
-                reaction: reaction ? callback : undefined,
+                callback,
+                reaction,
                 target,
                 previous: target.tail,
                 next: undefined,
@@ -2504,7 +2522,7 @@ class CommittedStoreTreeHost
                 this.#reactionQueue = undefined
                 index = 0
                 if (wave === REACTION_WAVE_LIMIT) {
-                    ;(errors ??= []).push(new ReactionLimitError())
+                    ;(errors ??= []).push(new SettleLimitError())
                     break
                 }
                 for (; index < queue.length; index++) {
@@ -2990,11 +3008,7 @@ const readHydrationSnapshot = <Value>(
 
 class CommittedStoreTreeFacade implements CommittedStoreTree {
     declare readonly get: <Value>(state: State<Value>) => Value
-    declare readonly sub: <Value>(
-        state: State<Value>,
-        callback: () => void,
-    ) => () => void
-    declare readonly react: CommittedStoreTree["react"]
+    declare readonly sub: CommittedStoreTree["sub"]
     declare readonly set: CommittedStoreTree["set"]
     declare readonly update: CommittedStoreTree["update"]
     declare readonly reset: CommittedStoreTree["reset"]
@@ -3015,9 +3029,10 @@ class CommittedStoreTreeFacade implements CommittedStoreTree {
         trace?: InternalStoreTreeTrace,
     ) {
         this.get = state => host.get(scope, state)
-        this.sub = (state, callback) => host.sub(scope, state, callback)
-        this.react = ((state: State<unknown>, run: () => void) =>
-            host.sub(scope, state, run, true)) as CommittedStoreTree["react"]
+        this.sub = (
+            state: State<unknown>,
+            handlers: (() => void) | SubscriptionHandlers<unknown>,
+        ) => host.sub(scope, state, handlers)
         this.set = ((
             target: Atom<unknown> | CollectionRow<any, any>,
             value: unknown,
@@ -3296,7 +3311,7 @@ export {
     InvalidSynchronousAtomValueError,
     InvalidTransactionCallbackResultError,
     InvalidTransactionTargetError,
-    ReactionLimitError,
+    SettleLimitError,
     RuntimeMismatchError,
     SubscriberNotificationError,
     ScopeNotFoundError,

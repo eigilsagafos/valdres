@@ -52,7 +52,6 @@
         "core.query-definition.offset",
         "core.query-definition.order-by",
         "core.query-definition.where",
-        "core.reaction-limit-error",
         "core.runtime-mismatch-error",
         "core.missing-collection-row-error",
         "core.scope-not-found-error",
@@ -63,6 +62,7 @@
         "core.selector-options.name",
         "core.selector-circular-dependency-error",
         "core.selector-evaluation-error",
+        "core.settle-limit-error",
         "core.store",
         "core.store-disposed-error",
         "core.store-tree-mismatch-error",
@@ -70,7 +70,6 @@
         "core.store.dispose",
         "core.store.get",
         "core.store.on-dispose",
-        "core.store.react",
         "core.store.reset",
         "core.store.scope",
         "core.store.set",
@@ -175,7 +174,7 @@
         "callback.materialization-status-listener",
         "callback.selector-comparator",
         "callback.selector-getter",
-        "callback.store-reaction",
+        "callback.store-sub-settle",
         "callback.store-subscriber",
         "callback.transaction",
         "callback.transaction-scope"
@@ -561,12 +560,12 @@
             "errorCode": "VALDRES_RUNTIME_MISMATCH"
         },
         {
-            "id": "core.reaction-limit-error",
+            "id": "core.settle-limit-error",
             "kind": "error",
             "package": "valdres",
             "subpath": ".",
-            "name": "ReactionLimitError",
-            "errorCode": "VALDRES_REACTION_LIMIT"
+            "name": "SettleLimitError",
+            "errorCode": "VALDRES_SETTLE_LIMIT"
         },
         {
             "id": "core.missing-collection-row-error",
@@ -685,13 +684,6 @@
             "package": "valdres",
             "subpath": ".",
             "name": "Store.sub"
-        },
-        {
-            "id": "core.store.react",
-            "kind": "method",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "Store.react"
         },
         {
             "id": "core.subscriber-notification-error",

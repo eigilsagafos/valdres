@@ -54,8 +54,6 @@ export const InvalidTransactionTargetError: typeof v1.InvalidTransactionTargetEr
     v1.InvalidTransactionTargetError
 export const MissingCollectionRowError: typeof v1.MissingCollectionRowError =
     v1.MissingCollectionRowError
-export const ReactionLimitError: typeof v1.ReactionLimitError =
-    v1.ReactionLimitError
 export const RuntimeMismatchError: typeof v1.RuntimeMismatchError =
     v1.RuntimeMismatchError
 export const ScopeNotFoundError: typeof v1.ScopeNotFoundError =
@@ -64,6 +62,7 @@ export const SelectorCapabilityError: typeof v1.SelectorCapabilityError =
     v1.SelectorCapabilityError
 export const SelectorCircularDependencyError: typeof v1.SelectorCircularDependencyError =
     v1.SelectorCircularDependencyError
+export const SettleLimitError: typeof v1.SettleLimitError = v1.SettleLimitError
 export const StoreDisposedError: typeof v1.StoreDisposedError =
     v1.StoreDisposedError
 export const StoreTreeMismatchError: typeof v1.StoreTreeMismatchError =
@@ -136,7 +135,6 @@ export type InvalidTransactionTargetError = InstanceType<
 export type MissingCollectionRowError = InstanceType<
     typeof v1.MissingCollectionRowError
 >
-export type ReactionLimitError = InstanceType<typeof v1.ReactionLimitError>
 export type RuntimeMismatchError = InstanceType<typeof v1.RuntimeMismatchError>
 export type ScopeNotFoundError = InstanceType<typeof v1.ScopeNotFoundError>
 export type SelectorCapabilityError = InstanceType<
@@ -145,6 +143,7 @@ export type SelectorCapabilityError = InstanceType<
 export type SelectorCircularDependencyError = InstanceType<
     typeof v1.SelectorCircularDependencyError
 >
+export type SettleLimitError = InstanceType<typeof v1.SettleLimitError>
 export type StoreDisposedError = InstanceType<typeof v1.StoreDisposedError>
 export type StoreTreeMismatchError = InstanceType<
     typeof v1.StoreTreeMismatchError
