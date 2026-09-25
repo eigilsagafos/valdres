@@ -205,8 +205,9 @@ export interface CommittedStoreTree {
         <Value>(state: State<Value>, callback: () => void): () => void
         /**
          * When a settlement changes `state`, `settle` writes inside it, before
-         * ordinary subscribers are notified; `notify` observes it afterwards.
-         * Registration never runs `settle`. One unsubscribe removes both.
+         * ordinary subscribers are notified; `notify` observes it afterwards,
+         * including after a failed `settle`. Registration never runs `settle`.
+         * One unsubscribe removes both.
          */
         <Value, Result = void>(
             state: State<Value>,

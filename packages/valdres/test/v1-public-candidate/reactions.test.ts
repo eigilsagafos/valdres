@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
     SettleLimitError,
+    StoreDisposedError,
     SubscriberNotificationError,
     atom,
     collection,
@@ -66,6 +67,42 @@ describe("v1 public Store.sub settle handlers", () => {
             // @ts-expect-error notify receives no transaction.
             target.sub(count, { notify: (tx: Transaction) => tx.get(count) })
         }
+    })
+
+    test("rejects handlers that dispose the Store or carry extra symbol keys", () => {
+        const root = store()
+        const child = root.scope()
+        let listeners = 0
+        const source = externalAtom({
+            getSnapshot: () => 0,
+            subscribe() {
+                listeners++
+                return () => {
+                    listeners--
+                }
+            },
+        })
+        expect(
+            thrownBy(() =>
+                child.sub(source, {
+                    get notify() {
+                        child.dispose()
+                        return () => {}
+                    },
+                }),
+            ),
+        ).toBeInstanceOf(StoreDisposedError)
+        expect(listeners).toBe(0)
+        root.dispose()
+        expect(listeners).toBe(0)
+
+        const extra = thrownBy(() =>
+            store().sub(atom(0), {
+                settle: () => {},
+                [Symbol("extra")]: 1,
+            } as never),
+        )
+        expect(extra).toBeInstanceOf(TypeError)
     })
 
     test("reacts to and writes collection rows inside one publication", () => {

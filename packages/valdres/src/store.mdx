@@ -249,6 +249,11 @@ Use `settle` for commands whose result must appear together with the input that
 caused it, such as a keyboard shortcut that sets a flag. Pass either handler or
 both; any other key throws.
 
+`notify` is not an on-success callback for `settle`. It observes the final state
+of every update that changes the trigger, so it also runs when its `settle`
+threw and wrote nothing. It can also run while subscribing, when attaching an
+external source changes its value; `settle` never runs then.
+
 - **Explicit trigger.** `settle` runs when the served value of the State you
   pass changes. Reads through `tx.get` do not add triggers.
 - **No initial run.** Subscribing never runs `settle`, not even when it attaches

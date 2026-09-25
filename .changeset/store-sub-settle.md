@@ -16,6 +16,9 @@ result it caused. `notify` behaves exactly like the callback form, and
 - Pass `settle`, `notify`, or both; one unsubscribe removes both. Any other key,
   or an object with neither handler, throws a `TypeError`.
 - Subscribing never runs `settle`; only later changes of the trigger do.
+- `notify` is not an on-success callback for `settle`: it observes every settled
+  change of the trigger, including after its `settle` threw, and can run during
+  subscribing without `settle`.
 - `tx.get` reads the latest committed state, including earlier `settle` handlers
   in the same settlement, plus the handler's own staged writes.
 - A `settle` handler that throws or returns a promise discards only its own

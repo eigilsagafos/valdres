@@ -134,6 +134,18 @@ and 19 gzip bytes, but a misspelled `notify` would then be dropped silently. The
 dependent feature budgets move to the measured values, the runtime digest is
 recertified, and the immutable ordinary baselines are not regenerated.
 
+A bounded review of the API revision found that a handler getter could dispose
+the Store after the initial liveness check, so registration attached an external
+listener that leaked, and that extra symbol keys passed validation. The fix
+checks liveness again after the handlers are read and rejects every other own
+key, including symbols. It adds 15 raw and 6 gzip bytes. Shortening the
+`TypeError` message and phrasing the key check differently brought that to
+`atom-selector-store` 66,723 / 17,960. The owner approved the exact no-cushion
+allowances 439 raw and 691 gzip, 3 gzip bytes above the earlier approval, rather
+than trimming the error message's `settle`/`notify` hint. The dependent feature
+budgets move to the measured values, the runtime digest is recertified, and the
+immutable ordinary baselines and unaffected budgets are unchanged.
+
 ## Validation
 
 An independent review found four defects in the first draft, and all four are
@@ -153,3 +165,11 @@ failure-outcome contract above fixes it. Independent validation closed A2 with
 notes. Two behaviours are unchanged and out of scope: a first-time dependency
 failure is swallowed without an edge, and paths without a reaction still serve a
 stale descendant after an escaped failure.
+
+A bounded review of the API revision then found the handler-getter disposal leak
+and the symbol-key gap described under size certification. Both are fixed with
+regressions: `settle` and `notify` getters that dispose the child scope or the
+root, a public reproduction with an `externalAtom` listener count, and a
+symbol-key case. The review also asked for explicit documentation that `notify`
+is not an on-success callback for `settle`; the Store docs and contract notes
+now say so, and a regression shows `notify` running after its `settle` failed.

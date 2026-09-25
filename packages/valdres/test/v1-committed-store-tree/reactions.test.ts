@@ -203,6 +203,57 @@ describe("Store settle handlers: registration and retention", () => {
         expect(runs).toEqual(["settle", "notify", "settle", "notify"])
     })
 
+    test("a handler getter that disposes the scope registers nothing", () => {
+        for (const phase of ["settle", "notify"] as const) {
+            for (const disposing of ["child", "root"] as const) {
+                const { domain, tree, read } = fixture()
+                const child = tree.scope("child")
+                const keys = source(0)
+                const external = createInternalExternalAtom(
+                    domain,
+                    keys.definition,
+                )
+                const before = read("activeSubscriptions")
+                const handlers = {
+                    get [phase]() {
+                        ;(disposing === "child" ? child : tree).dispose()
+                        return () => {}
+                    },
+                }
+                expect(
+                    thrownBy(() => child.sub(external, handlers as never)),
+                ).toBeInstanceOf(StoreDisposedError)
+                expect(read("activeSubscriptions")).toBe(before)
+                expect(keys.subscribes).toBe(0)
+                expect(keys.listeners).toBe(0)
+                tree.dispose()
+                expect(keys.listeners).toBe(0)
+            }
+        }
+    })
+
+    test("notify is not a continuation of settle: it runs after settle fails", () => {
+        const { domain, tree } = fixture()
+        const trigger = domain.atom(0)
+        const written = domain.atom(0)
+        const failure = new Error("settle failed")
+        const seen: number[] = []
+        tree.sub(trigger, {
+            settle: tx => {
+                tx.set(written, 1)
+                throw failure
+            },
+            notify: () => void seen.push(tree.get(written)),
+        })
+        const error = thrownBy(() => tree.set(trigger, 1))
+        expect(error).toBeInstanceOf(SubscriberNotificationError)
+        expect((error as SubscriberNotificationError).causes).toEqual([failure])
+        // The aborted draft left nothing behind; notify still observed the
+        // trigger's change.
+        expect(seen).toEqual([0])
+        expect(tree.get(written)).toBe(0)
+    })
+
     test("retains an external closure without ordinary subscribers and releases it on removal", () => {
         const { domain, tree } = fixture()
         const keys = source(0)
@@ -293,11 +344,12 @@ describe("Store settle handlers: registration and retention", () => {
             { settle: noop, notify: 1 },
             { settle: noop, notfy: noop },
             { setle: noop },
+            { settle: noop, [Symbol("extra")]: 1 },
         ]) {
             const callback = thrownBy(() => tree.sub(count, handlers as never))
             expect(callback).toBeInstanceOf(TypeError)
             expect((callback as Error).message).toBe(
-                "StoreTree.sub requires a callback function or settle/notify handlers",
+                "StoreTree.sub requires a callback or settle/notify handlers",
             )
         }
         expect(read("activeSubscriptions")).toBe(0)

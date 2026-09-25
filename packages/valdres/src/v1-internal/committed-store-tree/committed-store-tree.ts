@@ -959,14 +959,16 @@ class CommittedStoreTreeHost
                 notify: callback,
                 ...rest
             } = (handlers ?? {}) as SubscriptionHandlers<unknown>)
+            // Handler getters are application code and may dispose the scope.
+            this.#assertScopeLive(scope)
             if (
-                Object.keys(rest).length !== 0 ||
+                Reflect.ownKeys(rest).length > 0 ||
                 (reaction ?? callback) === undefined ||
                 (reaction !== undefined && typeof reaction !== "function") ||
                 (callback !== undefined && typeof callback !== "function")
             ) {
                 throw new TypeError(
-                    "StoreTree.sub requires a callback function or settle/notify handlers",
+                    "StoreTree.sub requires a callback or settle/notify handlers",
                 )
             }
         }
