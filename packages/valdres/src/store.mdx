@@ -156,6 +156,9 @@ const unsub = myStore.sub(countAtom, () => {
 unsub()
 ```
 
+To write state in response to a change, before subscribers see it, pass a
+[`settle` handler](#writing-during-a-change-settle).
+
 ## Transactions
 
 Batch multiple updates so subscribers only fire once:
@@ -212,6 +215,119 @@ synchronously, so it cannot await anything.
     once, after all updates are applied. This is the intended behavior for
     performance.
 </div>
+
+## Writing during a change: `settle`
+
+<div className="callout callout-note">
+    <div className="callout-title">Experimental</div>
+    The `settle` handler is experimental during the beta.
+</div>
+
+`sub` also takes phase-keyed handlers. `settle` runs inside the update, while
+state is still settling, and may write. `notify` runs after it settles, exactly
+like the callback form:
+
+```ts
+const saving = atom(false)
+const saveRequest = atom<{ seq: number } | null>(null)
+
+const stop = myStore.sub(hotkeyMatch, {
+    settle: tx => {
+        const match = tx.get(hotkeyMatch)
+        if (match.command !== "save") return
+        tx.set(saving, true)
+        tx.set(saveRequest, { seq: match.seq })
+    },
+    notify: () => announce(myStore.get(saving)),
+})
+
+// Later: removes both handlers. Calling it again does nothing.
+stop()
+```
+
+Use `settle` for commands whose result must appear together with the input that
+caused it, such as a keyboard shortcut that sets a flag. Pass either handler or
+both; any other key throws.
+
+`notify` is not an on-success callback for `settle`. It observes the final state
+of every update that changes the trigger, so it also runs when its `settle`
+threw and wrote nothing. It can also run while subscribing, when attaching an
+external source changes its value; `settle` never runs then.
+
+- **Explicit trigger.** `settle` runs when the served value of the State you
+  pass changes. Reads through `tx.get` do not add triggers.
+- **No initial run.** Subscribing never runs `settle`, not even when it attaches
+  an external source whose value then changes. Only later changes do.
+- **Latest state.** No triggering value is passed. `tx.get` reads the latest
+  committed state, including commits of `settle` handlers that ran earlier in
+  the same update, plus the handler's own staged writes. An earlier handler can
+  therefore change whether a later one is still eligible, and among handlers
+  that are eligible when their turn comes, registration order decides which runs
+  first. Recording that an input was handled, in the same transaction as the
+  command's writes, stops later handlers from also succeeding for it; it does
+  not freeze eligibility or pick a winner. When a decision must reflect the
+  moment the input happened, make it once and store it explicitly.
+- **One publication.** Each `settle` call is its own synchronous transaction.
+  Its commit updates selectors immediately, and may trigger further `settle`
+  handlers in a following round. Subscribers, including `notify` handlers and
+  React components, are notified once, after the last round, and only ever see
+  the final state.
+- **Order.** `settle` handlers run in the order their triggers changed, then in
+  registration order. One whose trigger changes again after it has run runs
+  again in the next round. At most 64 rounds run; after that the update fails
+  with a `SettleLimitError` cause.
+- **Failure isolation.** A `settle` handler that throws, or returns a promise,
+  discards its own staged writes. Other handlers still run, and earlier commits
+  stay. Failures are reported after subscribers run, as causes of a
+  `SubscriberNotificationError`. A failure after its writes were applied does
+  not undo them; derived state still updates before subscribers are notified. If
+  recomputing a selector fails at that point, the selector serves that failure
+  as its error, and its dependents fail with it, until one of its inputs
+  changes. Subscribers never see a value computed before the write.
+
+`settle` is not a database transaction around the whole update. It cannot undo
+work outside Valdres. Keep I/O, DOM work, and anything that can synchronously
+re-enter an external source (`focus()`, dispatching events) out of `settle`. Do
+that work in `notify`, or any ordinary subscriber, which runs after the one
+publication, and report completion as a separate operation:
+
+```ts
+myStore.sub(saveRequest, () => {
+    const request = myStore.get(saveRequest)
+    if (request === null) return
+    api.save(myStore.get(documentAtom)).then(
+        () =>
+            myStore.txn(tx => {
+                tx.set(saving, false)
+                tx.set(saveRequest, null)
+            }),
+        error =>
+            myStore.txn(tx => {
+                tx.set(saving, false)
+                tx.set(saveRequest, null)
+                tx.set(saveError, error)
+            }),
+    )
+})
+```
+
+Work that needs a newly rendered DOM node belongs after the framework's own
+commit. Notification alone does not mean the DOM is ready. Cancelling the live
+native event (`event.preventDefault()`) is safe inside `settle` because it runs
+synchronously while the event dispatches.
+
+A `settle` handler belongs to the store, or scope, it was registered on. It
+cannot write another store. The two phases differ in what they may do:
+
+|                    | `notify` (or a plain callback) | `settle`                                     |
+| ------------------ | ------------------------------ | -------------------------------------------- |
+| Runs               | after the update settles, once | during the update, before any `notify`       |
+| Can write state    | no                             | yes, through its transaction                 |
+| Reads              | `store.get` of committed state | `tx.get` of the latest state plus its writes |
+| Unsubscribe inside | allowed                        | not allowed                                  |
+
+The guarantee holds per update and per store. Two external sources that are
+invalidated one after the other for the same DOM event produce two updates.
 
 ## Disposing request stores
 

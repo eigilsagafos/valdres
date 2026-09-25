@@ -48,6 +48,7 @@ describe("v1 public root", () => {
                 "SelectorCapabilityError",
                 "SelectorCircularDependencyError",
                 "ServerSnapshotUnavailableError",
+                "SettleLimitError",
                 "StoreDisposedError",
                 "StoreTreeMismatchError",
                 "SubscriberNotificationError",

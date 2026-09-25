@@ -8,11 +8,12 @@
     "provenance": {
         "ordinaryBaselineCommit": "7c55be567457218fb597f9cd9658b1c71997fb83",
         "certificationBuildCount": 3,
-        "certifiedRuntimeBuildSha256": "8cdd3979d27c74eb137310e1beef5742ceebef692034800678985521577ff1b1"
+        "certifiedRuntimeBuildSha256": "af65248a154bac465c5048928fc5338fdec14f40d206ff9da5425b61715ce93d"
     },
     "policy": {
         "ordinaryTolerancePercent": 2,
-        "coreRetainingGzipAllowance": 77,
+        "coreRetainingRawAllowance": 439,
+        "coreRetainingGzipAllowance": 691,
         "coreRetainingFixtures": [
             "atom",
             "atom-selector-store",
@@ -44,37 +45,37 @@
     },
     "featureBudgets": {
         "dist": {
-            "raw": 358708,
-            "gzip": 105910
+            "raw": 364348,
+            "gzip": 107570
         },
         "packed": {
-            "raw": 507021,
-            "gzip": 134311
+            "raw": 515207,
+            "gzip": 136845
         },
         "fixtures": {
             "collection": {
-                "raw": 98732,
-                "gzip": 27725
+                "raw": 100651,
+                "gzip": 28333
             },
             "all-exports": {
-                "raw": 123896,
-                "gzip": 35003
+                "raw": 125842,
+                "gzip": 35667
             },
             "inspect": {
-                "raw": 101760,
-                "gzip": 27291
+                "raw": 104529,
+                "gzip": 28104
             },
             "query": {
-                "raw": 104493,
-                "gzip": 29558
+                "raw": 106406,
+                "gzip": 30156
             },
             "query-development": {
-                "raw": 104493,
-                "gzip": 29558
+                "raw": 106406,
+                "gzip": 30156
             },
             "external-atom": {
-                "raw": 85688,
-                "gzip": 23146
+                "raw": 87600,
+                "gzip": 23734
             }
         }
     }

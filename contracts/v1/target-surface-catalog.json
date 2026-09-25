@@ -62,6 +62,7 @@
         "core.selector-options.name",
         "core.selector-circular-dependency-error",
         "core.selector-evaluation-error",
+        "core.settle-limit-error",
         "core.store",
         "core.store-disposed-error",
         "core.store-tree-mismatch-error",
@@ -173,6 +174,7 @@
         "callback.materialization-status-listener",
         "callback.selector-comparator",
         "callback.selector-getter",
+        "callback.store-sub-settle",
         "callback.store-subscriber",
         "callback.transaction",
         "callback.transaction-scope"
@@ -556,6 +558,14 @@
             "subpath": ".",
             "name": "RuntimeMismatchError",
             "errorCode": "VALDRES_RUNTIME_MISMATCH"
+        },
+        {
+            "id": "core.settle-limit-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SettleLimitError",
+            "errorCode": "VALDRES_SETTLE_LIMIT"
         },
         {
             "id": "core.missing-collection-row-error",

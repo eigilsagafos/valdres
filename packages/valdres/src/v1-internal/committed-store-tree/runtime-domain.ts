@@ -292,6 +292,16 @@ export class SelectorCapabilityError extends ImmutableRuntimeError {
     }
 }
 
+export class SettleLimitError extends ImmutableRuntimeError {
+    readonly code = "VALDRES_SETTLE_LIMIT"
+
+    constructor() {
+        super("Store updates did not settle")
+        this.name = "SettleLimitError"
+        this.seal()
+    }
+}
+
 export class TransactionPhaseError extends ImmutableRuntimeError {
     readonly code = "VALDRES_TRANSACTION_PHASE"
 

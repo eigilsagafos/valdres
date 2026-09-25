@@ -23,6 +23,7 @@ import {
     FAMILY_DEFINITIONS,
     RuntimeMismatchError,
     REACQUIRABLE_ATOMS,
+    SettleLimitError,
     ScopeNotFoundError,
     SelectorCapabilityError,
     StoreDisposedError,
@@ -97,6 +98,7 @@ import type {
     SelectorOptions,
     State,
     StateRead,
+    SubscriptionHandlers,
     TransactionCallback,
 } from "./types"
 
@@ -131,6 +133,10 @@ interface CommitWorksets {
 }
 
 type SubscriberCallback = () => unknown
+type ReactionCallback = (transaction: RootTransaction) => unknown
+
+/** Nonempty reaction waves one notification boundary may run. */
+const REACTION_WAVE_LIMIT = 64
 
 interface SubscriptionTarget {
     readonly host: CommittedStoreTreeHost
@@ -139,13 +145,21 @@ interface SubscriptionTarget {
     head: SubscriptionRegistration | undefined
     tail: SubscriptionRegistration | undefined
     reachedEpoch: number
+    /** Live reaction registrations in this target's list. */
+    reactions: number
 }
 
+/** One `sub` registration. A `settle` handler is its `reaction`; without a
+ * `notify` handler `callback` stays undefined, so ordinary snapshot capture
+ * skips it without an extra branch. */
 export interface SubscriptionRegistration {
     status?: "provisional" | "active" | "rolled-back"
     admissionToken?: OutcomeToken
     admissionNotified?: boolean
     callback: SubscriberCallback | undefined
+    reaction?: ReactionCallback | undefined
+    /** Queued for a reaction wave and not yet run. */
+    pending?: boolean
     target: SubscriptionTarget | undefined
     previous: SubscriptionRegistration | undefined
     next: SubscriptionRegistration | undefined
@@ -749,6 +763,12 @@ class CommittedStoreTreeHost
     #notificationEpoch = 0
     #notificationTarget: SubscriptionTarget | undefined
     #remainingNotificationTargets: SubscriptionTarget[] | undefined
+    /** Reactions reached in the current notification boundary, in reach order. */
+    #reactionQueue: SubscriptionRegistration[] | undefined
+    /** Nonzero while a reaction's own commit runs inside a boundary. */
+    #reactionDepth = 0
+    /** First failure after a reaction's apply, reported once it propagated. */
+    #reactionFailure: { readonly error: unknown } | undefined
     readonly #domain: RuntimeDomainRecords
     readonly #counters:
         | ((counter: StoreTreeCounterId, amount: number) => void)
@@ -908,7 +928,7 @@ class CommittedStoreTreeHost
     sub<Value>(
         scope: StoreScopeNode,
         state: State<Value>,
-        callback: () => void,
+        handlers: SubscriberCallback | SubscriptionHandlers<unknown>,
     ): () => void {
         const node = state as unknown as AnyState
         let session: SelectorEvaluationSession<AnyState> | undefined
@@ -929,8 +949,28 @@ class CommittedStoreTreeHost
         ) {
             throw new TypeError("StoreTree.sub requires a valid State")
         }
-        if (typeof callback !== "function") {
-            throw new TypeError("StoreTree.sub requires a callback function")
+        let callback = handlers as SubscriberCallback | undefined
+        let reaction: ReactionCallback | undefined
+        if (typeof handlers !== "function") {
+            // Any other key rejects, so a misspelled handler cannot pass.
+            let rest: object
+            ;({
+                settle: reaction,
+                notify: callback,
+                ...rest
+            } = (handlers ?? {}) as SubscriptionHandlers<unknown>)
+            // Handler getters are application code and may dispose the scope.
+            this.#assertScopeLive(scope)
+            if (
+                Reflect.ownKeys(rest).length > 0 ||
+                (reaction ?? callback) === undefined ||
+                (reaction !== undefined && typeof reaction !== "function") ||
+                (callback !== undefined && typeof callback !== "function")
+            ) {
+                throw new TypeError(
+                    "StoreTree.sub requires a callback or settle/notify handlers",
+                )
+            }
         }
         const current = scope.getMaterializedServedOutcome(node)
         const outer =
@@ -984,6 +1024,7 @@ class CommittedStoreTreeHost
                     head: undefined,
                     tail: undefined,
                     reachedEpoch: 0,
+                    reactions: 0,
                 }
                 byState.set(node, target)
                 if (this.instrumented) {
@@ -996,11 +1037,13 @@ class CommittedStoreTreeHost
                 }
             }
             const registration: SubscriptionRegistration = {
-                callback: callback as SubscriberCallback,
+                callback,
+                reaction,
                 target,
                 previous: target.tail,
                 next: undefined,
             }
+            if (reaction) target.reactions++
             if (target.tail === undefined) {
                 target.head = registration
             } else {
@@ -1047,6 +1090,10 @@ class CommittedStoreTreeHost
             target.tail = previous
         } else {
             next.previous = previous
+        }
+        if (registration.reaction !== undefined) {
+            registration.reaction = undefined
+            target.reactions--
         }
         registration.callback = undefined
         registration.target = undefined
@@ -1182,30 +1229,10 @@ class CommittedStoreTreeHost
             throw new TypeError("StoreTree.txn requires a callback")
         const outer = this.#beginOperation(HostOperationKind.mutation)
         try {
-            const draft = this.createDraft()
-            try {
-                const cursor = createRootTransactionCursor(this, draft, scope)
-                const result = runTransactionActivity(
-                    this.#domain,
-                    draft.transaction,
-                    () =>
-                        (
-                            callback as unknown as (
-                                transaction: typeof cursor,
-                            ) => Result
-                        )(cursor),
-                )
-                draft.close()
-                const resultSession = new SelectorEvaluationSession<AnyState>()
-                runTransactionResultActivity(this.#domain, resultSession, () =>
-                    inspectTransactionCallbackResult(result),
-                )
-                this.#commitDraft(draft)
-                return result
-            } finally {
-                draft.close()
-                draft.release()
-            }
+            return this.#transact(
+                scope,
+                callback as unknown as (transaction: RootTransaction) => Result,
+            )
         } catch (error) {
             if (outer) this.#external?.failure(error)
             throw error
@@ -1214,6 +1241,32 @@ class CommittedStoreTreeHost
                 this.#operationCursor = undefined
                 this.#external?.finish()
             }
+        }
+    }
+
+    /** One synchronous TreeTransaction: stage, validate, then commit. */
+    #transact<Result>(
+        scope: StoreScopeNode,
+        callback: (transaction: RootTransaction) => Result,
+    ): Result {
+        const draft = this.createDraft()
+        try {
+            const cursor = createRootTransactionCursor(this, draft, scope)
+            const result = runTransactionActivity(
+                this.#domain,
+                draft.transaction,
+                () => callback(cursor),
+            )
+            draft.close()
+            const resultSession = new SelectorEvaluationSession<AnyState>()
+            runTransactionResultActivity(this.#domain, resultSession, () =>
+                inspectTransactionCallbackResult(result),
+            )
+            this.#commitDraft(draft)
+            return result
+        } finally {
+            draft.close()
+            draft.release()
         }
     }
 
@@ -1549,6 +1602,7 @@ class CommittedStoreTreeHost
             while (registration !== undefined) {
                 const next = registration.next
                 registration.callback = undefined
+                registration.reaction = undefined
                 registration.target = undefined
                 registration.previous = undefined
                 registration.next = undefined
@@ -1557,6 +1611,7 @@ class CommittedStoreTreeHost
             }
             target.head = undefined
             target.tail = undefined
+            target.reactions = 0
             this.#external?.releaseRoot(scope, target.state)
         }
         targets!.delete(scope)
@@ -1952,7 +2007,9 @@ class CommittedStoreTreeHost
             collectionPlan.commit(1)
         }
 
-        this.beginNotificationSettlement()
+        // A reaction's commit joins the boundary that is running it.
+        const nested = this.#reactionDepth !== 0
+        if (!nested) this.beginNotificationSettlement()
         try {
             let firstChangedSource: AtomViewRecord | undefined
             let remainingChangedSources: AtomViewRecord[] | undefined
@@ -2034,15 +2091,18 @@ class CommittedStoreTreeHost
                         : 1 + (remainingChangedSources?.length ?? 0),
                 )
             } catch (error) {
-                if (!this.#external) throw error
-                this.#external.failure(error, "instrumenting")
+                // A reaction's applied sources must still propagate before the
+                // boundary publishes; its runner reports the failure after.
+                if (nested) this.#reactionFailure ??= { error }
+                else if (!this.#external) throw error
+                else this.#external.failure(error, "instrumenting")
             }
             this.propagateFromSources(
                 firstChangedSource,
                 remainingChangedSources,
             )
         } catch (error) {
-            this.clearNotificationSettlement()
+            if (!nested) this.clearNotificationSettlement()
             throw error
         }
     }
@@ -2356,8 +2416,12 @@ class CommittedStoreTreeHost
         remainingSources?: readonly PropagationSource[],
         prepare?: () => void,
     ): void {
+        // A reaction's commit propagates inside the running boundary: it
+        // neither clears nor delivers that boundary's notification set, and
+        // leaves latched control faults for the boundary to surface.
+        const nested = this.#reactionDepth !== 0
         if (firstSource === undefined && prepare === undefined) {
-            this.clearNotificationSettlement()
+            if (!nested) this.clearNotificationSettlement()
             return
         }
         if (firstSource !== undefined)
@@ -2401,8 +2465,9 @@ class CommittedStoreTreeHost
                     try {
                         this.#settleSelector(scope, selector)
                     } catch (cause) {
-                        if (prepare === undefined) throw cause
-                        this.#external!.failure(cause, "settling")
+                        if (nested) this.#reactionFailure ??= { error: cause }
+                        else if (prepare === undefined) throw cause
+                        else this.#external!.failure(cause, "settling")
                     }
                 }
             } finally {
@@ -2414,25 +2479,112 @@ class CommittedStoreTreeHost
                 this.#propagationStatuses = undefined
                 this.#external?.endPropagation(previousPull)
             }
+            if (nested) return
+            // Reactions settle before the one ordinary snapshot is captured.
+            const reactionErrors =
+                this.#reactionQueue === undefined
+                    ? undefined
+                    : this.#drainReactions()
             const subscriberErrors = this.#deliverSubscriptionSnapshot()
             // A first external reach in a callback adopts and clears the pending
             // control ledger. Only an unadopted fault belongs to this core result.
             const authoritativeControlFault =
                 this.#propagationControlFault?.[0]?.error
-            if (subscriberErrors === undefined) {
+            const errors =
+                reactionErrors === undefined
+                    ? subscriberErrors
+                    : subscriberErrors === undefined
+                      ? reactionErrors
+                      : [...reactionErrors, ...subscriberErrors]
+            if (errors === undefined) {
                 if (authoritativeControlFault !== undefined)
                     throw authoritativeControlFault
                 return
             }
             const error = new SubscriberNotificationError(
                 authoritativeControlFault === undefined
-                    ? subscriberErrors
-                    : [authoritativeControlFault, ...subscriberErrors],
+                    ? errors
+                    : [authoritativeControlFault, ...errors],
             )
             throw this.#external?.notificationFailure(error) ?? error
         } finally {
-            this.#propagationControlFault = undefined
+            if (!nested) this.#propagationControlFault = undefined
         }
+    }
+
+    /** Runs reached reactions in waves, each as its own TreeTransaction whose
+     * commit joins this boundary. Returns reaction failures in run order. */
+    #drainReactions(): unknown[] | undefined {
+        let errors: unknown[] | undefined
+        let queue: SubscriptionRegistration[] | undefined
+        let index = 0
+        try {
+            for (let wave = 0; this.#reactionQueue !== undefined; wave++) {
+                queue = this.#reactionQueue
+                this.#reactionQueue = undefined
+                index = 0
+                if (wave === REACTION_WAVE_LIMIT) {
+                    ;(errors ??= []).push(new SettleLimitError())
+                    break
+                }
+                for (; index < queue.length; index++) {
+                    const registration = queue[index]!
+                    registration.pending = false
+                    const run = registration.reaction
+                    const target = registration.target
+                    if (run === undefined || target === undefined) continue
+                    const failure = this.#runReaction(target.scope, run)
+                    if (failure !== undefined)
+                        (errors ??= []).push(failure.error)
+                }
+            }
+        } finally {
+            // Only an escaping internal fault leaves this wave unfinished.
+            if (queue !== undefined)
+                for (; index < queue.length; index++)
+                    queue[index]!.pending = false
+        }
+        return errors
+    }
+
+    #runReaction(
+        scope: StoreScopeNode,
+        run: ReactionCallback,
+    ): { readonly error: unknown } | undefined {
+        let failure: { readonly error: unknown } | undefined
+        this.#reactionDepth++
+        try {
+            this.#trace?.(3, scope)
+            this.#transact(scope, run)
+            failure = this.#reactionFailure
+        } catch (thrown) {
+            // The draft and cursor are closed; inspecting a thrown thenable is
+            // still application code, so it keeps transaction-result guards.
+            let error = thrown
+            try {
+                runTransactionResultActivity(
+                    this.#domain,
+                    new SelectorEvaluationSession<AnyState>(),
+                    () => {
+                        const inspected = inspectThenable(thrown)
+                        if (inspected.kind === "thenable")
+                            containThenable(inspected)
+                    },
+                )
+            } catch (fault) {
+                error = fault
+            }
+            failure = { error }
+        } finally {
+            this.#reactionDepth--
+            this.#reactionFailure = undefined
+        }
+        try {
+            this.#trace?.(4, failure !== undefined)
+        } catch (error) {
+            failure ??= { error }
+        }
+        return failure
     }
 
     beginNotificationSettlement(): void {
@@ -2448,18 +2600,19 @@ class CommittedStoreTreeHost
         this.#notificationEpoch = 0
         this.#notificationTarget = undefined
         this.#remainingNotificationTargets = undefined
+        // Every boundary exit comes through here, so no queue outlives it.
+        const queue = this.#reactionQueue
+        if (queue === undefined) return
+        this.#reactionQueue = undefined
+        for (const registration of queue) registration.pending = false
     }
 
     reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void {
         const epoch = this.#notificationEpoch
         const target = this.#subscriptionTargets?.get(scope)?.get(state)
-        if (
-            epoch === 0 ||
-            target === undefined ||
-            target.reachedEpoch === epoch
-        ) {
-            return
-        }
+        if (epoch === 0 || target === undefined) return
+        if (target.reactions !== 0) this.#queueReactions(target)
+        if (target.reachedEpoch === epoch) return
         target.reachedEpoch = epoch
         if (this.instrumented) {
             this.recordCounter(StoreTreeCounterId.notificationTargetsReached)
@@ -2472,6 +2625,25 @@ class CommittedStoreTreeHost
             this.#remainingNotificationTargets = [target]
         } else {
             this.#remainingNotificationTargets.push(target)
+        }
+    }
+
+    /** Queues each settled, not-yet-pending reaction of a reached target. One
+     * already run in this wave queues for the next; a pending one reads the
+     * newer state when its turn comes. Admission never runs its own reaction;
+     * a rolled-back admission has already been removed. */
+    #queueReactions(target: SubscriptionTarget): void {
+        let registration = target.head
+        while (registration !== undefined) {
+            if (
+                registration.reaction !== undefined &&
+                !registration.pending &&
+                registration.status !== "provisional"
+            ) {
+                registration.pending = true
+                ;(this.#reactionQueue ??= []).push(registration)
+            }
+            registration = registration.next
         }
     }
 
@@ -2632,16 +2804,23 @@ class CommittedStoreTreeHost
                 const graphStayedCurrent =
                     graphVersionBeforeDependencies ===
                     scope.getSelectorGraphVersion()
-                if (session !== undefined && graphStayedCurrent) {
-                    // Reuse the dynamically active session only when this
-                    // dependency walk published nothing. Its publication is then
-                    // attributable without changing base settlement ordering.
-                    scope.serve(selector, session)
-                } else {
-                    scope.serve(
-                        selector,
-                        new SelectorEvaluationSession<AnyState>(),
-                    )
+                // Reuse the dynamically active session only when this
+                // dependency walk published nothing. Its publication is then
+                // attributable without changing base settlement ordering.
+                const settleSession =
+                    session !== undefined && graphStayedCurrent
+                        ? session
+                        : new SelectorEvaluationSession<AnyState>()
+                try {
+                    scope.serve(selector, settleSession)
+                } catch (error) {
+                    // A reaction's commit must settle this branch before its
+                    // boundary publishes. The escaped failure becomes this
+                    // selector's error outcome, so dependents settle against
+                    // it rather than serving values computed before the write.
+                    if (this.#reactionDepth === 0) throw error
+                    this.#reactionFailure ??= { error }
+                    scope.publishFailedSelector(selector, error, settleSession)
                 }
             }
             this.#updatePropagationStatus(
@@ -2831,10 +3010,7 @@ const readHydrationSnapshot = <Value>(
 
 class CommittedStoreTreeFacade implements CommittedStoreTree {
     declare readonly get: <Value>(state: State<Value>) => Value
-    declare readonly sub: <Value>(
-        state: State<Value>,
-        callback: () => void,
-    ) => () => void
+    declare readonly sub: CommittedStoreTree["sub"]
     declare readonly set: CommittedStoreTree["set"]
     declare readonly update: CommittedStoreTree["update"]
     declare readonly reset: CommittedStoreTree["reset"]
@@ -2855,7 +3031,10 @@ class CommittedStoreTreeFacade implements CommittedStoreTree {
         trace?: InternalStoreTreeTrace,
     ) {
         this.get = state => host.get(scope, state)
-        this.sub = (state, callback) => host.sub(scope, state, callback)
+        this.sub = (
+            state: State<unknown>,
+            handlers: (() => void) | SubscriptionHandlers<unknown>,
+        ) => host.sub(scope, state, handlers)
         this.set = ((
             target: Atom<unknown> | CollectionRow<any, any>,
             value: unknown,
@@ -3134,6 +3313,7 @@ export {
     InvalidSynchronousAtomValueError,
     InvalidTransactionCallbackResultError,
     InvalidTransactionTargetError,
+    SettleLimitError,
     RuntimeMismatchError,
     SubscriberNotificationError,
     ScopeNotFoundError,
