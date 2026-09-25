@@ -33,6 +33,8 @@ app.get(kb.modifierSelector("meta"))
 app.get(kb.isCodePressedSelector("KeyA"))
 app.get(kb.isKeyPressedSelector("a"))
 app.get(kb.toggleKeySelector("CapsLock"))
+app.get(kb.lastKeyDownAtom)
+app.get(kb.lastKeyDownSelector("KeyA"))
 assert.deepEqual(attached, [], "a dormant read attached listeners")
 
 const stop = app.sub(kb.toggleKeySelector("CapsLock"), () => {})

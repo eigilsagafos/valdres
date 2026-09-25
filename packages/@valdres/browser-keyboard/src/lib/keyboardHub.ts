@@ -1,11 +1,14 @@
 import type { KeyboardSnapshot } from "../types/KeyboardSnapshot"
+import type { KeyDown } from "../types/KeyDown"
 import { EMPTY_KEYBOARD_SNAPSHOT } from "./emptyKeyboardSnapshot"
 import { isAppleLike } from "./isAppleLike"
 import { reduceKeyboardEvent } from "./reduceKeyboardEvent"
+import { toKeyDown } from "./toKeyDown"
 
-export interface KeyboardHub {
-    /** The current immutable snapshot. Reads nothing from the DOM. */
-    readonly snapshot: () => KeyboardSnapshot
+/** One immutable value plus the store-tree invalidators that follow it. */
+export interface HubChannel<Value> {
+    /** The current value. Reads nothing from the DOM. */
+    readonly current: () => Value
     /**
      * Registers one store tree's invalidator. The returned cleanup removes only
      * that registration and is idempotent; it never detaches the hub.
@@ -13,6 +16,13 @@ export interface KeyboardHub {
     readonly subscribe: (invalidate: () => void) => () => void
     /** @internal Live invalidator registrations, for tests. */
     readonly invalidators: () => number
+}
+
+export interface KeyboardHub {
+    /** Pressed keys and locks. Unchanged by repeats. */
+    readonly keyboard: HubChannel<KeyboardSnapshot>
+    /** The most recent keydown, repeats included; `null` after a reset. */
+    readonly lastKeyDown: HubChannel<KeyDown | null>
     /** @internal Removes the native listeners. Tests only; no public teardown. */
     readonly detach: () => void
 }
@@ -21,55 +31,158 @@ interface Registration {
     readonly invalidate: () => void
 }
 
+interface Channel<Value> extends HubChannel<Value> {
+    /**
+     * Installs `next` and invalidates every registration if it differs from
+     * the current value. Collects failures into `failures` instead of throwing,
+     * so one channel's failing store cannot stop the other channel's delivery.
+     */
+    readonly publish: (next: Value, failures: unknown[]) => void
+}
+
+const createChannel = <Value>(initial: Value): Channel<Value> => {
+    const registrations = new Set<Registration>()
+    let value = initial
+    return {
+        current: () => value,
+        publish: (next, failures) => {
+            if (Object.is(next, value)) return
+            value = next
+            if (registrations.size === 0) return
+            for (const registration of [...registrations]) {
+                // Skip a registration removed by an earlier invalidation's
+                // subscriber; one added during delivery catches up on its own.
+                if (!registrations.has(registration)) continue
+                try {
+                    registration.invalidate()
+                } catch (error) {
+                    failures.push(error)
+                }
+            }
+        },
+        subscribe: invalidate => {
+            const registration: Registration = { invalidate }
+            registrations.add(registration)
+            return () => {
+                registrations.delete(registration)
+            }
+        },
+        invalidators: () => registrations.size,
+    }
+}
+
+/**
+ * Events applied per native event, counting the native one and every event a
+ * subscriber dispatches while it is being delivered.
+ */
+const MAX_EVENTS_PER_DISPATCH = 64
+
+const rethrow = (failures: readonly unknown[]) => {
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1)
+        throw new AggregateError(failures, "Keyboard invalidation failed")
+}
+
 /**
  * One persistent native listener set for a Document: `keydown`/`keyup` and
- * `visibilitychange` on the document, `blur` on its window. The hub owns the
- * current snapshot and keeps tracking with zero registrations; in that state
- * an event only replaces the snapshot and does no Valdres work.
+ * `visibilitychange` on the document, `blur` on its window. The hub owns two
+ * channels and keeps tracking with zero registrations; in that state an event
+ * only replaces values and does no Valdres work.
+ *
+ * `keyboard` changes only when pressed keys or locks change, so a repeat costs
+ * its subscribers nothing. `lastKeyDown` changes on every observed keydown,
+ * repeats included, so only stores that read it pay for repeats.
+ *
+ * A store reading both is invalidated once per channel, so it settles twice per
+ * event and briefly holds one channel's new value with the other's old one.
+ * `lastKeyDown` is delivered first, for keydowns and resets alike, so that
+ * in-between state is always "this keydown with the keys held just before it" —
+ * a moment that actually happened — never a new key state paired with a stale
+ * keydown. A selector such as "Shift held and ArrowDown was the last keydown"
+ * therefore cannot fire for an ArrowDown that happened before Shift.
+ *
+ * Events are processed one at a time. An event dispatched from inside a
+ * subscriber (a nested keydown, or a blur caused by moving focus) is queued and
+ * applied after the current event has reached both channels, so the channels
+ * never disagree about which event came last and `sequence` follows dispatch
+ * order.
  *
  * Every registration is invalidated after each change, in registration order,
- * even when an earlier one throws. Failures are rethrown once delivery is
- * complete — the exact error when there is one, an `AggregateError` otherwise —
- * so the platform reports them from the native listener as it would for any
- * throwing listener.
+ * even when an earlier one throws. Failures are rethrown once the event and
+ * anything queued behind it are delivered — the exact error when there is one,
+ * an `AggregateError` otherwise — so the platform reports them from the native
+ * listener as it would for any throwing listener.
  */
 export const createKeyboardHub = (doc: Document): KeyboardHub => {
     const view = doc.defaultView
-    const registrations = new Set<Registration>()
-    let snapshot = EMPTY_KEYBOARD_SNAPSHOT
+    const keyboard = createChannel<KeyboardSnapshot>(EMPTY_KEYBOARD_SNAPSHOT)
+    const lastKeyDown = createChannel<KeyDown | null>(null)
+    let sequence = 0
 
-    const publish = (next: KeyboardSnapshot) => {
-        if (next === snapshot) return
-        snapshot = next
-        if (registrations.size === 0) return
-        const failures: unknown[] = []
-        for (const registration of [...registrations]) {
-            // Skip a registration removed by an earlier invalidation's
-            // subscriber; one added during delivery catches up on its own.
-            if (!registrations.has(registration)) continue
-            try {
-                registration.invalidate()
-            } catch (error) {
-                failures.push(error)
-            }
+    type Job = (failures: unknown[]) => void
+    const queue: Job[] = []
+    let delivering = false
+    const run = (job: Job) => {
+        if (delivering) {
+            queue.push(job)
+            return
         }
-        if (failures.length === 1) throw failures[0]
-        if (failures.length > 1)
-            throw new AggregateError(failures, "Keyboard invalidation failed")
+        delivering = true
+        const failures: unknown[] = []
+        try {
+            let processed = 0
+            for (let next: Job | undefined = job; next; next = queue.shift()) {
+                // Subscribers that keep dispatching events would otherwise
+                // drain forever: nested events are queued, so they never nest
+                // deep enough for Valdres's own delivery limit to stop them.
+                if (++processed > MAX_EVENTS_PER_DISPATCH) {
+                    failures.push(
+                        new RangeError(
+                            `More than ${MAX_EVENTS_PER_DISPATCH} keyboard events were dispatched from subscribers during one native event; the rest were dropped`,
+                        ),
+                    )
+                    break
+                }
+                // One job failing outside channel delivery must not drop the
+                // events queued behind it or the failures already collected.
+                try {
+                    next(failures)
+                } catch (error) {
+                    failures.push(error)
+                }
+            }
+        } finally {
+            delivering = false
+            queue.length = 0
+        }
+        rethrow(failures)
     }
 
     const onKey = (event: Event) =>
-        publish(
-            reduceKeyboardEvent(
-                snapshot,
-                event as KeyboardEvent,
+        run(failures => {
+            const keyEvent = event as KeyboardEvent
+            // Reduce first: if the event is malformed, nothing is published.
+            const nextKeyboard = reduceKeyboardEvent(
+                keyboard.current(),
+                keyEvent,
                 isAppleLike(),
-            ),
-        )
-    // Focus loss can swallow keyups, so what is still held is unknown.
-    const onBlur = () => publish(EMPTY_KEYBOARD_SNAPSHOT)
+            )
+            const keyDown = toKeyDown(keyEvent, sequence + 1)
+            if (keyDown !== null) {
+                sequence = keyDown.sequence
+                lastKeyDown.publish(keyDown, failures)
+            }
+            keyboard.publish(nextKeyboard, failures)
+        })
+    // Focus loss can swallow keyups, so what is still held is unknown, and a
+    // keydown from before the reset should not be acted on afterwards.
+    const reset = () =>
+        run(failures => {
+            lastKeyDown.publish(null, failures)
+            keyboard.publish(EMPTY_KEYBOARD_SNAPSHOT, failures)
+        })
     const onVisibilityChange = () => {
-        if (doc.visibilityState === "hidden") publish(EMPTY_KEYBOARD_SNAPSHOT)
+        if (doc.visibilityState === "hidden") reset()
     }
 
     const attached: [EventTarget, string, (event: Event) => void][] = []
@@ -89,22 +202,11 @@ export const createKeyboardHub = (doc: Document): KeyboardHub => {
         attach(doc, "keydown", onKey)
         attach(doc, "keyup", onKey)
         attach(doc, "visibilitychange", onVisibilityChange)
-        if (view) attach(view, "blur", onBlur)
+        if (view) attach(view, "blur", reset)
     } catch (error) {
         detach()
         throw error
     }
 
-    return {
-        snapshot: () => snapshot,
-        subscribe: invalidate => {
-            const registration: Registration = { invalidate }
-            registrations.add(registration)
-            return () => {
-                registrations.delete(registration)
-            }
-        },
-        invalidators: () => registrations.size,
-        detach,
-    }
+    return { keyboard, lastKeyDown, detach }
 }

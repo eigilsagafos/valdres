@@ -9,11 +9,13 @@ import {
     isCodePressedSelector,
     isKeyPressedSelector,
     keyboardAtom,
+    lastKeyDownSelector,
     modifierSelector,
     pressedCodesSelector,
     pressedKeysSelector,
     pressedKeyValuesSelector,
     toggleKeySelector,
+    type KeyDown,
     type PressedKey,
 } from "../src/index"
 import {
@@ -283,5 +285,35 @@ describe("events from focused elements", () => {
         } finally {
             input.remove()
         }
+    })
+})
+
+describe("lastKeyDownSelector", () => {
+    test("reports the code's keydowns and repeats; null once another key goes down", () => {
+        const arrow = record<KeyDown | null>(lastKeyDownSelector("ArrowDown"))
+        kb.down("ArrowDown", "ArrowDown")
+        kb.down("ArrowDown", "ArrowDown", { repeat: true })
+        kb.down("ShiftLeft", "Shift")
+        kb.down("ArrowDown", "ArrowDown")
+        kb.up("ArrowDown", "ArrowDown")
+        expect(
+            arrow.seen.map(keyDown =>
+                keyDown === null ? null : [keyDown.repeat, keyDown.sequence],
+            ),
+        ).toEqual([[false, 1], [true, 2], null, [false, 4]])
+        arrow.stop()
+    })
+
+    test("keydowns of other keys do not notify while it is already null", () => {
+        const arrow = record<KeyDown | null>(lastKeyDownSelector("ArrowDown"))
+        kb.down("KeyA", "a")
+        kb.down("KeyA", "a", { repeat: true })
+        kb.down("KeyB", "b")
+        expect(arrow.seen).toEqual([])
+        arrow.stop()
+    })
+
+    test("returns the same selector for the same code", () => {
+        expect(lastKeyDownSelector("KeyA")).toBe(lastKeyDownSelector("KeyA"))
     })
 })

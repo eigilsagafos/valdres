@@ -9,6 +9,8 @@ import { store } from "valdres"
 import {
     activateKeyboard,
     keyboardAtom,
+    lastKeyDownAtom,
+    lastKeyDownSelector,
     modifierSelector,
     pressedCodesSelector,
     pressedKeysSelector,
@@ -32,6 +34,12 @@ assert.deepEqual(app.get(pressedKeysSelector), [])
 assert.deepEqual(app.get(pressedCodesSelector), [])
 assert.equal(app.get(modifierSelector("shift")), false)
 assert.equal(app.get(toggleKeySelector("CapsLock")), null)
+assert.equal(app.get(lastKeyDownAtom), null)
+assert.equal(app.get(lastKeyDownSelector("KeyA")), null)
+const stopKeyDowns = app.sub(lastKeyDownAtom, () => {
+    throw new Error("a DOM-less source must never notify")
+})
+stopKeyDowns()
 
 // Explicit activation is a no-op without a document.
 activateKeyboard()

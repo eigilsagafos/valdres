@@ -206,6 +206,9 @@ assert.deepEqual(empty, { pressed: [], locks: { CapsLock: null, NumLock: null, S
 assert.ok(Object.isFrozen(empty))
 assert.deepEqual(app.get(kb.pressedCodesSelector), [])
 assert.equal(app.get(kb.toggleKeySelector("CapsLock")), null)
+assert.equal(app.get(kb.lastKeyDownAtom), null)
+assert.equal(app.get(kb.lastKeyDownSelector("KeyA")), null)
+assert.throws(() => app.set(kb.lastKeyDownAtom, null), TypeError)
 kb.activateKeyboard()
 assert.equal(app.get(kb.keyboardAtom), empty)
 const stop = app.sub(kb.keyboardAtom, () => { throw new Error("must not notify") })
@@ -267,8 +270,17 @@ assert.equal(total(), 4)
 key("keydown", "KeyA", "a", { caps: true })
 assert.deepEqual(seen, ["first:KeyA", "second:KeyA"])
 assert.equal(first.get(kb.toggleKeySelector("CapsLock")), true)
+const keyDowns = []
+const stopKeyDowns = second.sub(kb.lastKeyDownSelector("KeyA"), () => {
+    const keyDown = second.get(kb.lastKeyDownSelector("KeyA"))
+    keyDowns.push(keyDown && keyDown.repeat + ":" + keyDown.sequence)
+})
+assert.equal(total(), 4, "lastKeyDown shares the hub")
 key("keydown", "KeyA", "a", { repeat: true })
-assert.equal(seen.length, 2, "repeat notified")
+assert.equal(seen.length, 2, "repeat notified key-state subscribers")
+assert.equal(keyDowns.length, 1, "repeat must reach lastKeyDown subscribers")
+assert.equal(keyDowns[0].startsWith("true:"), true)
+stopKeyDowns()
 
 stopFirst(); stopSecond()
 assert.equal(total(), 4, "unsubscribe detached the hub")
@@ -312,7 +324,7 @@ await writeFile(
 await writeFile(
     join(consumer, "types.ts"),
     `import { store, type ExternalAtom } from "valdres"
-import { activateKeyboard, keyboardAtom, pressedKeysSelector, pressedCodesSelector, toggleKeySelector, modifierSelector, isCodePressedSelector, type KeyboardSnapshot, type PressedKey, type KeyboardCode } from "@valdres/browser-keyboard"
+import { activateKeyboard, keyboardAtom, lastKeyDownAtom, lastKeyDownSelector, pressedKeysSelector, pressedCodesSelector, toggleKeySelector, modifierSelector, isCodePressedSelector, type KeyboardSnapshot, type KeyDown, type PressedKey, type KeyboardCode } from "@valdres/browser-keyboard"
 const app = store()
 const source: ExternalAtom<KeyboardSnapshot> = keyboardAtom
 const pressed: readonly PressedKey[] = app.get(pressedKeysSelector)
@@ -326,7 +338,11 @@ app.set(keyboardAtom, app.get(keyboardAtom))
 // @ts-expect-error packed declarations keep derived reads read-only
 app.set(toggleKeySelector("CapsLock"), true)
 const started: void = activateKeyboard()
-void [source, pressed, codes, caps, shift, held, started]
+const lastKeyDown: ExternalAtom<KeyDown | null> = lastKeyDownAtom
+const arrow: KeyDown | null = app.get(lastKeyDownSelector("ArrowDown"))
+// @ts-expect-error packed declarations keep the last keydown read-only
+app.set(lastKeyDownAtom, null)
+void [source, pressed, codes, caps, shift, held, started, lastKeyDown, arrow]
 `,
 )
 run(
