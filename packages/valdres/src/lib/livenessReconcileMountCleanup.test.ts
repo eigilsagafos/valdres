@@ -49,8 +49,8 @@ test("a cyclic region's onMount cleanup fires when its only subscriber leaves", 
     // x live → reads tracked → tracked mounted.
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
-    expect(getStoreData(s).liveDependentCount.get(tracked) ?? 0).toBe(1)
-    expect(getStoreData(s).cycleRiskInClosure.has(x)).toBe(false)
+    expect(getStoreData(s).graphNodes.get(tracked)?.live ?? 0).toBe(1)
+    expect(getStoreData(s).graphNodes.get(x)?.cycleRisk === true).toBe(false)
 
     // Close the cycle: ay odd makes y read x while x still reads y.
     s.set(ay, 1)
@@ -58,8 +58,8 @@ test("a cyclic region's onMount cleanup fires when its only subscriber leaves", 
     expect(getStoreData(s).stateDependencies.get(y)).toContain(x)
     // y (materialized before x) now points forward to x. That order-violating
     // edge marks the whole x↔y closure as requiring exact cycle detection.
-    expect(getStoreData(s).cycleRiskInClosure.has(x)).toBe(true)
-    expect(getStoreData(s).cycleRiskInClosure.has(y)).toBe(true)
+    expect(getStoreData(s).graphNodes.get(x)?.cycleRisk === true).toBe(true)
+    expect(getStoreData(s).graphNodes.get(y)?.cycleRisk === true).toBe(true)
     // tracked is still read by the (still-subscribed) x.
     expect(cleanups).toBe(0)
 
@@ -67,9 +67,9 @@ test("a cyclic region's onMount cleanup fires when its only subscriber leaves", 
     // (each keeps the other's count > 0), so the unsubscribe reconcile must mark
     // both non-live AND unmount `tracked`, firing its cleanup.
     unsub()
-    expect(getStoreData(s).liveDependentCount.get(tracked) ?? 0).toBe(0)
-    expect(getStoreData(s).liveDependentCount.get(x) ?? 0).toBe(0)
-    expect(getStoreData(s).liveDependentCount.get(y) ?? 0).toBe(0)
+    expect(getStoreData(s).graphNodes.get(tracked)?.live ?? 0).toBe(0)
+    expect(getStoreData(s).graphNodes.get(x)?.live ?? 0).toBe(0)
+    expect(getStoreData(s).graphNodes.get(y)?.live ?? 0).toBe(0)
     // The actual resource release: every mount was cleaned up — no leaked
     // subscription left running on the collected cyclic group.
     expect(cleanups).toBe(mounts)
@@ -104,16 +104,16 @@ test("a nested cyclic region is collected when its subscribed parent leaves", ()
 
     expect(getStoreData(s).stateDependencies.get(x)).toContain(y)
     expect(getStoreData(s).stateDependencies.get(y)).toContain(x)
-    expect(getStoreData(s).liveDependentCount.get(x)).toBe(2)
+    expect(getStoreData(s).graphNodes.get(x)?.live).toBe(2)
 
     // Removing root decrements x from 2 -> 1 and stops the incremental walk at
     // the nested x↔y cycle. The cycle-risk marker forces an exact reconcile,
     // which collects the cycle and releases its resource.
     unsubscribeRoot()
 
-    expect(getStoreData(s).liveDependentCount.get(x) ?? 0).toBe(0)
-    expect(getStoreData(s).liveDependentCount.get(y) ?? 0).toBe(0)
-    expect(getStoreData(s).liveDependentCount.get(tracked) ?? 0).toBe(0)
+    expect(getStoreData(s).graphNodes.get(x)?.live ?? 0).toBe(0)
+    expect(getStoreData(s).graphNodes.get(y)?.live ?? 0).toBe(0)
+    expect(getStoreData(s).graphNodes.get(tracked)?.live ?? 0).toBe(0)
     expect(cleanups).toBe(1)
 })
 
@@ -181,20 +181,21 @@ test("acyclic dependency removals skip the exact cycle DFS", async () => {
     s.get(left)
     s.get(right)
     const unsubscribe = s.sub(root, () => {}, false)
-    expect(getStoreData(s).cycleRiskInClosure.has(dynamic)).toBe(false)
+    expect(getStoreData(s).graphNodes.get(dynamic)?.cycleRisk === true).toBe(false)
 
-    const proofs = getStoreData(s).acyclicDependencyVersion
-    const writeProof = proofs.set.bind(proofs)
-    let proofWrites = 0
-    proofs.set = (key: WeakKey, version: number) => {
-        proofWrites++
-        return writeProof(key, version)
-    }
+    // The acyclic proof is now a field on the per-state graph record, so
+    // snapshot it for every state in the region instead of spying on a map.
+    const nodes = getStoreData(s).graphNodes
+    const region = [chooseLeft, source, left, right, dynamic, root]
+    const before = region.map(state => nodes.get(state)?.acyclicAt ?? -1)
 
     // This removes dynamic→left and adds dynamic→right. The removal arm is set,
-    // but the unmarked seed closure proves no exact cycle scan is necessary.
+    // but the unmarked seed closure proves no exact cycle scan is necessary —
+    // so the DFS never runs, and no state gains a proof.
     s.set(chooseLeft, false)
-    expect(proofWrites).toBe(0)
+    expect(region.map(state => nodes.get(state)?.acyclicAt ?? -1)).toEqual(
+        before,
+    )
 
     unsubscribe()
     await Promise.resolve()
