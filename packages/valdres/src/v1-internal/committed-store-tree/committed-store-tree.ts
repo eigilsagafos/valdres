@@ -2784,16 +2784,23 @@ class CommittedStoreTreeHost
                 const graphStayedCurrent =
                     graphVersionBeforeDependencies ===
                     scope.getSelectorGraphVersion()
-                if (session !== undefined && graphStayedCurrent) {
-                    // Reuse the dynamically active session only when this
-                    // dependency walk published nothing. Its publication is then
-                    // attributable without changing base settlement ordering.
-                    scope.serve(selector, session)
-                } else {
-                    scope.serve(
-                        selector,
-                        new SelectorEvaluationSession<AnyState>(),
-                    )
+                // Reuse the dynamically active session only when this
+                // dependency walk published nothing. Its publication is then
+                // attributable without changing base settlement ordering.
+                const settleSession =
+                    session !== undefined && graphStayedCurrent
+                        ? session
+                        : new SelectorEvaluationSession<AnyState>()
+                try {
+                    scope.serve(selector, settleSession)
+                } catch (error) {
+                    // A reaction's commit must settle this branch before its
+                    // boundary publishes. The escaped failure becomes this
+                    // selector's error outcome, so dependents settle against
+                    // it rather than serving values computed before the write.
+                    if (this.#reactionDepth === 0) throw error
+                    this.#reactionFailure ??= { error }
+                    scope.publishFailedSelector(selector, error, settleSession)
                 }
             }
             this.#updatePropagationStatus(

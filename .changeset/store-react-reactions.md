@@ -16,6 +16,9 @@ input together with the result it caused.
   same settlement, plus the reaction's own staged writes.
 - A reaction that throws or returns a promise discards only its own writes;
   failures are reported after delivery as `SubscriberNotificationError` causes.
+  If recomputing a selector fails inside a reaction's commit, that selector
+  serves the failure as its error, and its dependents fail with it, until one of
+  its inputs changes. Subscribers never see a value computed before the write.
 - Reactions run in at most 64 rounds per settlement; a settlement that needs
   more reports the new `ReactionLimitError` (`VALDRES_REACTION_LIMIT`).
 - `valdres/inspect` records each reaction's commit as a commit span with

@@ -36,11 +36,23 @@ ordinary notification.
   pending work survives the boundary.
 - **Failures.** A throw, a thenable result, or a staging failure aborts only
   that reaction's draft. Earlier commits and the initiating update remain. A
-  failure after apply keeps the writes and propagates them before delivery.
-  Thrown values are inspected under transaction-result guards. Failures are
-  reported after the one delivery as `SubscriberNotificationError` causes, ahead
-  of subscriber throws. Its frozen `phase: "notifying"` names the reporting
-  boundary, not the moment each cause occurred.
+  failure after apply keeps the writes and propagates them before delivery. If a
+  selector's recomputation escapes the evaluator while a reaction's commit
+  settles it, the escaped error becomes that selector's error outcome. The
+  outcome keeps the selector's previous dependencies. Dependents settle against
+  it in the same boundary and record the dependency edge, and the failure stays
+  current until one of the selector's inputs changes, like any selector error.
+  Re-evaluating on the next read instead would re-run the failed selector. It
+  would also let a dependent read during a persistent fault cache a getter error
+  with no edge to the failed selector: the evaluator records no edge for a read
+  that throws. That error would outlive the fault. Two consequences follow.
+  Recovery follows the failed selector's previous dependencies, and a
+  transaction's `tx.get`, which evaluates against the draft, can compute the
+  selector while `store.get` serves the failure. Thrown values are inspected
+  under transaction-result guards. Failures are reported after the one delivery
+  as `SubscriberNotificationError` causes, ahead of subscriber throws. Its
+  frozen `phase: "notifying"` names the reporting boundary, not the moment each
+  cause occurred.
 - **Capabilities.** A reaction has transaction-callback capabilities only.
   Captured Store work, unsubscribe, and same-domain source invalidation stay
   rejected.
@@ -58,16 +70,23 @@ not tree-shaken. Measured on pinned Bun 1.4.0 against clean `main` (`a18963f9`):
 | -------------------------------------- | --------------- | -------------------- | ------------- |
 | `atom-selector-store` (core-retaining) | 64,767 / 17,314 | 66,270 / 17,820      | +1,503 / +506 |
 
-`atom-selector-store` is now 551 gzip bytes over its immutable 2% ceiling
-(17,269). The reviewed core-retaining allowance therefore rises from 77 to 551,
-the new exact no-cushion maximum overage. The `dist`, `packed`, `collection`,
-`query`, `query-development`, `all-exports`, `inspect`, and `external-atom`
-budgets move to the measured values. The immutable ordinary baselines are not
-regenerated. Three byte-identical pinned-Bun builds certify the runtime digest.
+`atom-selector-store` was then 551 gzip bytes over its immutable 2% ceiling
+(17,269), so the reviewed core-retaining allowance first rose from 77 to 551,
+the exact no-cushion maximum overage at that point. The `dist`, `packed`,
+`collection`, `query`, `query-development`, `all-exports`, `inspect`, and
+`external-atom` budgets move to the measured values. The immutable ordinary
+baselines are not regenerated. Three byte-identical pinned-Bun builds certify
+the runtime digest.
 
-The raw ceiling for `atom-selector-store` is 66,284, and raw has no additive
-allowance. This change leaves a 14-byte raw margin, so further core growth on
-that fixture needs a raw-policy decision.
+The recomputation-failure fix (A2) adds 325 raw and 87 gzip bytes:
+`atom-selector-store` becomes 66,595 raw and 17,907 gzip. The raw ceiling for
+`atom-selector-store` is 66,284, and raw had no additive allowance, so this
+change adds a reviewed `coreRetainingRawAllowance` of 311. That value is the
+exact no-cushion raw overage, and it applies to the core-retaining fixtures the
+same way the gzip allowance does. The gzip allowance rises from 551 to 638, the
+new exact overage. The dependent feature budgets move to the measured values.
+`atom`, `family`, `equality`, and `adapter-internals` are unchanged, and the
+immutable ordinary baselines are not regenerated.
 
 ## Validation
 
@@ -81,3 +100,10 @@ fixed with regressions:
 
 It also suggested exception-safe cleanup of pending state for the internal trace
 seam; that is done too.
+
+A focused revalidation then found that a selector recomputation failure inside a
+reaction's commit could still leave cached descendants stale. The
+failure-outcome contract above fixes it. Independent validation closed A2 with
+notes. Two behaviours are unchanged and out of scope: a first-time dependency
+failure is swallowed without an edge, and paths without a reaction still serve a
+stale descendant after an escaped failure.

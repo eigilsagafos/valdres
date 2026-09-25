@@ -265,7 +265,10 @@ stop()
   its own staged writes. Other reactions still run, and earlier commits stay.
   Failures are reported after subscribers run, as causes of a
   `SubscriberNotificationError`. A failure after its writes were applied does
-  not undo them; derived state still updates before subscribers are notified.
+  not undo them; derived state still updates before subscribers are notified. If
+  recomputing a selector fails at that point, the selector serves that failure
+  as its error, and its dependents fail with it, until one of its inputs
+  changes. Subscribers never see a value computed before the write.
 
 A reaction is not a database transaction around the whole settlement. It cannot
 undo work outside Valdres. Keep I/O, DOM work, and anything that can

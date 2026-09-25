@@ -5,8 +5,8 @@
  * npm-produced tarball here so dist, packed-file, and consumer-fixture sizes
  * are all measurements of the artifact that every other validator sees.
  *
- * Ordinary-control baselines are immutable. Feature budgets and the one
- * additive core gzip allowance are reviewed architecture decisions, never a
+ * Ordinary-control baselines are immutable. Feature budgets and the additive
+ * core raw and gzip allowances are reviewed architecture decisions, never a
  * command-driven ratchet.
  */
 import { mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises"
@@ -51,6 +51,7 @@ interface SizeBaseline {
     }
     readonly policy: {
         readonly ordinaryTolerancePercent: number
+        readonly coreRetainingRawAllowance: number
         readonly coreRetainingGzipAllowance:
             | number
             | typeof PENDING_CERTIFICATION
@@ -334,6 +335,17 @@ async function checkAgainstBaseline(
         )
     }
 
+    const rawAllowance = baseline.policy?.coreRetainingRawAllowance
+    if (
+        typeof rawAllowance !== "number" ||
+        !Number.isInteger(rawAllowance) ||
+        rawAllowance < 0
+    ) {
+        failures.push(
+            "core-retaining raw allowance must be a nonnegative integer",
+        )
+    }
+
     const tolerance = baseline.policy?.ordinaryTolerancePercent
     if (tolerance !== 2) {
         failures.push(
@@ -354,11 +366,10 @@ async function checkAgainstBaseline(
             const toleranceCeiling = Math.ceil(
                 (base[metric] * (100 + ordinaryTolerance)) / 100,
             )
+            const metricAllowance = metric === "gzip" ? allowance : rawAllowance
             const additive =
-                metric === "gzip" &&
-                coreRetaining.has(label) &&
-                typeof allowance === "number"
-                    ? allowance
+                coreRetaining.has(label) && typeof metricAllowance === "number"
+                    ? metricAllowance
                     : 0
             const ceiling = toleranceCeiling + additive
             const delta = size[metric] - base[metric]

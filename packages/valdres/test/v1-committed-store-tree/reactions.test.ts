@@ -15,6 +15,11 @@ import {
     type RootTransaction,
 } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
 import { createInternalExternalAtom } from "../../src/v1-internal/committed-store-tree/external-atom"
+import {
+    SelectorDependencyError,
+    SelectorGetterError,
+} from "../../src/v1-internal/selector-evaluator/errors"
+import { evaluateSelector } from "../../src/v1-internal/selector-evaluator/evaluate"
 
 const thrownBy = (operation: () => unknown): unknown => {
     try {
@@ -960,6 +965,331 @@ describe("Store reactions: failures and limits", () => {
             committed: true,
         })
         expect(tree.get(external)).toBe(1)
+    })
+})
+
+/*
+ * An escaping recomputation failure inside a reaction's commit (injected
+ * through the internal evaluation seam before the evaluator runs, or after it
+ * returns but before its proposal is installed) becomes the failed selector's
+ * error outcome. Its previous dependencies stay, its dependents settle against
+ * it in the same boundary, and nothing computed before the write is served as
+ * current. Like any selector error outcome, it stays current until one of the
+ * selector's own inputs changes.
+ */
+type Fault =
+    | "before evaluation"
+    | "after evaluation"
+    | "instrumentation"
+    | "selector throw"
+
+const recomputation = (external: boolean, fault: Fault) => {
+    const domain = createCommittedStoreTreeDomain()
+    const cause = new Error(fault)
+    const observerFailure = new Error("ordinary observer")
+    let inReaction = false
+    let armed = false
+    let injected = 0
+    let derivedRuns = 0
+    const finishes: boolean[] = []
+    const tree = domain.createStoreTree(
+        undefined,
+        Object.assign(
+            (code: number, detail?: unknown) => {
+                if (code === 3) inReaction = true
+                if (code === 4) {
+                    inReaction = false
+                    finishes.push(detail as boolean)
+                }
+                if (
+                    code === 2 &&
+                    inReaction &&
+                    armed &&
+                    fault === "instrumentation"
+                ) {
+                    armed = false
+                    injected++
+                    throw cause
+                }
+            },
+            {
+                evaluate: ((...args: Parameters<typeof evaluateSelector>) => {
+                    if (
+                        inReaction &&
+                        armed &&
+                        args[0].name === "derived" &&
+                        (fault === "before evaluation" ||
+                            fault === "after evaluation")
+                    ) {
+                        armed = false
+                        injected++
+                        if (fault === "after evaluation")
+                            evaluateSelector(...args)
+                        throw cause
+                    }
+                    return evaluateSelector(...args)
+                }) as typeof evaluateSelector,
+            },
+        ),
+    )
+    let value = 0
+    let invalidate = () => {}
+    const input = external
+        ? createInternalExternalAtom(domain, {
+              getSnapshot: () => value,
+              subscribe(next) {
+                  invalidate = next
+                  return () => {}
+              },
+          })
+        : domain.atom(0)
+    const written = domain.atom(0)
+    const neighbor = domain.atom(0)
+    const unrelated = domain.atom(0)
+    const derived = domain.selector(
+        get => {
+            derivedRuns++
+            const next = get(written) * 10
+            if (fault === "selector throw" && armed && next === 10) {
+                armed = false
+                injected++
+                throw cause
+            }
+            return next
+        },
+        { name: "derived" },
+    )
+    const combined = domain.selector(get => get(derived) + 1, {
+        name: "combined",
+    })
+    const read = <Value>(
+        state: Parameters<typeof tree.get<Value>>[0],
+    ): unknown => {
+        try {
+            return tree.get(state)
+        } catch (error) {
+            return error
+        }
+    }
+    // Pre-materialize and subscribe to the whole downstream chain.
+    expect(tree.get(combined)).toBe(1)
+    const observations: unknown[][] = []
+    const calls = { written: 0, derived: 0, combined: 0 }
+    let firstObservation = true
+    tree.sub(input, () => {
+        // Read the cached downstream selector first: reading its upstream
+        // first would repair a dirty leaf and hide a stale descendant.
+        const end = read(combined)
+        observations.push([
+            tree.get(input),
+            tree.get(written),
+            read(derived),
+            end,
+            tree.get(neighbor),
+        ])
+        if (firstObservation) {
+            firstObservation = false
+            throw observerFailure
+        }
+    })
+    tree.sub(written, () => void calls.written++)
+    tree.sub(derived, () => void calls.derived++)
+    tree.sub(combined, () => void calls.combined++)
+    tree.react(input, tx =>
+        tx.set(written, tx.get(input) === 2 ? 1 : tx.get(input)),
+    )
+    let neighborRuns = 0
+    tree.react(input, tx => {
+        neighborRuns++
+        tx.set(neighbor, tx.get(input) + 100)
+    })
+    const publish = (next: number) => {
+        if (external) {
+            value = next
+            invalidate()
+        } else tree.set(input as ReturnType<typeof domain.atom<number>>, next)
+    }
+    return {
+        tree,
+        cause,
+        observerFailure,
+        observations,
+        calls,
+        finishes,
+        publish,
+        unrelated,
+        arm: () => {
+            armed = true
+            derivedRuns = 0
+        },
+        get injected() {
+            return injected
+        },
+        get derivedRuns() {
+            return derivedRuns
+        },
+        get neighborRuns() {
+            return neighborRuns
+        },
+    }
+}
+
+const expectFailedBranch = (
+    observation: unknown[] | undefined,
+    cause: Error,
+    head: readonly [number, number],
+    neighbor: number,
+) => {
+    const [input, written, derived, combined, neighborValue] = observation!
+    expect([input, written, neighborValue]).toEqual([...head, neighbor])
+    expect(derived).toBe(cause)
+    expect(combined).toBeInstanceOf(SelectorGetterError)
+    const dependencyError = (combined as SelectorGetterError).cause
+    expect(dependencyError).toBeInstanceOf(SelectorDependencyError)
+    expect((dependencyError as SelectorDependencyError).cause).toBe(cause)
+}
+
+describe("Store reactions: selector recomputation failures", () => {
+    for (const external of [false, true])
+        for (const fault of ["before evaluation", "after evaluation"] as const)
+            test(`${external ? "external" : "owned"} trigger, failure ${fault}: the failed branch publishes a coherent failure`, () => {
+                const r = recomputation(external, fault)
+                r.arm()
+
+                const error = thrownBy(() => r.publish(1))
+
+                expect(r.injected).toBe(1)
+                // Exact reporting: the reaction cause, then the observer's.
+                expect(error).toBeInstanceOf(SubscriberNotificationError)
+                expect(error).toMatchObject({
+                    causes: [r.cause, r.observerFailure],
+                    committed: true,
+                    source: external
+                        ? "external-invalidation"
+                        : "owned-mutation",
+                })
+                expect(r.finishes).toEqual([true, false])
+                expect(r.neighborRuns).toBe(1)
+                // No value computed before the write is served as current,
+                // and every affected subscriber is notified once.
+                expect(r.observations).toHaveLength(1)
+                expectFailedBranch(r.observations[0], r.cause, [1, 1], 101)
+                expect(r.calls).toEqual({ written: 1, derived: 1, combined: 1 })
+                // The failed selector is not re-run within the boundary.
+                expect(r.derivedRuns).toBe(fault === "after evaluation" ? 1 : 0)
+
+                // Unrelated work notifies nothing and keeps the failure.
+                r.tree.set(r.unrelated, 1)
+                expect(r.observations).toHaveLength(1)
+                expect(r.tree.get(r.unrelated)).toBe(1)
+                // An equal write leaves the failed selector's inputs unchanged,
+                // so its failure outcome remains current and coherent.
+                r.publish(2)
+                expectFailedBranch(r.observations[1], r.cause, [2, 1], 102)
+                expect(r.calls).toEqual({ written: 1, derived: 1, combined: 1 })
+                // A changed input re-evaluates the branch and recovers it.
+                r.publish(3)
+                expect(r.observations[2]).toEqual([3, 3, 30, 31, 103])
+                expect(r.calls).toEqual({ written: 2, derived: 2, combined: 2 })
+                expect(r.finishes).toEqual([
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                ])
+                expect(r.neighborRuns).toBe(3)
+            })
+
+    test("a persistent recomputation failure keeps dependency edges and recovers on the next input change", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const cause = new Error("persistent")
+        let failing = false
+        let derivedRuns = 0
+        const tree = domain.createStoreTree(
+            undefined,
+            Object.assign(() => {}, {
+                evaluate: ((...args: Parameters<typeof evaluateSelector>) => {
+                    if (failing && args[0].name === "derived") throw cause
+                    return evaluateSelector(...args)
+                }) as typeof evaluateSelector,
+            }),
+        )
+        const input = domain.atom(0)
+        const written = domain.atom(0)
+        const derived = domain.selector(
+            get => {
+                derivedRuns++
+                return get(written) * 10
+            },
+            { name: "derived" },
+        )
+        const combined = domain.selector(get => get(derived) + 1)
+        tree.sub(combined, () => undefined)
+        tree.react(input, tx => tx.set(written, tx.get(input)))
+        failing = true
+
+        expect(thrownBy(() => tree.set(input, 1))).toBeInstanceOf(
+            SubscriberNotificationError,
+        )
+        // Reads while the fault persists serve the published failure; they
+        // do not re-run the failed selector.
+        const runs = derivedRuns
+        expect(thrownBy(() => tree.get(derived))).toBe(cause)
+        expect(thrownBy(() => tree.get(combined))).toBeInstanceOf(
+            SelectorGetterError,
+        )
+        expect(derivedRuns).toBe(runs)
+
+        failing = false
+        tree.set(input, 2)
+        expect(tree.get(derived)).toBe(20)
+        expect(tree.get(combined)).toBe(21)
+    })
+
+    for (const external of [false, true])
+        test(`${external ? "external" : "owned"} trigger control: an instrumentation failure keeps coherent values`, () => {
+            const r = recomputation(external, "instrumentation")
+            r.arm()
+
+            const error = thrownBy(() => r.publish(1))
+
+            expect((error as SubscriberNotificationError).causes).toEqual([
+                r.cause,
+                r.observerFailure,
+            ])
+            r.tree.set(r.unrelated, 1)
+            r.publish(2)
+            r.publish(3)
+            expect(r.observations).toEqual([
+                [1, 1, 10, 11, 101],
+                [2, 1, 10, 11, 102],
+                [3, 3, 30, 31, 103],
+            ])
+            expect(r.calls).toEqual({ written: 2, derived: 2, combined: 2 })
+        })
+
+    test("control: an ordinary selector throw follows the same failure shape", () => {
+        const r = recomputation(false, "selector throw")
+        r.arm()
+
+        const error = thrownBy(() => r.publish(1))
+
+        // A selector's own error is its outcome, not a reaction failure.
+        expect((error as SubscriberNotificationError).causes).toEqual([
+            r.observerFailure,
+        ])
+        expect(r.finishes).toEqual([false, false])
+        const [, , derived, combined] = r.observations[0]!
+        expect(derived).toBeInstanceOf(SelectorGetterError)
+        expect((derived as SelectorGetterError).cause).toBe(r.cause)
+        expect(combined).toBeInstanceOf(SelectorGetterError)
+        r.publish(2)
+        expect(r.observations[1]![2]).toBeInstanceOf(SelectorGetterError)
+        r.publish(3)
+        expect(r.observations[2]).toEqual([3, 3, 30, 31, 103])
+        expect(r.calls).toEqual({ written: 2, derived: 2, combined: 2 })
     })
 })
 

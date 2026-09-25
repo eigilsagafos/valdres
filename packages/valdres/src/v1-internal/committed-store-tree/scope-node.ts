@@ -623,6 +623,32 @@ export class StoreScopeNode
         return this.coordinator.createOutcomeToken()
     }
 
+    /** Installs a failure that escaped evaluation as this selector's error
+     * outcome. Its previous dependencies stay, so a later change re-evaluates
+     * it; the new token reaches its subscribers and marks its dependents. */
+    publishFailedSelector(
+        selector: AnySelector,
+        error: unknown,
+        session: SelectorEvaluationSession<AnyState>,
+    ): void {
+        const dependencies =
+            this.#selectorRecords.get(selector)?.dependencies ??
+            EMPTY_DEPENDENCIES
+        this.#installSelectorProposal(
+            selector,
+            Object.freeze({
+                selector,
+                token: this.createOutcomeToken(),
+                outcome: Object.freeze({ kind: "error" as const, error }),
+                dependencies,
+                attemptedPrefix: Object.freeze(
+                    dependencies.map(dependency => dependency.node),
+                ),
+            }),
+            session,
+        )
+    }
+
     #installSelectorProposal(
         selector: AnySelector,
         proposal: SelectorEvaluationProposal<AnyState, OutcomeToken>,

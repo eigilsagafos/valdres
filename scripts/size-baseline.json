@@ -8,11 +8,12 @@
     "provenance": {
         "ordinaryBaselineCommit": "7c55be567457218fb597f9cd9658b1c71997fb83",
         "certificationBuildCount": 3,
-        "certifiedRuntimeBuildSha256": "0c99c1f791c91c5103881daada665b144a8003e392822d84d9e0d5defb0f2d01"
+        "certifiedRuntimeBuildSha256": "3e2547b617af395ed36ce2367853a66cad412e6bc0b2ccc2f04756b56fe645a2"
     },
     "policy": {
         "ordinaryTolerancePercent": 2,
-        "coreRetainingGzipAllowance": 551,
+        "coreRetainingRawAllowance": 311,
+        "coreRetainingGzipAllowance": 638,
         "coreRetainingFixtures": [
             "atom",
             "atom-selector-store",
@@ -44,37 +45,37 @@
     },
     "featureBudgets": {
         "dist": {
-            "raw": 363450,
-            "gzip": 107308
+            "raw": 364100,
+            "gzip": 107456
         },
         "packed": {
-            "raw": 513367,
-            "gzip": 136337
+            "raw": 514368,
+            "gzip": 136516
         },
         "fixtures": {
             "collection": {
-                "raw": 100198,
-                "gzip": 28194
+                "raw": 100523,
+                "gzip": 28279
             },
             "all-exports": {
-                "raw": 125391,
-                "gzip": 35524
+                "raw": 125716,
+                "gzip": 35614
             },
             "inspect": {
-                "raw": 104078,
-                "gzip": 27966
+                "raw": 104403,
+                "gzip": 28054
             },
             "query": {
-                "raw": 105953,
-                "gzip": 30014
+                "raw": 106278,
+                "gzip": 30098
             },
             "query-development": {
-                "raw": 105953,
-                "gzip": 30014
+                "raw": 106278,
+                "gzip": 30098
             },
             "external-atom": {
-                "raw": 87147,
-                "gzip": 23604
+                "raw": 87472,
+                "gzip": 23682
             }
         }
     }
