@@ -29,8 +29,16 @@ const runtime = globalThis.Bun
     ? `bun ${Bun.version}`
     : `node ${process.version}`
 
-// Heap after a full collection: what the published outcomes retain.
+// Heap after a full collection: what the published outcomes retain. On V8,
+// also the heap growth across a write during which nothing was collected,
+// which is what the write allocated (run with --max-semi-space-size=64 so no
+// scavenge interrupts it). JavaScriptCore exposes no allocation counter, so
+// Bun reports null.
 let retainedHeap
+let allocatedBy = write => {
+    write()
+    return null
+}
 if (globalThis.Bun) {
     const { heapSize } = await import("bun:jsc")
     retainedHeap = () => {
@@ -38,7 +46,7 @@ if (globalThis.Bun) {
         return heapSize()
     }
 } else {
-    const { setFlagsFromString } = await import("node:v8")
+    const { GCProfiler, setFlagsFromString } = await import("node:v8")
     const { runInNewContext } = await import("node:vm")
     setFlagsFromString("--expose-gc")
     const gc = runInNewContext("gc")
@@ -46,6 +54,20 @@ if (globalThis.Bun) {
         gc()
         gc()
         return process.memoryUsage().heapUsed
+    }
+    allocatedBy = write => {
+        gc()
+        const profiler = new GCProfiler()
+        profiler.start()
+        const before = process.memoryUsage().heapUsed
+        try {
+            write()
+        } catch (error) {
+            profiler.stop()
+            throw error
+        }
+        const after = process.memoryUsage().heapUsed
+        return profiler.stop().statistics.length === 0 ? after - before : null
     }
 }
 
@@ -72,8 +94,9 @@ const phase = (label, write) => {
         return realPrepare ? realPrepare(error, frames) : String(error)
     }
     let threw = null
+    let allocated = null
     try {
-        write()
+        allocated = allocatedBy(write)
     } catch (error) {
         threw = error?.code ?? String(error)
     } finally {
@@ -118,6 +141,7 @@ const phase = (label, write) => {
             distinctRootIdentities: roots.size,
             maxLibraryCauseDepth: read.maxDepth,
             sampleWrapperStackFrames: sampleFrames,
+            allocatedBytesDuringWrite: allocated,
             retainedHeapBytes: retainedHeap(),
             signature: read.signature,
         }),

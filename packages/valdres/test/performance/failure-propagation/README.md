@@ -22,9 +22,10 @@ build can run side by side.
 cd packages/valdres/test/performance/failure-propagation
 
 # Structural counts: wrappers created and sealed, stack materializations
-# during the write, reachable wrappers, cause depth and retained heap.
+# during the write, reachable wrappers, cause depth, retained heap and (V8
+# only, when no collection interrupts the write) bytes allocated.
 bun count.mjs /tmp/base-dist mixed 100 20
-node count.mjs /tmp/candidate-dist mixed 100 20
+node --max-semi-space-size=64 count.mjs /tmp/candidate-dist mixed 100 20
 
 # Uninstrumented timing, lanes interleaved in one process. `jotai` adds a
 # reference lane that rethrows the dependency's own error without wrappers.
