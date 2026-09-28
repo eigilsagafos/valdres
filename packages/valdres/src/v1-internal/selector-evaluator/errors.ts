@@ -1,5 +1,16 @@
 abstract class ImmutableSelectorError extends Error {
     abstract readonly code: string
+    // Only this module's constructors can give an object this private field,
+    // so neither `code` nor the prototype chain can forge the check below.
+    #selectorError = true
+
+    static is(value: unknown): boolean {
+        return (
+            typeof value === "object" &&
+            value !== null &&
+            #selectorError in value
+        )
+    }
 
     protected seal(): void {
         Object.freeze(this)
@@ -36,21 +47,23 @@ const sealPropagated = (
 }
 
 // V8 captures an Error's frames when it is constructed (about 2µs for the
-// default ten, most of a failing propagation there). A wrapper names its
-// selector or dependency as data and its cause chain ends in the thrown value,
-// which keeps its own stack, so there wrappers are constructed without frames.
-// A writable Error.stackTraceLimit is suspended around the constructor alone,
-// which runs no other code.
-export const propagatedError = <Wrapper>(
+// default ten, most of a failing propagation there). A wrapper around another
+// selector error names its selector or dependency as data, so there it is
+// constructed without frames; this returns undefined for every other wrapper,
+// which the caller constructs itself so its stack is unchanged. The first
+// selector error around a thrown value therefore keeps its frames, even when
+// the value is a primitive. A writable Error.stackTraceLimit is suspended
+// around the constructor alone, which runs no other code.
+export const framelessError = <Wrapper>(
     Type: new (subject: unknown, cause: unknown) => Wrapper,
     subject: unknown,
     cause: unknown,
-): Wrapper => {
+): Wrapper | undefined => {
     const limit =
-        "get" in probeOwnStack()
+        "get" in probeOwnStack() && ImmutableSelectorError.is(cause)
             ? Object.getOwnPropertyDescriptor(Error, "stackTraceLimit")
             : undefined
-    if (limit?.writable !== true) return new Type(subject, cause)
+    if (limit?.writable !== true) return undefined
     ;(Error as { stackTraceLimit?: unknown }).stackTraceLimit = 0
     try {
         return new Type(subject, cause)

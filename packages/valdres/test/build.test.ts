@@ -23,11 +23,13 @@ const temporaryDirectory = async (prefix: string): Promise<string> => {
 const run = (
     command: string[],
     cwd: string,
+    env?: Record<string, string>,
 ): { exitCode: number; stdout: string; stderr: string } => {
     const result = Bun.spawnSync(command, {
         cwd,
         stdout: "pipe",
         stderr: "pipe",
+        ...(env === undefined ? {} : { env: { ...process.env, ...env } }),
     })
     return {
         exitCode: result.exitCode,
@@ -430,4 +432,313 @@ test("collection-only bundles exclude the separately exported query engine", asy
             ),
         ).toBe(useQuery)
     }
+})
+
+// Each case runs in a fresh process because it reconfigures the global Error.
+// Four roots throw an Error, a string, a plain object and a forged wrapper;
+// each fails a selector chain, and a fallback reader catches the first chain's
+// dependency error.
+const STACK_PROBE = String.raw`
+const valdres = await import(process.env.VALDRES_ROOT_URL)
+const testCase = process.env.VALDRES_STACK_CASE
+const describeLimit = () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Error, "stackTraceLimit")
+    return descriptor === undefined
+        ? null
+        : { ...descriptor, get: descriptor.get?.name, set: descriptor.set?.name }
+}
+const access = { gets: 0, sets: 0 }
+const prepared = []
+if (testCase === "limit-7") Error.stackTraceLimit = 7
+if (testCase === "limit-missing") delete Error.stackTraceLimit
+if (testCase === "limit-readonly") {
+    Object.defineProperty(Error, "stackTraceLimit", {
+        value: 4,
+        writable: false,
+        enumerable: true,
+        configurable: true,
+    })
+}
+if (testCase === "limit-accessor") {
+    Object.defineProperty(Error, "stackTraceLimit", {
+        get: function limitGet() {
+            access.gets++
+            return 6
+        },
+        set: function limitSet() {
+            access.sets++
+        },
+        enumerable: true,
+        configurable: true,
+    })
+}
+if (testCase === "prepare-stack-trace") {
+    Error.prepareStackTrace = (error, frames) => {
+        prepared.push(error.name)
+        return "custom " + error.name + " " + frames.length
+    }
+}
+const limitBefore = describeLimit()
+// A value that looks like a wrapper (its prototype and code) without being
+// constructed by Valdres.
+const sample = valdres.selector(() => {
+    throw 0
+})
+let wrapperPrototype
+try {
+    valdres.store().get(sample)
+} catch (error) {
+    wrapperPrototype = Object.getPrototypeOf(error)
+}
+const forged = Object.create(wrapperPrototype, {
+    code: { value: "VALDRES_SELECTOR_GETTER_ERROR", enumerable: true },
+})
+const thrown = {
+    error: new Error("root failure"),
+    primitive: "root failure",
+    object: { reason: "root failure" },
+    forged,
+}
+const kinds = Object.keys(thrown)
+const fail = valdres.atom(false)
+const roots = kinds.map(kind =>
+    valdres.selector(get => {
+        if (get(fail)) throw thrown[kind]
+        return 1
+    }),
+)
+const middles = roots.map(root => valdres.selector(get => get(root) + 1))
+const leaves = middles.map(middle => valdres.selector(get => get(middle) + 1))
+const caught = []
+const fallback = valdres.selector(get => {
+    try {
+        return get(middles[0])
+    } catch (error) {
+        caught.push(error)
+        return -1
+    }
+})
+const store = valdres.store()
+for (const state of [...leaves, fallback]) store.sub(state, () => {})
+const preparedBeforeWrite = [...prepared]
+store.set(fail, true)
+const preparedDuringWrite = prepared.slice(preparedBeforeWrite.length)
+const isWrapper = value =>
+    value instanceof Error &&
+    (value.code === "VALDRES_SELECTOR_GETTER_ERROR" ||
+        value.code === "VALDRES_SELECTOR_DEPENDENCY_ERROR")
+const thrownValues = new Set(Object.values(thrown))
+const chainOf = error => {
+    const chain = []
+    for (
+        let cursor = error;
+        isWrapper(cursor) && !thrownValues.has(cursor);
+        cursor = cursor.cause
+    ) {
+        chain.push(cursor)
+    }
+    return chain
+}
+const errorOf = state => {
+    try {
+        store.get(state)
+    } catch (error) {
+        return error
+    }
+}
+const chains = Object.fromEntries(
+    kinds.map((kind, index) => [kind, chainOf(errorOf(leaves[index]))]),
+)
+chains.fallback = chainOf(caught[0])
+const result = {
+    limitBefore,
+    limitAfter: describeLimit(),
+    access,
+    preparedBeforeWrite,
+    preparedDuringWrite,
+    chains: Object.fromEntries(
+        Object.entries(chains).map(([kind, chain]) => [
+            kind,
+            chain.map(wrapper => {
+                const stack = wrapper.stack
+                return {
+                    code: wrapper.code,
+                    frames:
+                        typeof stack === "string"
+                            ? stack.split("\n").filter(line => /^\s+at /.test(line)).length
+                            : null,
+                    stack: testCase === "prepare-stack-trace" ? stack : undefined,
+                }
+            }),
+        ]),
+    ),
+    exactCauses: kinds.every(kind => Object.is(chains[kind].at(-1).cause, thrown[kind])),
+    fallbackCause: chains.fallback.at(-1).cause === thrown.error,
+    fallbackValue: store.get(fallback),
+    applicationValuesUntouched:
+        JSON.stringify(Reflect.ownKeys(thrown.object)) === '["reason"]' &&
+        JSON.stringify(Reflect.ownKeys(thrown.forged)) === '["code"]' &&
+        Object.isExtensible(thrown.object) &&
+        Object.isExtensible(thrown.error) &&
+        thrown.error.message === "root failure",
+}
+store.set(fail, false)
+result.recovered = [...leaves, fallback].map(state => store.get(state))
+store.dispose()
+console.log(JSON.stringify(result))
+`
+
+type StackProbeResult = {
+    limitBefore: Record<string, unknown> | null
+    limitAfter: Record<string, unknown> | null
+    access: { gets: number; sets: number }
+    preparedBeforeWrite: string[]
+    preparedDuringWrite: string[]
+    chains: Record<
+        "error" | "primitive" | "object" | "forged" | "fallback",
+        { code: string; frames: number | null; stack?: string }[]
+    >
+    exactCauses: boolean
+    fallbackCause: boolean
+    fallbackValue: number
+    applicationValuesUntouched: boolean
+    recovered: number[]
+}
+
+const GETTER = "VALDRES_SELECTOR_GETTER_ERROR"
+const DEPENDENCY = "VALDRES_SELECTOR_DEPENDENCY_ERROR"
+
+describe("propagated selector error stacks in the built output", () => {
+    const probe = async (
+        runtime: "bun" | "node",
+        testCase: string,
+    ): Promise<StackProbeResult> => {
+        const dist = await builtDist()
+        const result = run(
+            [runtime, "--input-type=module", "--eval", STACK_PROBE],
+            import.meta.dir,
+            {
+                VALDRES_ROOT_URL: pathToFileURL(join(dist, "index.js")).href,
+                VALDRES_STACK_CASE: testCase,
+            },
+        )
+        expect(result.exitCode, result.stderr).toBe(0)
+        const parsed: StackProbeResult = JSON.parse(result.stdout)
+        // Outcomes, causes and recovery never depend on the stack policy.
+        for (const kind of [
+            "error",
+            "primitive",
+            "object",
+            "forged",
+        ] as const) {
+            expect(parsed.chains[kind].map(wrapper => wrapper.code)).toEqual([
+                GETTER,
+                DEPENDENCY,
+                GETTER,
+                DEPENDENCY,
+                GETTER,
+            ])
+        }
+        expect(parsed.chains.fallback.map(wrapper => wrapper.code)).toEqual([
+            DEPENDENCY,
+            GETTER,
+            DEPENDENCY,
+            GETTER,
+        ])
+        expect(parsed.exactCauses).toBe(true)
+        expect(parsed.fallbackCause).toBe(true)
+        expect(parsed.fallbackValue).toBe(-1)
+        expect(parsed.applicationValuesUntouched).toBe(true)
+        expect(parsed.recovered).toEqual([3, 3, 3, 3, 2])
+        // Error.stackTraceLimit is left exactly as it was, whatever its shape,
+        // and never read or written through an accessor.
+        expect(parsed.limitAfter).toEqual(parsed.limitBefore)
+        expect(parsed.access).toEqual({ gets: 0, sets: 0 })
+        return parsed
+    }
+    const frames = (result: StackProbeResult) =>
+        Object.fromEntries(
+            Object.entries(result.chains).map(([kind, chain]) => [
+                kind,
+                chain.map(wrapper => wrapper.frames),
+            ]),
+        )
+    // On V8 only the first wrapper around a failure, the innermost in each
+    // chain, records frames; every other wrapper's stack is its header.
+    // A thrown value that only looks like a wrapper is treated like any other.
+    const originFramesOnly = (count: number) => ({
+        error: [0, 0, 0, 0, count],
+        primitive: [0, 0, 0, 0, count],
+        object: [0, 0, 0, 0, count],
+        forged: [0, 0, 0, 0, count],
+        fallback: [0, 0, 0, count],
+    })
+
+    test("Node keeps frames only where a failure enters the graph and restores the limit exactly", async () => {
+        expect(frames(await probe("node", "default"))).toEqual(
+            originFramesOnly(10),
+        )
+        const custom = await probe("node", "limit-7")
+        expect(custom.limitAfter).toMatchObject({ value: 7, writable: true })
+        expect(frames(custom)).toEqual(originFramesOnly(7))
+    })
+
+    test("Node leaves a missing, read-only or accessor Error.stackTraceLimit alone", async () => {
+        const missing = await probe("node", "limit-missing")
+        expect(missing.limitAfter).toBeNull()
+        const readonly = await probe("node", "limit-readonly")
+        expect(readonly.limitAfter).toMatchObject({ value: 4, writable: false })
+        // Nothing to suspend: every wrapper captures frames as before.
+        for (const chain of Object.values(frames(readonly))) {
+            expect(chain.every(count => count === 4)).toBe(true)
+        }
+        const accessor = await probe("node", "limit-accessor")
+        expect(accessor.limitAfter).toMatchObject({
+            get: "limitGet",
+            set: "limitSet",
+        })
+    })
+
+    test("Node formats wrapper stacks through a custom prepareStackTrace only when read", async () => {
+        const result = await probe("node", "prepare-stack-trace")
+        expect(result.preparedBeforeWrite).toEqual([])
+        expect(result.preparedDuringWrite).toEqual([])
+        expect(result.chains.primitive.map(wrapper => wrapper.stack)).toEqual([
+            "custom SelectorGetterError 0",
+            "custom SelectorDependencyError 0",
+            "custom SelectorGetterError 0",
+            "custom SelectorDependencyError 0",
+            "custom SelectorGetterError 10",
+        ])
+    })
+
+    test("Bun keeps every wrapper's frames and computes them only when read", async () => {
+        for (const testCase of [
+            "default",
+            "limit-readonly",
+            "limit-accessor",
+        ]) {
+            for (const chain of Object.values(
+                frames(await probe("bun", testCase)),
+            )) {
+                expect(chain.every(count => count !== null && count > 0)).toBe(
+                    true,
+                )
+            }
+        }
+        expect((await probe("bun", "limit-missing")).limitAfter).toBeNull()
+        const result = await probe("bun", "prepare-stack-trace")
+        // No wrapper stack is computed during a failing write. The first
+        // failure in the process (the forged value's setup here) probes how
+        // the engine holds stacks once, with an internal Error.
+        expect(result.preparedBeforeWrite).toEqual(["Error"])
+        expect(result.preparedDuringWrite).toEqual([])
+        for (const chain of Object.values(result.chains)) {
+            for (const wrapper of chain) {
+                expect(wrapper.stack).toMatch(
+                    /^custom Selector(Getter|Dependency)Error [1-9]\d*$/,
+                )
+            }
+        }
+    })
 })
