@@ -6,7 +6,12 @@ abstract class ImmutableSelectorError extends Error {
     }
 }
 
-let freezeComputesStack: boolean | undefined
+// An Error's own `stack` on this engine: a lazily computed data property on
+// JavaScriptCore, an accessor on V8, absent elsewhere.
+let ownStack: PropertyDescriptor | undefined
+const probeOwnStack = (): PropertyDescriptor =>
+    (ownStack ??= Object.getOwnPropertyDescriptor(new Error(), "stack") ?? {})
+
 const READ_ONLY = { writable: false, configurable: false }
 
 // A failure creates one getter and one dependency wrapper per failing
@@ -20,9 +25,7 @@ const sealPropagated = (
     error: Error,
     metadata: "selector" | "dependency",
 ): void => {
-    freezeComputesStack ??=
-        "value" in (Object.getOwnPropertyDescriptor(new Error(), "stack") ?? {})
-    if (!freezeComputesStack) {
+    if (!("value" in probeOwnStack())) {
         Object.freeze(error)
         return
     }
@@ -30,6 +33,30 @@ const sealPropagated = (
         Object.defineProperty(error, key, READ_ONLY)
     }
     Object.preventExtensions(error)
+}
+
+// V8 captures an Error's frames when it is constructed (about 2µs for the
+// default ten, most of a failing propagation there). A wrapper names its
+// selector or dependency as data and its cause chain ends in the thrown value,
+// which keeps its own stack, so there wrappers are constructed without frames.
+// A writable Error.stackTraceLimit is suspended around the constructor alone,
+// which runs no other code.
+export const propagatedError = <Wrapper>(
+    Type: new (subject: unknown, cause: unknown) => Wrapper,
+    subject: unknown,
+    cause: unknown,
+): Wrapper => {
+    const limit =
+        "get" in probeOwnStack()
+            ? Object.getOwnPropertyDescriptor(Error, "stackTraceLimit")
+            : undefined
+    if (limit?.writable !== true) return new Type(subject, cause)
+    ;(Error as { stackTraceLimit?: unknown }).stackTraceLimit = 0
+    try {
+        return new Type(subject, cause)
+    } finally {
+        ;(Error as { stackTraceLimit?: unknown }).stackTraceLimit = limit.value
+    }
 }
 
 export class SelectorGetterError extends ImmutableSelectorError {

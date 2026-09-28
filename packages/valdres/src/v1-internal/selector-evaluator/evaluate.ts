@@ -6,6 +6,7 @@ import {
     SelectorDependencyError,
     SelectorGetterError,
     SelectorReadRevokedError,
+    propagatedError,
 } from "./errors"
 import type {
     SelectorComparisonBaseline,
@@ -1343,7 +1344,11 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         const controlFault = session.getControlFault()
         if (controlFault.kind === "fault") throw controlFault.error
         if (served.outcome.kind === "error") {
-            throw new SelectorDependencyError(dependency, served.outcome.error)
+            throw propagatedError(
+                SelectorDependencyError,
+                dependency,
+                served.outcome.error,
+            )
         }
         return served.outcome.value as DependencyValue
     }
@@ -1403,7 +1408,11 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                         getterError instanceof
                         InvalidSynchronousSelectorResultError
                             ? getterError
-                            : new SelectorGetterError(selector, getterError),
+                            : propagatedError(
+                                  SelectorGetterError,
+                                  selector,
+                                  getterError,
+                              ),
                 },
                 dependencies,
             )
@@ -1435,7 +1444,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                         classifiedResult.error instanceof
                         InvalidSynchronousSelectorResultError
                             ? classifiedResult.error
-                            : new SelectorGetterError(
+                            : propagatedError(
+                                  SelectorGetterError,
                                   selector,
                                   classifiedResult.error,
                               ),
