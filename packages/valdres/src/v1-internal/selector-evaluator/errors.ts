@@ -6,6 +6,32 @@ abstract class ImmutableSelectorError extends Error {
     }
 }
 
+let freezeComputesStack: boolean | undefined
+const READ_ONLY = { writable: false, configurable: false }
+
+// A failure creates one getter and one dependency wrapper per failing
+// dependent. JavaScriptCore keeps an Error's stack, line and column as lazily
+// computed own data properties, and freezing the Error computes them (about
+// 1µs each, most of a failing propagation). There, wrappers make their own
+// metadata read-only and the Error non-extensible, leaving the engine's stack
+// lazy. Elsewhere freezing computes nothing (V8's own `stack` is an accessor),
+// so wrappers stay frozen.
+const sealPropagated = (
+    error: Error,
+    metadata: "selector" | "dependency",
+): void => {
+    freezeComputesStack ??=
+        "value" in (Object.getOwnPropertyDescriptor(new Error(), "stack") ?? {})
+    if (!freezeComputesStack) {
+        Object.freeze(error)
+        return
+    }
+    for (const key of ["message", "code", "name", metadata, "cause"]) {
+        Object.defineProperty(error, key, READ_ONLY)
+    }
+    Object.preventExtensions(error)
+}
+
 export class SelectorGetterError extends ImmutableSelectorError {
     readonly code = "VALDRES_SELECTOR_GETTER_ERROR"
     readonly selector: unknown
@@ -16,7 +42,7 @@ export class SelectorGetterError extends ImmutableSelectorError {
         this.name = "SelectorGetterError"
         this.selector = selector
         this.cause = cause
-        this.seal()
+        sealPropagated(this, "selector")
     }
 }
 
@@ -30,7 +56,7 @@ export class SelectorDependencyError extends ImmutableSelectorError {
         this.name = "SelectorDependencyError"
         this.dependency = dependency
         this.cause = cause
-        this.seal()
+        sealPropagated(this, "dependency")
     }
 }
 

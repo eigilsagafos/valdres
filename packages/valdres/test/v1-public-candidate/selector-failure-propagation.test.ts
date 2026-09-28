@@ -13,6 +13,10 @@ const thrownBy = (operation: () => unknown): any => {
 const GETTER = "VALDRES_SELECTOR_GETTER_ERROR"
 const DEPENDENCY = "VALDRES_SELECTOR_DEPENDENCY_ERROR"
 
+// JavaScriptCore keeps an Error's stack as a lazily computed own data property.
+const lazyOwnStack =
+    "value" in (Object.getOwnPropertyDescriptor(new Error(), "stack") ?? {})
+
 const isWrapper = (value: unknown): value is Error & Record<string, unknown> =>
     value instanceof Error &&
     ((value as { code?: unknown }).code === GETTER ||
@@ -290,4 +294,48 @@ describe("selector failure propagation wrappers", () => {
         for (const unsubscribe of unsubscribes) unsubscribe()
         target.dispose()
     })
+
+    test.if(lazyOwnStack)(
+        "materialize no wrapper stack while propagating where the engine computes stacks lazily",
+        () => {
+            const fail = atom(false)
+            const root = selector(get => {
+                if (get(fail)) throw new Error("root failure")
+                return 0
+            })
+            const chain: Selector<number>[] = []
+            let previous: Selector<number> = root
+            for (let index = 0; index < 50; index++) {
+                const parent = previous
+                previous = selector(get => get(parent) + 1)
+                chain.push(previous)
+            }
+            const target = store()
+            const unsubscribes = chain.map(node => target.sub(node, () => {}))
+            const prepare = (Error as { prepareStackTrace?: unknown })
+                .prepareStackTrace
+            let materialized = 0
+            ;(Error as { prepareStackTrace?: unknown }).prepareStackTrace = (
+                error: unknown,
+            ) => {
+                if (isWrapper(error)) materialized++
+                return `${error}`
+            }
+            try {
+                target.set(fail, true)
+                expect(materialized).toBe(0)
+                const error = thrownBy(() => target.get(chain.at(-1)!))
+                expect(materialized).toBe(0)
+                expect(error.stack).toBe(
+                    "SelectorGetterError: Selector getter failed",
+                )
+                expect(materialized).toBe(1)
+            } finally {
+                ;(Error as { prepareStackTrace?: unknown }).prepareStackTrace =
+                    prepare
+            }
+            for (const unsubscribe of unsubscribes) unsubscribe()
+            target.dispose()
+        },
+    )
 })
