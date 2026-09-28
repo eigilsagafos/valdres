@@ -242,6 +242,7 @@ export {
     RuntimeMismatchError,
     ScopeNotFoundError,
     SelectorCapabilityError,
+    SettleLimitError,
     StoreDisposedError,
     StoreTreeMismatchError,
     SubscriberNotificationError,

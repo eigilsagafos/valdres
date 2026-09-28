@@ -62,6 +62,7 @@ export const SelectorCapabilityError: typeof v1.SelectorCapabilityError =
     v1.SelectorCapabilityError
 export const SelectorCircularDependencyError: typeof v1.SelectorCircularDependencyError =
     v1.SelectorCircularDependencyError
+export const SettleLimitError: typeof v1.SettleLimitError = v1.SettleLimitError
 export const StoreDisposedError: typeof v1.StoreDisposedError =
     v1.StoreDisposedError
 export const StoreTreeMismatchError: typeof v1.StoreTreeMismatchError =
@@ -142,6 +143,7 @@ export type SelectorCapabilityError = InstanceType<
 export type SelectorCircularDependencyError = InstanceType<
     typeof v1.SelectorCircularDependencyError
 >
+export type SettleLimitError = InstanceType<typeof v1.SettleLimitError>
 export type StoreDisposedError = InstanceType<typeof v1.StoreDisposedError>
 export type StoreTreeMismatchError = InstanceType<
     typeof v1.StoreTreeMismatchError

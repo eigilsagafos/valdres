@@ -214,6 +214,7 @@ export interface OptionalCollectionVTable {
     scope(
         scope: object,
         node?: AnyState,
+        session?: ControlFaultSession,
     ): ServedSelectorOutcome<object> | undefined
     plan(draft: object): CollectionCommitPlan | undefined
 }
@@ -288,6 +289,16 @@ export class SelectorCapabilityError extends ImmutableRuntimeError {
     constructor(operation: string) {
         super(`A selector callback cannot call ${operation} directly`)
         this.name = "SelectorCapabilityError"
+        this.seal()
+    }
+}
+
+export class SettleLimitError extends ImmutableRuntimeError {
+    readonly code = "VALDRES_SETTLE_LIMIT"
+
+    constructor() {
+        super("Store updates did not settle")
+        this.name = "SettleLimitError"
         this.seal()
     }
 }

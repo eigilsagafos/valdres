@@ -226,6 +226,7 @@ describe("v1 build output", () => {
                 "SelectorCapabilityError",
                 "SelectorCircularDependencyError",
                 "ServerSnapshotUnavailableError",
+                "SettleLimitError",
                 "StoreDisposedError",
                 "StoreTreeMismatchError",
                 "SubscriberNotificationError",

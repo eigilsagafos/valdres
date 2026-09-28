@@ -184,15 +184,36 @@ export type TransactionCallback<Result> = (
 ) => SynchronousTransactionResult<Result>
 
 /**
+ * Phase-keyed `Store.sub` handlers; at least one is required. `settle` runs as
+ * its own synchronous transaction after derived state propagates and before
+ * any `notify` runs; `notify` is an ordinary subscriber.
+ */
+export type SubscriptionHandlers<Result = void> =
+    | {
+          readonly settle: TransactionCallback<Result>
+          readonly notify?: () => void
+      }
+    | { readonly settle?: undefined; readonly notify: () => void }
+
+/**
  * The deliberately small committed-host seam. It is internal source, not the
  * public Store API, and grows only when a later reviewed kernel slice lands.
  */
 export interface CommittedStoreTree {
     readonly get: <Value>(state: State<Value>) => Value
-    readonly sub: <Value>(
-        state: State<Value>,
-        callback: () => void,
-    ) => () => void
+    readonly sub: {
+        <Value>(state: State<Value>, callback: () => void): () => void
+        /**
+         * When a settlement changes `state`, `settle` writes inside it, before
+         * ordinary subscribers are notified; `notify` observes it afterwards,
+         * including after a failed `settle`. Registration never runs `settle`.
+         * One unsubscribe removes both.
+         */
+        <Value, Result = void>(
+            state: State<Value>,
+            handlers: SubscriptionHandlers<Result>,
+        ): () => void
+    }
     readonly set: {
         <Key extends CollectionKey, Value extends CollectionValue>(
             row: CollectionRow<Key, Value>,

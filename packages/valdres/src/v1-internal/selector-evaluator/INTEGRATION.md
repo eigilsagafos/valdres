@@ -249,6 +249,21 @@ The host may keep a successfully completed nested child even when the active
 parent later returns an ordinary/control error. It may never install a partial
 active-parent proposal or a foreign/offending edge.
 
+A failure can escape between the evaluator and proposal installation, for
+example from an evaluation strategy wrapper. The evaluator freezes its accepted
+prefix in place exactly when it builds a proposal, so
+`session.getProposedDependencies(host, selector)` returns that proposal's
+dependency list only after one was built, never a partial read sequence. The
+persistent host publishes such an escape as the selector's exact error outcome
+with those dependencies, else its previous ones, so readers record the edge and
+dependents settle against it. With neither, a later settlement re-attempts it
+once when a dependent reads it again. With a control fault latched in the
+session, the host installs the exact control outcome after source apply. Before
+apply, and at the scratch host, it still rejects the evaluation without
+publication, but the escaped error rather than the latched control error
+surfaces; that precedence gap predates this boundary and is tracked in
+`docs/designs/selector-failure-recovery.md`.
+
 ## Explicit exclusions
 
 This cluster owns no Store, transaction, scope, subscription, lifecycle,

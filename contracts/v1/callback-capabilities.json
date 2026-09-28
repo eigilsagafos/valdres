@@ -360,7 +360,7 @@
                 "source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw aborts the draft before apply; no source, membership, index, graph, or notification state changes.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw aborts the draft before apply; no source, membership, index, graph, or notification state changes. A throw during a committed read's first materialization publishes no partial index: it becomes that query's error outcome in that scope, which reading selectors depend on through SelectorDependencyError, and the next committed change to that collection in that scope retries materialization. A control fault latched by the reading evaluation is rethrown uncached.",
             "thenableRule": "A returned or thrown thenable rejects as an invalid synchronous extractor result and produces no prepared delta.",
             "resultBoundary": "Only validated inert canonical deltas cross into final no-user-code preflight/apply.",
             "requiredContractIds": [
@@ -554,6 +554,42 @@
             "requiredContractIds": [
                 "notification.after-stability",
                 "callback.subscriber-quarantine",
+                "error.stable-name-and-code"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.store-sub-settle",
+            "apiEntryId": "core.store.sub",
+            "role": "Run one synchronous state-changing command after its trigger's settled change, before ordinary subscribers observe the settlement.",
+            "phase": "settling",
+            "suppliedCapabilities": [
+                "active Transaction cursor bound to the registration scope",
+                "latest committed reads including earlier settle commits in the boundary",
+                "draft-overlay reads and mutation intents"
+            ],
+            "allowedExternalWork": [
+                "ordinary synchronous application work that does not require rollback",
+                "synchronous cancellation of the live native event that caused the settlement"
+            ],
+            "rejectedCapturedOperations": [
+                "captured Store read or mutation",
+                "nested Store transaction",
+                "subscription registration",
+                "unsubscribe",
+                "scope topology mutation",
+                "Store disposal",
+                "same-domain source invalidation"
+            ],
+            "guardDomain": "active-transaction",
+            "errorRule": "Captured Store work throws TransactionPhaseError; same-domain source invalidation throws CallbackCapabilityError, as in any transaction callback. An escaping error, or a failure staging or preflighting the draft, aborts only that handler's draft; later settle handlers still run and earlier settle commits remain. A failure after apply leaves that handler's writes committed; its sources still propagate before the boundary delivers, and the failure is reported afterwards. If a selector's recomputation escapes evaluation while that commit settles it, the escaped error becomes the selector's error outcome with the dependencies its attempt proposed, else its previous ones, and a control fault latched by that evaluation is installed as the exact control outcome instead; dependents settle against it before delivery, and it stays current until one of those inputs changes. The same publication applies to every applied write, transaction, and external settlement. Failures are reported after the one ordinary delivery as SubscriberNotificationError causes ahead of subscriber throws; RuntimeMismatchError precedence is unchanged.",
+            "thenableRule": "A returned thenable is rejected as InvalidTransactionCallbackResultError after its synchronous prefix, receives one rejection-containment handler, and aborts the draft; a thrown value is inspected, and a thrown thenable contained once, under transaction-result guards after the cursor closes, and kept as the exact cause. The cursor closes when the callback returns, so it cannot be used after an await.",
+            "resultBoundary": "The callback result is ignored. A successful draft commits and propagates inside the running boundary without delivering; ordinary subscribers, including notify handlers, are notified once after the last settle wave.",
+            "requiredContractIds": [
+                "settle.pre-notification-boundary",
+                "settle.bounded-waves",
+                "settle.draft-failure-isolation",
+                "transaction.one-tree-draft",
                 "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"

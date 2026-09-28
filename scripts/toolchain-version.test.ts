@@ -183,6 +183,7 @@ describe("pinned Bun toolchain", () => {
         ])
         expectExactKeys(baseline.policy, [
             "ordinaryTolerancePercent",
+            "coreRetainingRawAllowance",
             "coreRetainingGzipAllowance",
             "coreRetainingFixtures",
         ])
@@ -233,9 +234,18 @@ describe("pinned Bun toolchain", () => {
         // gzip overage above the immutable 2% ceilings. 77 is the same
         // measurement after the family()/collection() encoder-frame
         // allocation cut (family fixture 18990 - ceiling 18913), certified
-        // in docs/designs/family-identity.md.
+        // in docs/designs/family-identity.md. 691 is the same measurement
+        // after Store.sub settle handlers and their recomputation-failure fix
+        // (atom-selector-store 17960 - ceiling 17269), certified in
+        // docs/designs/store-reactions.md. 983 is the same measurement after
+        // escaped selector failures publish outside settle handlers too
+        // (atom-selector-store 18252 - ceiling 17269), certified in
+        // docs/designs/selector-failure-recovery.md.
         const allowance = baseline.policy.coreRetainingGzipAllowance
-        expect(allowance).toBe(77)
+        expect(allowance).toBe(983)
+        // The raw allowance is the same kind of reviewed edit: 1581 is
+        // atom-selector-store 67865 - ceiling 66284 at that point.
+        expect(baseline.policy.coreRetainingRawAllowance).toBe(1581)
         for (const budget of [
             baseline.featureBudgets.dist,
             baseline.featureBudgets.packed,

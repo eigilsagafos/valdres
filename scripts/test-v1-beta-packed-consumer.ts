@@ -161,6 +161,36 @@ assert.deepEqual(indexedChild.get(indexedTasks), [indexedRow])
 assert.throws(() => query(foreignCore.collection(), { where: { kind: { eq: "task" } } }), core.RuntimeMismatchError)
 indexedStore.dispose()
 
+// A query whose first materialization fails is a recorded dependency that
+// recovers once the failing row is repaired.
+const failingEntities = core.collection({
+    indexes: {
+        kind: value => {
+            if (value.kind === "bad") throw new Error("bad kind")
+            return value.kind
+        },
+    },
+})
+const failingStore = core.store()
+const failingRow = failingEntities("one")
+failingStore.set(failingRow, { kind: "bad" })
+const failingTasks = query(failingEntities, { where: { kind: { eq: "task" } } })
+const failingCount = core.selector(get => get(failingTasks).length)
+assert.throws(
+    () => failingStore.get(failingCount),
+    error =>
+        error.code === "VALDRES_SELECTOR_GETTER_ERROR" &&
+        error.cause.code === "VALDRES_SELECTOR_DEPENDENCY_ERROR" &&
+        error.cause.dependency === failingTasks &&
+        error.cause.cause.message === "bad kind",
+)
+let failingNotifications = 0
+failingStore.sub(failingCount, () => failingNotifications++)
+failingStore.set(failingRow, { kind: "task" })
+assert.equal(failingStore.get(failingCount), 1)
+assert.equal(failingNotifications, 1)
+failingStore.dispose()
+
 const count = core.atom(2)
 const doubled = core.selector(get => get(count) * 2)
 const target = core.store()
@@ -382,6 +412,56 @@ assert.throws(() => adapter.readHydrationSnapshot(externalTarget, foreignExterna
 assert.equal(foreignExternalSamples, 0)
 externalTarget.dispose()
 
+// Store.sub settle handlers: one coherent publication for input and settled write.
+let reactionInput = 0
+let invalidateReactionInput = () => {}
+const reactionSource = core.externalAtom({
+    getSnapshot: () => reactionInput,
+    subscribe(invalidate) {
+        invalidateReactionInput = invalidate
+        return () => { invalidateReactionInput = () => {} }
+    },
+})
+const reactionResult = core.atom(0)
+const reactionView = core.selector(get => [get(reactionSource), get(reactionResult)])
+const reactionTarget = core.store()
+const reactionSeen = []
+reactionTarget.sub(reactionView, () => reactionSeen.push(reactionTarget.get(reactionView)))
+let reactionRuns = 0
+let reactionCursor
+const reactionNotified = []
+const stopReaction = reactionTarget.sub(reactionSource, {
+    settle: transaction => {
+        reactionRuns++
+        reactionCursor = transaction
+        transaction.set(reactionResult, transaction.get(reactionSource) * 10)
+    },
+    notify: () => reactionNotified.push(reactionTarget.get(reactionResult)),
+})
+assert.equal(reactionRuns, 0)
+reactionInput = 2
+invalidateReactionInput()
+assert.deepEqual(reactionSeen, [[2, 20]])
+assert.deepEqual(reactionNotified, [20])
+assert.throws(() => reactionCursor.get(reactionResult), core.TransactionClosedError)
+stopReaction(); stopReaction()
+reactionInput = 3
+invalidateReactionInput()
+assert.equal(reactionRuns, 1)
+assert.deepEqual(reactionNotified, [20])
+assert.throws(() => reactionTarget.sub(reactionSource, { setle: () => {} }), TypeError)
+const pingAtom = core.atom(0)
+const pongAtom = core.atom(0)
+reactionTarget.sub(pingAtom, { settle: transaction => transaction.set(pongAtom, transaction.get(pingAtom) + 1) })
+reactionTarget.sub(pongAtom, { settle: transaction => transaction.set(pingAtom, transaction.get(pongAtom) + 1) })
+assert.throws(() => reactionTarget.set(pingAtom, 1), error => {
+    assert.ok(error instanceof core.SubscriberNotificationError)
+    assert.ok(error.cause instanceof core.SettleLimitError)
+    assert.equal(error.cause.code, "VALDRES_SETTLE_LIMIT")
+    return true
+})
+reactionTarget.dispose()
+
 console.log(JSON.stringify({
     runtime: typeof Bun === "undefined" ? "node" : "bun",
     sharedRootAdapterDomain: true,
@@ -389,6 +469,7 @@ console.log(JSON.stringify({
     familyIdentity: true,
     collectionLifecycle: true,
     externalLifecycleCaptureAndServer: true,
+    reactionCoherentPublication: true,
 }))
 `
 
@@ -1032,8 +1113,10 @@ import {
     ExternalSourceOperationError,
     family,
     presence,
+    SettleLimitError,
     selector,
     store,
+    type Transaction,
     type Atom,
     type AtomUpdater,
     type Collection,
@@ -1097,6 +1180,18 @@ void indexedRows
 const count = atom(0)
 const doubled = selector(get => get(count) * 2)
 const target: Store = store()
+const stopPackedReaction: () => void = target.sub(doubled, {
+    settle: (transaction: Transaction) => {
+        transaction.set(count, transaction.get(doubled))
+    },
+    notify: () => undefined,
+})
+stopPackedReaction()
+// @ts-expect-error settle handlers are synchronous transactions.
+target.sub(count, { settle: async transaction => transaction.set(count, 1) })
+// @ts-expect-error at least one handler is required.
+target.sub(count, {})
+export const packedSettleLimit: SettleLimitError = new SettleLimitError()
 export const packedExternalSource: ExternalSource<number> = {
     getSnapshot: () => 1,
     getServerSnapshot: () => 0,

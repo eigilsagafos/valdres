@@ -138,6 +138,12 @@ export interface StoreScopeCoordinator {
         session: SelectorEvaluationSession<AnyState>,
     ): void
     reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void
+    /** Monotonic id of the running (or last) settlement boundary, shared by
+     * its lifecycle waves and settle commits. */
+    readonly settlementEpoch: number
+    /** Reports a selector failure that escaped evaluation to the running
+     * settlement, if any. */
+    reportSelectorFailure(error: unknown): void
     latchPropagationControlFault(
         outcome: Extract<
             ServedSelectorOutcome<OutcomeToken>["outcome"],
@@ -265,6 +271,9 @@ export class StoreScopeNode
         | undefined
     #reverseEdges = new WeakMap<AnyState, WeakHandleSet<AnySelector>>()
     #dirtySelectors = new WeakSet<AnySelector>()
+    /** Escaped failures published without any dependency to invalidate them,
+     * by the settlement epoch that published them. */
+    #retrySelectors: WeakMap<AnySelector, number> | undefined
     #selectorGraphVersion = 0
     #selectorGraphObserverCount = 0
     #observedSelectorEdgeAdditions:
@@ -435,6 +444,7 @@ export class StoreScopeNode
         this.#selectorDependencyNodes = undefined
         this.#reverseEdges = new WeakMap()
         this.#dirtySelectors = new WeakSet()
+        this.#retrySelectors = undefined
         this.#selectorGraphVersion++
         this.#invalidateSelectorGraphObservation()
     }
@@ -471,7 +481,7 @@ export class StoreScopeNode
                 return this.coordinator
                     .reachExternal()
                     .serve(this, node, session)
-            const served = domain[COLLECTION_KERNEL]?.scope(this, node)
+            const served = domain[COLLECTION_KERNEL]?.scope(this, node, session)
             if (served !== undefined) {
                 return served as ServedSelectorOutcome<OutcomeToken>
             }
@@ -490,13 +500,22 @@ export class StoreScopeNode
             this.coordinator.prepareSelectorRead(this, selector, session)
             current = this.#selectorRecords.get(selector)
         }
-        if (current !== undefined && !this.#dirtySelectors.has(selector)) {
+        if (
+            current !== undefined &&
+            !this.#dirtySelectors.has(selector) &&
+            !(this.coordinator.postSourceApply && this.#claimRetry(selector))
+        ) {
             return current.served
         }
 
-        const proposal = runSelectorActivity(domain, session, () =>
-            this.coordinator.evaluate(definition, this, session),
-        )
+        let proposal: SelectorEvaluationProposal<AnyState, OutcomeToken>
+        try {
+            proposal = runSelectorActivity(domain, session, () =>
+                this.coordinator.evaluate(definition, this, session),
+            )
+        } catch (error) {
+            return this.publishEscapedFailure(selector, error, session)
+        }
         if (
             proposal.outcome.kind === "control-error" &&
             (!this.coordinator.postSourceApply ||
@@ -623,9 +642,80 @@ export class StoreScopeNode
         return this.coordinator.createOutcomeToken()
     }
 
+    /**
+     * Publishes a failure that escaped this selector's evaluation (before the
+     * evaluator ran, or after it returned but before its proposal installed)
+     * as the selector's exact error outcome. A reading parent then records the
+     * edge, and dependents settle against a coherent failure instead of values
+     * computed before the write. The outcome keeps the dependencies the failed
+     * attempt proposed, else the previous ones, and stays current until one of
+     * them changes. When neither exists the failure has no input that could
+     * invalidate it, so a later settlement re-attempts it once when a
+     * dependent reads it again; with nothing yet holding it (a top-level first
+     * evaluation) it is rethrown uncached. With a latched control fault, the
+     * exact control outcome is installed after sources apply. Before they
+     * apply the evaluation is still rejected unpublished, but the escaped
+     * error, not the latched control error, surfaces (a known gap).
+     */
+    publishEscapedFailure(
+        selector: AnySelector,
+        error: unknown,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ServedSelectorOutcome<OutcomeToken> {
+        const previous = this.#selectorRecords.get(selector)
+        const dependencies =
+            (session.getProposedDependencies(this, selector) as
+                | SelectorRecord["dependencies"]
+                | undefined) ?? previous?.dependencies
+        const fault = session.getControlFault()
+        const retry =
+            fault.kind !== "fault" &&
+            (dependencies === undefined || dependencies.length === 0)
+        if (
+            fault.kind === "fault"
+                ? !this.coordinator.postSourceApply ||
+                  this.coordinator.external?.dormantPull === true
+                : retry && previous === undefined && !session.evaluating
+        )
+            throw error
+        this.coordinator.reportSelectorFailure(error)
+        const served = this.#installSelectorProposal(
+            selector,
+            {
+                token: this.createOutcomeToken(),
+                outcome: Object.freeze(
+                    fault.kind === "fault"
+                        ? { ...fault, kind: "control-error" as const }
+                        : { kind: "error" as const, error },
+                ),
+                dependencies: dependencies ?? EMPTY_DEPENDENCIES,
+            },
+            session,
+        )
+        if (retry)
+            (this.#retrySelectors ??= new WeakMap()).set(
+                selector,
+                this.coordinator.settlementEpoch,
+            )
+        return served
+    }
+
+    /** A settlement after the one that published a dependency-less failure
+     * re-attempts it when a dependent reads it again. */
+    #claimRetry(selector: AnySelector): boolean {
+        const epoch = this.#retrySelectors?.get(selector)
+        if (epoch === undefined || epoch === this.coordinator.settlementEpoch)
+            return false
+        this.#retrySelectors!.delete(selector)
+        return true
+    }
+
     #installSelectorProposal(
         selector: AnySelector,
-        proposal: SelectorEvaluationProposal<AnyState, OutcomeToken>,
+        proposal: Pick<
+            SelectorEvaluationProposal<AnyState, OutcomeToken>,
+            "token" | "outcome" | "dependencies"
+        >,
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken> {
         const previous = this.#selectorRecords.get(selector)
@@ -671,6 +761,7 @@ export class StoreScopeNode
             record,
         )
         this.#dirtySelectors.delete(selector)
+        this.#retrySelectors?.delete(selector)
         if (addedSelectorEdges !== undefined) {
             this.#appendObservedSelectorEdgeAdditions(addedSelectorEdges)
         }
