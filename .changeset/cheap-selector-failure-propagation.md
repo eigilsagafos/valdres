@@ -2,23 +2,26 @@
 "valdres": patch
 ---
 
-**A failing selector no longer does stack work for every dependent it fails.**
+**A failing selector does much less stack work for each dependent it fails.**
 
 A throw fails every subscribed dependent, and each gets its own
-`SelectorGetterError` wrapping a `SelectorDependencyError`. Stack work for these
-wrappers was most of the cost of a failing write: V8 (Chrome, Node) captured
-frames for each one, and JavaScriptCore (Bun, Safari) computed each stack
-immediately because the wrapper was frozen.
+`SelectorGetterError` wrapping a `SelectorDependencyError`. On the measured
+workloads, stack work for these wrappers was most of the cost of a failing
+write. V8 (Chrome, Node) captured frames for every wrapper. JavaScriptCore (Bun,
+Safari) computed every wrapper's stack immediately because the wrapper was
+frozen.
 
-- On V8, wrappers are now constructed without stack frames. Their `stack` is
-  just their name and message. The `selector` and `dependency` fields identify
-  where the failure passed, and the thrown value at the end of the `cause` chain
-  keeps its own stack. `Error.stackTraceLimit` is suspended only while a wrapper
-  is constructed and is left alone when it is not writable.
+- On V8, a wrapper whose `cause` is another selector error is now constructed
+  without stack frames, so its `stack` is just its name and message. The first
+  wrapper around the thrown value keeps its stack as before, so every cause
+  chain still has frames, even when a string or plain object was thrown.
+  `Error.stackTraceLimit` is suspended only while such a wrapper is constructed,
+  and it is left alone when it is not an own writable data property.
 - On JavaScriptCore, wrappers are no longer frozen, so the engine computes a
   stack only when it is read. Their metadata (`message`, `code`, `name`,
-  `selector` or `dependency`, and `cause`) stays read-only and they stay
-  non-extensible; the engine's own `stack`, `line` and `column` stay writable,
-  as `stack` already was on V8.
+  `selector` or `dependency`, and `cause`) stays read-only and they cannot gain
+  properties. The engine's own `stack`, `line` and `column` stay writable, as
+  `stack` already was on V8.
 
-Codes, messages, cause chains and identity are unchanged.
+Codes, messages, cause chains, identity and the thrown value are unchanged. The
+`selector` docs now describe these wrappers, their cause chain and their stacks.
