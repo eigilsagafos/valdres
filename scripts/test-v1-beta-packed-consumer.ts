@@ -161,6 +161,36 @@ assert.deepEqual(indexedChild.get(indexedTasks), [indexedRow])
 assert.throws(() => query(foreignCore.collection(), { where: { kind: { eq: "task" } } }), core.RuntimeMismatchError)
 indexedStore.dispose()
 
+// A query whose first materialization fails is a recorded dependency that
+// recovers once the failing row is repaired.
+const failingEntities = core.collection({
+    indexes: {
+        kind: value => {
+            if (value.kind === "bad") throw new Error("bad kind")
+            return value.kind
+        },
+    },
+})
+const failingStore = core.store()
+const failingRow = failingEntities("one")
+failingStore.set(failingRow, { kind: "bad" })
+const failingTasks = query(failingEntities, { where: { kind: { eq: "task" } } })
+const failingCount = core.selector(get => get(failingTasks).length)
+assert.throws(
+    () => failingStore.get(failingCount),
+    error =>
+        error.code === "VALDRES_SELECTOR_GETTER_ERROR" &&
+        error.cause.code === "VALDRES_SELECTOR_DEPENDENCY_ERROR" &&
+        error.cause.dependency === failingTasks &&
+        error.cause.cause.message === "bad kind",
+)
+let failingNotifications = 0
+failingStore.sub(failingCount, () => failingNotifications++)
+failingStore.set(failingRow, { kind: "task" })
+assert.equal(failingStore.get(failingCount), 1)
+assert.equal(failingNotifications, 1)
+failingStore.dispose()
+
 const count = core.atom(2)
 const doubled = core.selector(get => get(count) * 2)
 const target = core.store()

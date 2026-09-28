@@ -102,8 +102,11 @@ The first committed read materializes the index for that collection and scope.
 It scans existing membership once. Later commits maintain buckets from effective
 row changes, coalescing multiple writes in one transaction. If an extractor
 fails during commit validation, the complete transaction aborts, including its
-atom writes. Failed first materialization publishes no partial index. Declaring
-an unread index does not eagerly evaluate its extractor.
+atom writes. Failed first materialization publishes no partial index: the query
+serves the extractor's error, so a selector reading it fails with a dependency
+error on the query. The next committed change to that collection in that scope
+retries materialization and updates those selectors. Declaring an unread index
+does not eagerly evaluate its extractor.
 
 Transaction reads see staged changes through isolated scratch results. Aborting
 the transaction discards those results and preserves committed state. Repeated

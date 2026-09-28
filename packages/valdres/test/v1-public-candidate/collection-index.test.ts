@@ -1,5 +1,6 @@
 import { describe, expect, test } from "../performance/test-compat"
 import {
+    CallbackCapabilityError,
     atom,
     collection,
     selector,
@@ -461,4 +462,168 @@ test("query identity uses finite scalar equality and rejects unsupported keys", 
     expect(lookup(1)).not.toBe(lookup(0))
     for (const key of [NaN, Infinity, Symbol("key"), {}, undefined])
         expect(() => lookup(key as number)).toThrow("finite scalar")
+})
+
+describe("a query whose first materialization fails", () => {
+    const fixture = () => {
+        let extractorCalls = 0
+        const entities = define(value => {
+            extractorCalls++
+            if (value.title === "bad") throw new Error("bad title")
+            return value.kind
+        })
+        const s = store()
+        const first = entities("entity:1")
+        s.set(first, entity("task", "bad"))
+        const tasks = query(entities, { where: { kind: { eq: "task" } } })
+        return {
+            entities,
+            s,
+            first,
+            tasks,
+            get extractorCalls() {
+                return extractorCalls
+            },
+        }
+    }
+    const thrown = (operation: () => unknown): unknown => {
+        try {
+            operation()
+        } catch (error) {
+            return error
+        }
+        throw new Error("Expected operation to throw")
+    }
+    /** The reader's own failure wraps the query's exact extractor failure. */
+    const expectQueryDependencyError = (error: unknown, dependency: object) => {
+        expect(error).toMatchObject({
+            code: "VALDRES_SELECTOR_GETTER_ERROR",
+            cause: {
+                code: "VALDRES_SELECTOR_DEPENDENCY_ERROR",
+                dependency,
+                cause: { message: "bad title" },
+            },
+        })
+    }
+
+    test("a reading selector records the query and recovers when the row is repaired", () => {
+        const f = fixture()
+        let runs = 0
+        const count = selector(get => {
+            runs++
+            return get(f.tasks).length
+        })
+        const guarded = selector(get => {
+            try {
+                return get(f.tasks).length
+            } catch {
+                return -1
+            }
+        })
+        expectQueryDependencyError(
+            thrown(() => f.s.get(count)),
+            f.tasks,
+        )
+        expect(f.s.get(guarded)).toBe(-1)
+        expect(thrown(() => f.s.get(f.tasks))).toMatchObject({
+            message: "bad title",
+        })
+        const seen: unknown[] = []
+        f.s.sub(count, () => seen.push(f.s.get(count)))
+        f.s.sub(guarded, () => seen.push(f.s.get(guarded)))
+        // The failure is served, not re-materialized, on every later read.
+        const calls = f.extractorCalls
+        f.s.get(guarded)
+        thrown(() => f.s.get(count))
+        expect([f.extractorCalls, runs]).toEqual([calls, 1])
+
+        f.s.set(f.first, entity())
+
+        expect(f.s.get(count)).toBe(1)
+        expect(f.s.get(guarded)).toBe(1)
+        expect(seen).toEqual([1, 1])
+        f.s.set(f.entities("entity:2"), entity())
+        expect(f.s.get(count)).toBe(2)
+        f.s.dispose()
+    })
+
+    test("a query newly read during a write fails as a dependency and recovers without the reader's inputs changing", () => {
+        const f = fixture()
+        const flag = atom(false)
+        const count = selector(get => (get(flag) ? get(f.tasks).length : -1))
+        const seen: unknown[] = []
+        f.s.sub(count, () => {
+            try {
+                seen.push(f.s.get(count))
+            } catch (error) {
+                seen.push(error)
+            }
+        })
+
+        // An extractor failure is a query outcome, not an operation failure.
+        f.s.set(flag, true)
+
+        expect(seen).toHaveLength(1)
+        expectQueryDependencyError(seen[0], f.tasks)
+        f.s.set(f.first, entity("person"))
+        expect(f.s.get(count)).toBe(0)
+        expect(seen[1]).toBe(0)
+        f.s.dispose()
+    })
+
+    test("a control fault during materialization is never cached as a catchable query failure", () => {
+        let borrowed: ((state: typeof source) => number) | undefined
+        let extractorCalls = 0
+        const source = atom(1)
+        const entities = define(value => {
+            extractorCalls++
+            borrowed!(source)
+            return value.kind
+        })
+        const s = store()
+        s.set(entities("entity:1"), entity())
+        const tasks = query(entities, { where: { kind: { eq: "task" } } })
+        const reader = selector(get => {
+            borrowed = get
+            try {
+                return get(tasks).length
+            } catch {
+                return -1
+            }
+        })
+        for (let read = 1; read <= 3; read++) {
+            expect(() => s.get(reader)).toThrow(CallbackCapabilityError)
+            expect(extractorCalls).toBe(read)
+        }
+        s.dispose()
+    })
+
+    test("a persistent failure is re-attempted once per write to its collection only", () => {
+        const f = fixture()
+        const other = define()
+        const unrelated = atom(0)
+        const count = selector(get => get(f.tasks).length)
+        let notifications = 0
+        f.s.sub(count, () => notifications++)
+        const calls = f.extractorCalls
+        expect(calls).toBe(1)
+
+        f.s.set(unrelated, 1)
+        f.s.set(other("entity:9"), entity())
+        expect([f.extractorCalls, notifications]).toEqual([calls, 0])
+        // A write to the same collection that leaves the bad row in place
+        // re-attempts materialization once, which stops at that row, and
+        // publishes the new failure.
+        f.s.set(f.entities("entity:2"), entity())
+        expect(f.extractorCalls).toBe(calls + 1)
+        expect(notifications).toBe(1)
+        expectQueryDependencyError(
+            thrown(() => f.s.get(count)),
+            f.tasks,
+        )
+        f.s.delete(f.first)
+        expect(f.s.get(count)).toBe(1)
+        expect(notifications).toBe(2)
+        f.s.dispose()
+    })
 })
