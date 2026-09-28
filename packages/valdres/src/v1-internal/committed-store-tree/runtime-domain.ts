@@ -214,6 +214,7 @@ export interface OptionalCollectionVTable {
     scope(
         scope: object,
         node?: AnyState,
+        session?: ControlFaultSession,
     ): ServedSelectorOutcome<object> | undefined
     plan(draft: object): CollectionCommitPlan | undefined
 }

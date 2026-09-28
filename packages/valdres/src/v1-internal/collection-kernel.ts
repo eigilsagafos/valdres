@@ -2665,13 +2665,21 @@ export const createCollectionKernel = (
                 stageReset(draft, scope, row)
             }
         },
-        scope: (scopeValue: object, node?: AnyState) => {
+        scope: (
+            scopeValue: object,
+            node?: AnyState,
+            session?: ControlFaultSession,
+        ) => {
             if (node === undefined) {
                 disposeScope(scopeValue)
                 return undefined
             }
             if (indexes?.has(node))
-                return indexes.scope(scopeValue as StoreScopeNode, node)
+                return indexes.scope(
+                    scopeValue as StoreScopeNode,
+                    node,
+                    session,
+                )
             if (bindings.lookupRow(node) !== undefined) {
                 return materializeRowView(scopeValue as StoreScopeNode, node)
                     .served

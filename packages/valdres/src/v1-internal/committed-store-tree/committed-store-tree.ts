@@ -769,6 +769,13 @@ class CommittedStoreTreeHost
     #reactionDepth = 0
     /** First failure after a reaction's apply, reported once it propagated. */
     #reactionFailure: { readonly error: unknown } | undefined
+    /** Escaped selector failures of the running owned settlement, reported
+     * once it has propagated and notified. */
+    #settlementFailures: unknown[] | undefined
+    /** True while an external settlement propagates; its plane records
+     * escaped selector failures itself. */
+    #externalSettlement = false
+    settlementEpoch = 0
     readonly #domain: RuntimeDomainRecords
     readonly #counters:
         | ((counter: StoreTreeCounterId, amount: number) => void)
@@ -2432,6 +2439,9 @@ class CommittedStoreTreeHost
         // failed settlements. Only the active queue is allocated on entry.
         this.#propagationQueue = []
         this.#postSourceApply = true
+        this.#externalSettlement = prepare !== undefined
+        if (!nested) this.settlementEpoch++
+        let settlementFailures: unknown[] | undefined
         try {
             try {
                 prepare?.()
@@ -2471,7 +2481,12 @@ class CommittedStoreTreeHost
                     }
                 }
             } finally {
+                // Only a boundary's own settlement collects these; a nested
+                // commit reports through its reaction.
+                settlementFailures = this.#settlementFailures
+                this.#settlementFailures = undefined
                 this.#postSourceApply = false
+                this.#externalSettlement = false
                 this.#propagationQueue = undefined
                 this.#propagationStatusScope = undefined
                 this.#propagationStatusSelector = undefined
@@ -2481,10 +2496,11 @@ class CommittedStoreTreeHost
             }
             if (nested) return
             // Reactions settle before the one ordinary snapshot is captured.
+            // Escaped selector failures precede reaction failures.
             const reactionErrors =
                 this.#reactionQueue === undefined
-                    ? undefined
-                    : this.#drainReactions()
+                    ? settlementFailures
+                    : this.#drainReactions(settlementFailures)
             const subscriberErrors = this.#deliverSubscriptionSnapshot()
             // A first external reach in a callback adopts and clears the pending
             // control ledger. Only an unadopted fault belongs to this core result.
@@ -2501,6 +2517,14 @@ class CommittedStoreTreeHost
                     throw authoritativeControlFault
                 return
             }
+            // An escaped selector failure is reported once its applied write
+            // settled and notified, exactly as it escaped when it is alone.
+            if (
+                errors === settlementFailures &&
+                errors.length === 1 &&
+                authoritativeControlFault === undefined
+            )
+                throw errors[0]
             const error = new SubscriberNotificationError(
                 authoritativeControlFault === undefined
                     ? errors
@@ -2513,9 +2537,8 @@ class CommittedStoreTreeHost
     }
 
     /** Runs reached reactions in waves, each as its own TreeTransaction whose
-     * commit joins this boundary. Returns reaction failures in run order. */
-    #drainReactions(): unknown[] | undefined {
-        let errors: unknown[] | undefined
+     * commit joins this boundary. Appends reaction failures in run order. */
+    #drainReactions(errors: unknown[] | undefined): unknown[] | undefined {
         let queue: SubscriptionRegistration[] | undefined
         let index = 0
         try {
@@ -2723,6 +2746,15 @@ class CommittedStoreTreeHost
         return subscriberErrors
     }
 
+    reportSelectorFailure(error: unknown): void {
+        // A read outside settlement serves the published failure itself.
+        if (this.#propagationQueue === undefined) return
+        if (this.#reactionDepth !== 0) this.#reactionFailure ??= { error }
+        else if (this.#externalSettlement)
+            this.#external!.failure(error, "settling")
+        else (this.#settlementFailures ??= []).push(error)
+    }
+
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean {
         const queue = this.#propagationQueue
         if (queue === undefined) return false
@@ -2814,13 +2846,12 @@ class CommittedStoreTreeHost
                 try {
                     scope.serve(selector, settleSession)
                 } catch (error) {
-                    // A reaction's commit must settle this branch before its
-                    // boundary publishes. The escaped failure becomes this
-                    // selector's error outcome, so dependents settle against
-                    // it rather than serving values computed before the write.
-                    if (this.#reactionDepth === 0) throw error
-                    this.#reactionFailure ??= { error }
-                    scope.publishFailedSelector(selector, error, settleSession)
+                    // Evaluation escapes are published by serve itself; this
+                    // settles any other escape the same way, so dependents
+                    // never serve values computed before the write. A dormant
+                    // pull records other faults for its own reads instead.
+                    if (this.#external?.dormantPull === true) throw error
+                    scope.publishEscapedFailure(selector, error, settleSession)
                 }
             }
             this.#updatePropagationStatus(

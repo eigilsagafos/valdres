@@ -293,6 +293,7 @@ interface ActiveSelectorFrame<Node> {
  */
 export class SelectorEvaluationSession<Node> {
     readonly #frames: ActiveSelectorFrame<Node>[] = []
+    #leftFrame: ActiveSelectorFrame<Node> | undefined
     #selectorGraphPublicationHost: object | undefined
     #selectorGraphPublicationCount = 0
     #otherSelectorGraphPublications: WeakMap<object, number> | undefined
@@ -375,6 +376,33 @@ export class SelectorEvaluationSession<Node> {
         ) {
             throw new Error("Selector evaluation frame corruption")
         }
+        this.#leftFrame = frame
+    }
+
+    /** @internal True while any selector evaluation frame is active. */
+    get evaluating(): boolean {
+        return this.#frames.length !== 0
+    }
+
+    /**
+     * @internal Host-owned recovery after an evaluation escaped between the
+     * evaluator and proposal installation. Returns the dependency list of the
+     * most recent evaluation of `selector` on `host` in this session only when
+     * that evaluation built a proposal: the evaluator freezes its accepted
+     * prefix in place exactly when it creates one, so an unfrozen prefix is a
+     * partial, unvalidated read sequence and is never returned.
+     */
+    getProposedDependencies(
+        host: object,
+        selector: Node,
+    ): readonly Readonly<{ node: Node }>[] | undefined {
+        const frame = this.#leftFrame
+        return frame !== undefined &&
+            Object.is(frame.host, host) &&
+            Object.is(frame.selector, selector) &&
+            Object.isFrozen(frame.dependencyPrefix)
+            ? frame.dependencyPrefix
+            : undefined
     }
 
     /** @internal */

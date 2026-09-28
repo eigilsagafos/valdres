@@ -77,8 +77,11 @@ export const createCollectionQueryRuntime = (
     >()
     const readers = new WeakMap<
         StoreScopeNode,
-        WeakMap<object, { record: QueryRecord; bucket: Bucket }>
+        WeakMap<object, { record: QueryRecord; bucket?: Bucket }>
     >()
+    // Queries whose materialization failed, retried on the next committed
+    // change to their collection in their scope.
+    const failures = new WeakMap<object, WeakHandleSet<QueryRecord>>()
     // Held maps contain only weak views, never scope/index ownership.
     const viewFinalizer = new FinalizationRegistry<{
         map: IndexRecord["views"]
@@ -177,14 +180,49 @@ export const createCollectionQueryRuntime = (
         return index
     }
     return {
-        active: collection => active.get(collection)?.isEmpty() === false,
+        active: collection =>
+            active.get(collection)?.isEmpty() === false ||
+            failures.get(collection)?.isEmpty() === false,
         has: node => definitions.has(node),
-        scope(scope, node) {
+        scope(scope, node, session) {
             let byQuery = readers.get(scope)
             const known = byQuery?.get(node)
             if (known !== undefined) return known.record.served
             const definition = definitions.get(node)!
-            const index = materialize(scope, definition)
+            if (byQuery === undefined)
+                readers.set(scope, (byQuery = new WeakMap()))
+            let index: IndexRecord
+            try {
+                index = materialize(scope, definition)
+            } catch (error) {
+                // A control fault the read latched keeps its authority and is
+                // never cached as an ordinary failure a later reader could
+                // catch.
+                if (session?.getControlFault().kind === "fault") throw error
+                // An existing row failed its extractor. Serve that failure as
+                // this query's outcome, so readers record the dependency
+                // instead of caching an edge-less getter error.
+                const record: QueryRecord = {
+                    atom: node,
+                    scope,
+                    served: Object.freeze({
+                        token: scope.createOutcomeToken(),
+                        outcome: Object.freeze({
+                            kind: "error" as const,
+                            error,
+                        }),
+                    }),
+                }
+                byQuery.set(node, { record })
+                let failed = failures.get(definition.collection)
+                if (failed === undefined)
+                    failures.set(
+                        definition.collection,
+                        (failed = new WeakHandleSet()),
+                    )
+                failed.add(record)
+                return record.served
+            }
             const bucket = bucketFor(scope, index, definition.value)
             const record: QueryRecord = {
                 atom: node,
@@ -192,8 +230,6 @@ export const createCollectionQueryRuntime = (
                 served: serve(scope, bucket.rows),
             }
             bucket.readers.add(record)
-            if (byQuery === undefined)
-                readers.set(scope, (byQuery = new WeakMap()))
             byQuery.set(node, { record, bucket })
             return record.served
         },
@@ -222,7 +258,7 @@ export const createCollectionQueryRuntime = (
                     result.push(row)
             }
             const previous =
-                known?.rows ?? readers.get(scope)?.get(node)?.bucket.rows
+                known?.rows ?? readers.get(scope)?.get(node)?.bucket?.rows
             const rows =
                 previous !== undefined && sameRows(previous, result)
                     ? previous
@@ -241,6 +277,25 @@ export const createCollectionQueryRuntime = (
             const updates: (() => void)[] = []
             const sources: CollectionCommitSource[] = []
             for (const delta of deltas) {
+                failures.get(delta.collection)?.forEach(record => {
+                    if (record.scope !== delta.scope) return
+                    updates.push(() => {
+                        // The changed rows may now pass. Dependents re-read
+                        // and rematerialize the query.
+                        failures.get(delta.collection)!.delete(record)
+                        const byQuery = readers.get(record.scope)
+                        if (byQuery?.get(record.atom)?.record !== record) return
+                        byQuery.delete(record.atom)
+                        sources.push({
+                            scope: record.scope,
+                            atom: record.atom as AnyState,
+                        })
+                        record.scope.coordinator.reachSubscriptionTarget(
+                            record.scope,
+                            record.atom as AnyState,
+                        )
+                    })
+                })
                 const indexes = scopes.get(delta.scope)?.get(delta.collection)
                 if (indexes === undefined) continue
                 const membership = host.membership(

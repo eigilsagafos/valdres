@@ -5588,6 +5588,59 @@ describe("v1 selector evaluator cycles", () => {
 })
 
 describe("v1 selector evaluator faults and revocation", () => {
+    test("a session exposes an evaluation's dependencies to its host only once a proposal was built", () => {
+        const host = new TestHost("persistent-post")
+        host.setLeaf("a", 1)
+        host.setLeaf("b", 2)
+        let evaluatingInGetter = false
+        host.define({
+            node: "sum",
+            get: get => {
+                evaluatingInGetter = session.evaluating
+                return (get("a") as number) + (get("b") as number)
+            },
+        })
+        const session = new SelectorEvaluationSession<Node>()
+        expect(session.evaluating).toBe(false)
+
+        const proposal = evaluateSelector(
+            host.definitions.get("sum")!,
+            host,
+            session,
+        )
+
+        expect(evaluatingInGetter).toBe(true)
+        expect(session.evaluating).toBe(false)
+        expect(session.getProposedDependencies(host, "sum")).toBe(
+            proposal.dependencies,
+        )
+        expect(session.getProposedDependencies(host, "a")).toBeUndefined()
+        expect(
+            session.getProposedDependencies(new TestHost(), "sum"),
+        ).toBeUndefined()
+
+        // An evaluation that escapes after accepting reads but before
+        // building its proposal leaves only an unvalidated partial prefix.
+        const escape = new Error("token allocation")
+        const failing = new TestHost("persistent-post")
+        failing.setLeaf("a", 1)
+        failing.define({ node: "partial", get: get => get("a") })
+        failing.createOutcomeToken = () => {
+            throw escape
+        }
+        const failingSession = new SelectorEvaluationSession<Node>()
+        expect(() =>
+            evaluateSelector(
+                failing.definitions.get("partial")!,
+                failing,
+                failingSession,
+            ),
+        ).toThrow(escape)
+        expect(
+            failingSession.getProposedDependencies(failing, "partial"),
+        ).toBeUndefined()
+    })
+
     test("V1M-SEL-004 a caught control fault wins and excludes its foreign edge", () => {
         const mismatch = Object.freeze({
             code: "VALDRES_RUNTIME_MISMATCH",

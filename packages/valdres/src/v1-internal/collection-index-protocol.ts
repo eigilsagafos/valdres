@@ -1,5 +1,8 @@
 import type { ServedSelectorOutcome } from "./selector-evaluator/types"
-import type { CollectionCommitSource } from "./committed-store-tree/runtime-domain"
+import type {
+    CollectionCommitSource,
+    ControlFaultSession,
+} from "./committed-store-tree/runtime-domain"
 import type { StoreScopeNode } from "./committed-store-tree/scope-node"
 import type { TreeDraft } from "./committed-store-tree/tree-transaction"
 import type { OrderedMembership } from "./ordered-membership"
@@ -31,7 +34,11 @@ export interface CollectionIndexRuntime {
     active(collection: object): boolean
     has(node: object): boolean
     read(draft: TreeDraft, scope: StoreScopeNode, node: object): unknown
-    scope(scope: StoreScopeNode, node: object): ServedSelectorOutcome<object>
+    scope(
+        scope: StoreScopeNode,
+        node: object,
+        session?: ControlFaultSession,
+    ): ServedSelectorOutcome<object>
     prepare(changes: readonly IndexScopeDelta[]): {
         publish(): readonly CollectionCommitSource[]
     }
