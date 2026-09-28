@@ -3,22 +3,35 @@
 // alternating their order, so machine noise hits every lane alike.
 //
 //   bun  time.mjs <topology> <width> <layers> <rounds> <label>=<distDir>... [jotai]
+//        [--roots=N] [--throw=error|primitive|object]
 //   node time.mjs ...
 //
 // Prints one JSON line with per-step p10/p50/p90 in milliseconds; on Node,
 // also the mean V8 garbage collections and GC milliseconds per failing write.
 import { pathToFileURL } from "node:url"
 import { resolve } from "node:path"
-import { buildGraph, buildJotaiGraph, readAll, readStacks } from "./graph.mjs"
+import {
+    buildGraph,
+    buildJotaiGraph,
+    readAll,
+    readStacks,
+    takeFlags,
+} from "./graph.mjs"
 
-const [topology, width, layers, roundsArg, ...lanes] = process.argv.slice(2)
+const { flags, positional } = takeFlags(process.argv.slice(2))
+const [topology, width, layers, roundsArg, ...lanes] = positional
 if (lanes.length === 0) {
     throw new Error(
         "usage: time.mjs <topology> <width> <layers> <rounds> <label>=<distDir>... [jotai]",
     )
 }
 const rounds = Number(roundsArg)
-const opts = { topology, width: Number(width), layers: Number(layers) }
+const opts = {
+    topology,
+    width: Number(width),
+    layers: Number(layers),
+    ...flags,
+}
 const runtime = globalThis.Bun
     ? `bun ${Bun.version}`
     : `node ${process.version}`

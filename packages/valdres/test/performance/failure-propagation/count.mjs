@@ -9,21 +9,28 @@
 // Prints one JSON line per phase.
 import { pathToFileURL } from "node:url"
 import { resolve } from "node:path"
-import { buildGraph, isLibraryWrapper, readAll } from "./graph.mjs"
+import { buildGraph, isLibraryWrapper, readAll, takeFlags } from "./graph.mjs"
 
+const { flags, positional } = takeFlags(process.argv.slice(2))
 const [
     distDir,
     topology = "chain",
     width = "100",
     layers = "20",
     subs = "all",
-] = process.argv.slice(2)
+] = positional
 if (!distDir)
     throw new Error(
-        "usage: count.mjs <distDir> [topology] [width] [layers] [subs]",
+        "usage: count.mjs <distDir> [topology] [width] [layers] [subs] [--roots=N] [--throw=error|primitive|object]",
     )
 const valdres = await import(pathToFileURL(resolve(distDir, "index.js")).href)
-const opts = { topology, width: Number(width), layers: Number(layers), subs }
+const opts = {
+    topology,
+    width: Number(width),
+    layers: Number(layers),
+    subs,
+    ...flags,
+}
 const graph = buildGraph(valdres, opts)
 const runtime = globalThis.Bun
     ? `bun ${Bun.version}`
@@ -106,22 +113,33 @@ const phase = (label, write) => {
     }
     const after = { ...graph.counters, notifications: graph.notifications }
     const read = readAll(graph, true)
+    // Before any stack is read: reading one computes it on JavaScriptCore.
+    const retained = retainedHeap()
     const reachable = new Set()
     const roots = new Set()
-    let sampleFrames = null
+    const chains = []
     for (const node of graph.subscribed) {
         try {
             graph.store.get(node)
         } catch (error) {
+            const chain = []
             let cursor = error
-            for (; isLibraryWrapper(cursor); cursor = cursor.cause)
+            for (; isLibraryWrapper(cursor); cursor = cursor.cause) {
                 reachable.add(cursor)
-            roots.add(cursor)
-            if (sampleFrames === null && isLibraryWrapper(error)) {
-                sampleFrames = String(error.stack).split("\n    at ").length - 1
+                chain.push(cursor)
             }
+            roots.add(cursor)
+            chains.push(chain)
         }
     }
+    // Wrapper stacks only; thrown application values are not inspected.
+    const framed = new Set(
+        [...reachable].filter(wrapper =>
+            String(wrapper.stack).includes("\n    at "),
+        ),
+    )
+    const frames = wrapper =>
+        String(wrapper.stack).split("\n    at ").length - 1
     console.log(
         JSON.stringify({
             runtime,
@@ -140,9 +158,16 @@ const phase = (label, write) => {
             reachableWrappers: reachable.size,
             distinctRootIdentities: roots.size,
             maxLibraryCauseDepth: read.maxDepth,
-            sampleWrapperStackFrames: sampleFrames,
+            framedReachableWrappers: framed.size,
+            outcomesWithoutFramedWrapper: chains.filter(
+                chain => !chain.some(wrapper => framed.has(wrapper)),
+            ).length,
+            outerWrapperFrames: chains.length ? frames(chains[0][0]) : null,
+            innermostWrapperFrames: chains.length
+                ? frames(chains[0].at(-1))
+                : null,
             allocatedBytesDuringWrite: allocated,
-            retainedHeapBytes: retainedHeap(),
+            retainedHeapBytes: retained,
             signature: read.signature,
         }),
     )

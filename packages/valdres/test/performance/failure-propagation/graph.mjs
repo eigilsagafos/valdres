@@ -1,6 +1,7 @@
 // Deterministic failure-propagation graph over the public API, shared by the
-// count and timing drivers. One root selector reads `tick` and throws while
-// `fail` is true; `layers` rows of `width` dependents sit below it.
+// count and timing drivers. `roots` root selectors read `tick` and throw while
+// `fail` is true; `layers` rows of `width` dependents sit below them, and the
+// first row reads the roots round-robin.
 //
 //   chain    node[l][i] reads node[l-1][i]: `width` independent chains
 //   diamond  node[l][i] reads node[l-1][i] and node[l-1][(i+1) % width]
@@ -8,26 +9,44 @@
 //   mixed    diamond, and every 7th node catches dependency errors and falls
 //            back, so the failure stops there
 //
-// Every dependent is subscribed unless `subs` is "leaves".
+// `throwKind` is what each root throws: a new Error ("error"), a string
+// ("primitive") or a plain object ("object"). Every dependent is subscribed
+// unless `subs` is "leaves".
+const THROWN = {
+    error: () => new Error("root failure"),
+    primitive: () => "root failure",
+    object: () => ({ reason: "root failure" }),
+}
+
 const makeGraph = (define, opts) => {
-    const { topology = "chain", width = 100, layers = 20 } = opts
+    const {
+        topology = "chain",
+        width = 100,
+        layers = 20,
+        roots: rootCount = 1,
+        throwKind = "error",
+    } = opts
+    const thrown = THROWN[throwKind]
+    if (!thrown) throw new Error(`unknown throw kind ${throwKind}`)
     const counters = { rootThrows: 0, evaluations: 0, fallbacks: 0 }
-    const root = define.derived(get => {
-        const value = get(define.tick)
-        if (get(define.fail)) {
-            counters.rootThrows++
-            throw new Error("root failure")
-        }
-        return value
-    }, "root")
+    const roots = Array.from({ length: rootCount }, (_, index) =>
+        define.derived(get => {
+            const value = get(define.tick)
+            if (get(define.fail)) {
+                counters.rootThrows++
+                throw thrown()
+            }
+            return value
+        }, `root${index}`),
+    )
     const nodes = []
-    let previous = [root]
+    let previous = roots
     for (let l = 0; l < layers; l++) {
         const row = []
         for (let i = 0; i < width; i++) {
             const parents =
                 l === 0
-                    ? [root]
+                    ? [roots[i % roots.length]]
                     : topology === "chain"
                       ? [previous[i]]
                       : topology === "fanout"
@@ -57,7 +76,7 @@ const makeGraph = (define, opts) => {
         nodes.push(row)
         previous = row
     }
-    return { root, nodes, counters }
+    return { roots, nodes, counters }
 }
 
 export const buildGraph = (valdres, opts) => {
@@ -167,4 +186,17 @@ export const readStacks = graph => {
         }
     }
     return characters
+}
+
+// Splits `--roots=N` and `--throw=kind` flags from positional arguments.
+export const takeFlags = argv => {
+    const flags = {}
+    const positional = []
+    for (const argument of argv) {
+        const match = /^--(roots|throw)=(.+)$/.exec(argument)
+        if (!match) positional.push(argument)
+        else if (match[1] === "roots") flags.roots = Number(match[2])
+        else flags.throwKind = match[2]
+    }
+    return { flags, positional }
 }
