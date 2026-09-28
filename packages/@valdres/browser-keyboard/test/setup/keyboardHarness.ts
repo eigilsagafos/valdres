@@ -51,8 +51,6 @@ export interface KeyboardHarness {
     attached(): Readonly<Record<string, number>>
     /** Registered store invalidators on the current hub, or 0 if unactivated. */
     invalidators(): number
-    /** Registered `lastKeyDownAtom` invalidators, or 0 if unactivated. */
-    keyDownInvalidators(): number
     /** Errors the platform reported from listeners, in occurrence order. */
     reported(): readonly unknown[]
     /** Make the next `addEventListener` of `type` on `target` throw. */
@@ -183,9 +181,7 @@ export const installKeyboardHarness = (): KeyboardHarness => {
             Object.fromEntries(
                 [...registered].map(([key, set]) => [key, set.size]),
             ),
-        invalidators: () => peekKeyboardHub()?.keyboard.invalidators() ?? 0,
-        keyDownInvalidators: () =>
-            peekKeyboardHub()?.lastKeyDown.invalidators() ?? 0,
+        invalidators: () => peekKeyboardHub()?.invalidators() ?? 0,
         reported: () => [...reported],
         failOnAttach: (target, type, error) => {
             failures.set(`${target}:${type}`, error)

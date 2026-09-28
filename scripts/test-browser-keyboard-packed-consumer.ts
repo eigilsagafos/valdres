@@ -297,6 +297,17 @@ assert.equal(second.get(kb.toggleKeySelector("CapsLock")), null)
 stopLate()
 first.dispose(); second.dispose()
 assert.equal(total(), 4)
+
+// One publication per event: a selector over both the latest keydown and the
+// held keys changes once per keydown, never through a mixed value.
+const coherent = store()
+const both = []
+const { selector } = await import("valdres")
+const view = selector(get => (get(kb.lastKeyDownAtom)?.code ?? "none") + "/" + get(kb.pressedCodesSelector).join("+"))
+coherent.sub(view, () => both.push(coherent.get(view)))
+key("keydown", "KeyC", "c")
+assert.deepEqual(both, ["KeyC/KeyC"])
+coherent.dispose()
 console.log("DOM_OK")
 `,
 )
@@ -323,10 +334,10 @@ await writeFile(
 )
 await writeFile(
     join(consumer, "types.ts"),
-    `import { store, type ExternalAtom } from "valdres"
+    `import { store, type Selector } from "valdres"
 import { activateKeyboard, keyboardAtom, lastKeyDownAtom, lastKeyDownSelector, pressedKeysSelector, pressedCodesSelector, toggleKeySelector, modifierSelector, isCodePressedSelector, type KeyboardSnapshot, type KeyDown, type PressedKey, type KeyboardCode } from "@valdres/browser-keyboard"
 const app = store()
-const source: ExternalAtom<KeyboardSnapshot> = keyboardAtom
+const source: Selector<KeyboardSnapshot> = keyboardAtom
 const pressed: readonly PressedKey[] = app.get(pressedKeysSelector)
 const codes: readonly string[] = app.get(pressedCodesSelector)
 const caps: boolean | null = app.get(toggleKeySelector("CapsLock"))
@@ -338,7 +349,7 @@ app.set(keyboardAtom, app.get(keyboardAtom))
 // @ts-expect-error packed declarations keep derived reads read-only
 app.set(toggleKeySelector("CapsLock"), true)
 const started: void = activateKeyboard()
-const lastKeyDown: ExternalAtom<KeyDown | null> = lastKeyDownAtom
+const lastKeyDown: Selector<KeyDown | null> = lastKeyDownAtom
 const arrow: KeyDown | null = app.get(lastKeyDownSelector("ArrowDown"))
 // @ts-expect-error packed declarations keep the last keydown read-only
 app.set(lastKeyDownAtom, null)

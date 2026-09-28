@@ -5,7 +5,7 @@
  * runtime rejection is asserted in `src/atoms/keyboardAtom.test.ts`.
  */
 import { expect, test } from "bun:test"
-import { store, type ExternalAtom, type Selector, type Store } from "valdres"
+import { store, type Selector, type Store } from "valdres"
 import {
     activateKeyboard,
     isCodePressedSelector,
@@ -25,15 +25,15 @@ import {
 } from "../src/index"
 
 const rejectedWrites = (app: Store, snapshot: KeyboardSnapshot) => {
-    // @ts-expect-error an external source cannot be written
+    // @ts-expect-error keyboard state cannot be written
     app.set(keyboardAtom, snapshot)
-    // @ts-expect-error an external source cannot be reset
+    // @ts-expect-error keyboard state cannot be reset
     app.reset(keyboardAtom)
     // @ts-expect-error the last keydown cannot be written
     app.set(lastKeyDownAtom, null)
     // @ts-expect-error the per-code keydown is derived, not writable
     app.set(lastKeyDownSelector("KeyA"), null)
-    // @ts-expect-error an external source cannot be updated
+    // @ts-expect-error keyboard state cannot be updated
     app.update(keyboardAtom, () => snapshot)
     // @ts-expect-error pressed keys are derived, not writable
     app.set(pressedKeysSelector, [])
@@ -53,7 +53,9 @@ const rejectedWrites = (app: Store, snapshot: KeyboardSnapshot) => {
 
 test("reads keep their declared value domains", () => {
     const app = store()
-    const source: ExternalAtom<KeyboardSnapshot> = keyboardAtom
+    // Both projections are read-only selectors over one internal source.
+    const source: Selector<KeyboardSnapshot> = keyboardAtom
+    const keyDowns: Selector<KeyDown | null> = lastKeyDownAtom
     const pressed: Selector<readonly PressedKey[]> = pressedKeysSelector
     const codes: readonly string[] = app.get(pressedCodesSelector)
     const keys: readonly string[] = app.get(pressedKeyValuesSelector)
@@ -70,6 +72,7 @@ test("reads keep their declared value domains", () => {
         null,
     ])
     expect(app.get(source).pressed).toBe(app.get(pressed))
+    expect(app.get(keyDowns)).toBe(null)
     // Every standard code is in the union; anything else is still accepted.
     const standard: KeyboardCode[] = [
         "PageUp",

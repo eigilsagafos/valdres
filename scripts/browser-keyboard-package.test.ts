@@ -79,8 +79,12 @@ describe("@valdres/browser-keyboard lane", () => {
             expect(source).not.toContain("globalAtom")
             expect(source).not.toMatch(/\b(setSelf|getSelf|onMount)\b/)
         }
-        expect(read(directory, "src", "atoms", "keyboardAtom.ts")).toContain(
-            "externalAtom(",
+        // One external source; every public read is a selector over it.
+        expect(
+            read(directory, "src", "atoms", "keyboardSourceAtom.ts"),
+        ).toContain("externalAtom(")
+        expect(read(directory, "src", "index.ts")).not.toContain(
+            "keyboardSourceAtom",
         )
     })
 

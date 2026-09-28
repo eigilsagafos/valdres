@@ -5,7 +5,7 @@ import {
     type KeyboardHarness,
 } from "../../test/setup/keyboardHarness"
 import { activateKeyboardHub, peekKeyboardHub } from "../lib/keyboardHubs"
-import { lastKeyDownSource } from "../lib/lastKeyDownSource"
+import { keyboardSource } from "../lib/keyboardSource"
 import { lastKeyDownSelector } from "../selectors/lastKeyDownSelector"
 import { modifierSelector } from "../selectors/modifierSelector"
 import { pressedCodesSelector } from "../selectors/pressedCodesSelector"
@@ -47,14 +47,14 @@ describe("lastKeyDownAtom", () => {
         app.dispose()
     })
 
-    test("subscribing activates the shared hub without adding native listeners", () => {
+    test("subscribing activates the shared hub; one registration per store tree", () => {
         const app = store()
         const keyboard = app.sub(keyboardAtom, () => {})
         expect(kb.physical()).toBe(4)
         const keyDowns = app.sub(lastKeyDownAtom, () => {})
         expect(kb.physical()).toBe(4)
+        // Both projections read one source, so the tree registers once.
         expect(kb.invalidators()).toBe(1)
-        expect(kb.keyDownInvalidators()).toBe(1)
         keyboard()
         keyDowns()
         app.dispose()
@@ -86,7 +86,7 @@ describe("lastKeyDownAtom", () => {
         app.dispose()
     })
 
-    test("repeats never invalidate stores that only read key state", () => {
+    test("repeats notify and re-evaluate nothing downstream in held-only stores", () => {
         const keyState = store()
         const keyDowns = store()
         let keyStateNotifications = 0
@@ -104,23 +104,26 @@ describe("lastKeyDownAtom", () => {
 
         expect(seen).toHaveLength(6)
         expect(keyStateNotifications).toBe(1)
+        // The held-only store is still invalidated on each repeat (one source)
+        // and re-projects `keyboardAtom`, whose unchanged identity stops the
+        // propagation before `pressedCodesSelector` and `counted`.
         expect(evaluations).toBe(afterFirst)
         keyState.dispose()
         keyDowns.dispose()
     })
 
-    test("lastKeyDown is delivered before key state for the same event", () => {
+    test("a keydown and the held state after it arrive in one settlement", () => {
         const app = store()
         const seen: string[] = []
-        app.sub(pressedCodesSelector, () => {})
-        app.sub(lastKeyDownAtom, () =>
-            seen.push(app.get(pressedCodesSelector).join("+") || "none"),
-        )
+        app.sub(lastKeyDownAtom, () => {
+            const keyDown = app.get(lastKeyDownAtom)
+            seen.push(
+                `${keyDown?.code}:${app.get(pressedCodesSelector).join("+")}`,
+            )
+        })
         kb.down("ShiftLeft", "Shift")
         kb.down("KeyA", "A")
-        // Each keydown is observed with the keys held just before it.
-        expect(seen).toEqual(["none", "ShiftLeft"])
-        expect(app.get(pressedCodesSelector)).toEqual(["ShiftLeft", "KeyA"])
+        expect(seen).toEqual(["ShiftLeft:ShiftLeft", "KeyA:ShiftLeft+KeyA"])
         app.dispose()
     })
 
@@ -159,7 +162,7 @@ describe("lastKeyDownAtom", () => {
         app.sub(held, () => seen.push(app.get(held)))
         kb.down("KeyA", "a")
         kb.blur()
-        expect(seen).toEqual(["KeyA/", "KeyA/KeyA", "none"])
+        expect(seen).toEqual(["KeyA/KeyA", "none"])
         app.dispose()
     })
 
@@ -199,7 +202,7 @@ describe("lastKeyDownAtom", () => {
             timeStamp: keyDown.timeStamp,
             sequence: 2,
         })
-        expect(kb.keyDownInvalidators()).toBe(0)
+        expect(kb.invalidators()).toBe(0)
         app.dispose()
     })
 
@@ -213,9 +216,9 @@ describe("lastKeyDownAtom", () => {
         kb.down("KeyA", "a", { repeat: true })
         expect(a.seen).toEqual(["KeyA:false:1"])
         expect(b.seen).toEqual(["KeyA:false:1", "KeyA:true:2"])
-        expect(kb.keyDownInvalidators()).toBe(1)
+        expect(kb.invalidators()).toBe(1)
         b.stop()
-        expect(kb.keyDownInvalidators()).toBe(0)
+        expect(kb.invalidators()).toBe(0)
         expect(kb.physical()).toBe(4)
         first.dispose()
         second.dispose()
@@ -265,7 +268,7 @@ describe("lastKeyDownAtom", () => {
         app.dispose()
     })
 
-    test("a blur dispatched from a subscriber leaves both channels reset", () => {
+    test("a blur dispatched from a subscriber leaves the snapshot reset", () => {
         const app = store()
         let blurred = false
         app.sub(keyboardAtom, () => {
@@ -283,7 +286,7 @@ describe("lastKeyDownAtom", () => {
         app.dispose()
     })
 
-    test("failures from both channels are reported together", () => {
+    test("failures from several stores are reported together", () => {
         const keyState = store()
         const keyDowns = store()
         keyState.sub(keyboardAtom, () => {
@@ -345,8 +348,8 @@ describe("lastKeyDownAtom", () => {
         app.dispose()
     })
 
-    test("the server snapshot is null", () => {
-        expect(lastKeyDownSource.getServerSnapshot?.()).toBe(null)
+    test("the server snapshot has no keydown", () => {
+        expect(keyboardSource.getServerSnapshot?.().lastKeyDown).toBe(null)
     })
 
     test("is read-only", () => {

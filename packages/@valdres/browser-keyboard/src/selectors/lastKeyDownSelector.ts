@@ -1,5 +1,5 @@
 import { family, selector, type Selector } from "valdres"
-import { lastKeyDownAtom } from "../atoms/lastKeyDownAtom"
+import { lastKeyDownAtom } from "./lastKeyDownAtom"
 import type { KeyboardCode } from "../types/KeyboardCode"
 import type { KeyDown } from "../types/KeyDown"
 

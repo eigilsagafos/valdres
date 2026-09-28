@@ -1,5 +1,5 @@
-export { keyboardAtom } from "./atoms/keyboardAtom"
-export { lastKeyDownAtom } from "./atoms/lastKeyDownAtom"
+export { keyboardAtom } from "./selectors/keyboardAtom"
+export { lastKeyDownAtom } from "./selectors/lastKeyDownAtom"
 export { pressedKeysSelector } from "./selectors/pressedKeysSelector"
 export { toggleKeySelector } from "./selectors/toggleKeySelector"
 export { pressedCodesSelector } from "./selectors/pressedCodesSelector"
