@@ -4,10 +4,13 @@ import {
     installKeyboardHarness,
     type KeyboardHarness,
 } from "../../test/setup/keyboardHarness"
-import { EMPTY_KEYBOARD_SNAPSHOT } from "../lib/emptyKeyboardSnapshot"
+import {
+    EMPTY_KEYBOARD_SNAPSHOT,
+    EMPTY_KEYBOARD_SOURCE_SNAPSHOT,
+} from "../lib/emptyKeyboardSnapshot"
 import { activateKeyboardHub, peekKeyboardHub } from "../lib/keyboardHubs"
 import { keyboardSource } from "../lib/keyboardSource"
-import { pressedCodesSelector } from "../selectors/pressedCodesSelector"
+import { pressedCodesSelector } from "./pressedCodesSelector"
 import { keyboardAtom } from "./keyboardAtom"
 
 // document keydown + keyup + visibilitychange, window blur.
@@ -93,13 +96,12 @@ describe("activation", () => {
     test("the source's server snapshot is the one stable empty snapshot", () => {
         activateKeyboardHub()
         kb.down("KeyA", "a")
-        expect(keyboardSource.getServerSnapshot?.()).toBe(
-            EMPTY_KEYBOARD_SNAPSHOT,
-        )
-        expect(keyboardSource.getServerSnapshot?.()).toBe(
-            EMPTY_KEYBOARD_SNAPSHOT,
-        )
-        expect(keyboardSource.getSnapshot()).not.toBe(EMPTY_KEYBOARD_SNAPSHOT)
+        const server = keyboardSource.getServerSnapshot?.()
+        expect(server).toBe(EMPTY_KEYBOARD_SOURCE_SNAPSHOT)
+        expect(keyboardSource.getServerSnapshot?.()).toBe(server!)
+        expect(server?.keyboard).toBe(EMPTY_KEYBOARD_SNAPSHOT)
+        expect(server?.lastKeyDown).toBe(null)
+        expect(keyboardSource.getSnapshot()).not.toBe(server)
     })
 })
 
@@ -119,7 +121,7 @@ describe("persistent hub lifetime", () => {
         expect(
             peekKeyboardHub()
                 ?.snapshot()
-                .pressed.map(k => k.code),
+                .keyboard.pressed.map(k => k.code),
         ).toEqual(["KeyB"])
 
         // A dormant read reports what the hub observed, without re-attaching.

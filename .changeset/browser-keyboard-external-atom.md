@@ -8,10 +8,11 @@ The package was built on `globalAtom`, `onMount` and `setSelf`, none of which
 exist in the v1 core, so the previously published build cannot import against a
 current core. It is rebuilt on the public `externalAtom` primitive.
 
-- **New `keyboardAtom`**, an `ExternalAtom<KeyboardSnapshot>`: one frozen
-  `{ pressed, locks }` snapshot. Every selector derives from it, so one event
-  never leaves pressed keys and lock state out of step, and an event that
-  changes nothing keeps the same snapshot object.
+- **New `keyboardAtom`**, a read-only `Selector<KeyboardSnapshot>` over the
+  package's single external source: one frozen `{ pressed, locks }` snapshot.
+  Every held-key selector derives from it, so one event never leaves pressed
+  keys and lock state out of step, and an event that changes nothing keeps the
+  same snapshot object.
 - **Renamed:** `pressedKeysAtom` → `pressedKeysSelector` and
   `toggleKeyAtom(key)` → `toggleKeySelector(key)`. Both were always derived
   state; they are read-only selectors now. `set`, `reset` and `update` reject

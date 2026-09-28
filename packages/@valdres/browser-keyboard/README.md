@@ -3,8 +3,8 @@
 # browser-keyboard
 
 Tracks which keys are currently held down, from the document's `keydown` / `keyup`
-events. One read-only external atom holds the keyboard snapshot; every other export
-is a selector derived from it.
+events. One persistent source publishes held keys, locks and the most recent
+keydown together, once per event; every export is a read-only selector over it.
 
 ## Live example
 
@@ -64,16 +64,18 @@ you pass explicitly as its second argument. There is no implicit global store.
 Everything is read-only browser truth. `set`, `reset` and `update` reject every
 export below, at compile time and at runtime.
 
-### Source
+### Held keys and locks
 
 ```ts
-const keyboardAtom: ExternalAtom<KeyboardSnapshot>
+const keyboardAtom: Selector<KeyboardSnapshot>
 ```
 
-The whole observed keyboard state as one frozen snapshot. Every selector below
-derives from it, so one event can never leave pressed keys and locks out of step.
-An event that changes nothing — a repeat, releasing a key that was not tracked —
-keeps the same snapshot object, and nothing downstream is notified.
+Held keys and locks as one frozen snapshot. The pressed-key, per-key and lock
+selectors below all derive from it. An event that does not change held keys or
+locks — a repeat, releasing a key that was not tracked — keeps the same snapshot
+object, and nothing downstream is notified. Despite its name, `keyboardAtom` is a
+read-only selector; it was an `ExternalAtom` before the latest keydown joined the
+same source.
 
 ### Activation
 
@@ -110,7 +112,7 @@ modifiers produced for the keydown that pressed it.
 ### Per-key checks
 
 ```ts
-function isCodePressedSelector(code: KeyboardCode): Selector<boolean>
+function isCodePressedSelector(code: KeyboardCode | (string & {})): Selector<boolean>
 function isKeyPressedSelector(key: string): Selector<boolean> // case-insensitive
 function modifierSelector(modifier: Modifier): Selector<boolean>
 ```
@@ -128,6 +130,70 @@ function toggleKeySelector(key: ToggleKey): Selector<boolean | null>
 Whether `CapsLock`, `NumLock` or `ScrollLock` is on, as of the last observed key
 event. `null` means unknown: nothing observed yet, or a focus-loss reset since.
 
+### Key downs, repeats included
+
+```ts
+const lastKeyDownAtom: Selector<KeyDown | null>
+function lastKeyDownSelector(code: KeyboardCode | (string & {})): Selector<KeyDown | null>
+```
+
+Every other export reports held keys, so holding a key down notifies once. These
+two change on **every** observed keydown, auto-repeats included. Subscribe to them
+to act once per keydown, for example moving a selection while an arrow key is
+held:
+
+```ts
+const stop = app.sub(lastKeyDownSelector("ArrowDown"), () => {
+    if (app.get(lastKeyDownSelector("ArrowDown")) !== null) moveSelectionDown()
+})
+```
+
+`lastKeyDownAtom` is the most recent keydown of any key. `lastKeyDownSelector(code)`
+is that keydown when it was `code`, and `null` once a different key goes down.
+Both are `null` before the first keydown and after a focus-loss reset. Keyups and
+IME composition keydowns are not reported. Modifier and lock keydowns are — but
+lock keys may not send a keydown for every press: on macOS, for example, CapsLock
+may report turning on as a keydown and turning off as a keyup.
+
+`lastKeyDownAtom` is a read-only selector over the same source as `keyboardAtom`
+(it was an `ExternalAtom`). A keydown and the held keys after it are published
+together, so in each store they change in one settlement: a selector reading both
+sees the new keydown with that key already held, and never a mix of an old and a
+new value. This holds per store; separate stores settle independently, and it
+says nothing about how many times a framework renders.
+
+Repeats notify nothing in stores that read only held-key state, and re-evaluate
+none of their selectors beyond `keyboardAtom` itself. Those stores are still
+invalidated on each repeat, and re-read the source once, because both values come
+from it — about 1.5 µs per store per repeat in a Happy-DOM measurement, against
+roughly 30 repeats per second while a key is held.
+
+`lastKeyDownAtom` holds the latest keydown; it is not an event queue. A selector
+that becomes true again later — an `enabled` flag toggled back on, say — sees the
+same keydown again. To run a command once per keydown, record the `sequence` you
+handled and skip anything not newer:
+
+```ts
+const handled = atom(0)
+
+app.sub(saveShortcut, {
+    settle: tx => {
+        const keyDown = tx.get(saveShortcut)
+        if (keyDown === null || keyDown.sequence <= tx.get(handled)) return
+        tx.set(handled, keyDown.sequence)
+        tx.set(saveRequested, true)
+    },
+})
+```
+
+A `settle` handler triggered by a keydown sees the held keys after that keydown,
+and its writes reach ordinary subscribers in the same notification (see
+[`store.sub`](https://valdres.dev/react/store) — `settle` is experimental).
+
+A store notification is not the native event: it cannot call `preventDefault()`
+and does not know which element had focus. For shortcuts that need either, handle
+the native `keydown` event.
+
 ### Types
 
 ```ts
@@ -142,10 +208,23 @@ type PressedKey = Readonly<{
     timeStamp: number // of the keydown that first pressed it; repeats keep it
 }>
 
+type KeyDown = Readonly<{
+    code: string
+    key: string
+    repeat: boolean // true for an auto-repeat of a held key
+    timeStamp: number
+    sequence: number // +1 per observed keydown, never reset
+}>
+
 type Modifier = "shift" | "ctrl" | "alt" | "meta"
 type ToggleKey = "CapsLock" | "NumLock" | "ScrollLock"
-type KeyboardCode = "KeyA" | "Digit1" | "ShiftLeft" | "ArrowUp" | "F1" | … // common KeyboardEvent.code values
+type KeyboardCode = "KeyA" | "Digit1" | "ShiftLeft" | "PageUp" | "Numpad0" | … // every UI Events code
 ```
+
+`KeyboardCode` lists every `KeyboardEvent.code` value defined by the
+[UI Events KeyboardEvent code spec](https://www.w3.org/TR/uievents-code/), plus
+`F13`–`F24`, so editors autocomplete them. Selectors that take a code accept any
+other string too, for codes outside that list.
 
 ## What is observed
 
@@ -155,8 +234,8 @@ pressed; modifier flags on other events (`ctrlKey`, `metaKey`, …) are never us
 to infer presses.
 
 - **Focus loss resets.** When the window loses focus or the page becomes hidden,
-  keyups can be missed, so every pressed key is cleared and every lock returns to
-  `null`.
+  keyups can be missed, so every pressed key is cleared, every lock returns to
+  `null`, and the last keydown returns to `null`.
 - **Lock keys** are reported only through `toggleKeySelector`, never as pressed
   keys. All three are read together from the first event after start or a reset;
   after that, a lock updates when its own key is pressed or released.
@@ -179,31 +258,34 @@ One persistent listener set per document — `keydown`, `keyup` and
   started reports the empty snapshot; after it has started, a `store.get` reports
   the current keys without subscribing.
 - **`activateKeyboard()` or the first store subscription starts it**, whichever
-  comes first. A subscription counts whether it is to `keyboardAtom` directly or
-  to any selector derived from it.
+  comes first. A subscription to any export of this package counts.
 - **Once started, it keeps tracking.** Unsubscribing, unmounting or disposing a
   store only removes that store's subscription. Key state is not cleared and the
   listeners stay attached, so a store that subscribes later sees the keys held now.
   With no store subscribed, events only update the snapshot; no store does work.
 
-Each store tree registers once, however many subscribers and child scopes read
-the keyboard. When one store's subscriber throws, the other stores are still
+Each store tree registers once, however many subscribers, selectors and child
+scopes read the keyboard. Events are applied one at a time: a key event or blur
+dispatched from inside a subscriber is applied after the current event has been
+delivered. At most 64 events are applied per native event; if subscribers keep
+dispatching more, the rest are dropped and a `RangeError` is reported instead of
+hanging the page. When one store's subscriber throws, the other stores are still
 notified, and the error is reported from the native event listener.
 
 ## Server rendering
 
 On the server — and in any runtime without a `document` — every read returns one
-fixed empty snapshot: no pressed keys, every lock `null`. Server rendering never
-starts the hub, and `activateKeyboard()` does nothing there. During hydration
-`useValue` renders that same empty value first, then switches to the live keyboard
-state: a normal two-pass render, not a hydration mismatch.
+fixed empty snapshot: no pressed keys, every lock `null`, no last keydown. Server
+rendering never starts the hub, and `activateKeyboard()` does nothing there.
+During hydration `useValue` renders that same empty value first, then switches to
+the live keyboard state: a normal two-pass render, not a hydration mismatch.
 
 ## Keyboard state versus shortcuts
 
-This package reports **state**: which keys are held. Store notifications are not
-the native event, so they cannot call `preventDefault()` or react to a single
-event such as a repeat. For "press this combination → run this callback", handle
-the native `keydown` event yourself.
+This package reports **state**: which keys are held, and the last keydown. Store
+notifications are not the native event, so they cannot call `preventDefault()` or
+tell which element had focus. For "press this combination → run this callback",
+handle the native `keydown` event yourself.
 
 ---
 

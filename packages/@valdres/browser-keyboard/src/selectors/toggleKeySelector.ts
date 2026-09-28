@@ -1,5 +1,5 @@
 import { family, selector, type Selector } from "valdres"
-import { keyboardAtom } from "../atoms/keyboardAtom"
+import { keyboardAtom } from "./keyboardAtom"
 import type { ToggleKey } from "../types/ToggleKey"
 
 /** A lock's state as of the last observed key event: `null` until then. */

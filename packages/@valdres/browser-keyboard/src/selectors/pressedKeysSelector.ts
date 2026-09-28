@@ -1,5 +1,5 @@
 import { selector, type Selector } from "valdres"
-import { keyboardAtom } from "../atoms/keyboardAtom"
+import { keyboardAtom } from "./keyboardAtom"
 import type { PressedKey } from "../types/PressedKey"
 
 export const pressedKeysSelector: Selector<readonly PressedKey[]> = selector(

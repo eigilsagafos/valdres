@@ -4,7 +4,7 @@ import {
     installKeyboardHarness,
     type KeyboardHarness,
 } from "../../test/setup/keyboardHarness"
-import { keyboardAtom } from "../atoms/keyboardAtom"
+import { keyboardAtom } from "../selectors/keyboardAtom"
 import { pressedCodesSelector } from "../selectors/pressedCodesSelector"
 import { activateKeyboard } from "./activateKeyboard"
 

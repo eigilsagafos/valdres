@@ -4,7 +4,11 @@ import { hydrateRoot, type Root } from "react-dom/client"
 import { renderToString } from "react-dom/server"
 import { store, type Store } from "valdres"
 import { Provider, useValue } from "valdres-react"
-import { pressedCodesSelector, toggleKeySelector } from "../src/index"
+import {
+    lastKeyDownSelector,
+    pressedCodesSelector,
+    toggleKeySelector,
+} from "../src/index"
 import { activateKeyboardHub, peekKeyboardHub } from "../src/lib/keyboardHubs"
 import {
     installKeyboardHarness,
@@ -150,6 +154,52 @@ describe("React server render and hydration", () => {
             expect(container.querySelector("#keys")?.textContent).toBe(
                 "KeyA|caps:false",
             )
+        } finally {
+            if (root !== undefined) await act(async () => root!.unmount())
+            container.remove()
+        }
+        app.dispose()
+    })
+
+    test("lastKeyDownSelector hydrates from null, then reports keydowns", async () => {
+        const LastK = () => {
+            const keyDown = useValue(lastKeyDownSelector("KeyK"))
+            return (
+                <span id="last">
+                    {keyDown === null ? "none" : `${keyDown.repeat}`}
+                </span>
+            )
+        }
+        const app = store()
+        const view = (
+            <Provider store={app}>
+                <LastK />
+            </Provider>
+        )
+        const markup = renderToString(view)
+        expect(markup).toContain(">none<")
+        expect(kb.physical()).toBe(0)
+
+        const container = document.createElement("div")
+        container.innerHTML = markup
+        document.body.append(container)
+        const recoverable: unknown[] = []
+        let root: Root | undefined
+        try {
+            await act(async () => {
+                root = hydrateRoot(container, view, {
+                    onRecoverableError: error => recoverable.push(error),
+                })
+            })
+            expect(recoverable).toEqual([])
+            await act(async () => {
+                kb.down("KeyK", "k")
+            })
+            expect(container.querySelector("#last")?.textContent).toBe("false")
+            await act(async () => {
+                kb.down("KeyK", "k", { repeat: true })
+            })
+            expect(container.querySelector("#last")?.textContent).toBe("true")
         } finally {
             if (root !== undefined) await act(async () => root!.unmount())
             container.remove()
