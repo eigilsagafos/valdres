@@ -1,8 +1,7 @@
 # Selector failure propagation cost
 
-Status: implemented, pending owner approval. Both changes alter an observable
-property of the wrapper errors on one engine, and the size allowance below is
-not yet approved.
+Status: approved by the owner on 2026-09-29, with the observable changes listed
+below, the compatibility boundary and the size certification.
 
 ## Problem
 
@@ -31,8 +30,9 @@ and Node 24.16 with `packages/valdres/test/performance/failure-propagation`:
   at the default limit of ten. A frozen V8 error's `stack` can still be
   reassigned through the accessor's setter.
 
-Chrome uses V8 but was not measured; its behavior is inferred from Node. Safari
-uses JavaScriptCore without Bun's global and therefore keeps `main`'s wrappers.
+Only Node 24.16 and Bun 1.4.0 were tested. Chrome, Safari and SpiderMonkey were
+not. Chrome is expected to behave like Node and Safari to take the fallback
+below, but neither is verified.
 
 ## Changes
 
@@ -52,8 +52,18 @@ Detection invokes no application accessor or formatting hook:
   invoked.
 - **Anything else** builds the wrappers exactly as on `main`: frozen, with
   frames. This covers a failed detection, and it is not retried. It includes
-  JavaScriptCore realms without Bun's global (Safari, or a Bun `node:vm`
-  context) and V8 with a read-only, missing or accessor stack limit.
+  JavaScriptCore realms without Bun's global (a Bun `node:vm` context was
+  tested; Safari was not) and V8 with a read-only, missing or accessor stack
+  limit.
+- **One exception.** On V8 with an own read-only `Error.stackTraceLimit`, the V8
+  probe cannot run. If the application has also defined a non-writable,
+  non-configurable, object-valued `Bun` global, that global matches Bun's own,
+  so the wrappers take the Bun policy. They keep their frames and read-only
+  metadata and stay non-extensible, but they are not frozen, and their `stack`
+  accessor stays configurable and deletable. Causes, identity, notifications,
+  recovery and the global limit are unaffected. A configurable polyfill with a
+  read-only limit takes the fallback. With a writable limit, any polyfill takes
+  the V8 policy.
 
 1. **Lazy stacks in Bun.** Wrappers make `message`, `code`, `name`, `selector`
    or `dependency`, and `cause` non-writable and non-configurable, and make the
@@ -90,6 +100,12 @@ prototype or `instanceof` result cannot forge it.
 - In Bun, a custom `Error.prepareStackTrace` used to run for every wrapper
   during every failing write, inside the selector's callback. It now runs only
   when a stack is read. On V8 it was, and still is, called only on read.
+- Where wrappers take the fallback, such as a Bun `node:vm` realm, they are
+  frozen as on `main`. JavaScriptCore then formats each one as it is frozen,
+  inside the selector callback, where a Store write from the hook is rejected
+  with `VALDRES_SELECTOR_CAPABILITY_ERROR`, as on `main`. Detection itself never
+  formats a stack, and no hook or accessor runs while the stack limit is
+  suspended.
 - The wrappers define their `name` instead of assigning it, so a setter on
   `Error.prototype.name` no longer runs for them. The resulting own `name` has
   the same value, attributes and key order as before.
@@ -100,10 +116,11 @@ are unmodified: the global `Error`, `Object.getOwnPropertyDescriptor`,
 `Object.freeze`, `Object.defineProperty` and `Object.preventExtensions`.
 Replacing those intrinsics is not supported. Accessors and hooks an application
 installs on ordinary properties are supported and tested. That covers a
-`globalThis.Bun` accessor or polyfill, setters on `Error.prototype.name`, a
+`globalThis.Bun` accessor, which is never invoked, and a `Bun` polyfill, with
+the exception above. It also covers setters on `Error.prototype.name`, a
 read-only, missing or accessor `Error.stackTraceLimit`, and
-`Error.prepareStackTrace`. Outside Bun and V8 no engine was tested; those
-engines take `main`'s behavior.
+`Error.prepareStackTrace`. Engines other than V8 and Bun take `main`'s behavior;
+none of them was tested.
 
 Unchanged: error classes and codes, messages, `selector`, `dependency`, cause
 chains, identity (repeated reads return the same wrapper, and each failing
@@ -179,7 +196,7 @@ discarded: 3,987.
 
 ## Size certification
 
-Pending owner approval. Measured on pinned Bun 1.4.0 against `main`
+Approved by the owner on 2026-09-29. Measured on pinned Bun 1.4.0 against `main`
 (`713e17c3`), which sits exactly at the core-retaining ceilings:
 
 | Fixture                                | main raw / gzip | branch raw / gzip | Change        |

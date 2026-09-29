@@ -608,6 +608,7 @@ type StackProbeResult = {
 
 const GETTER = "VALDRES_SELECTOR_GETTER_ERROR"
 const DEPENDENCY = "VALDRES_SELECTOR_DEPENDENCY_ERROR"
+const CAPABILITY = "VALDRES_SELECTOR_CAPABILITY_ERROR"
 
 describe("propagated selector error stacks in the built output", () => {
     const probe = async (
@@ -1402,9 +1403,10 @@ describe("detection and wrapper construction run no application accessor", () =>
     }
 
     test("a JavaScriptCore realm without Bun's global builds wrappers as main does", () => {
-        // Built for and run in a node:vm realm of Bun, which has no Bun global:
-        // detection reads no stack, so the formatting hook runs only for the
-        // wrappers main freezes, and never inside a selector callback.
+        // Built for and run in a node:vm realm of Bun, which has no Bun global.
+        // Detection formats no stack, so the hook runs only for the wrappers
+        // main also freezes. As on main, that happens inside the selector
+        // callback, where re-entrant Store writes stay rejected.
         const script = String.raw`
             import { runInNewContext } from "node:vm"
             const build = await Bun.build({
@@ -1425,12 +1427,13 @@ describe("detection and wrapper construction run no application accessor", () =>
                 const leaf = v.selector(get => get(root) + 1)
                 let notifications = 0
                 store.sub(leaf, () => notifications++)
-                const names = []
-                let reentry
+                const calls = []
                 Error.prepareStackTrace = (error, frames) => {
-                    names.push(error.name)
-                    if (error.name === "Error") {
-                        try { store.set(side, 1); reentry = "wrote" } catch (e) { reentry = e.code }
+                    try {
+                        store.set(side, 1)
+                        calls.push(error.name + " wrote")
+                    } catch (e) {
+                        calls.push(error.name + " " + e.code)
                     }
                     return error.name
                 }
@@ -1444,7 +1447,7 @@ describe("detection and wrapper construction run no application accessor", () =>
                 while (cursor && cursor.code) { codes.push(cursor.code); cursor = cursor.cause }
                 const result = {
                     hasBun: Object.getOwnPropertyDescriptor(globalThis, "Bun") !== undefined,
-                    names, reentry, codes, exactCause: cursor === cause,
+                    calls, codes, exactCause: cursor === cause,
                     sameError: found === again, frozen: Object.isFrozen(found),
                     notifications, side: store.get(side),
                 }
@@ -1461,11 +1464,12 @@ describe("detection and wrapper construction run no application accessor", () =>
         expect(result.exitCode, result.stderr).toBe(0)
         expect(JSON.parse(result.stdout)).toEqual({
             hasBun: false,
-            // As on main: frozen wrappers are formatted as they are frozen.
-            names: [
-                "SelectorGetterError",
-                "SelectorDependencyError",
-                "SelectorGetterError",
+            // As on main: each wrapper is formatted as it is frozen, inside the
+            // selector callback, and a write from the hook is rejected.
+            calls: [
+                `SelectorGetterError ${CAPABILITY}`,
+                `SelectorDependencyError ${CAPABILITY}`,
+                `SelectorGetterError ${CAPABILITY}`,
             ],
             codes: [GETTER, DEPENDENCY, GETTER],
             exactCause: true,

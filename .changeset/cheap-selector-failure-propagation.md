@@ -21,9 +21,15 @@ wrapper's stack immediately because the wrapper was frozen.
   `dependency`, and `cause`) stays read-only and they cannot gain properties.
   The engine's own `stack`, `line` and `column` stay writable, as `stack`
   already was on V8.
-- Other engines, including Safari, keep the frozen, framed wrappers.
+- Other engines keep the frozen, framed wrappers. The exception is V8 with a
+  read-only `Error.stackTraceLimit` together with a non-writable,
+  non-configurable `Bun` global defined by the application. There the wrappers
+  keep their frames but take Bun's unfrozen policy.
 - The wrappers define their `name` rather than assigning it, so a setter on
   `Error.prototype.name` no longer runs for them.
 
-Codes, messages, cause chains, identity and the thrown value are unchanged. The
-`selector` docs now describe these wrappers, their cause chain and their stacks.
+Codes, messages, cause chains, identity and the thrown value are unchanged. This
+relies on the global `Error` and the `Object` reflection functions being
+unmodified. Only Node 24 and Bun 1.4 were tested; Chrome, Safari and
+SpiderMonkey are unverified. The `selector` docs now describe these wrappers,
+their cause chain and their stacks.

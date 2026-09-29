@@ -148,7 +148,10 @@ Valdres created it, not where your code threw:
   selectors stays cheap.
 - In Bun, every wrapper records frames, and the stack text is only computed when
   you read `stack`.
-- Elsewhere, including Safari, every wrapper records frames as before.
+- Elsewhere, every wrapper records frames and is frozen, as before.
+
+Only Node and Bun are tested. Chrome and Safari are expected to behave as V8 and
+the "elsewhere" case above, but neither is verified.
 
 Prefer throwing `Error` objects. A string or plain object has no stack, so the
 first wrapper's frames, which show Valdres internals and, with a high enough
