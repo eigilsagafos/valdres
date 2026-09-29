@@ -567,29 +567,30 @@ jobs:
                               per_page: 100
                           }
                       );
-                      if (files.length === 0 || files.length > 500) {
-                          throw new Error(`Unexpected generated release file count: ${files.length}`);
+                      // Changesets left the release branch checked out, so the
+                      // working tree is the pull request under classification.
+                      // Read the classifier and the publishable-package list
+                      // from the main commit this workflow runs from instead.
+                      const trustedSha = context.sha;
+                      if (!/^[0-9a-f]{40}$/i.test(trustedSha)) {
+                          throw new Error('Workflow revision is not a commit SHA');
                       }
-                      // Changesets v3 keeps prerelease changesets it has already
-                      // versioned in `.changeset/pre/` instead of listing their
-                      // ids in `pre.json`, so a release commit moves files into
-                      // that folder as well.
-                      const generatedReleasePath = path =>
-                          path === '.changeset/pre.json' ||
-                          /^\.changeset\/(?:pre\/)?[a-z0-9-]+\.md$/.test(path) ||
-                          path === 'bun.lock' ||
-                          /^packages\/(?:valdres|valdres-react)\/(?:CHANGELOG\.md|package\.json)$/.test(path);
-                      const unexpected = files
-                          .flatMap(file => [file.filename, file.previous_filename].filter(Boolean))
-                          .filter(path => !generatedReleasePath(path));
-                      if (unexpected.length > 0) {
-                          throw new Error(
-                              `Refusing benchmark check for non-release files: ${unexpected.join(', ')}`
-                          );
-                      }
-                      if (!files.some(file => /\/package\.json$/.test(file.filename))) {
-                          throw new Error('Generated release pull request has no package manifest');
-                      }
+                      const readTrusted = async path =>
+                          (await exec.getExecOutput(
+                              'git', ['show', `${trustedSha}:${path}`], { silent: true }
+                          )).stdout;
+                      const classifierPath = require('path').join(
+                          process.env.RUNNER_TEMP, 'release-metadata-scope.mjs'
+                      );
+                      require('fs').writeFileSync(
+                          classifierPath,
+                          await readTrusted('scripts/lib/release-metadata-scope.mjs')
+                      );
+                      const { assertGeneratedReleaseFiles } = await import(classifierPath);
+                      assertGeneratedReleaseFiles(
+                          files,
+                          await readTrusted('scripts/publishable-packages.json')
+                      );
 
                       await github.rest.checks.create({
                           owner: context.repo.owner,
