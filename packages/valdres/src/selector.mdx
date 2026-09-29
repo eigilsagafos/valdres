@@ -146,8 +146,9 @@ Valdres created it, not where your code threw:
   frames. Wrappers created as the failure spreads to other selectors have a
   stack of just their name and message, so a failure that reaches thousands of
   selectors stays cheap.
-- In JavaScriptCore (Safari, Bun), every wrapper records frames, and the stack
-  text is only computed when you read `stack`.
+- In Bun, every wrapper records frames, and the stack text is only computed when
+  you read `stack`.
+- Elsewhere, including Safari, every wrapper records frames as before.
 
 Prefer throwing `Error` objects. A string or plain object has no stack, so the
 first wrapper's frames, which show Valdres internals and, with a high enough

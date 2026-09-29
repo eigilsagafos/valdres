@@ -31,30 +31,41 @@ and Node 24.16 with `packages/valdres/test/performance/failure-propagation`:
   at the default limit of ten. A frozen V8 error's `stack` can still be
   reassigned through the accessor's setter.
 
-Safari and Chrome use these engines but were not measured; their behavior is
-inferred from Bun and Node.
+Chrome uses V8 but was not measured; its behavior is inferred from Node. Safari
+uses JavaScriptCore without Bun's global and therefore keeps `main`'s wrappers.
 
 ## Changes
 
 Both changes apply only to `SelectorGetterError` and `SelectorDependencyError`.
-Every other error is constructed and frozen as before. The engine is detected
-once per module instance, at the first propagated error. Bun is identified
-directly, because reading any Error's stack there runs the application's
-`Error.prepareStackTrace`. Elsewhere detection reads the shape of
-`Object.getOwnPropertyDescriptor(new Error(), "stack")`, which runs no
-application code. If that read throws, the wrappers stay frozen and framed as on
-`main`, and detection is not retried.
+Every other error is constructed and frozen as before.
 
-1. **Lazy stacks where freezing computes them (JavaScriptCore).** Wrappers make
-   `message`, `code`, `name`, `selector` or `dependency`, and `cause`
-   non-writable and non-configurable, and make the error non-extensible, instead
-   of freezing it. The engine computes a stack only when it is read. Where
-   `stack` is not an own data property, wrappers are still frozen.
+The engine is detected once per module instance, at the first propagated error.
+Detection invokes no application accessor or formatting hook:
+
+- **V8** is recognized when an `Error` constructed while `Error.stackTraceLimit`
+  is 0 still has an own `stack` accessor. The limit is suspended only while it
+  is an own writable data property, and only around the base `Error`
+  constructor. On JavaScriptCore that Error has no stack to compute, so no
+  `Error.prepareStackTrace` runs.
+- **Bun** is otherwise recognized by its own global: a non-writable,
+  non-configurable data property named `Bun`, read as a descriptor and never
+  invoked.
+- **Anything else** builds the wrappers exactly as on `main`: frozen, with
+  frames. This covers a failed detection, and it is not retried. It includes
+  JavaScriptCore realms without Bun's global (Safari, or a Bun `node:vm`
+  context) and V8 with a read-only, missing or accessor stack limit.
+
+1. **Lazy stacks in Bun.** Wrappers make `message`, `code`, `name`, `selector`
+   or `dependency`, and `cause` non-writable and non-configurable, and make the
+   error non-extensible, instead of freezing it. JavaScriptCore then computes a
+   stack only when it is read.
 2. **No frames on wrappers around wrappers (V8).** A wrapper whose `cause` is
    already a selector error from this module is constructed with
    `Error.stackTraceLimit` set to 0 and restored in `finally`. The limit is
    suspended only while it is an own writable data property, and only around the
-   wrapper constructor, which runs no application code. Every other wrapper is
+   wrapper constructor. That constructor defines its own fields, including
+   `name`, assigns only fields it already defined, and freezes, so no
+   application code runs until the limit is restored. Every other wrapper is
    constructed at its call site exactly as before. In practice that is the first
    wrapper around a thrown value, a query failure or a cycle error.
 
@@ -64,10 +75,10 @@ prototype or `instanceof` result cannot forge it.
 
 ## Observable changes
 
-- On JavaScriptCore (Bun, Safari), `Object.isFrozen(wrapper)` is `false`. The
-  engine's own `stack`, `line`, `column` and `sourceURL` stay writable and
-  configurable, as `stack` already was on V8. The wrapper's metadata stays
-  read-only and it cannot gain properties.
+- In Bun, `Object.isFrozen(wrapper)` is `false`. The engine's own `stack`,
+  `line`, `column` and `sourceURL` stay writable and configurable, as `stack`
+  already was on V8. The wrapper's metadata stays read-only and it cannot gain
+  properties.
 - On V8 (Chrome, Node), a wrapper around another selector error has a `stack` of
   only its name and message. The first wrapper around the thrown value keeps the
   stack it had before, so every cause chain still has frames, including when the
@@ -76,10 +87,23 @@ prototype or `instanceof` result cannot forge it.
   operation, such as `mutate`; they reach application code only with a higher
   limit. Baseline wrappers further up the chain also recorded the reading
   selector's `get()` call site; those frames are gone.
-- On JavaScriptCore, a custom `Error.prepareStackTrace` used to run for every
-  wrapper during every failing write, inside the selector's callback. It now
-  runs only when a stack is read. On V8 it was, and still is, called only on
-  read.
+- In Bun, a custom `Error.prepareStackTrace` used to run for every wrapper
+  during every failing write, inside the selector's callback. It now runs only
+  when a stack is read. On V8 it was, and still is, called only on read.
+- The wrappers define their `name` instead of assigning it, so a setter on
+  `Error.prototype.name` no longer runs for them. The resulting own `name` has
+  the same value, attributes and key order as before.
+
+Compatibility boundary. Detection and the suspended construction run no
+application code as long as the reflection and construction built-ins they use
+are unmodified: the global `Error`, `Object.getOwnPropertyDescriptor`,
+`Object.freeze`, `Object.defineProperty` and `Object.preventExtensions`.
+Replacing those intrinsics is not supported. Accessors and hooks an application
+installs on ordinary properties are supported and tested. That covers a
+`globalThis.Bun` accessor or polyfill, setters on `Error.prototype.name`, a
+read-only, missing or accessor `Error.stackTraceLimit`, and
+`Error.prepareStackTrace`. Outside Bun and V8 no engine was tested; those
+engines take `main`'s behavior.
 
 Unchanged: error classes and codes, messages, `selector`, `dependency`, cause
 chains, identity (repeated reads return the same wrapper, and each failing
@@ -116,13 +140,13 @@ first dependency wrapper would restore the reading selector's `get()` frame for
 0.3–1.0 ms more than the WeakSet variant it was built on. That cost scales with
 how many selectors read a failing root directly.
 
-JavaScriptCore is unaffected by the V8 change. Failing write with both changes,
-against `main`: chain 18.8 → 5.4 ms, diamond 20.7 → 6.3, fanout 20.9 → 6.0,
-mixed 21.1 → 7.0, and mixed with three roots 17.6 → 5.9. A consumer that reads
-every wrapper's stack pays the deferred JavaScriptCore work there: 2.2 → 12–15
-ms. The failing write plus that read is still below `main`'s (chain: 18.8 + 2.2
-ms before, 5.4 + 13.4 ms after). On V8, reading every stack drops from 16–21 ms
-to about 2 ms.
+Bun is unaffected by the V8 change. Failing write with both changes, against
+`main`: chain 18.8 → 5.4 ms, diamond 20.7 → 6.3, fanout 20.9 → 6.0, mixed 21.1 →
+7.0, and mixed with three roots 17.6 → 5.9. A consumer that reads every
+wrapper's stack pays the deferred JavaScriptCore work there: 2.2 → 12–15 ms. The
+failing write plus that read is still below `main`'s (chain: 18.8 + 2.2 ms
+before, 5.4 + 13.4 ms after). On V8, reading every stack drops from 16–21 ms to
+about 2 ms.
 
 Healthy writes and recovery are unchanged within the null-copy spread. For
 reference, Jotai on the same graph takes 2.7–3.7 ms (Node) and 3.2–4.1 ms (Bun)
@@ -158,14 +182,16 @@ discarded: 3,987.
 Pending owner approval. Measured on pinned Bun 1.4.0 against `main`
 (`713e17c3`), which sits exactly at the core-retaining ceilings:
 
-| Fixture                                | main raw / gzip | branch raw / gzip | Change      |
-| -------------------------------------- | --------------- | ----------------- | ----------- |
-| `atom-selector-store` (core-retaining) | 67,865 / 18,252 | 68,490 / 18,498   | +625 / +246 |
+| Fixture                                | main raw / gzip | branch raw / gzip | Change        |
+| -------------------------------------- | --------------- | ----------------- | ------------- |
+| `atom-selector-store` (core-retaining) | 67,865 / 18,252 | 68,912 / 18,612   | +1,047 / +360 |
 
-The JavaScriptCore change alone accounts for +287 / +123. Fully frameless V8
+Of that, the lazy-stack sealing alone was +287 / +123 and fully frameless V8
 wrappers were +504 / +192. Constructing framed wrappers at their call sites, so
-their stacks equal `main`'s, costs 47 / 17 of that more than doing it inside the
-helper. The proposed allowances are 2,206 raw and 1,229 gzip, the exact
-no-cushion overages. The `dist`, `packed`, `collection`, `query`,
-`query-development`, `all-exports`, `inspect` and `external-atom` budgets move
-to the measured values, and the runtime digest is recertified.
+that their stacks equal `main`'s, added 47 / 17 over doing it inside the helper.
+Engine detection that invokes no application accessor or formatting hook,
+together with the defined wrapper `name`, adds the rest. The proposed allowances
+are 2,628 raw and 1,343 gzip, the exact no-cushion overages. The `dist`,
+`packed`, `collection`, `query`, `query-development`, `all-exports`, `inspect`
+and `external-atom` budgets move to the measured values, and the runtime digest
+is recertified.
