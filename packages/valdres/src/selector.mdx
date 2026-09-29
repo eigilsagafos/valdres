@@ -6,15 +6,23 @@ description: Create derived state from atoms or other selectors
 # selector
 
 <div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
-  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
-  <code className="text-sm font-mono text-accent-500">selector&lt;T&gt;(getter: (get: GetFn) =&gt; T): Selector&lt;T&gt;</code>
-  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
-    Derive computed state that updates automatically
-  </div>
+    <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">
+        Signature
+    </div>
+    <code className="text-sm font-mono text-accent-500">
+        selector&lt;T&gt;(getter: (get: GetFn) =&gt; T): Selector&lt;T&gt;
+    </code>
+    <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
+            valdres
+        </span>
+        Derive computed state that updates automatically
+    </div>
 </div>
 
-Creates derived state that automatically recomputes when its dependencies change. Selectors are read-only — they compute their value from atoms and other selectors.
+Creates derived state that automatically recomputes when its dependencies
+change. Selectors are read-only — they compute their value from atoms and other
+selectors.
 
 ## Usage
 
@@ -33,24 +41,25 @@ const fullNameSelector = selector(get => {
 
 ## Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `getter` | `(get: GetFn) => T` | A function that computes the derived value. Use `get()` to read atoms or other selectors. |
-| `options.name` | `string` | Optional name for debugging, devtools, and validation error messages |
-| `options.schema` | `Schema<T>` | Schema for runtime validation of the selector's result, and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
-| `options.schemaValidation` | `boolean` | Per-selector override of the store's `schemaValidation` flag — `true` always validates this selector, `false` exempts it |
-| `options.mutable` | `boolean` | Opt out of development/test deep-freezing. Required when results contain mutable built-ins or host objects that cannot be frozen safely. |
+| Parameter                  | Type                | Description                                                                                                                                                           |
+| -------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getter`                   | `(get: GetFn) => T` | A function that computes the derived value. Use `get()` to read atoms or other selectors.                                                                             |
+| `options.name`             | `string`            | Optional name for debugging, devtools, and validation error messages                                                                                                  |
+| `options.schema`           | `Schema<T>`         | Schema for runtime validation of the selector's result, and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
+| `options.schemaValidation` | `boolean`           | Per-selector override of the store's `schemaValidation` flag — `true` always validates this selector, `false` exempts it                                              |
+| `options.mutable`          | `boolean`           | Opt out of development/test deep-freezing. Required when results contain mutable built-ins or host objects that cannot be frozen safely.                              |
 
-Selectors follow the same [immutability and exotic-value
-contract](/valdres/atom#immutability-and-exotic-values) as atoms. When a
-selector returns a value from a mutable atom unchanged, mark the selector
-`mutable: true` as well so its cache does not attempt to deep-freeze that value.
+Selectors follow the same
+[immutability and exotic-value contract](/valdres/atom#immutability-and-exotic-values)
+as atoms. When a selector returns a value from a mutable atom unchanged, mark
+the selector `mutable: true` as well so its cache does not attempt to
+deep-freeze that value.
 
 ## Async selectors
 
 Selectors can return a promise. They work with `Suspense` in React. Note that
-the getter itself must be a sync function that *returns* a promise — `selector()`
-rejects `async` functions at creation time:
+the getter itself must be a sync function that _returns_ a promise —
+`selector()` rejects `async` functions at creation time:
 
 ```ts
 const userDataSelector = selector(get => {
@@ -77,28 +86,94 @@ selector (`schemaValidation: true`). See the
 
 ## Evaluation errors
 
-Synchronous exceptions thrown while evaluating a selector are wrapped in
-`SelectorEvaluationError`. The original exception remains available as
-`error.cause`, and the message includes the named selector chain that led to
-the failure. Give selectors a `name` to make that trace useful.
+When a selector's getter throws, reading the selector throws a
+`SelectorGetterError`. Its `selector` is the selector that failed and its
+`cause` is exactly the value the getter threw. Valdres does not modify that
+value.
 
-A dependency cycle throws `SelectorCircularDependencyError`, which extends
-`SelectorEvaluationError`. Both classes are exported from `valdres`, so check
-for the more specific circular error first when handling both:
+When a getter reads a dependency that has failed, `get` throws a
+`SelectorDependencyError`. Its `dependency` is the selector that was read and
+its `cause` is that dependency's error. The getter can catch it and return a
+fallback; the selector still depends on the failed one and recomputes when it
+recovers. If the getter doesn't catch it, the selector fails too, with the
+dependency error as the `cause` of its own `SelectorGetterError`. A failure
+therefore reaches every dependent as a chain of causes:
+
+```text
+SelectorGetterError         selector: profileSelector
+└ SelectorDependencyError   dependency: userSelector
+  └ SelectorGetterError     selector: userSelector
+    └ Error: User not found   (what userSelector's getter threw)
+```
+
+The two wrapper classes are not exported. Identify them by `code` and follow
+`cause` to the value that was thrown:
 
 ```ts
-import {
-    SelectorCircularDependencyError,
-    SelectorEvaluationError,
-} from "valdres"
+const WRAPPERS = new Set([
+    "VALDRES_SELECTOR_GETTER_ERROR",
+    "VALDRES_SELECTOR_DEPENDENCY_ERROR",
+])
+
+const thrownValue = (error: unknown): unknown => {
+    while (
+        error instanceof Error &&
+        WRAPPERS.has((error as { code?: string }).code ?? "")
+    ) {
+        error = error.cause
+    }
+    return error
+}
 
 try {
     appStore.get(profileSelector)
 } catch (error) {
-    if (error instanceof SelectorCircularDependencyError) {
-        console.error("Selector dependency cycle", error.message)
-    } else if (error instanceof SelectorEvaluationError) {
-        console.error("Selector evaluation failed", error.cause)
+    console.error("Profile failed", thrownValue(error))
+}
+```
+
+A failed selector keeps its error until one of its inputs changes, so reading it
+again throws the same error object. Each failing selector gets its own wrappers.
+Their `code`, `name`, `message`, `selector` or `dependency`, and `cause` are
+read-only, and they cannot gain properties.
+
+### Stack traces
+
+The value your getter threw keeps its own stack. A wrapper's stack shows where
+Valdres created it, not where your code threw:
+
+- In V8 (Chrome, Node), the first wrapper around a thrown value records stack
+  frames. Wrappers created as the failure spreads to other selectors have a
+  stack of just their name and message, so a failure that reaches thousands of
+  selectors stays cheap.
+- In Bun, every wrapper records frames, and the stack text is only computed when
+  you read `stack`.
+- Elsewhere, every wrapper records frames and is frozen, as before.
+
+Only Node and Bun are tested. Chrome and Safari are expected to behave as V8 and
+the "elsewhere" case above, but neither is verified.
+
+Prefer throwing `Error` objects. A string or plain object has no stack, so the
+first wrapper's frames, which show Valdres internals and, with a high enough
+`Error.stackTraceLimit`, the operation that triggered the failure, are all you
+get.
+
+### Dependency cycles
+
+A dependency cycle fails with `SelectorCircularDependencyError`
+(`VALDRES_SELECTOR_CIRCULAR_DEPENDENCY`), which is exported. Its `selector` is
+the selector whose read closed the cycle and `path` lists the selectors along
+it. A selector that reads into a cycle finds this error at the end of its cause
+chain:
+
+```ts
+import { SelectorCircularDependencyError } from "valdres"
+
+try {
+    appStore.get(profileSelector)
+} catch (error) {
+    if (thrownValue(error) instanceof SelectorCircularDependencyError) {
+        console.error("Selector dependency cycle")
     } else {
         throw error
     }
@@ -107,6 +182,8 @@ try {
 
 ## See also
 
-- [selectorFamily](/valdres/selectorFamily) — create a collection of selectors keyed by a parameter
-- [Schema Validation](/guides/schema-validation) — runtime validation and type inference
+- [selectorFamily](/valdres/selectorFamily) — create a collection of selectors
+  keyed by a parameter
+- [Schema Validation](/guides/schema-validation) — runtime validation and type
+  inference
 - [useValue](/react/useValue) — read a selector value in your components

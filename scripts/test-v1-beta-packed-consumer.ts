@@ -163,6 +163,7 @@ indexedStore.dispose()
 
 // A query whose first materialization fails is a recorded dependency that
 // recovers once the failing row is repaired.
+const stackTraceLimit = Error.stackTraceLimit
 const failingEntities = core.collection({
     indexes: {
         kind: value => {
@@ -184,6 +185,33 @@ assert.throws(
         error.cause.dependency === failingTasks &&
         error.cause.cause.message === "bad kind",
 )
+// Propagation wrappers keep immutable metadata on every engine. Bun
+// (JavaScriptCore) leaves their stacks lazy instead of freezing them; Node (V8)
+// constructs a wrapper around another selector error without frames, so only
+// the dependency wrapper around the extractor's error keeps them here.
+let failingError
+try {
+    failingStore.get(failingCount)
+} catch (error) {
+    failingError = error
+}
+for (const [wrapper, framed] of [
+    [failingError, typeof Bun !== "undefined"],
+    [failingError.cause, true],
+]) {
+    assert.equal(Object.isExtensible(wrapper), false)
+    for (const key of ["message", "code", "name", "cause"]) {
+        const descriptor = Object.getOwnPropertyDescriptor(wrapper, key)
+        assert.equal(descriptor.writable, false)
+        assert.equal(descriptor.configurable, false)
+    }
+    assert.equal(Object.isFrozen(wrapper), typeof Bun === "undefined")
+    const stack = String(wrapper.stack)
+    assert.ok(stack.startsWith(wrapper.name + ": " + wrapper.message))
+    assert.equal(stack.includes("\n    at "), framed)
+}
+assert.ok(failingError.cause.cause.stack.includes("\n    at "))
+assert.equal(Error.stackTraceLimit, stackTraceLimit)
 let failingNotifications = 0
 failingStore.sub(failingCount, () => failingNotifications++)
 failingStore.set(failingRow, { kind: "task" })

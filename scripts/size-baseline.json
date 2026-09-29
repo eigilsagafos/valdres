@@ -8,12 +8,12 @@
     "provenance": {
         "ordinaryBaselineCommit": "7c55be567457218fb597f9cd9658b1c71997fb83",
         "certificationBuildCount": 3,
-        "certifiedRuntimeBuildSha256": "8b8d0c716fea25638bb5ba06ab5637bdb5a3d790f47d5bbef86b2693b56a9f42"
+        "certifiedRuntimeBuildSha256": "f45969627c10ba37ed0a0034f0053c4594319eb6285a2b5eda1913c37b32d65e"
     },
     "policy": {
         "ordinaryTolerancePercent": 2,
-        "coreRetainingRawAllowance": 1581,
-        "coreRetainingGzipAllowance": 983,
+        "coreRetainingRawAllowance": 2628,
+        "coreRetainingGzipAllowance": 1343,
         "coreRetainingFixtures": [
             "atom",
             "atom-selector-store",
@@ -45,37 +45,37 @@
     },
     "featureBudgets": {
         "dist": {
-            "raw": 367896,
-            "gzip": 108628
+            "raw": 369992,
+            "gzip": 109366
         },
         "packed": {
-            "raw": 520747,
-            "gzip": 138728
+            "raw": 523149,
+            "gzip": 139499
         },
         "fixtures": {
             "collection": {
-                "raw": 101797,
-                "gzip": 28653
+                "raw": 102849,
+                "gzip": 29031
             },
             "all-exports": {
-                "raw": 126988,
-                "gzip": 35995
+                "raw": 128040,
+                "gzip": 36341
             },
             "inspect": {
-                "raw": 105671,
-                "gzip": 28399
+                "raw": 106724,
+                "gzip": 28743
             },
             "query": {
-                "raw": 108195,
-                "gzip": 30674
+                "raw": 109247,
+                "gzip": 31039
             },
             "query-development": {
-                "raw": 108195,
-                "gzip": 30674
+                "raw": 109247,
+                "gzip": 31039
             },
             "external-atom": {
-                "raw": 88742,
-                "gzip": 24021
+                "raw": 89789,
+                "gzip": 24394
             }
         }
     }

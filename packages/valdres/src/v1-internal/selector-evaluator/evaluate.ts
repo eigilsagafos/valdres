@@ -6,6 +6,7 @@ import {
     SelectorDependencyError,
     SelectorGetterError,
     SelectorReadRevokedError,
+    framelessError,
 } from "./errors"
 import type {
     SelectorComparisonBaseline,
@@ -1343,7 +1344,14 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         const controlFault = session.getControlFault()
         if (controlFault.kind === "fault") throw controlFault.error
         if (served.outcome.kind === "error") {
-            throw new SelectorDependencyError(dependency, served.outcome.error)
+            throw (
+                framelessError(
+                    SelectorDependencyError,
+                    dependency,
+                    served.outcome.error,
+                ) ??
+                new SelectorDependencyError(dependency, served.outcome.error)
+            )
         }
         return served.outcome.value as DependencyValue
     }
@@ -1403,7 +1411,12 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                         getterError instanceof
                         InvalidSynchronousSelectorResultError
                             ? getterError
-                            : new SelectorGetterError(selector, getterError),
+                            : (framelessError(
+                                  SelectorGetterError,
+                                  selector,
+                                  getterError,
+                              ) ??
+                              new SelectorGetterError(selector, getterError)),
                 },
                 dependencies,
             )
@@ -1435,10 +1448,15 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                         classifiedResult.error instanceof
                         InvalidSynchronousSelectorResultError
                             ? classifiedResult.error
-                            : new SelectorGetterError(
+                            : (framelessError(
+                                  SelectorGetterError,
                                   selector,
                                   classifiedResult.error,
-                              ),
+                              ) ??
+                              new SelectorGetterError(
+                                  selector,
+                                  classifiedResult.error,
+                              )),
                 },
                 dependencies,
             )
