@@ -240,12 +240,15 @@ describe("pinned Bun toolchain", () => {
         // docs/designs/store-reactions.md. 983 is the same measurement after
         // escaped selector failures publish outside settle handlers too
         // (atom-selector-store 18252 - ceiling 17269), certified in
-        // docs/designs/selector-failure-recovery.md.
+        // docs/designs/selector-failure-recovery.md. 1343 is the same
+        // measurement after propagated selector errors stop doing eager stack
+        // work (atom-selector-store 18612 - ceiling 17269), certified in
+        // docs/designs/selector-failure-propagation.md.
         const allowance = baseline.policy.coreRetainingGzipAllowance
-        expect(allowance).toBe(983)
-        // The raw allowance is the same kind of reviewed edit: 1581 is
-        // atom-selector-store 67865 - ceiling 66284 at that point.
-        expect(baseline.policy.coreRetainingRawAllowance).toBe(1581)
+        expect(allowance).toBe(1343)
+        // The raw allowance is the same kind of reviewed edit: 2628 is
+        // atom-selector-store 68912 - ceiling 66284 at that point.
+        expect(baseline.policy.coreRetainingRawAllowance).toBe(2628)
         for (const budget of [
             baseline.featureBudgets.dist,
             baseline.featureBudgets.packed,
