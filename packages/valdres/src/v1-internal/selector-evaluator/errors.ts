@@ -17,29 +17,50 @@ abstract class ImmutableSelectorError extends Error {
     }
 }
 
-// How this engine holds an Error's own `stack`: "lazy" for JavaScriptCore's
-// lazily computed data property, "accessor" for V8, and "" when it has neither
-// or detection failed, which keeps the plain frozen, framed wrappers.
+// How this engine holds an Error's own `stack`: "accessor" for V8, "lazy" for
+// Bun's JavaScriptCore, whose lazily computed data property freezing would
+// compute, and "" otherwise. Wrappers are then built exactly as on main:
+// frozen, with frames. Detection runs once, at the first wrapper, and never
+// reads a stack that an application's Error.prepareStackTrace could format or
+// invokes an accessor.
 let ownStack: string | undefined
 const probeOwnStack = (): string => {
     if (ownStack !== undefined) return ownStack
     ownStack = ""
-    if ((globalThis as { Bun?: unknown }).Bun !== undefined) {
-        // Bun is JavaScriptCore. Reading any Error's stack there runs the
-        // application's Error.prepareStackTrace, which must not run, throw or
-        // re-enter while a selector failure is being wrapped.
-        ownStack = "lazy"
-    } else {
-        // Elsewhere reading the descriptor runs no application code.
-        try {
-            const stack = Object.getOwnPropertyDescriptor(new Error(), "stack")
-            if (stack !== undefined) {
-                ownStack = "value" in stack ? "lazy" : "accessor"
+    try {
+        // An Error constructed without frames still gets V8's own accessor. On
+        // JavaScriptCore it has no stack to compute, so no hook runs.
+        const limit = Object.getOwnPropertyDescriptor(Error, "stackTraceLimit")
+        if (limit?.writable === true) {
+            let probe: Error
+            ;(Error as { stackTraceLimit?: unknown }).stackTraceLimit = 0
+            try {
+                probe = new Error()
+            } finally {
+                ;(Error as { stackTraceLimit?: unknown }).stackTraceLimit =
+                    limit.value
             }
-        } catch {
-            // Detection must never replace the failure being wrapped. It is
-            // not retried; wrappers stay frozen and framed.
+            const stack = Object.getOwnPropertyDescriptor(probe, "stack")
+            if (stack !== undefined && "get" in stack) {
+                ownStack = "accessor"
+                return ownStack
+            }
         }
+        // Bun's own global is a non-writable, non-configurable data property.
+        const bun = Object.getOwnPropertyDescriptor(globalThis, "Bun")
+        if (
+            bun !== undefined &&
+            "value" in bun &&
+            bun.writable === false &&
+            bun.configurable === false &&
+            typeof bun.value === "object" &&
+            bun.value !== null
+        ) {
+            ownStack = "lazy"
+        }
+    } catch {
+        // Detection must never replace the failure being wrapped. It is
+        // not retried; wrappers are built as on main.
     }
     return ownStack
 }
@@ -74,7 +95,9 @@ const sealPropagated = (
 // which the caller constructs itself so its stack is unchanged. The first
 // selector error around a thrown value therefore keeps its frames, even when
 // the value is a primitive. A writable Error.stackTraceLimit is suspended
-// around the constructor alone, which runs no other code.
+// around the constructor alone. It only defines own fields, assigns fields it
+// already defined and freezes, so with unmodified built-ins no application
+// code runs until the limit is restored.
 export const framelessError = <Wrapper>(
     Type: new (subject: unknown, cause: unknown) => Wrapper,
     subject: unknown,
@@ -97,10 +120,12 @@ export class SelectorGetterError extends ImmutableSelectorError {
     readonly code = "VALDRES_SELECTOR_GETTER_ERROR"
     readonly selector: unknown
     override readonly cause: unknown
+    // Defined, not assigned: assignment would run an application setter on
+    // Error.prototype.name, possibly while the stack limit is suspended.
+    override readonly name = "SelectorGetterError"
 
     constructor(selector: unknown, cause: unknown) {
         super("Selector getter failed")
-        this.name = "SelectorGetterError"
         this.selector = selector
         this.cause = cause
         sealPropagated(this, "selector")
@@ -111,10 +136,12 @@ export class SelectorDependencyError extends ImmutableSelectorError {
     readonly code = "VALDRES_SELECTOR_DEPENDENCY_ERROR"
     readonly dependency: unknown
     override readonly cause: unknown
+    // Defined, not assigned: assignment would run an application setter on
+    // Error.prototype.name, possibly while the stack limit is suspended.
+    override readonly name = "SelectorDependencyError"
 
     constructor(dependency: unknown, cause: unknown) {
         super("Selector dependency failed")
-        this.name = "SelectorDependencyError"
         this.dependency = dependency
         this.cause = cause
         sealPropagated(this, "dependency")

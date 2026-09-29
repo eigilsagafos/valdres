@@ -975,31 +975,33 @@ result.notificationsAfterRecovery = notifications
 console.log(JSON.stringify(result))
 `
 
+// Where the fresh-process probes load Valdres from: the TypeScript source
+// (Bun), the built output and an npm-installed tarball (Bun and Node).
+const probeTargets = async () => [
+    {
+        label: "source",
+        runtimes: ["bun"],
+        cwd: import.meta.dir,
+        entry: pathToFileURL(resolve(import.meta.dir, "../src/index.ts")).href,
+    },
+    {
+        label: "built",
+        runtimes: ["bun", "node"],
+        cwd: import.meta.dir,
+        entry: pathToFileURL(join(await builtDist(), "index.js")).href,
+    },
+    {
+        label: "installed",
+        runtimes: ["bun", "node"],
+        cwd: await installedConsumer(),
+        entry: "valdres-hook-probe",
+    },
+]
+
 describe("engine detection with an application formatting hook", () => {
-    const targets = async () => [
-        {
-            label: "source",
-            runtimes: ["bun"],
-            cwd: import.meta.dir,
-            entry: pathToFileURL(resolve(import.meta.dir, "../src/index.ts"))
-                .href,
-        },
-        {
-            label: "built",
-            runtimes: ["bun", "node"],
-            cwd: import.meta.dir,
-            entry: pathToFileURL(join(await builtDist(), "index.js")).href,
-        },
-        {
-            label: "installed",
-            runtimes: ["bun", "node"],
-            cwd: await installedConsumer(),
-            entry: "valdres-hook-probe",
-        },
-    ]
     const probeAll = async (hookCase: string, first: "write" | "read") => {
         const results: (HookProbeResult & { where: string })[] = []
-        for (const target of await targets()) {
+        for (const target of await probeTargets()) {
             for (const runtime of target.runtimes) {
                 const result = run(
                     [runtime, "--input-type=module", "--eval", HOOK_PROBE],
@@ -1086,8 +1088,8 @@ describe("engine detection with an application formatting hook", () => {
         )
     })
 
-    test("a failed engine probe keeps main's frozen, framed wrappers and is not retried", async () => {
-        for (const target of await targets()) {
+    test("a failed engine probe falls back to main's frozen, framed wrappers and is not retried", async () => {
+        for (const target of await probeTargets()) {
             for (const runtime of target.runtimes) {
                 const result = run(
                     [
@@ -1101,15 +1103,14 @@ describe("engine detection with an application formatting hook", () => {
                 )
                 const where = `${target.label} ${runtime}`
                 expect(result.exitCode, `${where}\n${result.stderr}`).toBe(0)
-                const bun = runtime === "bun"
                 expect({ where, ...JSON.parse(result.stdout) }).toEqual({
                     where,
-                    // Bun is known without probing; elsewhere one failed probe.
-                    stackQueries: bun ? 0 : 1,
+                    // One failed probe, on every engine, and no retry.
+                    stackQueries: 1,
                     codes: [GETTER, DEPENDENCY, GETTER],
                     exactCause: true,
                     sameOnRepeat: true,
-                    frozen: [!bun, !bun, !bun],
+                    frozen: [true, true, true],
                     extensible: [false, false, false],
                     framed: [true, true, true],
                     limitUnchanged: true,
@@ -1119,5 +1120,360 @@ describe("engine detection with an application formatting hook", () => {
                 })
             }
         }
+    })
+})
+
+// Accessors an application may install before the first selector failure:
+// a global Bun accessor or polyfill, or a setter on Error.prototype.name that
+// tampers with Error.stackTraceLimit, throws or re-enters the Store.
+const ACCESSOR_PROBE = String.raw`
+const testCase = process.env.VALDRES_CASE
+const sentinel = { marker: "accessor failure" }
+const calls = { bun: 0, name: 0 }
+const reentry = []
+let store
+let side
+const reenter = () => {
+    try {
+        store.set(side, store.get(side) + 1)
+        return "wrote"
+    } catch (error) {
+        return error?.code ?? "threw"
+    }
+}
+if (testCase === "bun-throwing") {
+    Object.defineProperty(globalThis, "Bun", {
+        configurable: true,
+        get() {
+            calls.bun++
+            throw sentinel
+        },
+    })
+}
+if (testCase === "bun-reentrant") {
+    Object.defineProperty(globalThis, "Bun", {
+        configurable: true,
+        get() {
+            calls.bun++
+            reentry.push(reenter())
+        },
+    })
+}
+if (testCase === "bun-polyfill") globalThis.Bun = { version: "polyfill" }
+if (testCase === "bun-polyfill-fixed-limit") {
+    globalThis.Bun = { version: "polyfill" }
+    Object.defineProperty(Error, "stackTraceLimit", { writable: false })
+}
+if (testCase === "bun-polyfill-locked") {
+    Object.defineProperty(globalThis, "Bun", { value: {}, enumerable: true })
+}
+const valdres = await import(process.env.VALDRES_ENTRY)
+const limitBefore = Object.getOwnPropertyDescriptor(Error, "stackTraceLimit")
+const rootCause = { marker: "application failure" }
+const secondCause = new Error("second failure")
+const fail = valdres.atom(false)
+side = valdres.atom(0)
+const root = valdres.selector(get => {
+    if (get(fail)) throw rootCause
+    return 1
+})
+const leaf = valdres.selector(get => get(root) + 1)
+const secondRoot = valdres.selector(() => {
+    throw secondCause
+})
+const secondLeaf = valdres.selector(get => get(secondRoot))
+store = valdres.store()
+let notifications = 0
+store.sub(leaf, () => notifications++)
+const initial = store.get(leaf)
+if (testCase.startsWith("name-")) {
+    Object.defineProperty(Error.prototype, "name", {
+        configurable: true,
+        get() {
+            return "Error"
+        },
+        set(name) {
+            Object.defineProperty(this, "name", {
+                value: name,
+                writable: true,
+                enumerable: true,
+                configurable: true,
+            })
+            calls.name++
+            if (testCase === "name-readonly") {
+                Object.defineProperty(Error, "stackTraceLimit", { writable: false })
+            }
+            if (testCase === "name-throw-at-zero" && Error.stackTraceLimit === 0) {
+                throw sentinel
+            }
+            if (testCase === "name-throw") throw sentinel
+            if (testCase === "name-delete") delete Error.stackTraceLimit
+            if (testCase === "name-accessor") {
+                Object.defineProperty(Error, "stackTraceLimit", {
+                    configurable: true,
+                    get: () => 10,
+                    set() {
+                        throw sentinel
+                    },
+                })
+            }
+            if (testCase === "name-reentrant") reentry.push(reenter())
+            if (testCase === "name-observe") reentry.push(Error.stackTraceLimit)
+        },
+    })
+}
+const isWrapper = value =>
+    value instanceof Error &&
+    (value.code === "VALDRES_SELECTOR_GETTER_ERROR" ||
+        value.code === "VALDRES_SELECTOR_DEPENDENCY_ERROR")
+const outcome = (target, state, cause) => {
+    let error
+    try {
+        return { value: target.get(state) }
+    } catch (caught) {
+        error = caught
+    }
+    const chain = []
+    let cursor = error
+    while (isWrapper(cursor) && cursor !== cause) {
+        chain.push(cursor)
+        cursor = cursor.cause
+    }
+    return { chain, exactCause: cursor === cause, error }
+}
+let write = "returned"
+try {
+    store.set(fail, true)
+} catch (error) {
+    write = error === sentinel ? "accessor failure" : (error?.code ?? String(error))
+}
+const leafFailure = outcome(store, leaf, rootCause)
+const failures = {
+    leaf: leafFailure,
+    leafAgain: outcome(store, leaf, rootCause),
+    coldRead: outcome(store, secondLeaf, secondCause),
+    coldReadAgain: outcome(store, secondLeaf, secondCause),
+}
+const otherStore = valdres.store()
+otherStore.set(fail, true)
+failures.otherStore = outcome(otherStore, leaf, rootCause)
+const limitAfter = Object.getOwnPropertyDescriptor(Error, "stackTraceLimit")
+const sameDescriptor = (a, b) =>
+    a === b ||
+    (a !== undefined &&
+        b !== undefined &&
+        ["value", "writable", "get", "set", "enumerable", "configurable"].every(
+            key => Object.is(a[key], b[key]),
+        ))
+const frames = wrapper =>
+    String(wrapper.stack)
+        .split("\n")
+        .filter(line => /^\s+at /.test(line)).length
+const chain = leafFailure.chain ?? []
+const result = {
+    calls,
+    reentry,
+    initial,
+    write,
+    notificationsAfterWrite: notifications,
+    failures: Object.fromEntries(
+        Object.entries(failures).map(([key, { chain, exactCause }]) => [
+            key,
+            { codes: (chain ?? []).map(wrapper => wrapper.code), exactCause },
+        ]),
+    ),
+    sameLeafError: failures.leafAgain.error === leafFailure.error,
+    limitUnchanged: sameDescriptor(limitBefore, limitAfter),
+    frozen: chain.map(wrapper => Object.isFrozen(wrapper)),
+    extensible: chain.map(wrapper => Object.isExtensible(wrapper)),
+}
+if (testCase.startsWith("name-")) {
+    delete Error.prototype.name
+    Object.defineProperty(Error.prototype, "name", {
+        value: "Error",
+        writable: true,
+        configurable: true,
+    })
+}
+if (limitAfter !== undefined && "value" in limitAfter) {
+    result.frames = chain.map(wrapper => frames(wrapper) > 0)
+}
+store.set(fail, false)
+result.recovered = store.get(leaf)
+result.notificationsAfterRecovery = notifications
+result.side = store.get(side)
+console.log(JSON.stringify(result))
+`
+
+describe("detection and wrapper construction run no application accessor", () => {
+    const chain = { codes: [GETTER, DEPENDENCY, GETTER], exactCause: true }
+    const probeCase = async (testCase: string, runtimes = ["bun", "node"]) => {
+        const results = []
+        for (const target of await probeTargets()) {
+            for (const runtime of target.runtimes) {
+                if (!runtimes.includes(runtime)) continue
+                const result = run(
+                    [runtime, "--input-type=module", "--eval", ACCESSOR_PROBE],
+                    target.cwd,
+                    { VALDRES_ENTRY: target.entry, VALDRES_CASE: testCase },
+                )
+                const where = `${target.label} ${runtime} ${testCase}`
+                expect(result.exitCode, `${where}\n${result.stderr}`).toBe(0)
+                results.push({ where, runtime, ...JSON.parse(result.stdout) })
+            }
+        }
+        return results
+    }
+    // Outcomes, causes, notifications, recovery and the stack-limit descriptor
+    // match an environment without the accessor; engine policy is unchanged.
+    const expected = (where: string, runtime: string) => {
+        const v8 = runtime === "node"
+        return {
+            where,
+            runtime,
+            calls: { bun: 0, name: 0 },
+            reentry: [],
+            initial: 2,
+            write: "returned",
+            notificationsAfterWrite: 1,
+            failures: {
+                leaf: chain,
+                leafAgain: chain,
+                coldRead: chain,
+                coldReadAgain: chain,
+                otherStore: chain,
+            },
+            sameLeafError: true,
+            limitUnchanged: true,
+            frozen: [v8, v8, v8],
+            extensible: [false, false, false],
+            // V8 keeps frames only on the first wrapper around the thrown value.
+            frames: v8 ? [false, false, true] : [true, true, true],
+            recovered: 2,
+            notificationsAfterRecovery: 2,
+            side: 0,
+        }
+    }
+
+    for (const testCase of [
+        "bun-throwing",
+        "bun-reentrant",
+        "bun-polyfill",
+        "bun-polyfill-locked",
+    ]) {
+        // Bun's own global is non-configurable, so these run where it is absent.
+        test(`a global Bun that is not Bun's own (${testCase}) is never read and changes nothing`, async () => {
+            const results = await probeCase(testCase, ["node"])
+            expect(results).toHaveLength(2)
+            expect(results).toEqual(
+                results.map(result => expected(result.where, result.runtime)),
+            )
+        })
+    }
+
+    test("without a writable stack limit to probe with, a polyfilled Bun keeps main's wrappers", async () => {
+        const results = await probeCase("bun-polyfill-fixed-limit", ["node"])
+        expect(results).toHaveLength(2)
+        expect(results).toEqual(
+            results.map(result => ({
+                ...expected(result.where, result.runtime),
+                frozen: [true, true, true],
+                frames: [true, true, true],
+            })),
+        )
+    })
+
+    for (const testCase of [
+        "name-readonly",
+        "name-throw-at-zero",
+        "name-throw",
+        "name-delete",
+        "name-accessor",
+        "name-reentrant",
+        "name-observe",
+    ]) {
+        test(`an Error.prototype.name setter (${testCase}) never runs for wrappers`, async () => {
+            const results = await probeCase(testCase)
+            expect(results).toHaveLength(5)
+            expect(results).toEqual(
+                results.map(result => expected(result.where, result.runtime)),
+            )
+        })
+    }
+
+    test("a JavaScriptCore realm without Bun's global builds wrappers as main does", () => {
+        // Built for and run in a node:vm realm of Bun, which has no Bun global:
+        // detection reads no stack, so the formatting hook runs only for the
+        // wrappers main freezes, and never inside a selector callback.
+        const script = String.raw`
+            import { runInNewContext } from "node:vm"
+            const build = await Bun.build({
+                entrypoints: [${JSON.stringify(resolve(import.meta.dir, "../src/index.ts"))}],
+                format: "cjs",
+                target: "browser",
+                packages: "bundle",
+            })
+            if (!build.success) throw new Error(build.logs.join("\n"))
+            const code = await build.outputs[0].text()
+            const probe = ${"`"}(() => {
+                const v = module.exports
+                const cause = { id: "cause" }
+                const fail = v.atom(false)
+                const side = v.atom(0)
+                const store = v.store()
+                const root = v.selector(get => { if (get(fail)) throw cause; return 1 })
+                const leaf = v.selector(get => get(root) + 1)
+                let notifications = 0
+                store.sub(leaf, () => notifications++)
+                const names = []
+                let reentry
+                Error.prepareStackTrace = (error, frames) => {
+                    names.push(error.name)
+                    if (error.name === "Error") {
+                        try { store.set(side, 1); reentry = "wrote" } catch (e) { reentry = e.code }
+                    }
+                    return error.name
+                }
+                store.set(fail, true)
+                let found
+                try { store.get(leaf) } catch (e) { found = e }
+                let again
+                try { store.get(leaf) } catch (e) { again = e }
+                let cursor = found
+                const codes = []
+                while (cursor && cursor.code) { codes.push(cursor.code); cursor = cursor.cause }
+                const result = {
+                    hasBun: Object.getOwnPropertyDescriptor(globalThis, "Bun") !== undefined,
+                    names, reentry, codes, exactCause: cursor === cause,
+                    sameError: found === again, frozen: Object.isFrozen(found),
+                    notifications, side: store.get(side),
+                }
+                store.set(fail, false)
+                result.recovered = store.get(leaf)
+                return JSON.stringify(result)
+            })()${"`"}
+            console.log(runInNewContext(code + "\n" + probe, { module: { exports: {} } }))
+        `
+        const result = run(
+            ["bun", "--input-type=module", "--eval", script],
+            import.meta.dir,
+        )
+        expect(result.exitCode, result.stderr).toBe(0)
+        expect(JSON.parse(result.stdout)).toEqual({
+            hasBun: false,
+            // As on main: frozen wrappers are formatted as they are frozen.
+            names: [
+                "SelectorGetterError",
+                "SelectorDependencyError",
+                "SelectorGetterError",
+            ],
+            codes: [GETTER, DEPENDENCY, GETTER],
+            exactCause: true,
+            sameError: true,
+            frozen: true,
+            notifications: 1,
+            side: 0,
+            recovered: 2,
+        })
     })
 })
