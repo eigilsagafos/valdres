@@ -1,5 +1,110 @@
 # valdres
 
+## 1.0.0-beta.41
+
+### Minor Changes
+
+- [#408](https://github.com/eigilsagafos/valdres/pull/408)
+  [`7c0aba8`](https://github.com/eigilsagafos/valdres/commit/7c0aba8638862e9398b1d85ddaba0b10130ef158)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - **Experimental:
+  `store.sub(state, { settle, notify })` adds a `settle` phase that writes state
+  before subscribers are notified.**
+
+    `sub` now also takes phase-keyed handlers. When a settlement changes
+    `state`, `settle` executes as its own synchronous transaction after
+    selectors propagate and before ordinary subscribers see the settlement. Its
+    commit joins the same settlement, so subscribers — including `notify`
+    handlers and `valdres-react` components — are notified once and only observe
+    the input together with the result it caused. `notify` behaves exactly like
+    the callback form, and `store.sub(state, callback)` is unchanged.
+
+    - Pass `settle`, `notify`, or both; one unsubscribe removes both. Any other
+      key, or an object with neither handler, throws a `TypeError`.
+    - Subscribing never runs `settle`; only later changes of the trigger do.
+    - `notify` is not an on-success callback for `settle`: it observes every
+      settled change of the trigger, including after its `settle` threw, and can
+      run during subscribing without `settle`.
+    - `tx.get` reads the latest committed state, including earlier `settle`
+      handlers in the same settlement, plus the handler's own staged writes.
+    - A `settle` handler that throws or returns a promise discards only its own
+      writes; failures are reported after delivery as
+      `SubscriberNotificationError` causes. If recomputing a selector fails
+      inside a `settle` commit, that selector serves the failure as its error,
+      and its dependents fail with it, until one of its inputs changes.
+      Subscribers never see a value computed before the write.
+    - `settle` handlers run in at most 64 rounds per settlement; a settlement
+      that needs more reports the new `SettleLimitError`
+      (`VALDRES_SETTLE_LIMIT`).
+    - `valdres/inspect` records each `settle` commit as a commit span with
+      `settle: true` and its own `result`.
+    - `settle` handlers read the latest state, so an earlier one can change
+      whether a later one is still eligible; among eligible handlers,
+      registration order decides.
+
+    Do I/O and DOM work that can re-enter an external source in `notify`, not in
+    `settle`. The `settle` phase is experimental during the beta.
+
+### Patch Changes
+
+- [#410](https://github.com/eigilsagafos/valdres/pull/410)
+  [`610c008`](https://github.com/eigilsagafos/valdres/commit/610c008e5195428bfca1f84f3c8f447e5e4b947d)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - **A failing
+  selector does much less stack work for each dependent it fails.**
+
+    A throw fails every subscribed dependent, and each gets its own
+    `SelectorGetterError` wrapping a `SelectorDependencyError`. On the measured
+    workloads, stack work for these wrappers was most of the cost of a failing
+    write. V8 (Chrome, Node) captured frames for every wrapper. Bun computed
+    every wrapper's stack immediately because the wrapper was frozen.
+
+    - On V8, a wrapper whose `cause` is another selector error is now
+      constructed without stack frames, so its `stack` is just its name and
+      message. The first wrapper around the thrown value keeps its stack as
+      before, so every cause chain still has frames, even when a string or plain
+      object was thrown. `Error.stackTraceLimit` is suspended only while such a
+      wrapper is constructed, and it is left alone when it is not an own
+      writable data property.
+    - In Bun, wrappers are no longer frozen, so the engine computes a stack only
+      when it is read. Their metadata (`message`, `code`, `name`, `selector` or
+      `dependency`, and `cause`) stays read-only and they cannot gain
+      properties. The engine's own `stack`, `line` and `column` stay writable,
+      as `stack` already was on V8.
+    - Other engines keep the frozen, framed wrappers. The exception is V8 with a
+      read-only `Error.stackTraceLimit` together with a non-writable,
+      non-configurable `Bun` global defined by the application. There the
+      wrappers keep their frames but take Bun's unfrozen policy.
+    - The wrappers define their `name` rather than assigning it, so a setter on
+      `Error.prototype.name` no longer runs for them.
+
+    Codes, messages, cause chains, identity and the thrown value are unchanged.
+    This relies on the global `Error` and the `Object` reflection functions
+    being unmodified. Only Node 24 and Bun 1.4 were tested; Chrome, Safari and
+    SpiderMonkey are unverified. The `selector` docs now describe these
+    wrappers, their cause chain and their stacks.
+
+- [#409](https://github.com/eigilsagafos/valdres/pull/409)
+  [`4d3ddb0`](https://github.com/eigilsagafos/valdres/commit/4d3ddb0f7ddd6fbbb1b2dee0269220b8ad8dc6a0)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - **Selector failures
+  now recover through their dependency edges.**
+
+    - A query whose first index materialization fails (an extractor throws or
+      returns an invalid key for an existing row) now serves that error as its
+      outcome. A selector reading it fails with a `SelectorDependencyError` on
+      the query instead of caching an edge-less getter error, and the next
+      committed change to that collection in that scope retries materialization
+      and updates those selectors. Previously such a selector stayed failed
+      until one of its other inputs changed, even after the row was repaired.
+    - A failure that escapes a selector's re-evaluation during any write,
+      external source update, or external read now becomes that selector's error
+      outcome, as it already did inside `settle` handlers. Its dependents settle
+      against it and are notified, so no cached value computed before the write
+      is served as current. The applied write is kept, and the failure is thrown
+      afterwards, exactly as it escaped when it is the only error, or as a cause
+      of a `SubscriberNotificationError` alongside other failures.
+    - A selector that reads a dependency whose first evaluation escaped now
+      records that dependency, including when it catches the read error and
+      returns a fallback, and recovers when that dependency does.
+
 ## 1.0.0-beta.40
 
 ### Patch Changes
