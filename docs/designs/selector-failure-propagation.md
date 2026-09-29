@@ -212,3 +212,17 @@ are 2,628 raw and 1,343 gzip, the exact no-cushion overages. The `dist`,
 `packed`, `collection`, `query`, `query-development`, `all-exports`, `inspect`
 and `external-atom` budgets move to the measured values, and the runtime digest
 is recertified.
+
+### Release-version adjustment
+
+Approved by the owner on 2026-09-29. The certified `packed` gzip budget of
+139,499 was exact, and it covers the prepacked `package.json`. Release PR #406
+changes nothing in the packed package except `valdres`' version, `1.0.0-beta.40`
+→ `1.0.0-beta.41`. That moves canonical packed gzip from 139,499 to 139,500.
+Packed raw stays 523,149 and `dist` is byte-identical.
+
+Reproduced on pinned Bun 1.4.0 with `bun run check-size`: `main` (`d6954a24`)
+measures 139,499. The same tree with only that version string edited measures
+139,500, as does #406's head (`2c7bb6b7`). Only the `packed` gzip budget moves,
+to 139,500. The core-retaining allowances, the fixture and `dist` budgets, and
+the runtime digest are unchanged.
