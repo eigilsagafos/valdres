@@ -17,11 +17,32 @@ abstract class ImmutableSelectorError extends Error {
     }
 }
 
-// An Error's own `stack` on this engine: a lazily computed data property on
-// JavaScriptCore, an accessor on V8, absent elsewhere.
-let ownStack: PropertyDescriptor | undefined
-const probeOwnStack = (): PropertyDescriptor =>
-    (ownStack ??= Object.getOwnPropertyDescriptor(new Error(), "stack") ?? {})
+// How this engine holds an Error's own `stack`: "lazy" for JavaScriptCore's
+// lazily computed data property, "accessor" for V8, and "" when it has neither
+// or detection failed, which keeps the plain frozen, framed wrappers.
+let ownStack: string | undefined
+const probeOwnStack = (): string => {
+    if (ownStack !== undefined) return ownStack
+    ownStack = ""
+    if ((globalThis as { Bun?: unknown }).Bun !== undefined) {
+        // Bun is JavaScriptCore. Reading any Error's stack there runs the
+        // application's Error.prepareStackTrace, which must not run, throw or
+        // re-enter while a selector failure is being wrapped.
+        ownStack = "lazy"
+    } else {
+        // Elsewhere reading the descriptor runs no application code.
+        try {
+            const stack = Object.getOwnPropertyDescriptor(new Error(), "stack")
+            if (stack !== undefined) {
+                ownStack = "value" in stack ? "lazy" : "accessor"
+            }
+        } catch {
+            // Detection must never replace the failure being wrapped. It is
+            // not retried; wrappers stay frozen and framed.
+        }
+    }
+    return ownStack
+}
 
 const READ_ONLY = { writable: false, configurable: false }
 
@@ -36,7 +57,7 @@ const sealPropagated = (
     error: Error,
     metadata: "selector" | "dependency",
 ): void => {
-    if (!("value" in probeOwnStack())) {
+    if (probeOwnStack() !== "lazy") {
         Object.freeze(error)
         return
     }
@@ -60,7 +81,7 @@ export const framelessError = <Wrapper>(
     cause: unknown,
 ): Wrapper | undefined => {
     const limit =
-        "get" in probeOwnStack() && ImmutableSelectorError.is(cause)
+        probeOwnStack() === "accessor" && ImmutableSelectorError.is(cause)
             ? Object.getOwnPropertyDescriptor(Error, "stackTraceLimit")
             : undefined
     if (limit?.writable !== true) return undefined

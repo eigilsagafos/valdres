@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import {
+    cp,
     mkdir,
     mkdtemp,
     readdir,
@@ -728,16 +729,394 @@ describe("propagated selector error stacks in the built output", () => {
         }
         expect((await probe("bun", "limit-missing")).limitAfter).toBeNull()
         const result = await probe("bun", "prepare-stack-trace")
-        // No wrapper stack is computed during a failing write. The first
-        // failure in the process (the forged value's setup here) probes how
-        // the engine holds stacks once, with an internal Error.
-        expect(result.preparedBeforeWrite).toEqual(["Error"])
+        // No stack is computed while failing, not even to detect the engine.
+        expect(result.preparedBeforeWrite).toEqual([])
         expect(result.preparedDuringWrite).toEqual([])
         for (const chain of Object.values(result.chains)) {
             for (const wrapper of chain) {
                 expect(wrapper.stack).toMatch(
                     /^custom Selector(Getter|Dependency)Error [1-9]\d*$/,
                 )
+            }
+        }
+    })
+})
+
+// Each case runs in a fresh process, so the first failure below is the first
+// one the runtime's engine detection ever sees. The formatting hook is
+// installed after a healthy read and before any failure.
+const HOOK_PROBE = String.raw`
+const valdres = await import(process.env.VALDRES_ENTRY)
+const hookCase = process.env.VALDRES_HOOK_CASE
+const sentinel = { marker: "hook failure" }
+const rootCause = { marker: "application failure" }
+const secondCause = new Error("second failure")
+const fail = valdres.atom(false)
+const other = valdres.atom(0)
+const root = valdres.selector(get => {
+    if (get(fail)) throw rootCause
+    return 1
+})
+const leaf = valdres.selector(get => get(root) + 1)
+const secondRoot = valdres.selector(() => {
+    throw secondCause
+})
+const secondLeaf = valdres.selector(get => get(secondRoot))
+const store = valdres.store()
+let notifications = 0
+store.sub(leaf, () => notifications++)
+const result = { initial: store.get(leaf) }
+const attempt = run => {
+    try {
+        return { value: run() }
+    } catch (error) {
+        return { threw: error === sentinel ? "hook failure" : (error?.code ?? String(error)), error }
+    }
+}
+let hookCalls = 0
+const reentry = []
+Error.prepareStackTrace = (error, frames) => {
+    hookCalls++
+    if (hookCase === "throw-generic" && error.name === "Error") throw sentinel
+    if (hookCase === "throw-all") throw sentinel
+    if (hookCase === "reentrant") {
+        reentry.push(attempt(() => store.get(leaf)), attempt(() => store.set(other, hookCalls)))
+    }
+    return "custom " + error.name + " " + frames.length
+}
+const isWrapper = value =>
+    value instanceof Error &&
+    (value.code === "VALDRES_SELECTOR_GETTER_ERROR" ||
+        value.code === "VALDRES_SELECTOR_DEPENDENCY_ERROR")
+const outcome = (target, state, cause) => {
+    const read = attempt(() => target.get(state))
+    if (!("threw" in read)) return { value: read.value }
+    const codes = []
+    let cursor = read.error
+    while (isWrapper(cursor) && cursor !== cause) {
+        codes.push(cursor.code)
+        cursor = cursor.cause
+    }
+    return { codes, exactCause: cursor === cause, error: read.error }
+}
+const summary = ({ error, ...rest }) => rest
+const failures = {}
+if (process.env.VALDRES_FIRST === "read") {
+    failures.coldRead = outcome(store, secondLeaf, secondCause)
+}
+const write = attempt(() => store.set(fail, true))
+result.write = "threw" in write ? write.threw : "returned"
+result.notificationsAfterWrite = notifications
+failures.leaf = outcome(store, leaf, rootCause)
+failures.leafAgain = outcome(store, leaf, rootCause)
+result.sameLeafError = failures.leafAgain.error === failures.leaf.error
+failures.coldRead ??= outcome(store, secondLeaf, secondCause)
+failures.coldReadAgain = outcome(store, secondLeaf, secondCause)
+const otherStore = valdres.store()
+otherStore.set(fail, true)
+failures.otherStore = outcome(otherStore, leaf, rootCause)
+result.hookCallsDuringFailures = hookCalls
+result.leafExtensible = Object.isExtensible(failures.leaf.error)
+if (hookCase === "reentrant") {
+    // Outside any selector callback, a formatting hook may use the Store.
+    result.stack = failures.leaf.error.stack
+    result.reentry = reentry.map(({ value, threw, error }) => ({
+        value,
+        threw,
+        sameLeafError: error === failures.leaf.error,
+    }))
+    result.otherAfterReentry = store.get(other)
+}
+store.set(fail, false)
+result.recovered = store.get(leaf)
+result.notificationsAfterRecovery = notifications
+result.failures = Object.fromEntries(
+    Object.entries(failures).map(([key, value]) => [key, summary(value)]),
+)
+console.log(JSON.stringify(result))
+`
+
+type HookProbeFailure = { codes: string[]; exactCause: boolean }
+type HookProbeResult = {
+    initial: number
+    write: string
+    notificationsAfterWrite: number
+    sameLeafError: boolean
+    hookCallsDuringFailures: number
+    leafExtensible: boolean
+    stack?: string
+    reentry?: { value?: unknown; threw?: string; sameLeafError: boolean }[]
+    otherAfterReentry?: number
+    recovered: number
+    notificationsAfterRecovery: number
+    failures: Record<
+        "coldRead" | "coldReadAgain" | "leaf" | "leafAgain" | "otherStore",
+        HookProbeFailure
+    >
+}
+
+let installedConsumerPromise: Promise<string> | undefined
+const installedConsumer = (): Promise<string> =>
+    (installedConsumerPromise ??= (async () => {
+        const workspace = await temporaryDirectory("valdres-v1-hooks-")
+        const packageDirectory = join(workspace, "package")
+        const consumerDirectory = join(workspace, "consumer")
+        await mkdir(consumerDirectory, { recursive: true })
+        await cp(await builtDist(), join(packageDirectory, "dist"), {
+            recursive: true,
+        })
+        await writeFile(
+            join(packageDirectory, "package.json"),
+            JSON.stringify({
+                name: "valdres-hook-probe",
+                version: "1.0.0-beta.0",
+                type: "module",
+                sideEffects: false,
+                files: ["dist"],
+                exports: { ".": "./dist/index.js" },
+            }),
+        )
+        const packed = run(
+            [
+                "npm",
+                "pack",
+                "--ignore-scripts",
+                "--json",
+                "--pack-destination",
+                workspace,
+            ],
+            packageDirectory,
+        )
+        expect(packed.exitCode, packed.stderr).toBe(0)
+        const [{ filename }] = JSON.parse(packed.stdout) as [
+            { filename: string },
+        ]
+        await writeFile(
+            join(consumerDirectory, "package.json"),
+            JSON.stringify({ private: true, type: "module" }),
+        )
+        const installed = run(
+            [
+                "npm",
+                "install",
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+                "--no-package-lock",
+                join(workspace, basename(filename)),
+            ],
+            consumerDirectory,
+        )
+        expect(installed.exitCode, installed.stderr).toBe(0)
+        return consumerDirectory
+    })())
+
+// Forces engine detection to fail: reading an Error's stack descriptor throws.
+const FAILED_DETECTION_PROBE = String.raw`
+const valdres = await import(process.env.VALDRES_ENTRY)
+const describeLimit = () => JSON.stringify(Object.getOwnPropertyDescriptor(Error, "stackTraceLimit"))
+const limitBefore = describeLimit()
+const native = Object.getOwnPropertyDescriptor
+let stackQueries = 0
+Object.getOwnPropertyDescriptor = function (target, key) {
+    if (key === "stack" && target instanceof Error) {
+        stackQueries++
+        throw new Error("detection unavailable")
+    }
+    return Reflect.apply(native, this, arguments)
+}
+const rootCause = { marker: "application failure" }
+const fail = valdres.atom(false)
+const root = valdres.selector(get => {
+    if (get(fail)) throw rootCause
+    return 1
+})
+const leaf = valdres.selector(get => get(root) + 1)
+const store = valdres.store()
+let notifications = 0
+store.sub(leaf, () => notifications++)
+const errorOf = (target, state) => {
+    try {
+        target.get(state)
+    } catch (error) {
+        return error
+    }
+}
+const chainOf = error => {
+    const chain = []
+    for (let cursor = error; cursor instanceof Error && cursor !== rootCause; cursor = cursor.cause) {
+        chain.push(cursor)
+    }
+    return { chain, exactCause: chain.at(-1)?.cause === rootCause }
+}
+store.set(fail, true)
+const leafError = errorOf(store, leaf)
+const first = chainOf(leafError)
+const again = errorOf(store, leaf) === leafError
+const otherStore = valdres.store()
+otherStore.set(fail, true)
+const other = chainOf(errorOf(otherStore, leaf))
+Object.getOwnPropertyDescriptor = native
+const frames = wrapper => String(wrapper.stack).split("\n").filter(line => /^\s+at /.test(line)).length
+const result = {
+    stackQueries,
+    codes: first.chain.map(wrapper => wrapper.code),
+    exactCause: first.exactCause && other.exactCause,
+    sameOnRepeat: again,
+    frozen: first.chain.map(wrapper => Object.isFrozen(wrapper)),
+    extensible: first.chain.map(wrapper => Object.isExtensible(wrapper)),
+    framed: first.chain.map(wrapper => frames(wrapper) > 0),
+    limitUnchanged: describeLimit() === limitBefore,
+    notifications,
+}
+store.set(fail, false)
+result.recovered = store.get(leaf)
+result.notificationsAfterRecovery = notifications
+console.log(JSON.stringify(result))
+`
+
+describe("engine detection with an application formatting hook", () => {
+    const targets = async () => [
+        {
+            label: "source",
+            runtimes: ["bun"],
+            cwd: import.meta.dir,
+            entry: pathToFileURL(resolve(import.meta.dir, "../src/index.ts"))
+                .href,
+        },
+        {
+            label: "built",
+            runtimes: ["bun", "node"],
+            cwd: import.meta.dir,
+            entry: pathToFileURL(join(await builtDist(), "index.js")).href,
+        },
+        {
+            label: "installed",
+            runtimes: ["bun", "node"],
+            cwd: await installedConsumer(),
+            entry: "valdres-hook-probe",
+        },
+    ]
+    const probeAll = async (hookCase: string, first: "write" | "read") => {
+        const results: (HookProbeResult & { where: string })[] = []
+        for (const target of await targets()) {
+            for (const runtime of target.runtimes) {
+                const result = run(
+                    [runtime, "--input-type=module", "--eval", HOOK_PROBE],
+                    target.cwd,
+                    {
+                        VALDRES_ENTRY: target.entry,
+                        VALDRES_HOOK_CASE: hookCase,
+                        VALDRES_FIRST: first,
+                    },
+                )
+                const where = `${target.label} ${runtime} ${hookCase} ${first}`
+                expect(result.exitCode, `${where}\n${result.stderr}`).toBe(0)
+                results.push({ where, ...JSON.parse(result.stdout) })
+            }
+        }
+        return results
+    }
+    // What every target must report: the application's failures, unchanged
+    // outcomes and recovery, and no formatting hook call while failing.
+    const observed = (result: HookProbeResult & { where: string }) => ({
+        where: result.where,
+        initial: result.initial,
+        write: result.write,
+        notificationsAfterWrite: result.notificationsAfterWrite,
+        failures: result.failures,
+        sameLeafError: result.sameLeafError,
+        leafExtensible: result.leafExtensible,
+        hookCallsDuringFailures: result.hookCallsDuringFailures,
+        recovered: result.recovered,
+        notificationsAfterRecovery: result.notificationsAfterRecovery,
+    })
+    const chain = { codes: [GETTER, DEPENDENCY, GETTER], exactCause: true }
+    const expected = (where: string) => ({
+        where,
+        initial: 2,
+        write: "returned",
+        notificationsAfterWrite: 1,
+        failures: {
+            coldRead: chain,
+            coldReadAgain: chain,
+            leaf: chain,
+            leafAgain: chain,
+            otherStore: chain,
+        },
+        sameLeafError: true,
+        leafExtensible: false,
+        hookCallsDuringFailures: 0,
+        recovered: 2,
+        notificationsAfterRecovery: 2,
+    })
+
+    for (const first of ["write", "read"] as const) {
+        for (const hookCase of ["throw-generic", "throw-all"]) {
+            test(`a hook that throws (${hookCase}) cannot replace the first failure (${first} first)`, async () => {
+                const results = await probeAll(hookCase, first)
+                expect(results).toHaveLength(5)
+                expect(results.map(observed)).toEqual(
+                    results.map(result => expected(result.where)),
+                )
+            })
+        }
+    }
+
+    test("a re-entrant hook runs only when a stack is read, outside selector callbacks", async () => {
+        const results = await probeAll("reentrant", "write")
+        expect(results).toHaveLength(5)
+        expect(
+            results.map(result => ({
+                ...observed(result),
+                stack: result.stack?.startsWith("custom SelectorGetterError "),
+                reentry: result.reentry,
+                otherAfterReentry: result.otherAfterReentry,
+            })),
+        ).toEqual(
+            results.map(result => ({
+                ...expected(result.where),
+                stack: true,
+                reentry: [
+                    { threw: GETTER, sameLeafError: true },
+                    { sameLeafError: false },
+                ],
+                otherAfterReentry: 1,
+            })),
+        )
+    })
+
+    test("a failed engine probe keeps main's frozen, framed wrappers and is not retried", async () => {
+        for (const target of await targets()) {
+            for (const runtime of target.runtimes) {
+                const result = run(
+                    [
+                        runtime,
+                        "--input-type=module",
+                        "--eval",
+                        FAILED_DETECTION_PROBE,
+                    ],
+                    target.cwd,
+                    { VALDRES_ENTRY: target.entry },
+                )
+                const where = `${target.label} ${runtime}`
+                expect(result.exitCode, `${where}\n${result.stderr}`).toBe(0)
+                const bun = runtime === "bun"
+                expect({ where, ...JSON.parse(result.stdout) }).toEqual({
+                    where,
+                    // Bun is known without probing; elsewhere one failed probe.
+                    stackQueries: bun ? 0 : 1,
+                    codes: [GETTER, DEPENDENCY, GETTER],
+                    exactCause: true,
+                    sameOnRepeat: true,
+                    frozen: [!bun, !bun, !bun],
+                    extensible: [false, false, false],
+                    framed: [true, true, true],
+                    limitUnchanged: true,
+                    notifications: 1,
+                    recovered: 2,
+                    notificationsAfterRecovery: 2,
+                })
             }
         }
     })
