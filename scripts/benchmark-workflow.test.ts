@@ -287,18 +287,19 @@ describe("trusted generated-release pull requests", () => {
         expect(publish).toContain("candidate.head.sha === releaseSha")
         expect(publish).toContain("branch.object.sha === releaseSha")
         expect(publish).toContain("candidate.state !== 'open'")
-        expect(publish).toContain("files.length === 0 || files.length > 500")
-        expect(publish).toContain("path === '.changeset/pre.json'")
-        expect(publish).toContain("(?:pre\\/)?[a-z0-9-]+\\.md")
-        expect(publish).toContain("path === 'bun.lock'")
-        expect(publish).toContain("CHANGELOG\\.md|package\\.json")
-        expect(publish).toContain("file.previous_filename")
+        // The path policy is scripts/lib/release-metadata-scope.mjs applied to
+        // scripts/publishable-packages.json, both read from the main commit
+        // the workflow runs from — never from the release checkout.
+        // scripts/release-pr-benchmark-safe.test.ts executes this step.
+        expect(publish).toContain("const trustedSha = context.sha;")
+        expect(publish).toContain("['show', `${trustedSha}:${path}`]")
         expect(publish).toContain(
-            "[file.filename, file.previous_filename].filter(Boolean)",
+            "readTrusted('scripts/lib/release-metadata-scope.mjs')",
         )
         expect(publish).toContain(
-            "Refusing benchmark check for non-release files",
+            "readTrusted('scripts/publishable-packages.json')",
         )
+        expect(publish).not.toContain("(?:valdres|valdres-react)")
         expect(publish).toContain("name: 'benchmark_pr'")
         expect(publish).toContain("head_sha: releaseSha")
 
@@ -306,11 +307,13 @@ describe("trusted generated-release pull requests", () => {
         const localSha = publish.indexOf("exec.getExecOutput('git', [")
         const remoteRef = publish.indexOf("github.rest.git.getRef")
         const changedFiles = publish.indexOf("github.rest.pulls.listFiles")
+        const classify = publish.indexOf("assertGeneratedReleaseFiles(")
         const createCheck = publish.indexOf("name: 'benchmark_pr'")
         expect(changesets).toBeLessThan(localSha)
         expect(localSha).toBeLessThan(remoteRef)
         expect(remoteRef).toBeLessThan(changedFiles)
-        expect(changedFiles).toBeLessThan(createCheck)
+        expect(changedFiles).toBeLessThan(classify)
+        expect(classify).toBeLessThan(createCheck)
     })
 })
 
