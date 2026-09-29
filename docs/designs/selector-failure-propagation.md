@@ -38,7 +38,12 @@ inferred from Bun and Node.
 
 Both changes apply only to `SelectorGetterError` and `SelectorDependencyError`.
 Every other error is constructed and frozen as before. The engine is detected
-once, from the shape of `Object.getOwnPropertyDescriptor(new Error(), "stack")`.
+once per module instance, at the first propagated error. Bun is identified
+directly, because reading any Error's stack there runs the application's
+`Error.prepareStackTrace`. Elsewhere detection reads the shape of
+`Object.getOwnPropertyDescriptor(new Error(), "stack")`, which runs no
+application code. If that read throws, the wrappers stay frozen and framed as on
+`main`, and detection is not retried.
 
 1. **Lazy stacks where freezing computes them (JavaScriptCore).** Wrappers make
    `message`, `code`, `name`, `selector` or `dependency`, and `cause`
@@ -72,9 +77,9 @@ prototype or `instanceof` result cannot forge it.
   limit. Baseline wrappers further up the chain also recorded the reading
   selector's `get()` call site; those frames are gone.
 - On JavaScriptCore, a custom `Error.prepareStackTrace` used to run for every
-  wrapper during every failing write. It now runs only when a stack is read,
-  plus once per process for the engine probe's own `Error`. On V8 it was, and
-  still is, called only on read.
+  wrapper during every failing write, inside the selector's callback. It now
+  runs only when a stack is read. On V8 it was, and still is, called only on
+  read.
 
 Unchanged: error classes and codes, messages, `selector`, `dependency`, cause
 chains, identity (repeated reads return the same wrapper, and each failing
