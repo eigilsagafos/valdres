@@ -73,11 +73,28 @@ for (const name of Object.keys(dirs) as Name[]) {
     run(`build ${name} types`, ["bun", "run", "build:types"], dirs[name])
 }
 
-// Versions that pending changesets will produce, per Changesets itself.
+// Versions that pending changesets will produce, per Changesets itself. Its
+// release plan needs no git, but `status` also compares against a branch:
+// `--since` the repository's first commit counts every pending changeset and
+// works without a local `main` (CI checks out full history for this job).
+const firstCommit = run(
+    "find the first commit",
+    ["git", "rev-list", "--max-parents=0", "HEAD"],
+    ROOT,
+)
+    .stdout.trim()
+    .split("\n")
+    .at(-1)!
 const statusFile = join(workspace, "changeset-status.json")
 run(
     "changeset status",
-    ["bunx", "changeset", "status", `--output=${statusFile}`],
+    [
+        "bunx",
+        "changeset",
+        "status",
+        `--since=${firstCommit}`,
+        `--output=${statusFile}`,
+    ],
     ROOT,
 )
 const pending = new Map<string, string>(

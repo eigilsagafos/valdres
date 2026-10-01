@@ -340,6 +340,10 @@ jobs:
             contents: read
         steps:
             - uses: actions/checkout@v6
+              with:
+                  # The packed gate asks Changesets for the versions pending
+                  # changesets will produce, which needs the full history.
+                  fetch-depth: 0
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: 1.4.0
