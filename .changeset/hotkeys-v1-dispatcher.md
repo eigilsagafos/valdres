@@ -6,6 +6,19 @@
 **Breaking: hotkeys are rebuilt on `@valdres/browser-keyboard` and run their
 commands as synchronous transactions inside the keydown's store update.**
 
+**Upgrade both packages together, with their peers.** Move `@valdres/hotkeys`
+and `@valdres-react/hotkeys` to this release in the same change, alongside
+`valdres` 1.0.0-beta.41 or later, `@valdres/browser-keyboard` 1.0.0-beta.10 or
+later and, for the React package, `valdres-react` 1.0.0-beta.8 or later; the
+peer ranges require exactly these. Earlier `@valdres-react/hotkeys` betas
+(1.0.0-beta.1 to 1.0.0-beta.7) depend on `@valdres/hotkeys` `^1.0.0-beta.N`,
+which this release also satisfies, so an install that re-resolves
+`@valdres/hotkeys` under one of them breaks: the import fails with the v1 core,
+and npm reports an `ERESOLVE` peer conflict when an older core is pinned.
+Installs from an existing lockfile are unaffected; keep it until you migrate
+both packages. The migration guide in the hotkeys documentation maps every
+removed API to its replacement.
+
 - `bindHotkey(store, shortcut, (tx, hit) => …, options)` and
   `useHotkey(shortcut, command, options)` replace the `subscribeTo*` and
   `useHotkeys*` families. A command writes through the update's transaction, so

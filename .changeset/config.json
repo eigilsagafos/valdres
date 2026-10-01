@@ -31,12 +31,10 @@
         "@valdres/browser-visibility",
         "@valdres/browser-window",
         "@valdres/color-mode",
-        "@valdres/hotkeys",
         "@valdres/public-ip",
         "@valdres/redux-devtools",
         "@valdres-react/color-mode",
         "@valdres-react/draggable",
-        "@valdres-react/hotkeys",
         "@valdres-react/jotai",
         "@valdres-react/panable",
         "@valdres-react/recoil"

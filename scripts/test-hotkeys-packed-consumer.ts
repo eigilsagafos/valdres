@@ -10,10 +10,10 @@
  * the React hooks, packed declarations, peer ranges, and that no source
  * manifest changed.
  *
- * Both hotkeys packages are release-ignored; this gate checks the artifacts
- * they would ship. A dependency whose next version is still pending (a
- * changeset not yet versioned) is staged at the version Changesets reports for
- * it, so the peer ranges are checked against what will actually be released.
+ * Both hotkeys packages are release-eligible; this gate checks the artifacts
+ * they ship. Every package whose next version is still pending (a changeset not
+ * yet versioned) is staged at the version Changesets reports for it, so the
+ * manifests and peer ranges are checked as they will actually be released.
  *
  *   bun run scripts/test-hotkeys-packed-consumer.ts
  *   bun run test:hotkeys:packed
@@ -24,6 +24,8 @@ import { statSync } from "node:fs"
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
+import { assertHotkeysReleaseCohort } from "./lib/hotkeys-packages"
+import { pendingReleaseVersions } from "./lib/pending-release-versions"
 
 const ROOT = join(import.meta.dir, "..")
 const run = (
@@ -73,37 +75,11 @@ for (const name of Object.keys(dirs) as Name[]) {
     run(`build ${name} types`, ["bun", "run", "build:types"], dirs[name])
 }
 
-// Versions that pending changesets will produce, per Changesets itself. Its
-// release plan needs no git, but `status` also compares against a branch:
-// `--since` the repository's first commit counts every pending changeset and
-// works without a local `main` (CI checks out full history for this job).
-const firstCommit = run(
-    "find the first commit",
-    ["git", "rev-list", "--max-parents=0", "HEAD"],
-    ROOT,
-)
-    .stdout.trim()
-    .split("\n")
-    .at(-1)!
-const statusFile = join(workspace, "changeset-status.json")
-run(
-    "changeset status",
-    [
-        "bunx",
-        "changeset",
-        "status",
-        `--since=${firstCommit}`,
-        `--output=${statusFile}`,
-    ],
-    ROOT,
-)
-const pending = new Map<string, string>(
-    (
-        JSON.parse(await readFile(statusFile, "utf8")).releases as {
-            name: string
-            newVersion: string
-        }[]
-    ).map(release => [release.name, release.newVersion]),
+// Versions pending changesets will produce, per Changesets; empty right after
+// a Version Packages merge, when the manifests already carry them.
+const pending = pendingReleaseVersions(ROOT)
+console.log(
+    `staged versions: ${pending.size === 0 ? "workspace manifests (nothing pending)" : "release plan"}`,
 )
 
 const before = new Map<Name, string>()
@@ -176,12 +152,18 @@ for (const name of Object.keys(dirs) as Name[])
     )
 console.log("manifests byte-identical after staging: ok")
 
-// RELEASE-ENABLEMENT PREREQUISITE (both hotkeys packages are release-ignored):
-// `@valdres-react/hotkeys` peers on `@valdres/hotkeys@^1.0.0-beta.7`, which also
-// admits the already-published beta.7 with the retired API. Ignored packages are
-// not versioned, so this check passes trivially today. When the hotkeys packages
-// are made release-eligible, raise that floor to the first release carrying the
-// v1 API in the same change.
+// The published `@valdres/hotkeys@1.0.0-beta.7` (and every older line) carries
+// the retired callback API, so the React package's floor must exclude it.
+assert.equal(
+    Bun.semver.satisfies(
+        "1.0.0-beta.7",
+        packed.get("@valdres-react/hotkeys")!.manifest.peerDependencies[
+            "@valdres/hotkeys"
+        ],
+    ),
+    false,
+    "@valdres-react/hotkeys admits the legacy @valdres/hotkeys@1.0.0-beta.7",
+)
 for (const name of ["@valdres/hotkeys", "@valdres-react/hotkeys"] as const) {
     const { manifest, files } = packed.get(name)!
     assert.ok(!files.some(f => f.includes(".test.")), `${name}: tests shipped`)
@@ -207,6 +189,44 @@ for (const name of ["@valdres/hotkeys", "@valdres-react/hotkeys"] as const) {
         console.log(`${name}: peer ${peer}@${range} admits ${provided}`)
     }
 }
+// The release manifests, as prepack rewrites them for the tarball.
+for (const name of Object.keys(dirs) as Name[]) {
+    const { manifest } = packed.get(name)!
+    assert.equal(
+        manifest.version,
+        pending.get(name) ?? JSON.parse(before.get(name)!).version,
+        `${name}: packed version is not the planned release version`,
+    )
+}
+// Both hotkeys packages must ship the v1 API together.
+assertHotkeysReleaseCohort(
+    new Map(),
+    Object.fromEntries(
+        (["@valdres/hotkeys", "@valdres-react/hotkeys"] as const).map(name => [
+            name,
+            packed.get(name)!.manifest.version,
+        ]),
+    ),
+)
+const hotkeysManifest = packed.get("@valdres/hotkeys")!.manifest
+const reactHotkeysManifest = packed.get("@valdres-react/hotkeys")!.manifest
+assert.deepEqual(Object.keys(hotkeysManifest.exports), [
+    ".",
+    "./adapter-internals",
+])
+assert.deepEqual(Object.keys(reactHotkeysManifest.exports), ["."])
+assert.equal(hotkeysManifest.dependencies, undefined)
+assert.equal(reactHotkeysManifest.dependencies, undefined)
+assert.ok(
+    !Object.keys(hotkeysManifest.peerDependencies).some(peer =>
+        peer.includes("react"),
+    ),
+    "@valdres/hotkeys must not depend on React",
+)
+console.log(
+    "release manifests:",
+    [...packed].map(([name, p]) => `${name}@${p.manifest.version}`).join(", "),
+)
 const hotkeysFiles = packed.get("@valdres/hotkeys")!.files
 assert.ok(hotkeysFiles.includes("dist/adapter-internals.js"))
 assert.ok(
@@ -217,6 +237,57 @@ console.log(
     "hotkeys tarball:",
     hotkeysFiles.filter(f => !f.startsWith("dist/types/")).join(", "),
 )
+
+// A framework-free consumer: core, keyboard and hotkeys only, with no React
+// anywhere in its tree.
+const plain = join(workspace, "plain-consumer")
+await mkdir(plain, { recursive: true })
+await writeFile(
+    join(plain, "package.json"),
+    JSON.stringify(
+        {
+            name: "valdres-hotkeys-plain-consumer",
+            private: true,
+            type: "module",
+            dependencies: Object.fromEntries(
+                (
+                    [
+                        "valdres",
+                        "@valdres/browser-keyboard",
+                        "@valdres/hotkeys",
+                    ] as const
+                ).map(name => [name, `file:${packed.get(name)!.tarball}`]),
+            ),
+        },
+        null,
+        2,
+    ),
+)
+run(
+    "install plain consumer",
+    ["npm", "install", "--no-audit", "--no-fund", "--loglevel=error"],
+    plain,
+)
+await writeFile(
+    join(plain, "plain.mjs"),
+    `import { strict as assert } from "node:assert"
+import { existsSync } from "node:fs"
+await assert.rejects(import("react"), "React must not be installed")
+assert.equal(existsSync("node_modules/react"), false)
+const { atom, store } = await import("valdres")
+const hotkeys = await import("@valdres/hotkeys")
+const internals = await import("@valdres/hotkeys/adapter-internals")
+assert.deepEqual(Object.keys(hotkeys).sort(), ["HotkeyConflictError", "activateHotkeyScope", "bindHotkey", "hotkeyScope", "shortcutSelector"])
+assert.deepEqual(Object.keys(internals).sort(), ["parseShortcuts", "registerBinding", "validateBindingConfig"])
+const app = store()
+const ran = atom(0)
+const stop = hotkeys.bindHotkey(app, "Mod+s", tx => tx.set(ran, 1))
+stop()
+app.dispose()
+console.log("PLAIN_OK")
+`,
+)
+console.log(run("plain consumer", ["node", "plain.mjs"], plain).stdout.trim())
 
 await writeFile(
     join(consumer, "package.json"),
@@ -232,6 +303,7 @@ await writeFile(
                 react: "19.1.1",
                 "react-dom": "19.1.1",
                 "@types/react": "19.1.12",
+                "@happy-dom/global-registrator": "20.0.5",
             },
         },
         null,
@@ -256,6 +328,8 @@ import * as internals from "@valdres/hotkeys/adapter-internals"
 import { useHotkey, useHotkeyScope } from "@valdres-react/hotkeys"
 assert.equal(typeof globalThis.document, "undefined")
 assert.match(import.meta.resolve("@valdres/hotkeys"), /node_modules\\/@valdres\\/hotkeys\\/dist\\//)
+const reactHotkeys = await import("@valdres-react/hotkeys")
+assert.deepEqual(Object.keys(reactHotkeys).sort(), ["useHotkey", "useHotkeyScope"])
 const app = store()
 const ran = atom(0)
 const stop = hotkeys.bindHotkey(app, ["Mod+s", "Ctrl+KeyS"], tx => tx.set(ran, 1))
@@ -355,6 +429,80 @@ console.log("DOM_OK")
 `,
 )
 console.log(run("dom consumer", ["node", "dom.mjs"], consumer).stdout.trim())
+
+await writeFile(
+    join(consumer, "react-dom.mjs"),
+    `import { strict as assert } from "node:assert"
+import { GlobalRegistrator } from "@happy-dom/global-registrator"
+GlobalRegistrator.register()
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+const { act, createElement: h } = await import("react")
+const { createRoot } = await import("react-dom/client")
+const { atom, store } = await import("valdres")
+const { Provider, useValue } = await import("valdres-react")
+const { activateKeyboard } = await import("@valdres/browser-keyboard")
+const hotkeys = await import("@valdres/hotkeys")
+const { useHotkey, useHotkeyScope } = await import("@valdres-react/hotkeys")
+activateKeyboard()
+const errors = []
+window.addEventListener("error", event => { errors.push(event.error); event.preventDefault() })
+const press = key => {
+    let event
+    act(() => {
+        event = new KeyboardEvent("keydown", { key, code: key === "Escape" ? "Escape" : "Key" + key.toUpperCase(), bubbles: true, cancelable: true })
+        document.dispatchEvent(event)
+        document.dispatchEvent(new KeyboardEvent("keyup", { key, code: event.code, bubbles: true }))
+    })
+    return event
+}
+const app = store()
+const open = atom(true)
+const saved = atom(0)
+const dialog = hotkeys.hotkeyScope({ name: "dialog", priority: 10, exclusive: true })
+const renders = []
+const Dialog = () => {
+    useHotkeyScope(dialog)
+    useHotkey("Escape", tx => tx.set(open, false), { scope: dialog, preventDefault: true })
+    return h("p", { id: "dialog" }, "dialog")
+}
+const Page = () => {
+    useHotkey("s", tx => tx.set(saved, tx.get(saved) + 1), { preventDefault: true })
+    const count = useValue(saved)
+    renders.push(count)
+    return h("div", null, useValue(open) ? h(Dialog) : null, h("p", { id: "saved" }, String(count)))
+}
+const container = document.createElement("div")
+document.body.append(container)
+const root = createRoot(container)
+act(() => root.render(h(Provider, { store: app }, h(Page))))
+assert.equal(press("s").defaultPrevented, false, "exclusive dialog blocks the page binding")
+assert.equal(app.get(saved), 0)
+assert.equal(press("Escape").defaultPrevented, true)
+assert.equal(container.querySelector("#dialog"), null, "the dialog closed and released its scope")
+renders.length = 0
+assert.equal(press("s").defaultPrevented, true)
+assert.equal(container.querySelector("#saved").textContent, "1")
+assert.deepEqual(renders, [1], "one render, already showing the command's result")
+// One dispatcher per store across the React adapter and the public API: an
+// equal-rank plain binding conflicts with the mounted React binding.
+const stop = hotkeys.bindHotkey(app, "s", tx => tx.set(saved, 100))
+press("s")
+assert.equal(app.get(saved), 1)
+assert.ok(errors.some(error => String(error?.causes?.[0] ?? error).includes("HotkeyConflictError")))
+stop()
+act(() => root.unmount())
+app.dispose()
+await GlobalRegistrator.unregister()
+console.log("REACT_DOM_OK")
+`,
+)
+console.log(
+    run(
+        "react dom consumer",
+        ["node", "react-dom.mjs"],
+        consumer,
+    ).stdout.trim(),
+)
 
 await writeFile(
     join(consumer, "tsconfig.json"),

@@ -6,5 +6,7 @@
   "packages/@valdres/browser-reduced-motion",
   "packages/@valdres/browser-reduced-data",
   "packages/@valdres/browser-reduced-transparency",
-  "packages/@valdres/browser-keyboard"
+  "packages/@valdres/browser-keyboard",
+  "packages/@valdres/hotkeys",
+  "packages/@valdres-react/hotkeys"
 ]
