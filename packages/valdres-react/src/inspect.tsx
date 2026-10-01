@@ -175,7 +175,7 @@ export interface InspectableReactResult {
         atom: Atom<Value>,
         store?: Store,
     ) => readonly [Value, (value: Value) => void]
-    readonly useStore: () => Store
+    readonly useStore: (store?: Store) => Store
     readonly useSetAtom: <Value>(
         atom: Atom<Value>,
         store?: Store,
@@ -955,7 +955,7 @@ export const createInspectableReact = (
     ): readonly [Value, (value: Value) => void] =>
         [useValue(atom, store), useSetAtom(atom, store)] as const
 
-    const useStore = (): Store => useSelectedStore()
+    const useStore = (store?: Store): Store => useSelectedStore(store)
 
     const inspect = Object.freeze({
         get recordingId(): string {

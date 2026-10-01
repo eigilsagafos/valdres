@@ -1,25 +1,11 @@
-import { eventHandler } from "./eventHandler"
+export { bindHotkey } from "./utils/bindHotkey"
+export { hotkeyScope } from "./utils/hotkeyScope"
+export { activateHotkeyScope } from "./utils/activateHotkeyScope"
+export { shortcutSelector } from "./selectors/shortcutSelector"
+export { HotkeyConflictError } from "./errors/HotkeyConflictError"
 
-export { currentCodeCombinationAtom } from "./currentCodeCombinationAtom"
-export { currentKeyCombinationAtom } from "./currentKeyCombinationAtom"
-export { DEFAULT_OPTIONS } from "./DEFAULT_OPTIONS"
-export { eventByKeyAtom } from "./eventByKeyAtom"
-export { eventByCodeAtom } from "./eventByCodeAtom"
-export { eventHandler }
-export { subscribeToCode } from "./subscribeToCode"
-export { subscribeToCommand } from "./subscribeToCommand"
-export { subscribeToHotkey } from "./subscribeToHotkey"
-export { subscribeToKey } from "./subscribeToKey"
-
-export type { KeyboardCode } from "./types/KeyboardCode"
-export type { KeyboardCommand } from "./types/KeyboardCommand"
-export type { Options } from "./types/Options"
-
-export const registerListeners = () => {
-    document.addEventListener("keydown", eventHandler)
-    document.addEventListener("keyup", eventHandler)
-}
-
-if (document) {
-    registerListeners()
-}
+export type { HotkeyCommand } from "./types/HotkeyCommand"
+export type { HotkeyHit } from "./types/HotkeyHit"
+export type { HotkeyOptions } from "./types/HotkeyOptions"
+export type { HotkeyScope } from "./types/HotkeyScope"
+export type { HotkeyScopeOptions } from "./types/HotkeyScopeOptions"

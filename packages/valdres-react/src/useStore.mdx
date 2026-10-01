@@ -6,11 +6,22 @@ description: Access the nearest Provider Store
 # useStore
 
 ```ts
-useStore(): Store
+useStore(store?: Store): Store
 ```
 
 Returns the exact Store from the nearest `Provider`. It throws when there is no
 Provider; there is no global fallback or string-ID registry.
+
+Pass a Store to use it instead of the nearest Provider's — the same resolution
+`useValue(state, store)` and the other hooks apply. A hook that accepts an
+optional Store can forward it here and work both under a Provider and without
+one:
+
+```tsx
+function useCanvasStore(store?: Store): Store {
+    return useStore(store) // the explicit Store, else the nearest Provider's
+}
+```
 
 ```tsx
 import { useCallback } from "react"

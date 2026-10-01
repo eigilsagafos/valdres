@@ -308,7 +308,7 @@ The package tables below are auto-generated — do not hand-edit.
 | [`@valdres/browser-visibility`](https://valdres.dev/react/plugins/browser-visibility) | Reactive Page Visibility state (visible / hidden) |
 | [`@valdres/browser-window`](https://valdres.dev/react/plugins/browser-window) | Reactive window inner size, tracked through resize events |
 | [`@valdres/color-mode`](https://valdres.dev/react/plugins/color-mode) | Color mode (dark/light theme) state powered by Valdres |
-| [`@valdres/hotkeys`](https://valdres.dev/react/plugins/hotkeys) | Hotkey state management powered by Valdres |
+| [`@valdres/hotkeys`](https://valdres.dev/react/plugins/hotkeys) | Keyboard shortcuts as synchronous Valdres transactions |
 | [`@valdres/public-ip`](https://valdres.dev/react/plugins/public-ip) | Reactive public IP (v4/v6) with stale-while-revalidate |
 | [`@valdres/redux-devtools`](https://valdres.dev/react/plugins/redux-devtools) | Connect a valdres store to the Redux DevTools browser extension |
 
@@ -318,7 +318,7 @@ The package tables below are auto-generated — do not hand-edit.
 |:--------|:------------|
 | [`@valdres-react/color-mode`](https://valdres.dev) | React color mode hooks powered by Valdres |
 | [`@valdres-react/draggable`](https://valdres.dev) | React drag-and-drop powered by Valdres |
-| [`@valdres-react/hotkeys`](https://valdres.dev) | React hotkey hooks powered by Valdres |
+| [`@valdres-react/hotkeys`](https://valdres.dev) | React bindings for @valdres/hotkeys |
 | [`@valdres-react/jotai`](https://valdres.dev/guides/migration) | Jotai API compatibility layer for Valdres |
 | [`@valdres-react/panable`](https://valdres.dev) | React pan and zoom powered by Valdres |
 | [`@valdres-react/recoil`](https://valdres.dev/guides/migration) | Recoil API compatibility layer for Valdres |

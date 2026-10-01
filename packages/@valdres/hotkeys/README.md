@@ -2,56 +2,328 @@
 
 # hotkeys
 
-Keyboard shortcuts from `keydown` / `keyup`. `subscribeToHotkey`/`Key`/`Code`/`Command` fire a callback on match; the live key/code combination is exposed as global atoms.
-
-## Install
-
-```bash
-bun add @valdres/hotkeys
-```
+Keyboard shortcuts whose commands run inside the store update that the keydown
+causes. A command writes through that update's transaction, so subscribers and
+components see the key state and the command's result together, once.
 
 ## Live example
 
 ▶ Live example: [https://valdres.dev/react/plugins/hotkeys](https://valdres.dev/react/plugins/hotkeys)
 
+## Install
+
+```bash
+bun add @valdres/hotkeys @valdres/browser-keyboard valdres
+# React bindings
+bun add @valdres-react/hotkeys valdres-react react
+```
+
 ## Usage
 
-React has a `useHotkeys` hook family. Every other framework calls `subscribeToHotkey(...)` inside its own effect primitive and returns the unsubscribe.
+```ts
+import { atom, store } from "valdres"
+import { bindHotkey } from "@valdres/hotkeys"
+
+const app = store()
+const zoom = atom(1)
+
+const stop = bindHotkey(app, "Mod+=", tx => tx.set(zoom, tx.get(zoom) * 1.25), {
+    repeat: true,
+    preventDefault: true,
+})
+stop() // idempotent
+```
 
 ```tsx
-import { useHotkeys } from "@valdres-react/hotkeys"
+import { useHotkey } from "@valdres-react/hotkeys"
 
-function Editor() {
-    useHotkeys("meta+s", () => save(), { preventDefault: true })
-    // also: useHotkeysKey, useHotkeysCode, useHotkeysCommand("Save", ...)
-    return <textarea />
+function Canvas() {
+    useHotkey("Mod+=", tx => tx.set(zoom, tx.get(zoom) * 1.25), {
+        repeat: true,
+        preventDefault: true,
+    })
+    return <svg />
 }
 ```
 
+`useHotkey` binds in the store from `options.store`, or from the nearest
+`<Provider>`. It registers when the component commits and unregisters when it
+unmounts. Later renders adopt the newest command, options and shortcut without
+registering again, so a re-render never changes which keydowns were handled or
+which binding wins. A render that is never committed binds nothing.
+
+Every other framework calls `bindHotkey` with its store inside its own effect
+primitive and calls the returned function on cleanup.
+
+## Commands
+
+```ts
+type HotkeyCommand = (tx: Transaction, hit: HotkeyHit) => void
+type HotkeyHit = Readonly<{ keyDown: KeyDown; shortcut: string }>
+```
+
+A command runs as a [`settle` handler](https://valdres.dev/react/store)
+of the keydown's update, with that handler's transaction. Read and write
+through `tx`. Calling `store.set`, `store.txn` or `store.get` from inside a
+command is rejected with `TransactionPhaseError`.
+
+- **Once per keydown, at most.** A keydown is handled — attempted — by at most
+  one binding per store. A command that throws, or returns a promise, has its
+  writes discarded and is reported as a cause of a
+  `SubscriberNotificationError`. It is not retried, and the keydown does not
+  pass to another binding. The next keydown is a new attempt.
+- **Never for an earlier keydown.** A binding never runs for a keydown that
+  happened before it was registered, and becoming enabled, entering a scope,
+  re-rendering or resubscribing never acts on a keydown that already happened.
+  Only a new keydown triggers anything.
+- **Synchronous only.** Start I/O, focus changes and other effects from an
+  ordinary subscriber, after the update; see
+  [Asynchronous effects](#asynchronous-effects).
+
+### Operations used by commands and by the rest of the app
+
+Write operations that take the transaction, and wrap them for code that is
+not already inside one:
+
+```ts
+export const duplicate = (tx: Transaction, refs: readonly Ref[]) => {
+    /* tx.get / tx.set only */
+}
+export const duplicateNow = (store: Store, refs: readonly Ref[]) =>
+    store.txn(tx => duplicate(tx, refs)) // toolbars, menus, tests
+
+bindHotkey(app, ["Ctrl+d", "Meta+d"], tx => duplicate(tx, tx.get(selection)), {
+    preventDefault: true,
+})
+```
+
+## Shortcuts
+
+| Form            | Meaning                                                                                                                                                                                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"Mod+Shift+Z"` | Tokens joined by `+`; the last is the trigger. Modifiers: `Ctrl`/`Control`, `Shift`, `Alt`/`Option`, `Meta`/`Cmd`/`Command`, and `Mod` — Meta on Apple platforms, Control elsewhere.                                                                                                                          |
+| Modifiers       | Compared exactly, as a set, against the modifiers held: `Ctrl+S` does not match Ctrl+Shift+S, and press order does not matter.                                                                                                                                                                                |
+| Trigger         | Matches `KeyDown.code` exactly — `"KeyH"`, `"Space"`, `"Digit1"` name the physical key — or `KeyDown.key` case-insensitively — `"z"`, `"."`, `"="` follow the layout. Aliases: `Esc`, `Space`, `Up`/`Down`/`Left`/`Right`, `Plus`, `Del`, `Return`; key names such as `Enter` and `Backspace` match directly. |
+| Shifted symbols | `"?"` matches whatever Shift state produced it. `"Shift+?"` is a `SyntaxError`; name the physical key instead (`"Shift+Slash"`). With Alt on macOS, use codes (`"Alt+KeyK"`).                                                                                                                                 |
+| `"+"`           | The plus key alone, or as the last token: `"Mod++"`.                                                                                                                                                                                                                                                          |
+| Alternatives    | An array: `["Ctrl+d", "Meta+d"]`. Every alternative is active on every platform; use `Mod` when you want one per platform.                                                                                                                                                                                    |
+
+`shortcutSelector(shortcut)` is the latest keydown when it matches, or `null`,
+for display. It becomes non-null again whenever its inputs do, so never run a
+command from it.
+
+Chords of several non-modifier keys and keyup shortcuts are not supported.
+
+## Options
+
+```ts
+type HotkeyOptions = Readonly<{
+    enabled?: boolean | State<boolean> // default true
+    scope?: HotkeyScope // default: the base layer
+    priority?: number // default 0
+    repeat?: boolean // default false
+    editable?: boolean // default false
+    preventDefault?: boolean // default false
+    handleDefaultPrevented?: boolean // default false
+}>
+```
+
+- **`enabled`** is read when the keydown is dispatched, not watched. A State
+  works in every framework and can be shared between bindings. A plain boolean
+  is fixed for `bindHotkey`; with `useHotkey` it is the latest committed prop.
+  Handlers that ran earlier in the same update — other `settle` handlers on
+  the same store — can already have changed what it reads.
+- **`repeat: false`** swallows auto-repeats for the binding that would handle
+  them: it is still that binding's keydown (cancelled if `preventDefault`
+  is set) but the command does not run, and the repeat does not pass to
+  another binding.
+- **`editable: false`** skips keydowns aimed at text entry — a textarea, a
+  select, a text-like input, or a contenteditable element (see
+  `KeyDown.editable` in [browser-keyboard](https://valdres.dev/valdres/browser-keyboard)).
+- **`preventDefault: true`** cancels the native keydown whenever this binding
+  handles it, before its command runs, so the browser's action is blocked even
+  if the command fails.
+- **`handleDefaultPrevented: true`** keeps the binding eligible for a keydown
+  that something had already cancelled before the keyboard received it —
+  for example a menu's `onKeyDown` that called `preventDefault()`. By default
+  such keydowns are skipped by every binding.
+
+## Which binding runs
+
+For each new keydown, each store picks at most one binding:
+
+1. Skip bindings registered after the keydown, keydowns already cancelled
+   (unless `handleDefaultPrevented`), and keydowns aimed at text entry (unless
+   `editable`).
+2. Skip bindings whose shortcut does not match, whose scope is inactive or
+   below an active exclusive scope, or that are not `enabled`.
+3. Of the rest, the highest scope priority wins, then the highest `priority`.
+4. If two or more are tied at the top, **none runs**, the keydown is not
+   cancelled, and a `HotkeyConflictError` is reported. Give one of them a
+   higher priority or a scope, or make all but one ineligible.
+
+Registration order and component mount order never decide. Bindings in
+different stores — including a child scope of a store — decide independently,
+so the same keydown can run one command in each.
+
+### Scopes
+
+```ts
+const dialog = hotkeyScope({ name: "dialog", priority: 10, exclusive: true })
+
+const release = activateHotkeyScope(app, dialog) // while active, outranks the base layer
+bindHotkey(app, "Escape", tx => tx.set(dialogOpen, false), { scope: dialog })
+release()
+```
+
+```tsx
+function Dialog() {
+    useHotkeyScope(dialog) // active while mounted
+    useHotkey("Escape", tx => tx.set(dialogOpen, false), { scope: dialog })
+    return <div role="dialog" />
+}
+```
+
+A scope is inactive until activated in a store; activations count, and
+`scope.active` is a selector of whether it is active in the store you read. An
+active scope's bindings outrank every binding in a lower layer; the base layer
+is priority 0. An `exclusive` scope also makes every lower layer ineligible
+while it is active, so a dialog can block the page's shortcuts without listing
+them. Activation is store work: do it from effects or event handlers, not from
+a command.
+
+## The native keydown
+
+Commands run while the keydown is still being dispatched, which is what makes
+`preventDefault` synchronous. Hotkeys never stops propagation. Listeners that
+run after the keyboard's — `document` listeners added later, `window`
+listeners, other keyboard libraries listening there — still receive the event,
+whatever a binding did; `KeyDown.defaultPrevented` only lets handlers that run
+**earlier** opt a keydown out. It is not arbitration between libraries.
+
+A keydown dispatched from inside a subscriber is applied after its own dispatch
+has returned: bindings still run for it, but it can no longer be cancelled.
+
+## Writing other stores
+
+A command may write any store in its own store tree through `tx.scope(...)` —
+for example a binding in a child scope that updates root state with
+`tx.scope(rootStore).set(panels, …)`. A store in another tree cannot be
+written inside the update; use an effect.
+
+## Recipes
+
+### Holding a key
+
+A hold — pan while Space is held — is state, not a pair of keydown and keyup
+toggles, which stick when a keyup is lost. Record the press the hotkey accepted,
+and let the application clear it once the key is no longer held:
+
+```ts
+const panPress = atom<KeyDown | null>(null)
+const spaceHeld = isCodePressedSelector("Space")
+const panning = selector(get => get(panPress) !== null && get(spaceHeld))
+
+// Owned by the application, for as long as the hold state exists — not the binding.
+const stopClear = app.sub(spaceHeld, {
+    settle: tx => {
+        if (!tx.get(spaceHeld) && tx.get(panPress) !== null) tx.set(panPress, null)
+    },
+})
+const stop = bindHotkey(app, "Space", (tx, { keyDown }) => tx.set(panPress, keyDown), {
+    enabled: canvasAcceptsPan,
+    preventDefault: true, // also cancels the repeats, so the page never scrolls
+})
+
+// Tear down, outside any transaction:
+stop()
+stopClear()
+app.set(panPress, null)
+```
+
+The hold ends on keyup and on a focus-loss reset, even if focus moved into a
+field meanwhile. A Space typed into a field never starts one. Disposing the
+binding during a hold leaves it to end on release. To toggle a mode while
+held, derive it: `held ? flip(mode) : mode`.
+
+### Asynchronous effects
+
+A command records what was asked; an ordinary subscriber performs it:
+
+```ts
+type Request = { readonly sequence: number }
+const copyRequest = atom<Request | null>(null)
+
+bindHotkey(app, "Mod+Shift+c", (tx, { keyDown }) =>
+    tx.set(copyRequest, { sequence: keyDown.sequence }),
+)
+
+let handled = 0
+const stopEffect = app.sub(copyRequest, () => {
+    const request = app.get(copyRequest)
+    if (request === null || request.sequence <= handled) return // dedupe
+    handled = request.sequence
+    void copyAsImage(app).catch(error =>
+        app.txn(tx => tx.set(copyStatus, { failed: String(error) })),
+    )
+})
+```
+
+- The subscriber runs after the update but still while the keydown is being
+  dispatched, so browser APIs that need a user gesture can be started there.
+- A single atom holds the **latest** request; it is not a queue. Several writes
+  in one transaction collapse into one, and a subscriber added later is not
+  called for an earlier one. Keyboard requests are not collapsed while the
+  subscriber is in place, because each keydown is its own update with at most
+  one command per store. Use an array atom drained by the subscriber when no
+  request may be lost.
+- Subscribers cannot write synchronously during notification; start the
+  operation, or defer one that opens its own transaction with
+  `queueMicrotask`. Completion is a separate transaction: check the request is
+  still current, and handle failure yourself — nothing is rolled back.
+- For the platform's own copy, cut and paste, prefer the native `copy`, `cut`
+  and `paste` events, which provide `clipboardData` synchronously.
+
+### Only the active canvas
+
+With one store per canvas, gate on state rather than mounting:
+
+```ts
+const isActive = selector(get => get(canvasId) === get(activeCanvas)) // canvasId is set per canvas store
+bindHotkey(canvasStore, "Delete", deleteSelection, { enabled: isActive })
+```
+
+## Migrating from 1.0.0-beta.7
+
+| Before                                                                                         | Now                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `subscribeToHotkey` / `subscribeToKey` / `subscribeToCode`(…, callback(event), options, store) | `bindHotkey(store, shortcut, (tx, hit) => …, options)`. There is no `KeyboardEvent`; write through `tx`.                                                             |
+| `useHotkeys` / `useHotkeysKey` / `useHotkeysCode`(…, options?, deps?)                          | `useHotkey(shortcut, command, options)`, without a deps array.                                                                                                       |
+| `"ctrl+x, command+x"`                                                                          | `["Ctrl+x", "Meta+x"]` (both active everywhere), or `"Mod+x"` (one per platform).                                                                                    |
+| `useHotkeysCode("KeyH", …)`                                                                    | `useHotkey("KeyH", …)` — code tokens name the physical key.                                                                                                          |
+| `useHotkeysCommand("ZoomIn" \| "ZoomOut", …, { repeat: true, preventDefault: true })`          | `useHotkey("Mod+=", …)` / `useHotkey("Mod+-", …)` with the same options.                                                                                             |
+| `useHotkeysCommand("ZoomReset", …)`                                                            | `useHotkey("Mod+0", …)` — default options keep it from repeating or cancelling, as before.                                                                           |
+| `subscribeToCommand`, `KeyboardCommand` (`Save`, `Undo`, `Redo`, …)                            | Write the shortcut: `"Mod+s"`, `"Mod+z"`, `isApple ? "Meta+Shift+z" : ["Ctrl+y", "Ctrl+Shift+z"]`.                                                                   |
+| `{ keyup: true }`                                                                              | Not supported. For holds, see [Holding a key](#holding-a-key).                                                                                                       |
+| `enableOnFormTags` / `enableOnContentEditable`                                                 | `editable: true`. Checkboxes, radios and buttons no longer block shortcuts.                                                                                          |
+| `enabled: () => boolean`                                                                       | `enabled: someSelector`, read when the keydown happens.                                                                                                              |
+| `currentKeyCombinationAtom` / `currentCodeCombinationAtom`                                     | `pressedKeyValuesSelector` / `pressedCodesSelector` from `@valdres/browser-keyboard`.                                                                                |
+| `eventByKeyAtom` / `eventByCodeAtom`                                                           | `shortcutSelector(shortcut)`.                                                                                                                                        |
+| `registerListeners`, `eventHandler`, import-time listeners                                     | Gone: `@valdres/browser-keyboard` owns one persistent listener per document. Call `activateKeyboard()` at client start if keys held before the first binding matter. |
+| `DEFAULT_OPTIONS`, `Options`                                                                   | The defaults above; `HotkeyOptions`.                                                                                                                                 |
+
 ## Exports
 
-| Export                       | Kind             | Type                                                                                             |
-| ---------------------------- | ---------------- | ------------------------------------------------------------------------------------------------ |
-| `currentCodeCombinationAtom` | atom (read-only) | `KeyboardCode[]` — `event.code`s currently held                                                  |
-| `currentKeyCombinationAtom`  | atom (read-only) | `string[]` — lowercased `event.key`s currently held                                              |
-| `eventByCodeAtom`            | atomFamily       | `(code: KeyboardCode[]) => Atom<KeyboardEvent \| null>`                                          |
-| `eventByKeyAtom`             | atomFamily       | `(key: string[]) => Atom<KeyboardEvent \| null>`                                                 |
-| `subscribeToHotkey`          | util fn          | `(hotkey: string, cb: (e: KeyboardEvent) => void, options: Options, store: Store) => () => void` |
-| `subscribeToKey`             | util fn          | `(key: string \| string[], cb, options, store) => () => void`                                    |
-| `subscribeToCode`            | util fn          | `(code: KeyboardCode \| KeyboardCode[], cb, options, store) => () => void`                       |
-| `subscribeToCommand`         | util fn          | `(command: KeyboardCommand, cb, options, store) => () => void`                                   |
-| `registerListeners`          | util fn          | `() => void` — attaches the document key listeners                                               |
-| `eventHandler`               | util fn          | `(event: KeyboardEvent) => void`                                                                 |
-| `DEFAULT_OPTIONS`            | const            | frozen `Options`                                                                                 |
-| `Options`                    | type             | `{ keyup, keydown, enabled, enableOnFormTags, enableOnContentEditable, preventDefault, repeat }` |
-| `KeyboardCode`               | type             | re-exported from `@valdres/browser-keyboard`                                                     |
-| `KeyboardCommand`            | type             | `"Save" \| "Undo" \| "Redo" \| "Cut" \| "Copy" \| "ZoomIn" \| "ZoomOut" \| "ZoomReset"`          |
-
-`enabled` accepts a `boolean`, `() => boolean`, `Atom<boolean>`, or `Selector<boolean>`. `subscribeToCommand` maps a command to the OS-specific chord (e.g. `Save` → `meta+s` on Apple, `ctrl+s` elsewhere).
-
-## Cross-framework
-
-The combination atoms are global — read them with the framework's primitive (`useValue` / `createValue` / `injectValue` / `watch`, or `store.get` / `store.sub`). The `subscribeToX` callbacks take `store` explicitly, so they work anywhere.
+| Export                                                                             | Kind                        |
+| ---------------------------------------------------------------------------------- | --------------------------- |
+| `bindHotkey(store, shortcut, command, options?)`                                   | `() => void`                |
+| `hotkeyScope(options?)`                                                            | `HotkeyScope`               |
+| `activateHotkeyScope(store, scope)`                                                | `() => void`                |
+| `shortcutSelector(shortcut)`                                                       | `Selector<KeyDown \| null>` |
+| `HotkeyConflictError`                                                              | error class                 |
+| `HotkeyCommand`, `HotkeyHit`, `HotkeyOptions`, `HotkeyScope`, `HotkeyScopeOptions` | types                       |
+| `useHotkey(shortcut, command, options?)`                                           | `@valdres-react/hotkeys`    |
+| `useHotkeyScope(scope, options?)`                                                  | `@valdres-react/hotkeys`    |
 
 ---
 

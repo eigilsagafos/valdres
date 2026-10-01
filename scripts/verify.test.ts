@@ -27,6 +27,7 @@ const COVERED_JOBS = [
     "test",
     "browser-media",
     "browser-keyboard",
+    "hotkeys",
     "valdres-package",
 ]
 
@@ -263,6 +264,14 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "            - uses: actions/setup-node@v6",
             "            - name: Browser keyboard gate",
             "              run: bun run test:browser-keyboard",
+            "    hotkeys:",
+            "        runs-on: ubuntu-22.04",
+            "        steps:",
+            "            - uses: actions/checkout@v6",
+            "            - uses: oven-sh/setup-bun@v2",
+            "            - uses: actions/setup-node@v6",
+            "            - name: Hotkeys gate",
+            "              run: bun run test:hotkeys",
             "    valdres-package:",
             "        runs-on: ubuntu-22.04",
             "        steps:",
@@ -297,6 +306,7 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "Gate",
             "Browser media gate",
             "Browser keyboard gate",
+            "Hotkeys gate",
             "Package gate",
         ])
     })

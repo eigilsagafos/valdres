@@ -116,6 +116,9 @@ describe("createInspectableReact", () => {
             { wrapper },
         )
 
+        const explicit = renderHook(() => inspected.useStore(core.store))
+        expect(explicit.result.current).toBe(core.store)
+
         expect(Object.keys(inspected)).toEqual([
             "Provider",
             "useValue",

@@ -1,0 +1,11 @@
+{
+    // Type-checks everything the package ships or runs; `tsconfig.json`
+    // narrows to the entries for declaration emit.
+    "extends": "../../../tsconfig.json",
+    "include": ["src", "test", "build.ts"],
+    "exclude": ["dist"],
+    "compilerOptions": {
+        "noEmit": true,
+        "types": ["bun"]
+    }
+}
