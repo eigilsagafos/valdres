@@ -47,7 +47,9 @@ const shiftArrowDown = selector<KeyDown | null>(get => {
  * trigger, recording the handled `sequence` in the same transaction.
  */
 const gatedCommand = (app: Store, trigger: Selector<KeyDown | null>) => {
-    const handled = atom(latestKeyDownSequence())
+    const handled = atom(0)
+    // The watermark is read at registration, as the docs show.
+    app.set(handled, latestKeyDownSequence())
     const runs = atom(0)
     const settleCalls = { count: 0 }
     const stop = app.sub(trigger, {
@@ -276,6 +278,36 @@ describe("keyboard commands in settle handlers", () => {
         kb.down("KeyK", "k")
         app.set(enabled, true)
         expect(app.get(watermarked.runs)).toBe(1)
+        app.dispose()
+    })
+
+    test("a watermark read at module load protects nothing; one read at registration does", () => {
+        // Simulates `const handled = atom(latestKeyDownSequence())` at module load:
+        // nothing observed yet, so the default is 0.
+        const moduleLoadDefault = latestKeyDownSequence()
+        expect(moduleLoadDefault).toBe(0)
+        activateKeyboard()
+        const app = store()
+        const enabled = atom(true)
+        const trigger = selector<KeyDown | null>(get =>
+            get(enabled) ? get(lastKeyDownSelector("KeyK")) : null,
+        )
+        kb.down("KeyK", "k") // before registration
+        const stale = atom(moduleLoadDefault)
+        let staleRuns = 0
+        app.sub(trigger, {
+            settle: tx => {
+                const keyDown = tx.get(trigger)
+                if (keyDown === null || keyDown.sequence <= tx.get(stale))
+                    return
+                tx.set(stale, keyDown.sequence)
+                staleRuns++
+            },
+        })
+        const atRegistration = gatedCommand(app, trigger)
+        app.set(enabled, false)
+        app.set(enabled, true)
+        expect([staleRuns, app.get(atRegistration.runs)]).toEqual([1, 0])
         app.dispose()
     })
 })
