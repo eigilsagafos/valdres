@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/hotkeys",
-    "description": "React hotkey hooks powered by Valdres",
+    "description": "React bindings for @valdres/hotkeys",
     "version": "1.0.0-beta.7",
     "license": "MIT",
     "author": {
@@ -21,26 +21,30 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../../scripts/rewrite-declaration-imports.ts dist/types",
-        "test": "echo 'no tests'"
-    },
-    "dependencies": {
-        "@valdres/hotkeys": "^1.0.0-beta.7"
+        "typecheck:tests": "bunx tsgo --noEmit -p tsconfig.tests.json",
+        "test": "bun test"
     },
     "devDependencies": {
-        "@testing-library/react": "16.3.0",
+        "@happy-dom/global-registrator": "20.0.5",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "@valdres/browser-keyboard": "workspace:^",
+        "@valdres/hotkeys": "workspace:^",
+        "happy-dom": "20.0.5",
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "typescript": "5.9.2",
+        "valdres": "workspace:^",
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
+        "@valdres/hotkeys": "^1.0.0-beta.7",
         "react": ">=18",
-        "valdres": "^1.0.0-beta.19",
-        "valdres-react": "^1.0.0-beta.4"
+        "valdres": "^1.0.0-beta.41",
+        "valdres-react": "^1.0.0-beta.8"
     },
     "publishConfig": {
         "access": "public",
         "registry": "https://registry.npmjs.org/"
-    },
-    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+    }
 }

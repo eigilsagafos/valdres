@@ -75,10 +75,7 @@ import {
     isLightModeSelector,
     userSelectedColorModeAtom,
 } from "@valdres/color-mode"
-import {
-    currentCodeCombinationAtom,
-    currentKeyCombinationAtom,
-} from "@valdres/hotkeys"
+import { shortcutSelector } from "@valdres/hotkeys"
 import { publicIpAtom, publicIpStatusAtom } from "@valdres/public-ip"
 
 export const pluginDemos: Record<string, (el: HTMLElement) => void> = {
@@ -299,10 +296,10 @@ export const pluginDemos: Record<string, (el: HTMLElement) => void> = {
     }),
 
     hotkeys: inspector({
-        hint: "Press and hold any keys",
+        hint: "Press Mod+K, then ? (Shift+/ on most layouts)",
         rows: [
-            { label: "currentCodeCombinationAtom", state: currentCodeCombinationAtom },
-            { label: "currentKeyCombinationAtom", state: currentKeyCombinationAtom },
+            { label: 'shortcutSelector("Mod+K")', state: shortcutSelector("Mod+K") },
+            { label: 'shortcutSelector("?")', state: shortcutSelector("?") },
         ],
     }),
 

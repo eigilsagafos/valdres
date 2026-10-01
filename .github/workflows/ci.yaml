@@ -329,6 +329,40 @@ jobs:
               # declarations, read-only enforcement and the peer floor.
               run: bun run test:browser-keyboard:packed
 
+    hotkeys:
+        name: Hotkeys packages
+        # `@valdres/hotkeys` and `@valdres-react/hotkeys` are release-ignored, so
+        # this job does not gate `publish`. It still runs on every pull request:
+        # both packages build on the release-eligible keyboard, core and React
+        # packages, and their packed artifacts must keep working against them.
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  # The packed gate asks Changesets for the versions pending
+                  # changesets will produce, which needs the full history.
+                  fetch-depth: 0
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.0
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Hotkeys suites and typechecks
+              # `bun test` plus BOTH tsconfigs for each package.
+              run: bun run test:hotkeys
+            - name: Validate packed hotkeys consumers
+              # Shadow-packs both packages with core, React and keyboard, installs
+              # the tarballs into an isolated consumer and checks the artifacts:
+              # browserless import and SSR, one dispatcher registry across the
+              # split entries, dispatch and cancellation, declarations, peers.
+              run: bun run test:hotkeys:packed
+
     valdres-package:
         name: Valdres published-package gate
         runs-on: ubuntu-22.04

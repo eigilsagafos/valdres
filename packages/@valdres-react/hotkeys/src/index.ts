@@ -1,4 +1,5 @@
-export { useHotkeys } from "./useHotkeys"
-export { useHotkeysCode } from "./useHotkeysCode"
-export { useHotkeysCommand } from "./useHotkeysCommand"
-export { useHotkeysKey } from "./useHotkeysKey"
+export { useHotkey } from "./useHotkey"
+export { useHotkeyScope } from "./useHotkeyScope"
+
+export type { UseHotkeyOptions } from "./types/UseHotkeyOptions"
+export type { UseHotkeyScopeOptions } from "./types/UseHotkeyScopeOptions"
