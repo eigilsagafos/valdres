@@ -10,11 +10,14 @@ import {
     activateKeyboard,
     keyboardAtom,
     lastKeyDownAtom,
+    latestKeyDownSequence,
     lastKeyDownSelector,
     modifierSelector,
     pressedCodesSelector,
     pressedKeysSelector,
+    preventKeyDownDefault,
     toggleKeySelector,
+    type KeyDown,
 } from "../../src/index"
 
 assert.equal(typeof globalThis.document, "undefined")
@@ -40,6 +43,19 @@ const stopKeyDowns = app.sub(lastKeyDownAtom, () => {
     throw new Error("a DOM-less source must never notify")
 })
 stopKeyDowns()
+
+// No hub on the server: no watermark and nothing to cancel.
+assert.equal(latestKeyDownSequence(), 0)
+const foreign: KeyDown = Object.freeze({
+    code: "KeyA",
+    key: "a",
+    repeat: false,
+    timeStamp: 0,
+    sequence: 1,
+    editable: false,
+    defaultPrevented: false,
+})
+assert.equal(preventKeyDownDefault(foreign), false)
 
 // Explicit activation is a no-op without a document.
 activateKeyboard()

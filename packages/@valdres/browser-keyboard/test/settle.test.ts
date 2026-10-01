@@ -8,13 +8,16 @@
  * A retained `lastKeyDown` value is not an exactly-once event queue: a trigger
  * that becomes eligible again later re-serves the same occurrence. Consumers
  * that must run a command once per keydown gate on `sequence`, as the fixture
- * below does.
+ * below does, starting from `latestKeyDownSequence()` so that a keydown from
+ * before registration never counts.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { atom, selector, store, type Selector, type Store } from "valdres"
 import {
+    activateKeyboard,
     isCodePressedSelector,
     lastKeyDownAtom,
+    latestKeyDownSequence,
     lastKeyDownSelector,
     modifierSelector,
     pressedCodesSelector,
@@ -45,6 +48,8 @@ const shiftArrowDown = selector<KeyDown | null>(get => {
  */
 const gatedCommand = (app: Store, trigger: Selector<KeyDown | null>) => {
     const handled = atom(0)
+    // The watermark is read at registration, as the docs show.
+    app.set(handled, latestKeyDownSequence())
     const runs = atom(0)
     const settleCalls = { count: 0 }
     const stop = app.sub(trigger, {
@@ -237,5 +242,72 @@ describe("keyboard commands in settle handlers", () => {
         expect(healthy.get(otherStore.runs)).toBe(2)
         failing.dispose()
         healthy.dispose()
+    })
+
+    test("the watermark: a late handler never acts on a keydown from before it, even when eligibility returns", () => {
+        activateKeyboard()
+        const app = store()
+        const enabled = atom(true)
+        const trigger = selector<KeyDown | null>(get =>
+            get(enabled) ? get(lastKeyDownSelector("KeyK")) : null,
+        )
+        kb.down("KeyK", "k") // before either handler exists
+        const fromZero = { runs: 0 }
+        const fromZeroHandled = atom(0)
+        app.sub(trigger, {
+            settle: tx => {
+                const keyDown = tx.get(trigger)
+                if (
+                    keyDown === null ||
+                    keyDown.sequence <= tx.get(fromZeroHandled)
+                )
+                    return
+                tx.set(fromZeroHandled, keyDown.sequence)
+                fromZero.runs++
+            },
+        })
+        const watermarked = gatedCommand(app, trigger)
+        app.set(enabled, false)
+        app.set(enabled, true)
+        // Starting from 0 re-serves the earlier keydown; the watermark does not.
+        expect([fromZero.runs, app.get(watermarked.runs)]).toEqual([1, 0])
+        // A gated trigger still re-serves a keydown pressed while it was
+        // ineligible: only an occurrence-keyed trigger avoids that.
+        app.set(enabled, false)
+        kb.up("KeyK", "k")
+        kb.down("KeyK", "k")
+        app.set(enabled, true)
+        expect(app.get(watermarked.runs)).toBe(1)
+        app.dispose()
+    })
+
+    test("a watermark read at module load protects nothing; one read at registration does", () => {
+        // Simulates `const handled = atom(latestKeyDownSequence())` at module load:
+        // nothing observed yet, so the default is 0.
+        const moduleLoadDefault = latestKeyDownSequence()
+        expect(moduleLoadDefault).toBe(0)
+        activateKeyboard()
+        const app = store()
+        const enabled = atom(true)
+        const trigger = selector<KeyDown | null>(get =>
+            get(enabled) ? get(lastKeyDownSelector("KeyK")) : null,
+        )
+        kb.down("KeyK", "k") // before registration
+        const stale = atom(moduleLoadDefault)
+        let staleRuns = 0
+        app.sub(trigger, {
+            settle: tx => {
+                const keyDown = tx.get(trigger)
+                if (keyDown === null || keyDown.sequence <= tx.get(stale))
+                    return
+                tx.set(stale, keyDown.sequence)
+                staleRuns++
+            },
+        })
+        const atRegistration = gatedCommand(app, trigger)
+        app.set(enabled, false)
+        app.set(enabled, true)
+        expect([staleRuns, app.get(atRegistration.runs)]).toEqual([1, 0])
+        app.dispose()
     })
 })

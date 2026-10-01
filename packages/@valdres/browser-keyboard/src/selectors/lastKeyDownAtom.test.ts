@@ -201,6 +201,8 @@ describe("lastKeyDownAtom", () => {
             repeat: true,
             timeStamp: keyDown.timeStamp,
             sequence: 2,
+            editable: false,
+            defaultPrevented: false,
         })
         expect(kb.invalidators()).toBe(0)
         app.dispose()
