@@ -1,5 +1,19 @@
 # valdres-react
 
+## 1.0.0-beta.8
+
+### Minor Changes
+
+- [#414](https://github.com/eigilsagafos/valdres/pull/414)
+  [`8b26a8f`](https://github.com/eigilsagafos/valdres/commit/8b26a8fca08689926901cbd00a1faec027ec0ec0)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! -
+  **`useStore(store?)` accepts an explicit Store.** It returns that Store
+  instead of the nearest `<Provider>`'s — the resolution
+  `useValue(state, store)` and the other hooks already apply — so a library hook
+  that takes an optional Store can forward it and work with or without a
+  Provider. `useStore()` is unchanged, a string ID is still rejected, and the
+  opt-in `valdres-react/inspect` binding's `useStore` gains the same parameter.
+
 ## 1.0.0-beta.7
 
 ### Patch Changes
