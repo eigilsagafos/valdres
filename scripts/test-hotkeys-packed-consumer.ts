@@ -21,17 +21,11 @@
 import { strict as assert } from "node:assert"
 import { spawnSync } from "node:child_process"
 import { statSync } from "node:fs"
-import {
-    cp,
-    mkdir,
-    mkdtemp,
-    readFile,
-    readdir,
-    rm,
-    writeFile,
-} from "node:fs/promises"
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
+import { assertHotkeysReleaseCohort } from "./lib/hotkeys-packages"
+import { pendingReleaseVersions } from "./lib/pending-release-versions"
 
 const ROOT = join(import.meta.dir, "..")
 const run = (
@@ -81,44 +75,11 @@ for (const name of Object.keys(dirs) as Name[]) {
     run(`build ${name} types`, ["bun", "run", "build:types"], dirs[name])
 }
 
-// Versions that pending changesets will produce, per Changesets itself. Its
-// release plan needs no git, but `status` also compares against a branch:
-// `--since` the repository's first commit counts every pending changeset and
-// works without a local `main` (CI checks out full history for this job).
-// With no pending changeset — right after a Version Packages merge, when the
-// manifests already carry the release versions — nothing is pending, and
-// `status` would only fail on its "changed but no changesets" check.
-const pendingChangesets = (await readdir(join(ROOT, ".changeset"))).filter(
-    file => file.endsWith(".md") && file !== "README.md",
-)
-const pending = new Map<string, string>()
-if (pendingChangesets.length > 0) {
-    const firstCommit = run(
-        "find the first commit",
-        ["git", "rev-list", "--max-parents=0", "HEAD"],
-        ROOT,
-    )
-        .stdout.trim()
-        .split("\n")
-        .at(-1)!
-    const statusFile = join(workspace, "changeset-status.json")
-    run(
-        "changeset status",
-        [
-            "bunx",
-            "changeset",
-            "status",
-            `--since=${firstCommit}`,
-            `--output=${statusFile}`,
-        ],
-        ROOT,
-    )
-    for (const release of JSON.parse(await readFile(statusFile, "utf8"))
-        .releases as { name: string; newVersion: string }[])
-        pending.set(release.name, release.newVersion)
-}
+// Versions pending changesets will produce, per Changesets; empty right after
+// a Version Packages merge, when the manifests already carry them.
+const pending = pendingReleaseVersions(ROOT)
 console.log(
-    `pending changesets: ${pendingChangesets.length}; staged versions: ${pending.size === 0 ? "workspace manifests" : "release plan"}`,
+    `staged versions: ${pending.size === 0 ? "workspace manifests (nothing pending)" : "release plan"}`,
 )
 
 const before = new Map<Name, string>()
@@ -237,6 +198,16 @@ for (const name of Object.keys(dirs) as Name[]) {
         `${name}: packed version is not the planned release version`,
     )
 }
+// Both hotkeys packages must ship the v1 API together.
+assertHotkeysReleaseCohort(
+    new Map(),
+    Object.fromEntries(
+        (["@valdres/hotkeys", "@valdres-react/hotkeys"] as const).map(name => [
+            name,
+            packed.get(name)!.manifest.version,
+        ]),
+    ),
+)
 const hotkeysManifest = packed.get("@valdres/hotkeys")!.manifest
 const reactHotkeysManifest = packed.get("@valdres-react/hotkeys")!.manifest
 assert.deepEqual(Object.keys(hotkeysManifest.exports), [

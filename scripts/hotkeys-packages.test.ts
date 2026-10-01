@@ -11,10 +11,15 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import {
+    assertHotkeysReleaseCohort,
+    assertHotkeysReleaseNotes,
     HOTKEYS_EXCLUDED_PEER_VERSIONS,
     HOTKEYS_PACKAGES,
     HOTKEYS_PEER_RANGES,
+    parseChangesetReleases,
+    type ChangesetEntry,
 } from "./lib/hotkeys-packages"
+import { pendingReleaseVersions } from "./lib/pending-release-versions"
 import { PUBLISHABLE_PACKAGE_DIRS } from "./lib/publishable-packages"
 
 const ROOT = join(import.meta.dir, "..")
@@ -32,6 +37,19 @@ const changesetFiles = (dir = join(ROOT, ".changeset")): string[] =>
             : []
     })
 
+/** Pending (`.changeset/*.md`) and consumed (`.changeset/pre/*.md`) changesets. */
+const repositoryChangesets = (): ChangesetEntry[] =>
+    ["", "pre/"].flatMap(sub =>
+        readdirSync(join(ROOT, ".changeset", sub))
+            .filter(file => file.endsWith(".md") && file !== "README.md")
+            .map(file => ({
+                path: `.changeset/${sub}${file}`,
+                releases: parseChangesetReleases(
+                    read(ROOT, ".changeset", sub, file),
+                ),
+            })),
+    )
+
 const frontMatterNames = (file: string): string[] => {
     const match = readFileSync(file, "utf8").match(/^---\n([\s\S]*?)\n---/)
     if (match === null) return []
@@ -39,9 +57,9 @@ const frontMatterNames = (file: string): string[] => {
 }
 
 describe("hotkeys lane", () => {
-    test.each(HOTKEYS_PACKAGES)(
+    test.each([...HOTKEYS_PACKAGES])(
         "$name has the wiring the gates assume",
-        pkg => {
+        (pkg: (typeof HOTKEYS_PACKAGES)[number]) => {
             const directory = join(ROOT, pkg.dir)
             const manifest = JSON.parse(read(directory, "package.json"))
             expect(manifest.name).toBe(pkg.name)
@@ -121,18 +139,163 @@ describe("hotkeys lane", () => {
         }
     })
 
-    test("carries its release notes in exactly one pending breaking changeset", () => {
-        const names = HOTKEYS_PACKAGES.map(pkg => pkg.name) as string[]
-        const naming = changesetFiles().filter(file =>
-            frontMatterNames(file).some(name => names.includes(name)),
+    test("carries its breaking release notes in exactly one changeset, pending or consumed", () => {
+        const entry = assertHotkeysReleaseNotes(repositoryChangesets())
+        expect(entry.path).toMatch(
+            /^\.changeset\/(?:pre\/)?hotkeys-v1-dispatcher\.md$/,
         )
-        expect(naming.map(file => file.slice(ROOT.length + 1))).toEqual([
-            ".changeset/hotkeys-v1-dispatcher.md",
+    })
+
+    test("both packages release at least the v1 floor, per the actual release plan", () => {
+        const manifests = Object.fromEntries(
+            HOTKEYS_PACKAGES.map(pkg => [
+                pkg.name,
+                JSON.parse(read(ROOT, pkg.dir, "package.json")).version,
+            ]),
+        )
+        const versions = assertHotkeysReleaseCohort(
+            pendingReleaseVersions(ROOT),
+            manifests,
+        )
+        expect(Object.keys(versions).sort()).toEqual([
+            "@valdres-react/hotkeys",
+            "@valdres/hotkeys",
         ])
-        const front = read(ROOT, ".changeset/hotkeys-v1-dispatcher.md").match(
-            /^---\n([\s\S]*?)\n---/,
-        )![1]!
-        expect(front).toContain('"@valdres/hotkeys": major')
-        expect(front).toContain('"@valdres-react/hotkeys": major')
+    }, 30_000)
+})
+
+describe("hotkeys release-note guard", () => {
+    const both = {
+        "@valdres/hotkeys": "major",
+        "@valdres-react/hotkeys": "major",
+    }
+    const entry = (path: string, releases: Record<string, string>) => ({
+        path,
+        releases,
+    })
+
+    test("accepts the breaking changeset while pending and once consumed", () => {
+        for (const path of [
+            ".changeset/hotkeys-v1-dispatcher.md",
+            ".changeset/pre/hotkeys-v1-dispatcher.md",
+        ])
+            expect(
+                assertHotkeysReleaseNotes([
+                    entry(path, both),
+                    entry(".changeset/pre/other.md", { valdres: "major" }),
+                    entry(".changeset/hotkeys-fix.md", {
+                        "@valdres/hotkeys": "patch",
+                    }),
+                ]).path,
+            ).toBe(path)
+    })
+
+    test("rejects a missing breaking changeset", () => {
+        expect(() =>
+            assertHotkeysReleaseNotes([
+                entry(".changeset/hotkeys-fix.md", {
+                    "@valdres/hotkeys": "patch",
+                    "@valdres-react/hotkeys": "patch",
+                }),
+            ]),
+        ).toThrow("found 0")
+    })
+
+    test("rejects duplicated breaking changesets, pending and consumed or two files", () => {
+        expect(() =>
+            assertHotkeysReleaseNotes([
+                entry(".changeset/hotkeys-v1-dispatcher.md", both),
+                entry(".changeset/pre/hotkeys-v1-dispatcher.md", both),
+            ]),
+        ).toThrow("found 2")
+        expect(() =>
+            assertHotkeysReleaseNotes([
+                entry(".changeset/pre/hotkeys-v1-dispatcher.md", both),
+                entry(".changeset/hotkeys-again.md", {
+                    "@valdres/hotkeys": "major",
+                }),
+            ]),
+        ).toThrow("found 2")
+    })
+
+    test("rejects a breaking changeset that does not release both as major", () => {
+        expect(() =>
+            assertHotkeysReleaseNotes([
+                entry(".changeset/pre/hotkeys-v1-dispatcher.md", {
+                    "@valdres/hotkeys": "major",
+                }),
+            ]),
+        ).toThrow("@valdres-react/hotkeys as major")
+        expect(() =>
+            assertHotkeysReleaseNotes([
+                entry(".changeset/pre/hotkeys-v1-dispatcher.md", {
+                    "@valdres/hotkeys": "major",
+                    "@valdres-react/hotkeys": "minor",
+                }),
+            ]),
+        ).toThrow("not minor")
+    })
+
+    test("parses front matter like Changesets writes it", () => {
+        expect(
+            parseChangesetReleases(
+                '---\n"@valdres/hotkeys": major\n"@valdres-react/hotkeys": major\n---\n\nNotes',
+            ),
+        ).toEqual(both)
+        expect(parseChangesetReleases("---\n---\n")).toEqual({})
+    })
+})
+
+describe("hotkeys release-cohort guard", () => {
+    const beta7 = {
+        "@valdres/hotkeys": "1.0.0-beta.7",
+        "@valdres-react/hotkeys": "1.0.0-beta.7",
+    }
+
+    test("passes when the plan moves both to the floor or beyond", () => {
+        expect(
+            assertHotkeysReleaseCohort(
+                new Map([
+                    ["@valdres/hotkeys", "1.0.0-beta.8"],
+                    ["@valdres-react/hotkeys", "1.0.0-beta.8"],
+                ]),
+                beta7,
+            ),
+        ).toEqual({
+            "@valdres/hotkeys": "1.0.0-beta.8",
+            "@valdres-react/hotkeys": "1.0.0-beta.8",
+        })
+        expect(() =>
+            assertHotkeysReleaseCohort(new Map(), {
+                "@valdres/hotkeys": "1.0.0-beta.12",
+                "@valdres-react/hotkeys": "1.0.0",
+            }),
+        ).not.toThrow()
+    })
+
+    test("rejects a plan omitting React hotkeys while its manifest stays beta.7", () => {
+        expect(() =>
+            assertHotkeysReleaseCohort(
+                new Map([["@valdres/hotkeys", "1.0.0-beta.8"]]),
+                beta7,
+            ),
+        ).toThrow("@valdres-react/hotkeys would release 1.0.0-beta.7")
+    })
+
+    test("rejects post-version manifests where React hotkeys stayed beta.7", () => {
+        expect(() =>
+            assertHotkeysReleaseCohort(new Map(), {
+                "@valdres/hotkeys": "1.0.0-beta.8",
+                "@valdres-react/hotkeys": "1.0.0-beta.7",
+            }),
+        ).toThrow("@valdres-react/hotkeys would release 1.0.0-beta.7")
+    })
+
+    test("rejects a missing version", () => {
+        expect(() =>
+            assertHotkeysReleaseCohort(new Map(), {
+                "@valdres/hotkeys": "1.0.0-beta.8",
+            }),
+        ).toThrow("No release or manifest version for @valdres-react/hotkeys")
     })
 })
