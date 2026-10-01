@@ -331,10 +331,11 @@ jobs:
 
     hotkeys:
         name: Hotkeys packages
-        # `@valdres/hotkeys` and `@valdres-react/hotkeys` are release-ignored, so
-        # this job does not gate `publish`. It still runs on every pull request:
-        # both packages build on the release-eligible keyboard, core and React
-        # packages, and their packed artifacts must keep working against them.
+        # `@valdres/hotkeys` and `@valdres-react/hotkeys` are release-eligible,
+        # so this job gates `publish` like browser-media and browser-keyboard:
+        # the revision that publishes them must have passed both suites, both
+        # tsconfig type-checks per package and the packed-consumer gate, which
+        # installs them at their release versions with core, React and keyboard.
         runs-on: ubuntu-22.04
         permissions:
             contents: read
@@ -433,11 +434,11 @@ jobs:
               run: bun run test:v1-beta:packed
 
     publish:
-        # browser-media and browser-keyboard joined this list when their
-        # packages stopped being release-ignored: the revision that publishes
-        # them must have passed their suites, both tsconfig type-checks and the
-        # packed-consumer gate.
-        needs: [test, valdres-package, browser-media, browser-keyboard]
+        # browser-media, browser-keyboard and hotkeys joined this list when
+        # their packages stopped being release-ignored: the revision that
+        # publishes them must have passed their suites, both tsconfig
+        # type-checks and the packed-consumer gate.
+        needs: [test, valdres-package, browser-media, browser-keyboard, hotkeys]
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         runs-on: ubuntu-22.04
         environment: npm-publish

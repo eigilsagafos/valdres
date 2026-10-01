@@ -15,12 +15,10 @@
 "@valdres/browser-visibility": patch
 "@valdres/browser-window": patch
 "@valdres/color-mode": patch
-"@valdres/hotkeys": patch
 "@valdres/public-ip": patch
 "@valdres/redux-devtools": patch
 "@valdres-react/color-mode": patch
 "@valdres-react/draggable": patch
-"@valdres-react/hotkeys": patch
 "@valdres-react/jotai": patch
 "@valdres-react/panable": patch
 "@valdres-react/recoil": patch

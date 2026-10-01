@@ -15,11 +15,9 @@
 "@valdres/browser-visibility": patch
 "@valdres/browser-window": patch
 "@valdres/color-mode": minor
-"@valdres/hotkeys": minor
 "@valdres/public-ip": patch
 "@valdres-react/color-mode": minor
 "@valdres-react/draggable": minor
-"@valdres-react/hotkeys": minor
 "@valdres-react/jotai": patch
 "@valdres-react/panable": minor
 "@valdres-react/recoil": patch

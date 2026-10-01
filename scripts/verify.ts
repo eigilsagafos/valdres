@@ -19,7 +19,7 @@
  * migrated browser media packages: suites, both tsconfigs, packed consumers),
  * `browser-keyboard` (the same three gates for the keyboard package),
  * `hotkeys` (suites, both tsconfigs and packed consumers for the two
- * release-ignored hotkeys packages) and `valdres-package` (the published-tarball gate: publint, ATTW, size
+ * hotkeys packages) and `valdres-package` (the published-tarball gate: publint, ATTW, size
  * budgets; ~13s). It does NOT cover the manual-only legacy docs workflows or
  * the Bencher gate; those are listed under NOT_COVERED and printed on every
  * run, because a

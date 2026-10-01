@@ -10,10 +10,10 @@
  * the React hooks, packed declarations, peer ranges, and that no source
  * manifest changed.
  *
- * Both hotkeys packages are release-ignored; this gate checks the artifacts
- * they would ship. A dependency whose next version is still pending (a
- * changeset not yet versioned) is staged at the version Changesets reports for
- * it, so the peer ranges are checked against what will actually be released.
+ * Both hotkeys packages are release-eligible; this gate checks the artifacts
+ * they ship. Every package whose next version is still pending (a changeset not
+ * yet versioned) is staged at the version Changesets reports for it, so the
+ * manifests and peer ranges are checked as they will actually be released.
  *
  *   bun run scripts/test-hotkeys-packed-consumer.ts
  *   bun run test:hotkeys:packed
@@ -176,12 +176,18 @@ for (const name of Object.keys(dirs) as Name[])
     )
 console.log("manifests byte-identical after staging: ok")
 
-// RELEASE-ENABLEMENT PREREQUISITE (both hotkeys packages are release-ignored):
-// `@valdres-react/hotkeys` peers on `@valdres/hotkeys@^1.0.0-beta.7`, which also
-// admits the already-published beta.7 with the retired API. Ignored packages are
-// not versioned, so this check passes trivially today. When the hotkeys packages
-// are made release-eligible, raise that floor to the first release carrying the
-// v1 API in the same change.
+// The published `@valdres/hotkeys@1.0.0-beta.7` (and every older line) carries
+// the retired callback API, so the React package's floor must exclude it.
+assert.equal(
+    Bun.semver.satisfies(
+        "1.0.0-beta.7",
+        packed.get("@valdres-react/hotkeys")!.manifest.peerDependencies[
+            "@valdres/hotkeys"
+        ],
+    ),
+    false,
+    "@valdres-react/hotkeys admits the legacy @valdres/hotkeys@1.0.0-beta.7",
+)
 for (const name of ["@valdres/hotkeys", "@valdres-react/hotkeys"] as const) {
     const { manifest, files } = packed.get(name)!
     assert.ok(!files.some(f => f.includes(".test.")), `${name}: tests shipped`)

@@ -67,12 +67,43 @@ describe("generated release metadata scope", () => {
         ])
     })
 
+    test("accepts the Version Packages list once the hotkeys packages release", () => {
+        accepts([
+            ...[
+                "browser-keyboard-native-keydown",
+                "hotkeys-v1-dispatcher",
+                "hotkeys-release-eligibility",
+                "valdres-react-use-store-explicit",
+            ].map(id =>
+                renamed(`.changeset/${id}.md`, `.changeset/pre/${id}.md`),
+            ),
+            modified("bun.lock"),
+            modified("packages/@valdres/browser-keyboard/CHANGELOG.md"),
+            modified("packages/@valdres/browser-keyboard/package.json"),
+            modified("packages/@valdres/hotkeys/CHANGELOG.md"),
+            modified("packages/@valdres/hotkeys/package.json"),
+            modified("packages/@valdres-react/hotkeys/CHANGELOG.md"),
+            modified("packages/@valdres-react/hotkeys/package.json"),
+            modified("packages/valdres-react/CHANGELOG.md"),
+            modified("packages/valdres-react/package.json"),
+        ])
+    })
+
     test.each([
         ["runtime source", "packages/valdres/src/index.ts"],
         [
             "runtime file in a keyboard package",
             "packages/@valdres/browser-keyboard/src/index.ts",
         ],
+        [
+            "runtime file in a hotkeys package",
+            "packages/@valdres/hotkeys/src/lib/registry.ts",
+        ],
+        [
+            "runtime file in the React hotkeys package",
+            "packages/@valdres-react/hotkeys/src/useHotkey.ts",
+        ],
+        ["hotkeys package README", "packages/@valdres/hotkeys/README.md"],
         ["built output", "packages/valdres/dist/index.js"],
         ["package README", "packages/valdres/README.md"],
         ["workflow", ".github/workflows/ci.yaml"],

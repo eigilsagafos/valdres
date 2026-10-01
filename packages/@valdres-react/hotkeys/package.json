@@ -38,7 +38,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "@valdres/hotkeys": "^1.0.0-beta.7",
+        "@valdres/hotkeys": "^1.0.0-beta.8",
         "react": ">=18",
         "valdres": "^1.0.0-beta.41",
         "valdres-react": "^1.0.0-beta.8"

@@ -18,7 +18,8 @@ that is true: Changesets publishes prereleases to the tag in this file.
 The release cohort is `valdres`, `valdres-react`, the five migrated browser
 media packages: `@valdres/browser-color-scheme`, `@valdres/browser-contrast`,
 `@valdres/browser-reduced-motion`, `@valdres/browser-reduced-data` and
-`@valdres/browser-reduced-transparency` — plus `@valdres/browser-keyboard`.
+`@valdres/browser-reduced-transparency` — plus `@valdres/browser-keyboard`,
+`@valdres/hotkeys` and `@valdres-react/hotkeys`.
 Angular, Vue, Svelte, Solid, the
 remaining feature packages, and the compatibility packages stay on their last
 legacy beta versions until each is migrated and certified.
@@ -53,7 +54,13 @@ the cohort above are supported together. The migrated media packages declare
 `scripts/browser-media-packages.test.ts` pins that floor by equality, because a
 `satisfies` check alone would also accept the old `^1.0.0-beta.19`. The keyboard
 package declares `^1.0.0-beta.40`, pinned the same way by
-`scripts/browser-keyboard-package.test.ts`. Do not combine beta.24 or later with a
+`scripts/browser-keyboard-package.test.ts`. The hotkeys packages carry three
+floors, pinned by equality in `scripts/hotkeys-packages.test.ts`: `valdres`
+`^1.0.0-beta.41` (the first core with `settle`), `@valdres/browser-keyboard`
+`^1.0.0-beta.10` and `valdres-react` `^1.0.0-beta.8` (the releases carrying the
+keydown bridge and `useStore(store?)`), and `@valdres-react/hotkeys` requires
+`@valdres/hotkeys` `^1.0.0-beta.8` — the published `1.0.0-beta.7` still carries
+the retired callback API. Do not combine beta.24 or later with a
 deferred adapter, plugin, or compatibility package until that package is
 migrated.
 
