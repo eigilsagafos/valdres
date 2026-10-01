@@ -171,10 +171,11 @@ roughly 30 repeats per second while a key is held.
 `lastKeyDownAtom` holds the latest keydown; it is not an event queue. A selector
 that becomes true again later — an `enabled` flag toggled back on, say — sees the
 same keydown again. To run a command once per keydown, record the `sequence` you
-handled and skip anything not newer:
+handled and skip anything not newer. Start from `latestKeyDownSequence()`, so a
+keydown from before the handler existed never counts:
 
 ```ts
-const handled = atom(0)
+const handled = atom(latestKeyDownSequence())
 
 app.sub(saveShortcut, {
     settle: tx => {
@@ -190,9 +191,50 @@ A `settle` handler triggered by a keydown sees the held keys after that keydown,
 and its writes reach ordinary subscribers in the same notification (see
 [`store.sub`](https://valdres.dev/react/store) — `settle` is experimental).
 
-A store notification is not the native event: it cannot call `preventDefault()`
-and does not know which element had focus. For shortcuts that need either, handle
-the native `keydown` event.
+That still re-serves a keydown that was pressed while `saveShortcut` was null
+and becomes non-null later without a new keydown. Shortcut handling that must
+never do that subscribes to `lastKeyDownAtom` itself and decides eligibility
+when each keydown arrives — what `@valdres/hotkeys` does.
+
+### The native keydown
+
+A store update caused by a keydown runs while that keydown is still being
+dispatched, so it can cancel it, and every `KeyDown` records what the
+keyboard's listener saw when the event arrived.
+
+```ts
+function preventKeyDownDefault(keyDown: KeyDown): boolean
+function latestKeyDownSequence(): number
+```
+
+`preventKeyDownDefault(keyDown)` cancels the native keydown that produced
+`keyDown` — from a `settle` handler or a subscriber that the keydown caused —
+and returns whether its default is now prevented. Anywhere else it does nothing
+and returns `false`: for a `lastKeyDown` read later, for a different keydown, for
+an event that is not cancelable, and on the server. Calling it again, from any
+store, is harmless. A keydown dispatched from inside a subscriber is applied
+after its own dispatch has returned (see [Lifetime](#lifetime)); it is still
+published, but can no longer be cancelled.
+
+`KeyDown.editable` is `true` when the keydown was aimed at text entry: a
+textarea, a select, a text-like input, or a contenteditable element, looking
+through open shadow roots. Checkboxes, radios, buttons and other non-text inputs
+are not text entry.
+
+`KeyDown.defaultPrevented` is whether something had already cancelled the
+keydown when the keyboard's listener received it: element and capture-phase
+listeners, framework handlers on a root element such as React's `onKeyDown`,
+and `document` listeners added before the keyboard's. It is a snapshot taken
+before any store is updated. `document` listeners added later, `window`
+listeners, and any store that calls `preventKeyDownDefault` never change it, so
+every store sees the same value.
+
+`latestKeyDownSequence()` is the `sequence` of the latest observed keydown, or 0
+before the first and on the server. Unlike a store read it is never one keydown
+behind while that keydown is still being delivered to other stores, and a
+focus-loss reset does not lower it.
+
+No DOM object is kept: these are read once, while the event is dispatched.
 
 ### Types
 
@@ -214,6 +256,8 @@ type KeyDown = Readonly<{
     repeat: boolean // true for an auto-repeat of a held key
     timeStamp: number
     sequence: number // +1 per observed keydown, never reset
+    editable: boolean // aimed at text entry, when dispatched
+    defaultPrevented: boolean // already cancelled when the keyboard received it
 }>
 
 type Modifier = "shift" | "ctrl" | "alt" | "meta"
@@ -282,10 +326,11 @@ the live keyboard state: a normal two-pass render, not a hydration mismatch.
 
 ## Keyboard state versus shortcuts
 
-This package reports **state**: which keys are held, and the last keydown. Store
-notifications are not the native event, so they cannot call `preventDefault()` or
-tell which element had focus. For "press this combination → run this callback",
-handle the native `keydown` event yourself.
+This package reports **state**: which keys are held, and the last keydown, with
+what was known about the native event when it arrived. It does not match
+combinations or run commands. For "press this combination → run this command",
+use `@valdres/hotkeys`, which builds on `lastKeyDownAtom`,
+`preventKeyDownDefault` and `latestKeyDownSequence`.
 
 ---
 

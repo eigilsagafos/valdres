@@ -1,8 +1,9 @@
 import { EMPTY_KEYBOARD_SOURCE_SNAPSHOT } from "./emptyKeyboardSnapshot"
 import { isAppleLike } from "./isAppleLike"
 import type { KeyboardSourceSnapshot } from "./KeyboardSourceSnapshot"
+import { isEditableTarget } from "./isEditableTarget"
 import { reduceKeyboardEvent } from "./reduceKeyboardEvent"
-import { toKeyDown } from "./toKeyDown"
+import { toKeyDown, type KeyDownObservation } from "./toKeyDown"
 
 export interface KeyboardHub {
     /** The current immutable source snapshot. Reads nothing from the DOM. */
@@ -12,6 +13,14 @@ export interface KeyboardHub {
      * that registration and is idempotent; it never detaches the hub.
      */
     readonly subscribe: (invalidate: () => void) => () => void
+    /**
+     * Cancels the native keydown that produced `sequence` if it is the one
+     * being delivered right now and its dispatch has not finished. Returns
+     * whether its default is now prevented.
+     */
+    readonly preventDefault: (sequence: number) => boolean
+    /** The sequence of the latest observed keydown; 0 before any. */
+    readonly sequence: () => number
     /** @internal Live invalidator registrations, for tests. */
     readonly invalidators: () => number
     /** @internal Removes the native listeners. Tests only; no public teardown. */
@@ -62,6 +71,12 @@ export const createKeyboardHub = (doc: Document): KeyboardHub => {
     const registrations = new Set<Registration>()
     let snapshot = EMPTY_KEYBOARD_SOURCE_SNAPSHOT
     let sequence = 0
+    // The keydown being delivered, for exactly the duration of its own
+    // publication. Never part of a snapshot.
+    let live: {
+        readonly sequence: number
+        readonly event: KeyboardEvent
+    } | null = null
 
     const publish = (next: KeyboardSourceSnapshot, failures: unknown[]) => {
         if (next === snapshot) return
@@ -118,9 +133,19 @@ export const createKeyboardHub = (doc: Document): KeyboardHub => {
         rethrow(failures)
     }
 
-    const onKey = (event: Event) =>
+    const onKey = (event: Event) => {
+        const keyEvent = event as KeyboardEvent
+        // Read on arrival, not when the job runs: a keydown dispatched from a
+        // subscriber is queued and applied after its dispatch has finished, when
+        // later listeners may have cancelled it and its composed path is gone.
+        const observation: KeyDownObservation | null =
+            keyEvent.type === "keydown"
+                ? {
+                      editable: isEditableTarget(keyEvent),
+                      defaultPrevented: keyEvent.defaultPrevented,
+                  }
+                : null
         run(failures => {
-            const keyEvent = event as KeyboardEvent
             const current = snapshot
             // Reduce first: if the event is malformed, nothing is published.
             const keyboard = reduceKeyboardEvent(
@@ -128,7 +153,10 @@ export const createKeyboardHub = (doc: Document): KeyboardHub => {
                 keyEvent,
                 isAppleLike(),
             )
-            const keyDown = toKeyDown(keyEvent, sequence + 1)
+            const keyDown =
+                observation === null
+                    ? null
+                    : toKeyDown(keyEvent, sequence + 1, observation)
             if (keyDown !== null) sequence = keyDown.sequence
             const lastKeyDown = keyDown ?? current.lastKeyDown
             if (
@@ -136,8 +164,15 @@ export const createKeyboardHub = (doc: Document): KeyboardHub => {
                 lastKeyDown === current.lastKeyDown
             )
                 return
-            publish(Object.freeze({ keyboard, lastKeyDown }), failures)
+            if (keyDown !== null)
+                live = { sequence: keyDown.sequence, event: keyEvent }
+            try {
+                publish(Object.freeze({ keyboard, lastKeyDown }), failures)
+            } finally {
+                live = null
+            }
         })
+    }
     // Focus loss can swallow keyups, so what is still held is unknown, and a
     // keydown from before the reset should not be acted on afterwards.
     const reset = () =>
@@ -178,6 +213,17 @@ export const createKeyboardHub = (doc: Document): KeyboardHub => {
                 registrations.delete(registration)
             }
         },
+        preventDefault: target => {
+            if (live === null || live.sequence !== target) return false
+            const { event } = live
+            // A queued keydown is applied after its own dispatch has returned;
+            // cancelling it then would claim a default the platform has
+            // already acted on.
+            if (event.eventPhase === 0 || !event.cancelable) return false
+            event.preventDefault()
+            return event.defaultPrevented
+        },
+        sequence: () => sequence,
         invalidators: () => registrations.size,
         detach,
     }

@@ -7,7 +7,8 @@
  * fixtures are media-query-shaped. Proves against the installed artifact, not
  * workspace source: browserless import and read-only rejection, the persistent
  * hub's listener accounting (explicit activation, two stores, unsubscribe keeps
- * tracking, blur reset), packed declarations, the peer floor through a real
+ * tracking, blur reset), the native-keydown bridge (live-only cancellation,
+ * arrival snapshots, the sequence watermark), packed declarations, the peer floor through a real
  * semver implementation, and that no source manifest changed.
  *
  *   bun run scripts/test-browser-keyboard-packed-consumer.ts
@@ -209,6 +210,8 @@ assert.equal(app.get(kb.toggleKeySelector("CapsLock")), null)
 assert.equal(app.get(kb.lastKeyDownAtom), null)
 assert.equal(app.get(kb.lastKeyDownSelector("KeyA")), null)
 assert.throws(() => app.set(kb.lastKeyDownAtom, null), TypeError)
+assert.equal(kb.latestKeyDownSequence(), 0)
+assert.equal(kb.preventKeyDownDefault({ code: "KeyA", key: "a", repeat: false, timeStamp: 0, sequence: 1, editable: false, defaultPrevented: false }), false)
 kb.activateKeyboard()
 assert.equal(app.get(kb.keyboardAtom), empty)
 const stop = app.sub(kb.keyboardAtom, () => { throw new Error("must not notify") })
@@ -243,12 +246,13 @@ doc.visibilityState = "visible"
 track("document", doc); track("window", win)
 globalThis.document = doc
 const key = (type, code, keyName, extra = {}) => {
-    const event = new Event(type)
+    const event = new Event(type, { cancelable: true })
     Object.defineProperties(event, {
         code: { value: code }, key: { value: keyName }, isComposing: { value: false }, keyCode: { value: 0 },
         repeat: { value: !!extra.repeat }, getModifierState: { value: lock => lock === "CapsLock" && !!extra.caps },
     })
     doc.dispatchEvent(event)
+    return event
 }
 const total = () => [...attached.values()].reduce((a, b) => a + b, 0)
 
@@ -298,6 +302,33 @@ stopLate()
 first.dispose(); second.dispose()
 assert.equal(total(), 4)
 
+// The native-keydown bridge against the artifact: cancellation only while the
+// keydown is dispatching, arrival snapshots, and the hub's watermark.
+const bridge = store()
+const cancelled = []
+const stopBridge = bridge.sub(kb.lastKeyDownAtom, () => {
+    const keyDown = bridge.get(kb.lastKeyDownAtom)
+    if (keyDown !== null && keyDown.code === "KeyS") cancelled.push(kb.preventKeyDownDefault(keyDown))
+})
+const before = kb.latestKeyDownSequence()
+const save = key("keydown", "KeyS", "s")
+assert.deepEqual(cancelled, [true])
+assert.equal(save.defaultPrevented, true)
+assert.equal(kb.latestKeyDownSequence(), before + 1)
+const retained = bridge.get(kb.lastKeyDownAtom)
+assert.equal(kb.preventKeyDownDefault(retained), false)
+assert.equal(retained.editable, false)
+assert.equal(retained.defaultPrevented, false, "the store's own cancellation is not in the snapshot")
+const early = new Event("keydown", { cancelable: true })
+Object.defineProperties(early, { code: { value: "KeyQ" }, key: { value: "q" }, isComposing: { value: false }, keyCode: { value: 0 }, repeat: { value: false }, getModifierState: { value: () => false } })
+early.preventDefault()
+doc.dispatchEvent(early)
+assert.equal(bridge.get(kb.lastKeyDownAtom).defaultPrevented, true)
+key("keyup", "KeyS", "s")
+key("keyup", "KeyQ", "q")
+stopBridge()
+bridge.dispose()
+
 // One publication per event: a selector over both the latest keydown and the
 // held keys changes once per keydown, never through a mixed value.
 const coherent = store()
@@ -335,7 +366,7 @@ await writeFile(
 await writeFile(
     join(consumer, "types.ts"),
     `import { store, type Selector } from "valdres"
-import { activateKeyboard, keyboardAtom, lastKeyDownAtom, lastKeyDownSelector, pressedKeysSelector, pressedCodesSelector, toggleKeySelector, modifierSelector, isCodePressedSelector, type KeyboardSnapshot, type KeyDown, type PressedKey, type KeyboardCode } from "@valdres/browser-keyboard"
+import { activateKeyboard, latestKeyDownSequence, preventKeyDownDefault, keyboardAtom, lastKeyDownAtom, lastKeyDownSelector, pressedKeysSelector, pressedCodesSelector, toggleKeySelector, modifierSelector, isCodePressedSelector, type KeyboardSnapshot, type KeyDown, type PressedKey, type KeyboardCode } from "@valdres/browser-keyboard"
 const app = store()
 const source: Selector<KeyboardSnapshot> = keyboardAtom
 const pressed: readonly PressedKey[] = app.get(pressedKeysSelector)
@@ -351,9 +382,14 @@ app.set(toggleKeySelector("CapsLock"), true)
 const started: void = activateKeyboard()
 const lastKeyDown: Selector<KeyDown | null> = lastKeyDownAtom
 const arrow: KeyDown | null = app.get(lastKeyDownSelector("ArrowDown"))
+const watermark: number = latestKeyDownSequence()
+const cancelledNow: boolean = arrow === null ? false : preventKeyDownDefault(arrow)
+const snapshots: [boolean, boolean] | null = arrow && [arrow.editable, arrow.defaultPrevented]
+// @ts-expect-error a KeyDown records the arrival snapshots
+const partial: KeyDown = { code: "KeyA", key: "a", repeat: false, timeStamp: 0, sequence: 1 }
 // @ts-expect-error packed declarations keep the last keydown read-only
 app.set(lastKeyDownAtom, null)
-void [source, pressed, codes, caps, shift, held, started, lastKeyDown, arrow]
+void [source, pressed, codes, caps, shift, held, started, lastKeyDown, arrow, watermark, cancelledNow, snapshots, partial]
 `,
 )
 run(

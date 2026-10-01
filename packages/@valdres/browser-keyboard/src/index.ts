@@ -9,6 +9,8 @@ export { isCodePressedSelector } from "./selectors/isCodePressedSelector"
 export { isKeyPressedSelector } from "./selectors/isKeyPressedSelector"
 export { lastKeyDownSelector } from "./selectors/lastKeyDownSelector"
 export { activateKeyboard } from "./utils/activateKeyboard"
+export { preventKeyDownDefault } from "./utils/preventKeyDownDefault"
+export { latestKeyDownSequence } from "./utils/latestKeyDownSequence"
 
 export type { KeyboardSnapshot } from "./types/KeyboardSnapshot"
 export type { KeyDown } from "./types/KeyDown"
