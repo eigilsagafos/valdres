@@ -106,7 +106,9 @@ describe("documented limitations: registering while a keydown is being delivered
             }
         })
         kb.down("KeyK", "k")
-        expect((error as Error | undefined)?.name).toBe("DormantExternalReadError")
+        expect((error as Error | undefined)?.name).toBe(
+            "DormantExternalReadError",
+        )
         a.dispose()
         b.dispose()
     })
