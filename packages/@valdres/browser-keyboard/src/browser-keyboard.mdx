@@ -181,12 +181,16 @@ roughly 30 repeats per second while a key is held.
 `lastKeyDownAtom` holds the latest keydown; it is not an event queue. A selector
 that becomes true again later — an `enabled` flag toggled back on, say — sees the
 same keydown again. To run a command once per keydown, record the `sequence` you
-handled and skip anything not newer. Start from `latestKeyDownSequence()`, so a
-keydown from before the handler existed never counts:
+handled and skip anything not newer. Start from `latestKeyDownSequence()` read
+**when you register the handler**, so a keydown from before it existed never
+counts. An atom default such as `atom(latestKeyDownSequence())` is read when the
+module loads — usually before any keydown, so 0 — and protects nothing:
 
 ```ts
-const handled = atom(latestKeyDownSequence())
+const handled = atom(0)
 
+// At registration, not at module load:
+app.set(handled, latestKeyDownSequence())
 app.sub(saveShortcut, {
     settle: tx => {
         const keyDown = tx.get(saveShortcut)
