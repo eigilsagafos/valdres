@@ -16,6 +16,7 @@ import { useHotkey, useHotkeyScope } from "../src/index"
 import { activateKeyboard, lastKeyDownAtom } from "@valdres/browser-keyboard"
 import {
     inspectRegistry,
+    scopeCountAtom,
     installKeyboardHarness,
     setPlatform,
     type KeyboardHarness,
@@ -311,7 +312,7 @@ describe("behaviour through React", () => {
         ]).toEqual([false, 0, ""])
         press("Escape", "Escape")
         expect(app.get(pageEscapes)).toBe(1)
-        expect(app.get(modal.active)).toBe(false)
+        expect(app.get(scopeCountAtom(modal, app))).toBe(0)
         app.dispose()
     })
 

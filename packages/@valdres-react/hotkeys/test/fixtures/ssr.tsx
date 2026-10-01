@@ -9,6 +9,7 @@ import { Provider } from "valdres-react"
 import { hotkeyScope } from "@valdres/hotkeys"
 import { useHotkey, useHotkeyScope } from "../../src/index"
 import { inspectRegistry } from "../../../../@valdres/hotkeys/src/lib/registry"
+import { scopeCountAtom } from "../../../../@valdres/hotkeys/src/lib/scopeState"
 
 assert.equal(typeof globalThis.document, "undefined")
 const app = store()
@@ -37,7 +38,7 @@ assert.deepEqual(
     [inspectRegistry(app).bindings, inspectRegistry(explicit).bindings],
     [0, 0],
 )
-assert.equal(app.get(modal.active), false)
+assert.equal(app.get(scopeCountAtom(modal, app)), 0)
 assert.equal(app.get(ran) + explicit.get(ran), 0)
 app.dispose()
 explicit.dispose()

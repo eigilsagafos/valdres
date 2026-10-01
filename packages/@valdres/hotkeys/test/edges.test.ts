@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { atom, store } from "valdres"
 import { bindHotkey } from "../src/index"
 import { lastKeyDownAtom } from "@valdres/browser-keyboard"
@@ -91,4 +91,37 @@ test("domains: root and child-scope bindings both run; binding on the root and w
         String((kb.reported()[0] as { causes?: unknown[] }).causes?.[0]),
     ).toContain("Disposed")
     root.dispose()
+})
+
+describe("documented limitations: registering while a keydown is being delivered", () => {
+    test("from another Store's subscriber, a Store with no bindings yet cannot be registered", () => {
+        const a = store()
+        const b = store()
+        let error: unknown
+        a.sub(lastKeyDownAtom, () => {
+            try {
+                bindHotkey(b, "j", () => {})
+            } catch (caught) {
+                error = caught
+            }
+        })
+        kb.down("KeyK", "k")
+        expect((error as Error | undefined)?.name).toBe("DormantExternalReadError")
+        a.dispose()
+        b.dispose()
+    })
+
+    test("a keydown dispatched from a subscriber before a registration, but applied after it, reaches the new binding", () => {
+        const app = store()
+        const runs: string[] = []
+        bindHotkey(app, "m", () => {}) // the store already has a dispatcher
+        app.sub(lastKeyDownAtom, () => {
+            if (app.get(lastKeyDownAtom)?.code !== "KeyM") return
+            kb.down("KeyN", "n") // queued: applied after this delivery
+            bindHotkey(app, "n", () => void runs.push("n"))
+        })
+        kb.down("KeyM", "m")
+        expect(runs).toEqual(["n"])
+        app.dispose()
+    })
 })

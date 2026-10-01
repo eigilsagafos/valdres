@@ -176,6 +176,12 @@ for (const name of Object.keys(dirs) as Name[])
     )
 console.log("manifests byte-identical after staging: ok")
 
+// RELEASE-ENABLEMENT PREREQUISITE (both hotkeys packages are release-ignored):
+// `@valdres-react/hotkeys` peers on `@valdres/hotkeys@^1.0.0-beta.7`, which also
+// admits the already-published beta.7 with the retired API. Ignored packages are
+// not versioned, so this check passes trivially today. When the hotkeys packages
+// are made release-eligible, raise that floor to the first release carrying the
+// v1 API in the same change.
 for (const name of ["@valdres/hotkeys", "@valdres-react/hotkeys"] as const) {
     const { manifest, files } = packed.get(name)!
     assert.ok(!files.some(f => f.includes(".test.")), `${name}: tests shipped`)
@@ -270,7 +276,6 @@ const explicit = store()
 const Bare = () => (useHotkey("k", tx => tx.set(ran, 3), { store: explicit }), createElement("p", null, "bare"))
 assert.equal(renderToString(createElement(Provider, { store: app }, createElement(Page))), "<p>page</p>")
 assert.equal(renderToString(createElement(Bare)), "<p>bare</p>")
-assert.equal(app.get(modal.active), false)
 assert.equal(app.get(ran) + explicit.get(ran), 0)
 app.dispose()
 explicit.dispose()

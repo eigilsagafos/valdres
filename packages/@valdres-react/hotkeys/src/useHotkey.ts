@@ -2,6 +2,7 @@ import type { HotkeyCommand } from "@valdres/hotkeys"
 import {
     parseShortcuts,
     registerBinding,
+    validateBindingConfig,
     type BindingConfig,
     type BindingHandle,
 } from "@valdres/hotkeys/adapter-internals"
@@ -19,7 +20,9 @@ const SEPARATOR = "\u0000"
  * once per store: later renders adopt the newest command, options and
  * shortcut in place, so they never re-register, never reset what has been
  * handled and never change precedence. A render that is never committed
- * registers nothing.
+ * registers nothing. Invalid options — a non-finite priority, a scope not
+ * made by `hotkeyScope` — throw during render, so the binding keeps its last
+ * valid configuration.
  */
 export const useHotkey = (
     shortcut: string | readonly string[],
@@ -34,13 +37,17 @@ export const useHotkey = (
         () => parseShortcuts(text.split(SEPARATOR)),
         [text],
     )
+    // Validated on every render, before any effect can adopt it: an invalid
+    // update throws here and never reaches the registered binding.
+    const { store: _store, ...hotkeyOptions } = options
+    const config: BindingConfig = { ...hotkeyOptions, command }
+    validateBindingConfig(config)
     const latest = useRef<BindingConfig | null>(null)
     const handle = useRef<BindingHandle | null>(null)
 
     // Declared first, so on mount it runs before the registration below.
     useIsomorphicLayoutEffect(() => {
-        const { store: _store, ...hotkeyOptions } = options
-        latest.current = { ...hotkeyOptions, command }
+        latest.current = config
     })
     useIsomorphicLayoutEffect(() => {
         const registered = registerBinding(

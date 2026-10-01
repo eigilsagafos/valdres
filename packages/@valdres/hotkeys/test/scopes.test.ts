@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test"
 import { store } from "valdres"
 import { activateHotkeyScope, bindHotkey, hotkeyScope } from "../src/index"
 import { inspectRegistry } from "../src/lib/registry"
+import { scopeCountAtom } from "../src/lib/scopeState"
 import {
     installKeyboardHarness,
     setPlatform,
@@ -18,26 +19,21 @@ afterEach(() => kb.restore())
 test("a scope is frozen data with a per-store active selector; its count is not reachable", () => {
     const modal = hotkeyScope({ name: "modal", priority: 3, exclusive: true })
     expect(Object.isFrozen(modal)).toBe(true)
-    expect(Object.keys(modal).sort()).toEqual([
-        "active",
-        "exclusive",
-        "name",
-        "priority",
-    ])
+    expect(Object.keys(modal).sort()).toEqual(["exclusive", "name", "priority"])
     const one = store()
     const two = store()
     const release = activateHotkeyScope(one, modal)
-    expect([one.get(modal.active), two.get(modal.active)]).toEqual([
-        true,
-        false,
-    ])
+    expect([
+        one.get(scopeCountAtom(modal, one)),
+        two.get(scopeCountAtom(modal, two)),
+    ]).toEqual([1, 0])
     expect(inspectRegistry(one).exclusiveScopes).toBe(1)
     release()
     release() // idempotent
     expect([
-        one.get(modal.active),
+        one.get(scopeCountAtom(modal, one)),
         inspectRegistry(one).exclusiveScopes,
-    ]).toEqual([false, 0])
+    ]).toEqual([0, 0])
     one.dispose()
     two.dispose()
 })
@@ -54,7 +50,6 @@ test("invalid scopes and activation in a transaction are rejected", () => {
             name: "fake",
             priority: 0,
             exclusive: false,
-            active: hotkeyScope().active,
         }),
     ).toThrow(TypeError)
     const modal = hotkeyScope()
@@ -63,7 +58,7 @@ test("invalid scopes and activation in a transaction are rejected", () => {
     expect(
         String((kb.reported()[0] as { causes?: unknown[] }).causes?.[0]),
     ).toContain("TransactionPhaseError")
-    expect(app.get(modal.active)).toBe(false)
+    expect(app.get(scopeCountAtom(modal, app))).toBe(0)
     app.dispose()
 })
 

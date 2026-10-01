@@ -75,17 +75,23 @@ through `tx`. Calling `store.set`, `store.txn` or `store.get` from inside a
 command is rejected with `TransactionPhaseError`.
 
 - **Once per keydown, at most.** A keydown is handled — attempted — by at most
-  one binding per store. A command that throws, or returns a promise, has its
-  writes discarded and is reported as a cause of a
-  `SubscriberNotificationError`. It is not retried, and the keydown does not
-  pass to another binding. The next keydown is a new attempt.
+  one binding per store. A command that throws has its writes discarded and is
+  reported as a cause of a `SubscriberNotificationError`. It is not retried,
+  and the keydown does not pass to another binding. The next keydown is a new
+  attempt.
 - **Never for an earlier keydown.** A binding never runs for a keydown that
   happened before it was registered, and becoming enabled, entering a scope,
   re-rendering or resubscribing never acts on a keydown that already happened.
   Only a new keydown triggers anything.
 - **Synchronous only.** Start I/O, focus changes and other effects from an
   ordinary subscriber, after the update; see
-  [Asynchronous effects](#asynchronous-effects).
+  [Asynchronous effects](#asynchronous-effects). A command that returns a
+  promise is rejected like any `settle` handler that does: its writes are
+  discarded, an `InvalidTransactionCallbackResultError` is reported, and the
+  promise is observed so its own rejection is not left unhandled. Nothing can
+  undo work the async function had already started, and a binding with
+  `preventDefault` has already cancelled the keydown — cancellation happens
+  when the binding is selected, before its command runs.
 
 ### Operations used by commands and by the rest of the app
 
@@ -195,13 +201,34 @@ function Dialog() {
 
 </FrameworkBlock>
 
-A scope is inactive until activated in a store; activations count, and
-`scope.active` is a selector of whether it is active in the store you read. An
-active scope's bindings outrank every binding in a lower layer; the base layer
-is priority 0. An `exclusive` scope also makes every lower layer ineligible
-while it is active, so a dialog can block the page's shortcuts without listing
-them. Activation is store work: do it from effects or event handlers, not from
-a command.
+A scope is inactive until activated, and **activation is per Store object**:
+activating a scope in a store never activates it in another, including a
+child scope of that store or its parent. Activations count; the scope stays
+active in that store while any is held. An active scope's bindings outrank
+every binding in a lower layer; the base layer is priority 0.
+
+An `exclusive` scope also makes every layer with a **lower** priority
+ineligible while it is active, so a dialog can block the page's shortcuts
+without listing them. It does not outrank its own priority: an exclusive scope
+left at the default priority 0 blocks nothing, and its bindings tie with base
+bindings for the same key — a `HotkeyConflictError`. Give it a priority above
+the layers it should block.
+
+Activating and releasing are store writes, so — like any store write — they
+throw inside a command or while subscribers are being notified. A rejected
+call changes nothing: activation throws, and a release that throws stays
+unreleased and can simply be called again later. To close a dialog from its
+own shortcut, let the command update dialog state and let whatever owns the
+dialog release the scope; with React, `useHotkeyScope` in the dialog component
+releases it when the dialog unmounts:
+
+```tsx
+function Page() {
+    return useValue(dialogOpen) ? <Dialog /> : null // the command sets dialogOpen to false
+}
+```
+
+Release is idempotent and does nothing once the store is disposed.
 
 ## The native keydown
 
@@ -214,6 +241,18 @@ whatever a binding did; `KeyDown.defaultPrevented` only lets handlers that run
 
 A keydown dispatched from inside a subscriber is applied after its own dispatch
 has returned: bindings still run for it, but it can no longer be cancelled.
+
+### Registering while a keydown is being delivered
+
+Register bindings from effects, event handlers or setup code. Two edge cases
+apply to registering from inside a store subscriber while a keydown is still
+being delivered:
+
+- Registering in **another** store that has no bindings yet throws
+  `DormantExternalReadError`. A store that already has bindings accepts it.
+- A keydown dispatched from a subscriber before the registration, but applied
+  after it, reaches the new binding: bindings see keydowns in the order the
+  keyboard applies them.
 
 ## Writing other stores
 

@@ -5,11 +5,13 @@ import {
 } from "@valdres/browser-keyboard"
 import type { State, Store, Transaction } from "valdres"
 import { HotkeyConflictError } from "../errors/HotkeyConflictError"
+import { validateBindingConfig } from "./validateBindingConfig"
 import { shortcutSelector } from "../selectors/shortcutSelector"
 import type { HotkeyCommand } from "../types/HotkeyCommand"
 import type { HotkeyOptions } from "../types/HotkeyOptions"
 import type { HotkeyScope } from "../types/HotkeyScope"
 import type { Shortcut } from "../types/Shortcut"
+import { scopeCountAtom } from "./scopeState"
 
 /** A binding's configuration, read afresh at each keydown. */
 export type BindingConfig = HotkeyOptions & { readonly command: HotkeyCommand }
@@ -30,11 +32,16 @@ interface Binding {
 }
 
 interface Registry {
+    readonly store: Store
     readonly bindings: Set<Binding>
     /** Candidates by `c:<code>` and `k:<lowercased key>`. */
     readonly index: Map<string, Set<Binding>>
-    /** Exclusive scopes with live activations in this store, and their counts. */
-    readonly exclusive: Map<HotkeyScope, number>
+    /**
+     * Exclusive scopes that may be active in this store. Whether one is active
+     * is always read from its count atom, so this set can never disagree with
+     * the activations; it only avoids checking every scope ever defined.
+     */
+    readonly exclusive: Set<HotkeyScope>
     /** The highest sequence this store's dispatcher has decided on. */
     lastSeen: number
     stop: (() => void) | undefined
@@ -53,9 +60,10 @@ const registryFor = (store: Store): Registry => {
     let registry = registries.get(store)
     if (registry === undefined) {
         registry = {
+            store,
             bindings: new Set(),
             index: new Map(),
-            exclusive: new Map(),
+            exclusive: new Set(),
             lastSeen: 0,
             stop: undefined,
             teardownScheduled: false,
@@ -96,18 +104,13 @@ const isEnabled = (
     enabled === undefined ||
     (typeof enabled === "boolean" ? enabled : tx.get(enabled) === true)
 
-const isThenable = (value: unknown) =>
-    value !== null &&
-    (typeof value === "object" || typeof value === "function") &&
-    typeof (value as { then?: unknown }).then === "function"
-
 /**
  * The store's one settle handler. Its only trigger is a new keydown, never an
  * eligibility, scope or registration change, so a retained keydown is never
  * served again. Picks at most one binding and runs it in this settle's own
  * transaction.
  */
-const dispatch = (registry: Registry, tx: Transaction) => {
+const dispatch = (registry: Registry, tx: Transaction): unknown => {
     const keyDown = tx.get(lastKeyDownAtom)
     if (keyDown === null || keyDown.sequence <= registry.lastSeen) return
     // Recorded outside the transaction, before any command runs: a failing
@@ -120,10 +123,11 @@ const dispatch = (registry: Registry, tx: Transaction) => {
             candidates.add(binding)
     if (candidates.size === 0) return
 
+    const isActive = (scope: HotkeyScope) =>
+        tx.get(scopeCountAtom(scope, registry.store)) > 0
     let floor = -Infinity
-    for (const scope of registry.exclusive.keys())
-        if (scope.priority > floor && tx.get(scope.active))
-            floor = scope.priority
+    for (const scope of registry.exclusive)
+        if (scope.priority > floor && isActive(scope)) floor = scope.priority
 
     let best: Candidate[] = []
     let bestLayer = -Infinity
@@ -143,7 +147,7 @@ const dispatch = (registry: Registry, tx: Transaction) => {
             s => tx.get(shortcutSelector(s.id)) !== null,
         )
         if (shortcut === undefined) continue
-        if (config.scope !== undefined && !tx.get(config.scope.active)) continue
+        if (config.scope !== undefined && !isActive(config.scope)) continue
         if (!isEnabled(tx, config.enabled)) continue
         const priority = config.priority ?? 0
         if (
@@ -166,14 +170,10 @@ const dispatch = (registry: Registry, tx: Transaction) => {
     const { config, shortcut } = best[0]!
     if (config.preventDefault === true) preventKeyDownDefault(keyDown)
     if (keyDown.repeat && config.repeat !== true) return
-    const result: unknown = config.command(
-        tx,
-        Object.freeze({ keyDown, shortcut: shortcut.id }),
-    )
-    if (isThenable(result))
-        throw new TypeError(
-            "Hotkey commands must be synchronous; start asynchronous work from a subscriber",
-        )
+    // Returned to core: a promise is contained (its rejection is observed) and
+    // the transaction is rejected with InvalidTransactionCallbackResultError,
+    // like any settle handler that returns one.
+    return config.command(tx, Object.freeze({ keyDown, shortcut: shortcut.id }))
 }
 
 const isTransactionPhaseError = (error: unknown) =>
@@ -197,17 +197,6 @@ const teardown = (registry: Registry) => {
     }
 }
 
-const validate = (config: BindingConfig) => {
-    if (typeof config.command !== "function")
-        throw new TypeError("A hotkey command must be a function")
-    if (
-        config.priority !== undefined &&
-        (typeof config.priority !== "number" ||
-            !Number.isFinite(config.priority))
-    )
-        throw new TypeError("Hotkey priority must be a finite number")
-}
-
 /**
  * Registers a binding with `store`'s dispatcher, creating it if needed.
  * `config` is read at each keydown. Throws `TransactionPhaseError` inside a
@@ -221,7 +210,7 @@ export const registerBinding = (
 ): BindingHandle => {
     if (shortcuts.length === 0)
         throw new TypeError("A hotkey needs at least one shortcut")
-    validate(config())
+    validateBindingConfig(config())
     // The store's view may still be one keydown behind while that keydown is
     // delivered to other stores; the hub's own sequence never is.
     const storeView = store.get(lastKeyDownAtom)?.sequence ?? 0
@@ -229,7 +218,7 @@ export const registerBinding = (
     const registry = registryFor(store)
     if (registry.stop === undefined)
         registry.stop = store.sub(lastKeyDownAtom, {
-            settle: tx => dispatch(registry, tx),
+            settle: tx => dispatch(registry, tx) as void,
         })
     const binding: Binding = { id: ++nextId, shortcuts, config, cutoff }
     registry.bindings.add(binding)
@@ -254,17 +243,14 @@ export const registerBinding = (
     }
 }
 
-/** Records an exclusive scope's activations so dispatch knows its floor. */
-export const trackScope = (
-    store: Store,
-    scope: HotkeyScope,
-    delta: 1 | -1,
-): void => {
-    if (!scope.exclusive) return
-    const registry = registryFor(store)
-    const next = (registry.exclusive.get(scope) ?? 0) + delta
-    if (next > 0) registry.exclusive.set(scope, next)
-    else registry.exclusive.delete(scope)
+/** Lets dispatch in `store` check an exclusive scope's floor. */
+export const rememberExclusive = (store: Store, scope: HotkeyScope): void => {
+    if (scope.exclusive) registryFor(store).exclusive.add(scope)
+}
+
+/** Stops checking a scope whose count in `store` reached 0. */
+export const forgetExclusive = (store: Store, scope: HotkeyScope): void => {
+    registries.get(store)?.exclusive.delete(scope)
 }
 
 /** @internal For tests: what a store's registry holds. */

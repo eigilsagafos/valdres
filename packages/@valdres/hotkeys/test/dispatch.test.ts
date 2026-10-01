@@ -7,6 +7,7 @@ import {
     shortcutSelector,
 } from "../src/index"
 import { inspectRegistry } from "../src/lib/registry"
+import { scopeCountAtom } from "../src/lib/scopeState"
 import {
     activateKeyboard,
     lastKeyDownAtom,
@@ -243,7 +244,9 @@ describe("attempts and failures", () => {
         })
         kb.down("KeyP", "p")
         expect(app.get(touched)).toBe(0)
-        expect(causes(kb.reported()[0]).join()).toContain("must be synchronous")
+        expect(causes(kb.reported()[0]).join()).toContain(
+            "InvalidTransactionCallbackResultError",
+        )
         app.dispose()
     })
 })
@@ -295,7 +298,7 @@ describe("priority, conflicts and scopes", () => {
         releaseModal2()
         kb.down("KeyK", "k")
         releasePanel()
-        expect(app.get(modal.active)).toBe(false)
+        expect(app.get(scopeCountAtom(modal, app))).toBe(0)
         expect([
             baseEscape.count(),
             panelEscape.count(),

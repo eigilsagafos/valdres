@@ -19,7 +19,9 @@ commands as synchronous transactions inside the keydown's store update.**
   eligible bindings are a `HotkeyConflictError` and none runs. Registration and
   mount order never decide.
 - `hotkeyScope`, `activateHotkeyScope` and `useHotkeyScope`: layers that
-  outrank the base layer while active; `exclusive` ones block lower layers.
+  outrank the base layer while active; `exclusive` ones block lower-priority
+  layers. Activation is per Store object — never inherited by child scope
+  Stores — and a rejected activation or release changes nothing.
 - Options: `enabled` (boolean or `State<boolean>`, read when the keydown
   happens), `priority`, `scope`, `repeat`, `editable`, `preventDefault`, and
   `handleDefaultPrevented` — keydowns already cancelled by earlier handlers are
