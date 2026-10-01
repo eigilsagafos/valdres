@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { atom, store } from "valdres"
 import { bindHotkey } from "../src/index"
-import { lastKeyDownAtom } from "@valdres/browser-keyboard"
+import {
+    lastKeyDownAtom,
+    pressedCodesSelector,
+} from "@valdres/browser-keyboard"
 import {
     installKeyboardHarness,
     setPlatform,
@@ -108,6 +111,26 @@ describe("documented limitations: registering while a keydown is being delivered
         kb.down("KeyK", "k")
         expect((error as Error | undefined)?.name).toBe(
             "DormantExternalReadError",
+        )
+        a.dispose()
+        b.dispose()
+    })
+
+    test("from another Store's subscriber, a Store that already retains the keyboard without bindings fails differently", () => {
+        const a = store()
+        const b = store()
+        b.sub(pressedCodesSelector, () => {}) // retains the keyboard, no hotkeys
+        let error: unknown
+        a.sub(lastKeyDownAtom, () => {
+            try {
+                bindHotkey(b, "j", () => {})
+            } catch (caught) {
+                error = caught
+            }
+        })
+        kb.down("KeyK", "k")
+        expect((error as Error | undefined)?.name).toBe(
+            "CallbackCapabilityError",
         )
         a.dispose()
         b.dispose()

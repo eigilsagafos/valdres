@@ -21,8 +21,9 @@ const SEPARATOR = "\u0000"
  * shortcut in place, so they never re-register, never reset what has been
  * handled and never change precedence. A render that is never committed
  * registers nothing. Invalid options — a non-finite priority, a scope not
- * made by `hotkeyScope` — throw during render, so the binding keeps its last
- * valid configuration.
+ * made by `hotkeyScope` — throw during render and are never adopted. If an
+ * error boundary then unmounts the component, unmounting disposes its binding,
+ * previous configuration included.
  */
 export const useHotkey = (
     shortcut: string | readonly string[],
@@ -38,7 +39,8 @@ export const useHotkey = (
         [text],
     )
     // Validated on every render, before any effect can adopt it: an invalid
-    // update throws here and never reaches the registered binding.
+    // update throws here and is never adopted by the registered binding (an
+    // error boundary that unmounts the component then disposes the binding).
     const { store: _store, ...hotkeyOptions } = options
     const config: BindingConfig = { ...hotkeyOptions, command }
     validateBindingConfig(config)

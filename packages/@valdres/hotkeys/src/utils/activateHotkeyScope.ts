@@ -23,9 +23,11 @@ const holds = (store: Store, count: Atom<number>, expected: number) => {
  * Both are store writes, so — like any store write — they throw inside a
  * transaction (a command) or while subscribers are being notified. A rejected
  * call changes nothing: activation throws, and release stays unreleased and can
- * be retried. If the write commits and a subscriber then throws, activation is
- * undone before the error is rethrown, while release counts as done. Release is
- * idempotent and does nothing once the store is disposed.
+ * be retried. If the write commits and a subscriber then throws, activation
+ * writes the count back before rethrowing, so the final state is as if it never
+ * happened — subscribers may still have observed the intermediate activation;
+ * this restores state, it is not atomic to observers — while release counts as
+ * done. Release is idempotent and does nothing once the store is disposed.
  */
 export const activateHotkeyScope = (
     store: Store,
@@ -41,7 +43,9 @@ export const activateHotkeyScope = (
         store.update(count, value => value + 1)
     } catch (error) {
         if (holds(store, count, before + 1)) {
-            // Committed, then notification failed: keep activation all or nothing.
+            // Committed, then notification failed: restore the final count.
+            // Observers may already have seen the activation; this restores
+            // state, it does not make the activation unobservable.
             try {
                 store.update(count, value => value - 1)
             } catch {

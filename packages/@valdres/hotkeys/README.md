@@ -237,8 +237,11 @@ Register bindings from effects, event handlers or setup code. Two edge cases
 apply to registering from inside a store subscriber while a keydown is still
 being delivered:
 
-- Registering in **another** store that has no bindings yet throws
-  `DormantExternalReadError`. A store that already has bindings accepts it.
+- Registering in **another** store that has no bindings yet fails. The error
+  depends on what that store already retains: `CallbackCapabilityError` when
+  it already subscribes to the keyboard some other way, and
+  `DormantExternalReadError` when it does not. A store that already has
+  bindings accepts the registration.
 - A keydown dispatched from a subscriber before the registration, but applied
   after it, reaches the new binding: bindings see keydowns in the order the
   keyboard applies them.

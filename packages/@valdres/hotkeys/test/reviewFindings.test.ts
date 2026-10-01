@@ -108,7 +108,7 @@ describe("B1: exception-safe release", () => {
         app.dispose()
     })
 
-    test("an activation whose write commits but whose notification throws is undone: all or nothing", () => {
+    test("an activation whose write commits but whose notification throws restores the final count", () => {
         const app = store()
         const dialog = hotkeyScope({ priority: 10, exclusive: true })
         const k = counted(app, "k")
