@@ -40,6 +40,46 @@ export type ColdSelectorCache = {
     hasSelectorDependencies: boolean
 }
 
+/**
+ * Per-node graph metadata, held as ONE record per state rather than spread over
+ * six parallel WeakMaps. A closure walk needs several of these fields per node,
+ * so the split tables cost one ~30ns WeakMap lookup each where a field read is
+ * ~1ns. See lib/graph/graphNode.ts for the measurement that motivated it.
+ *
+ * `-1` is "unset" for the three version/order fields; an ABSENT record means
+ * every field is at its default, so reads never allocate.
+ */
+export type GraphNode = {
+    /** Dependents that are themselves live. Never stored negative; `0` means
+     *  "not live via dependents" and is indistinguishable from no record. */
+    live: number
+    /** At least one state in this node's DOWNWARD closure — its strict
+     *  transitive dependencies, NOT the node itself — carries an
+     *  `onMount`/`__valdresOnMount` hook, so a walk down from here could find
+     *  something to mount. `false` lets `mountTransitiveDeps` /
+     *  `unmountOrphanedDeps` return without walking, which is the common case.
+     *
+     *  INVARIANT (one-directional, the only property the skip relies on): NO
+     *  FALSE NEGATIVES. If a mountable descendant exists this is `true`. It MAY
+     *  be stale-`true` after an edge removal shrinks the closure — that costs a
+     *  redundant (and self-clearing) walk, never a missed mount. Set and
+     *  propagated UP on every edge add via `noteDependencyAdded`; cleared
+     *  opportunistically when a full walk finds the subtree mount-free. */
+    mountInClosure: boolean
+    /** This node's downward closure may contain a directed cycle. Conservative
+     *  and monotonic: false positives allowed, false negatives are not. */
+    cycleRisk: boolean
+    /** Stable order assigned when the selector first materializes its
+     *  dependency set. An edge to an equal/newer selector violates it, which is
+     *  what makes a cycle possible in that closure. */
+    order: number
+    /** `dependencyGraphVersion` at which this node's whole downward closure was
+     *  proven acyclic. */
+    acyclicAt: number
+    /** `dependencyGraphVersion` at which orphan cleanup last processed it. */
+    cleanedAt: number
+}
+
 export type StoreData = {
     id: string
     /** Tree-wide state: the root reference, the value-revision clock, and
@@ -73,6 +113,10 @@ export type StoreData = {
     subscriptionsRequireEqualCheck: Map<State, true | undefined>
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
+    /** Per-state graph metadata: liveness count, mount/cycle markers, stable
+     *  order and the two version stamps. One record per state so a closure walk
+     *  pays one lookup per node instead of one per field. */
+    graphNodes: WeakMap<WeakKey, GraphNode>
     /** Selectors whose forward dependency sets are currently mirrored into the
      *  iterable reverse graph. Cold selectors are deliberately absent. */
     selectorGraphActive: WeakSet<WeakKey>
@@ -88,16 +132,7 @@ export type StoreData = {
     stateRevisions: WeakMap<WeakKey, number>
     /** Cycle guard for recursive validation of cached selector dependencies. */
     coldCacheValidationSet: WeakSet<WeakKey>
-    /** Stable per-store order assigned when a selector first materializes its
-     *  dependency set. An edge to an equal/newer selector violates this order,
-     *  making a directed cycle possible in that closure. */
-    dependencyOrder: WeakMap<WeakKey, number>
     nextDependencyOrder: number
-    /** Monotonic, conservative marker: present when a state's downward closure
-     *  may contain an edge that violates `dependencyOrder`. Every real cycle has
-     *  at least one such edge, so absence proves the closure acyclic in O(1).
-     *  Stale positives after edge removal only cost a fallback DFS. */
-    cycleRiskInClosure: WeakMap<WeakKey, true>
     /** Monotonic generation for live dependency-graph materialization/churn.
      *  Active selector evaluation and cold-to-live promotion increment it.
      *  Cold forward caches do not. Orphan teardown only removes edges and
@@ -105,49 +140,11 @@ export type StoreData = {
      *  synchronous unsubscribe burst can reuse both negative cycle proofs and
      *  completed orphan-walk visits. */
     dependencyGraphVersion: number
-    /** `state -> dependencyGraphVersion` for closures proven acyclic. A cached
-     *  negative remains valid while teardown only deletes edges; any normal graph
-     *  construction/churn bumps `dependencyGraphVersion` and invalidates it. */
-    acyclicDependencyVersion: WeakMap<WeakKey, number>
-    /** `state -> dependencyGraphVersion` for non-live states whose orphan graph
-     *  work has completed. This is the shared visited set for a deletion-only
-     *  unsubscribe burst, without retaining states strongly between calls. */
-    orphanCleanupVersion: WeakMap<WeakKey, number>
     /** Strong only until the queued microtask drains it. Batches orphan graph
      *  cleanup roots across a synchronous unsubscribe burst. */
     pendingOrphanCleanup?: Set<WeakKey>
     orphanCleanupScheduled: boolean
     mounts: WeakMap<WeakKey, { cleanup?: () => void }>
-    /** Count of dependents (selectors that read this state) that are
-     *  currently "live" (transitively subscribed). A state is live iff it
-     *  has direct subscribers OR this count is > 0. Maintained incrementally
-     *  on sub/unsub and on dep add/remove instead of walking the graph. */
-    liveDependentCount: WeakMap<WeakKey, number>
-    /** Per-state cache for the mount/unmount graph-walk short-circuit. A key is
-     *  present (value `true`) iff at least one state in this state's DOWNWARD
-     *  dependency closure — its strict transitive dependencies, NOT the state
-     *  itself — carries an `onMount`/`__valdresOnMount` hook, i.e. a walk DOWN
-     *  from here could find something to mount. Absent means no mountable
-     *  descendant, so `mountTransitiveDeps`/`unmountOrphanedDeps` can return
-     *  without walking (the common case: layout/derived selectors whose whole
-     *  subtree is mount-free).
-     *
-     *  INVARIANT (one-directional, the only property the skip relies on): NO
-     *  FALSE NEGATIVES. If a mountable descendant exists the key is present.
-     *  The key MAY be stale-`true` after an edge removal shrinks the closure —
-     *  that only costs a redundant (and self-clearing) walk, never a missed
-     *  mount. Set + propagated UP on every edge add via `noteDependencyAdded`;
-     *  cleared opportunistically when a full walk finds the subtree mount-free.
-     *
-     *  The invariant holds because the marker is populated as dependency edges
-     *  form and mount hooks must exist before a state is first used (the
-     *  `AtomOnMount` contract). The only way to get a stale-ABSENT marker is to
-     *  attach a hook AFTER edges into its closure already exist — no edge add
-     *  fires to mark it — which is exactly the unsupported "assign onMount after
-     *  first use" case the contract forbids. So the skip is trusted on every
-     *  path; supporting late assignment would require invalidating this cache on
-     *  hook assignment, and a `State` has no back-reference to its stores. */
-    mountInClosure: WeakMap<WeakKey, true>
     /** True while a selector-update / cold-read pass owns the liveness collector.
      *  This (not `livenessSeeds`) is the ownership token, so the Set can be
      *  allocated LAZILY on the first actual seed: a no-churn pass (or a first-init

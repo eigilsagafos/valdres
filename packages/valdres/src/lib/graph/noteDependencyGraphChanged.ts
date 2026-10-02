@@ -1,5 +1,6 @@
 import type { State } from "../../types/State"
 import type { StoreData } from "../../types/StoreData"
+import { graphNodeFor, UNSET } from "./graphNode"
 
 /**
  * Invalidate topology-sensitive teardown caches after graph construction or
@@ -20,7 +21,8 @@ export const noteDependencyMaterialized = (
     selector: State,
     data: StoreData,
 ) => {
-    if (!data.dependencyOrder.has(selector)) {
-        data.dependencyOrder.set(selector, data.nextDependencyOrder++)
+    const node = graphNodeFor(selector, data)
+    if (node.order === UNSET) {
+        node.order = data.nextDependencyOrder++
     }
 }
