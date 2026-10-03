@@ -47,17 +47,22 @@ const examples: NavGroup = {
 // Core valdres API names — routes are framework-scoped
 const coreApiNames = [
     "atom",
-    "globalAtom",
     "selector",
     "family",
-    "atomFamily",
-    "globalAtomFamily",
-    "selectorFamily",
-    "index",
     "collection",
     "query",
     "presence",
     "store",
+]
+
+// Pages for APIs the 1.0 betas no longer export, kept for migration and listed
+// after everything current so they are not mistaken for the 1.0 surface.
+const legacyApiNames = [
+    "atomFamily",
+    "selectorFamily",
+    "globalAtom",
+    "globalAtomFamily",
+    "index",
 ]
 
 // Extra Getting Started items per framework
@@ -101,6 +106,10 @@ function getApiGroup(
         title: name,
         route: `/${fw}/${name}`,
     }))
+    const legacyItems: NavItem[] = legacyApiNames.map(name => ({
+        title: name,
+        route: `/${fw}/${name}`,
+    }))
 
     const fwEntries = fw !== "vanilla"
         ? entries
@@ -108,7 +117,9 @@ function getApiGroup(
                 e.framework === fw &&
                 e.type === "api" &&
                 !e.route.includes("/plugins/") &&
-                !coreApiNames.includes(e.route.split("/").pop() || ""),
+                ![...coreApiNames, ...legacyApiNames].includes(
+                    e.route.split("/").pop() || "",
+                ),
             )
             .map(e => ({
                 title: e.frontmatter.title,
@@ -116,13 +127,18 @@ function getApiGroup(
             }))
         : []
 
+    const legacyStart = coreItems.length + fwEntries.length
     return {
         title: "API",
-        items: [...coreItems, ...fwEntries],
+        items: [...coreItems, ...fwEntries, ...legacyItems],
         framework: fw,
-        sublabels: fwEntries.length > 0
-            ? { 0: "Core", [coreItems.length]: frameworks[fw].label }
-            : undefined,
+        sublabels: {
+            0: "Core",
+            ...(fwEntries.length > 0
+                ? { [coreItems.length]: frameworks[fw].label }
+                : {}),
+            [legacyStart]: "Legacy (not in 1.0)",
+        },
     }
 }
 
