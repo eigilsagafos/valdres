@@ -70,7 +70,7 @@ childStore.reset(nameAtom)
 childStore.get(nameAtom) // "Charlie" — the parent's value again
 ```
 
-`reset` works on one atom or [collection](/valdres/collection) row at a time.
+`reset` works on one atom or [collection](/react/collection) row at a time.
 To discard all of a scope's edits, dispose it and start a new scope; see
 [Lifetime](#lifetime).
 
@@ -97,7 +97,7 @@ root.get(totalSelector) // 120 — unchanged
 
 ## Collections in scopes
 
-[Collection](/valdres/collection) rows follow the same rules. A child scope
+[Collection](/react/collection) rows follow the same rules. A child scope
 inherits the parent's rows, its own inserts stay local, and `delete(row)` in a
 scope hides an inherited row without touching the parent:
 

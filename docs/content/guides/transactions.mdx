@@ -124,7 +124,7 @@ Subscribers run after the transaction commits. If one throws, the remaining
 subscribers still run, then `txn` throws a `SubscriberNotificationError` whose
 `committed` property is `true`. The transaction's writes are already applied, so
 do not run it again; see
-[Notification failures](/valdres/store#notification-failures).
+[Notification failures](/react/store#notification-failures).
 
 ## When to use transactions
 
