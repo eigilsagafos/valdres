@@ -18,22 +18,27 @@ import type { Framework } from "./frameworks"
 
 const PERFORMANCE_ROUTE = "/guides/performance"
 
+// Every core page under packages/valdres/src, current and legacy alike
 const coreApiNames = [
     "atom",
     "selector",
-    "atomFamily",
-    "selectorFamily",
-    "index",
+    "family",
     "collection",
+    "query",
     "presence",
     "store",
+    "atomFamily",
+    "selectorFamily",
+    "globalAtom",
+    "globalAtomFamily",
+    "index",
 ]
 
 function rewriteLink(href: string, framework: Framework): { href: string; apiName?: string } {
-    // Rewrite /valdres/X → /${framework}/X for core API names
-    const valdresMatch = href.match(/^\/valdres\/(.+)$/)
+    // Rewrite /valdres/X[#anchor] → /${framework}/X[#anchor] for core API names
+    const valdresMatch = href.match(/^\/valdres\/([^#]+)(#.*)?$/)
     if (valdresMatch && coreApiNames.includes(valdresMatch[1])) {
-        return { href: `/${framework}/${valdresMatch[1]}` }
+        return { href: `/${framework}/${valdresMatch[1]}${valdresMatch[2] ?? ""}` }
     }
 
     // Rewrite /react/X or /vue/X etc. → /${framework}/equivalent

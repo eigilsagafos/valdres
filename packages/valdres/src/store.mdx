@@ -10,7 +10,7 @@ description: Create and interact with a valdres store
         Signature
     </div>
     <code className="text-sm font-mono text-accent-500">
-        store(id?: string, options?: StoreOptions): Store
+        store(): Store
     </code>
     <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
@@ -20,9 +20,9 @@ description: Create and interact with a valdres store
     </div>
 </div>
 
-Creates a store instance that holds all atom and selector state and manages
-subscriptions. The store is the central hub for reading, writing, and
-subscribing to state.
+Creates a root Store. Atoms and selectors are definitions that hold no value;
+a Store holds their values for itself and its [scopes](#scopes), and is where
+you read, write, and subscribe.
 
 ## Usage
 
@@ -33,40 +33,36 @@ const myStore = store()
 const countAtom = atom(0)
 ```
 
-Every store exposes a stable, read-only `id`. Pass one explicitly when an
-adapter or application needs to address the store later; generated IDs are
-unique within the loaded Valdres instance.
+`store()` takes no arguments and throws a `TypeError` if given any. A Store has
+no `id` and no options; keep a reference to the Store you need, or pass it to a
+framework [Provider](/react/Provider).
 
-```ts
-const checkoutStore = store("checkout")
-checkoutStore.id // "checkout"
-```
+| Method                           | Does                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------- |
+| `get(state)`                     | Read the committed value of an Atom, Selector, or collection           |
+| `set(atom, value)`               | Store `value`                                                          |
+| `update(atom, updater)`          | Store `updater(current)`                                               |
+| `reset(atom)`                    | Remove this Store's own value                                          |
+| `delete(row)`                    | Remove a [collection](/valdres/collection) row                         |
+| `sub(state, callback)`           | Subscribe; returns an unsubscribe function                             |
+| `sub(state, { settle, notify })` | Subscribe with [phase-keyed handlers](#writing-during-a-change-settle) |
+| `txn(callback)`                  | Run an atomic [transaction](#transactions)                             |
+| `scope(name?)`                   | Get a named child Store, or create an anonymous one                    |
+| `dispose()`                      | Terminate this Store and its scopes                                    |
 
-The Store facade exposes operations and identity, not its mutable graph/cache
-runtime. Framework and tooling integrations use Valdres' versioned adapter
-entrypoint instead of reaching through the public Store object.
+The Store facade exposes operations, not its mutable graph/cache runtime.
+Framework and tooling integrations use Valdres' versioned adapter entrypoint
+instead of reaching through the public Store object.
 
-## Options
-
-The options bag is exported as `StoreOptions`, so a wrapper can accept and
-forward it without re-declaring the shape. It also carries `id`, which the
-`store(options)` form reads instead of a positional first argument.
-
-| Option             | Type      | Description                                                                                                                                            |
-| ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `batchUpdates`     | `boolean` | Batch sequential `set()` calls within a tick into one notification pass (recommended for React)                                                        |
-| `enumerable`       | `boolean` | Retain values enumerably so `store.snapshot()` can list current state                                                                                  |
-| `schemaValidation` | `boolean` | Validate atom/selector values against their `schema` (off by default). Inherited by scoped stores. See [Schema Validation](/guides/schema-validation). |
-
-With `batchUpdates`, a store and its scopes share pending writes for the tick.
-Synchronous descendant reads see pending ancestor values while scope-local
-shadows remain isolated from ancestors; subscriber notifications stay deferred
-until the batch commits.
-
-```ts
-// Enable schema validation (e.g. outside production)
-const devStore = store({ schemaValidation: import.meta.env.DEV })
-```
+<div className="callout callout-note">
+    <div className="callout-title">Upgrading from earlier betas</div>
+    The 1.0 Store does not have `store(id, options)`, `store.id`,
+    `StoreOptions` (`batchUpdates`, `enumerable`, `schemaValidation`),
+    `snapshot`, `hasScope`, `detach`, `onDispose`, `unset`, `unsetAll`, `del`,
+    the callback form of `store.scope(name, callback)`, or a shared
+    `globalStore`. `set` no longer calls updater functions (use `update`), and
+    writes no longer return a value or accept Promises.
+</div>
 
 ## Reading state
 
@@ -74,25 +70,37 @@ const devStore = store({ schemaValidation: import.meta.env.DEV })
 myStore.get(countAtom) // 0
 ```
 
+`get` returns the stored reference. Atom values and selector results are shared
+by reference with every reader; Valdres does not copy or freeze them. Treat them
+as read-only and write a new value to change state.
+
 ## Writing state
 
 ```ts
-// Set directly
-myStore.set(countAtom, 42)
-
-// Update based on previous value
-myStore.set(countAtom, prev => prev + 1)
+myStore.set(countAtom, 42) // stores 42
+myStore.update(countAtom, prev => prev + 1) // stores 43
+myStore.reset(countAtom) // back to the atom's initial value, 0
 ```
 
-Synchronous values and updater functions return the written value. Promise or
-promise-returning-updater inputs return the normalized `Promise`, which settles
-when the async write does:
+`set` stores the value it is given and never calls it. `update` calls its
+updater with the current value and stores the result. TypeScript rejects
+`set(countAtom, prev => prev + 1)` for an Atom whose value is not a function.
+
+Function-valued atoms are ordinary values, so `set` stores the function:
 
 ```ts
-const count = myStore.set(countAtom, 42) // number
-const pendingCount = myStore.set(countAtom, Promise.resolve(43)) // Promise<number>
-await pendingCount
+const onSaveAtom = atom<() => void>(() => {})
+
+myStore.set(onSaveAtom, () => console.log("saved"))
+myStore.get(onSaveAtom)() // logs "saved"
 ```
+
+Writes return `undefined`. Values and updater results must be synchronous: a
+Promise or other thenable throws `InvalidSynchronousAtomValueError`. Await the
+work first, then write its result.
+
+In a [scope](#scopes), `reset` removes the scope's own value, and the Atom reads
+its parent's value again.
 
 ## Collection rows
 
@@ -156,24 +164,70 @@ const unsub = myStore.sub(countAtom, () => {
 unsub()
 ```
 
-To write state in response to a change, before subscribers see it, pass a
-[`settle` handler](#writing-during-a-change-settle).
+A callback runs after the update has committed. It may read committed state
+with `get`, on this or any other Store, and it may unsubscribe. One read is not
+allowed: sampling an `externalAtom` that has no subscriber, directly or through
+a selector, throws `DormantExternalReadError`. Subscribe to that State first, or
+read it outside the callback. A callback cannot change state either: calling
+`set`, `update`, `reset`, `delete`, `txn`, `sub`, `scope`, or `dispose` on any
+Store, or creating a Store, throws `CallbackCapabilityError`.
 
-## Transactions
+To write in response to a change, either:
 
-Batch multiple updates so subscribers only fire once:
+- pass a [`settle` handler](#writing-during-a-change-settle), whose writes
+  become part of the same update, or
+- schedule a new operation:
 
 ```ts
-myStore.txn(({ set }) => {
-    set(atomA, 1)
-    set(atomB, 2)
-    // Subscribers fire once after the transaction completes
+myStore.sub(countAtom, () => {
+    const count = myStore.get(countAtom)
+    queueMicrotask(() => myStore.set(lastSeenAtom, count))
 })
 ```
 
-The transaction exposes the same collection-row operations. Its reads include
-all row and membership changes staged so far, and any error aborts Atom and row
-writes together:
+Deferred work is a separate operation, not part of the original atomic update.
+Subscribers have already been notified of the first write; the second commits
+and notifies on its own, and can fail on its own.
+
+### Notification failures
+
+When a subscriber throws, the update has already committed. The remaining
+subscribers still run, then the call that caused the update (`set`, `update`,
+`txn`, …) throws a `SubscriberNotificationError`. Its `committed` property is
+`true`, `cause` is the first failure, and `causes` lists all of them.
+
+Do not retry the original write when you catch it; that would apply it twice:
+
+```ts
+import { SubscriberNotificationError } from "valdres"
+
+try {
+    myStore.update(countAtom, n => n + 1)
+} catch (error) {
+    if (!(error instanceof SubscriberNotificationError)) throw error
+    // The increment committed. Report the subscriber failure, don't retry.
+    reportError(error.cause)
+}
+```
+
+## Transactions
+
+`txn` stages several writes and commits them together. Subscribers are notified
+once, after the commit, and never see the intermediate states:
+
+```ts
+myStore.txn(tx => {
+    tx.set(atomA, 1)
+    tx.update(atomB, n => n + 1)
+})
+```
+
+The callback receives a transaction cursor with `get`, `set`, `update`,
+`reset`, `delete`, and `scope`. Its reads include the writes staged so far. The
+cursor's methods can be destructured: `myStore.txn(({ get, set }) => …)`.
+
+The transaction exposes the same collection-row operations, and any error
+aborts Atom and row writes together:
 
 ```ts
 const active = todos("active")
@@ -197,7 +251,9 @@ callback that throws discards every staged write. Callback transactions
 intentionally expose no manual `commit()` or backing store `data`.
 
 The transaction hands back whatever the callback returned, so a value read
-against its view can come straight out:
+against its view can come straight out. If a subscriber then fails, `txn`
+throws a [`SubscriberNotificationError`](#notification-failures) instead and the
+return value is lost, although the writes committed:
 
 ```ts
 const total = myStore.txn(txn => {
@@ -206,15 +262,29 @@ const total = myStore.txn(txn => {
 })
 ```
 
-Promise and thenable callbacks are rejected at runtime — a transaction commits
-synchronously, so it cannot await anything.
+A callback that returns a Promise or other thenable throws
+`InvalidTransactionCallbackResultError` and commits nothing. A transaction
+commits synchronously, so it cannot await anything.
 
-<div className="callout callout-warning">
-    <div className="callout-title">Warning</div>
-    Selectors that depend on atoms updated in a transaction will only recompute
-    once, after all updates are applied. This is the intended behavior for
-    performance.
-</div>
+### Use the cursor, not captured Stores
+
+While a transaction callback runs, Store operations captured from outside it
+throw `TransactionPhaseError`. That includes `get` on the same Store, its
+scopes, unrelated Stores in other trees, nested `txn` calls, `sub`, and
+`store()`. Do all Store work through the cursor:
+
+```ts
+myStore.txn(tx => {
+    const count = tx.get(countAtom) // not myStore.get(countAtom)
+    tx.scope("draft").set(countAtom, count) // a scope of the same tree
+})
+```
+
+`tx.scope(nameOrStore)` reaches a scope in the transaction's own tree.
+`tx.scope(name, scoped => …)` runs a callback against it and returns its
+result. A missing named scope throws `ScopeNotFoundError`, and a Store from a
+different tree throws `StoreTreeMismatchError`. The cursor closes when the
+callback returns; using it afterwards throws `TransactionClosedError`.
 
 ## Writing during a change: `settle`
 
@@ -274,8 +344,9 @@ external source changes its value; `settle` never runs then.
   the final state.
 - **Order.** `settle` handlers run in the order their triggers changed, then in
   registration order. One whose trigger changes again after it has run runs
-  again in the next round. At most 64 rounds run; after that the update fails
-  with a `SettleLimitError` cause.
+  again in the next round. At most 64 rounds run. Then the write that started
+  the update throws a `SubscriberNotificationError` (`committed: true`) with a
+  `SettleLimitError` cause; commits from the rounds that ran stay applied.
 - **Failure isolation.** A `settle` handler that throws, or returns a promise,
   discards its own staged writes. Other handlers still run, and earlier commits
   stay. Failures are reported after subscribers run, as causes of a
@@ -316,117 +387,73 @@ commit. Notification alone does not mean the DOM is ready. Cancelling the live
 native event (`event.preventDefault()`) is safe inside `settle` because it runs
 synchronously while the event dispatches.
 
-A `settle` handler belongs to the store, or scope, it was registered on. It
-cannot write another store. The two phases differ in what they may do:
+A `settle` handler belongs to the store, or scope, it was registered on. Like
+any transaction, it reaches other scopes of its tree only through `tx.scope`,
+and cannot write a Store in another tree. The two phases differ in what they
+may do:
 
-|                    | `notify` (or a plain callback) | `settle`                                     |
-| ------------------ | ------------------------------ | -------------------------------------------- |
-| Runs               | after the update settles, once | during the update, before any `notify`       |
-| Can write state    | no                             | yes, through its transaction                 |
-| Reads              | `store.get` of committed state | `tx.get` of the latest state plus its writes |
-| Unsubscribe inside | allowed                        | not allowed                                  |
+|                    | `notify` (or a plain callback)                                | `settle`                                     |
+| ------------------ | ------------------------------------------------------------- | -------------------------------------------- |
+| Runs               | after the update settles, once                                | during the update, before any `notify`       |
+| Can write state    | no                                                            | yes, through its transaction                 |
+| Reads              | `store.get` of committed state, except dormant external atoms | `tx.get` of the latest state plus its writes |
+| Unsubscribe inside | allowed                                                       | not allowed                                  |
 
 The guarantee holds per update and per store. Two external sources that are
 invalidated one after the other for the same DOM event produce two updates.
 
-## Disposing request stores
+## Scopes
 
-Global atoms remember each store that has materialized them so writes can fan
-out synchronously. Dispose short-lived stores—such as one store per SSR request
-or background job—when their work finishes:
+`scope(name)` returns a child Store that reads through to its parent and keeps
+its own writes local — see the [scoped stores guide](/guides/scoped-stores).
+
+- **Named scopes are shared.** While a named scope is alive, every
+  `scope(name)` call on the same parent returns the same handle. Names are per
+  parent.
+- **`dispose()` ends it for everyone.** Disposing a named scope terminates it
+  for every holder of that handle. The next `scope(name)` creates a new scope
+  with no local state.
+- **`scope()` without a name** creates a new anonymous child on every call.
+  Use it for isolation that one consumer owns and disposes.
+
+Neither kind is reference-counted: there is no lease to release. A child's
+writes belong to the child, not its parent, and disposing the parent also
+disposes every child.
 
 ```ts
-const requestStore = store()
+const draft = myStore.scope("draft")
+myStore.scope("draft") === draft // true
 
-try {
-    return await renderRequest(requestStore)
-} finally {
-    requestStore.dispose()
-}
+draft.dispose()
+myStore.scope("draft") === draft // false: a new, empty scope
 ```
 
-`dispose()` is terminal. It drains the store and all descendant scopes of active
-subscriptions, atom mounts and their timers, `onChange` / `onCommitEnd`
-listeners, pending batched writes, async selector work, and registrations on the
-global atoms they touched. Cleanup stays proportional to lifecycle resources the
-store actually created.
+## Disposing stores
 
-Detached scopes are disposed automatically when their last consumer calls
-`detach()`. Every later operation on a disposed store throws
-`StoreDisposedError`; calling `dispose()` again is a no-op. Create a new store
-for later work.
+`dispose()` is terminal. It releases the Store's subscriptions and disposes its
+descendant scopes. Every later operation on a disposed Store or any of its
+scopes throws `StoreDisposedError`; calling `dispose()` again does nothing.
+Create a new Store for later work.
 
-### Releasing your own resources
-
-Valdres cleans up what it owns. For anything you keep alongside a store — a
-cache, a connection, a timer — register it with `onDispose`, which runs when the
-store is disposed, when an ancestor is disposed, or, for a scope, when its last
-`detach()` lands:
+Dispose short-lived stores, such as one per SSR request or background job, when
+their work finishes. Valdres has no dispose hook, so release anything you keep
+alongside a Store in the same place:
 
 ```ts
 const requestStore = store()
 const connection = openConnection()
-requestStore.onDispose(() => connection.close())
+
+try {
+    return await renderRequest(requestStore, connection)
+} finally {
+    requestStore.dispose()
+    connection.close()
+}
 ```
-
-It returns a function that cancels the registration. Each call registers
-independently, so the same function passed twice runs twice and each canceller
-removes only its own. The store is already terminal inside the callback — every
-operation on it throws — so read what you need beforehand and close over it.
-Every callback runs even if an earlier one throws, and the first error reaches
-whoever called `dispose()`.
-
-Per-atom setup belongs in an atom's `onMount` instead, whose cleanup tracks
-subscribers rather than the store's lifetime.
-
-## Scopes
-
-`scope(scopeId)` opens a child store that inherits everything from this one and
-keeps its own writes local — see the
-[scoped stores guide](/guides/scoped-stores). `hasScope` answers whether one
-exists right now, which is otherwise only observable by catching what the
-callback form throws:
-
-```ts
-const draft = myStore.scope("draft")
-myStore.hasScope("draft") // true
-draft.detach()
-myStore.hasScope("draft") // false — that was the last lease
-```
-
-It reports this store's own children, not a search of the tree; depth composes
-through `scope()` rather than a path argument:
-
-```ts
-myStore.scope("a", s => s.hasScope("b"))
-```
-
-## The global store
-
-`valdres` exports a shared `globalStore` — the store that global atoms
-synchronize through. Import it when you need store access outside of a component
-(scripts, tests, workers, cross-framework code):
-
-```ts
-import { globalStore } from "valdres"
-
-globalStore.get(myAtom)
-globalStore.set(myAtom, 1)
-```
-
-<div className="callout callout-warning">
-    <div className="callout-title">Do not dispose the global store</div>
-    `globalStore` is a process-wide singleton that global atoms use for
-    synchronization. Calling `globalStore.dispose()` throws. Only dispose stores
-    that your application creates with `store()`.
-</div>
-
-Inside a component you normally read and write through your framework's
-provider/context instead — see [Provider](/react/Provider).
 
 ## See also
 
 - [Provider](/react/Provider) — provide a store to your component tree
 - [useStore](/react/useStore) — access the current store in your components
-- [Schema Validation](/guides/schema-validation) — opt-in runtime validation via
-  the `schemaValidation` option
+- [Transactions](/guides/transactions) — atomic multi-write updates
+- [Scoped Stores](/guides/scoped-stores) — child stores and their lifetime

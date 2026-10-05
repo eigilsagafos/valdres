@@ -121,13 +121,13 @@ const balanceB = atom(100)
 const myStore = store()
 
 // Without transaction: components see intermediate state
-myStore.set(balanceA, prev => prev - 50)
-myStore.set(balanceB, prev => prev + 50) // brief moment where $50 is "missing"
+myStore.update(balanceA, prev => prev - 50)
+myStore.update(balanceB, prev => prev + 50) // brief moment where $50 is "missing"
 
 // With transaction: atomic update
-myStore.txn(({ set }) => {
-    set(balanceA, prev => prev - 50)
-    set(balanceB, prev => prev + 50)
+myStore.txn(tx => {
+    tx.update(balanceA, prev => prev - 50)
+    tx.update(balanceB, prev => prev + 50)
     // Subscribers fire once, after both updates
 })
 ```

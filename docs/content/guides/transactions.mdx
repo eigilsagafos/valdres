@@ -34,9 +34,9 @@ If a component is subscribed to `fullName`, it briefly shows "Jane Doe" before s
 Wrap related updates in `store.txn()`:
 
 ```ts
-myStore.txn(({ set }) => {
-    set(firstName, "Jane")
-    set(lastName, "Smith")
+myStore.txn(tx => {
+    tx.set(firstName, "Jane")
+    tx.set(lastName, "Smith")
     // Nothing fires until here
 })
 // Now subscribers fire once with fullName = "Jane Smith"
@@ -45,28 +45,30 @@ myStore.txn(({ set }) => {
 ## Synchronous callbacks
 
 Transaction callbacks must be synchronous. Returning a Promise or other
-thenable throws and aborts the automatic commit, because writes after an
-`await` cannot be part of the same atomic commit. Perform asynchronous work
-before the transaction, then apply its result synchronously:
+thenable throws `InvalidTransactionCallbackResultError` and commits nothing,
+because writes after an `await` cannot be part of the same atomic commit. Atom
+values must be synchronous too. Perform asynchronous work before the
+transaction, then apply its result synchronously:
 
 ```ts
 const user = await fetchUser()
 
-myStore.txn(({ set }) => {
-    set(userAtom, user)
-    set(statusAtom, "ready")
+myStore.txn(tx => {
+    tx.set(userAtom, user)
+    tx.set(statusAtom, "ready")
 })
 ```
 
 ## Atomic lifecycle
 
-Valdres owns the transaction lifecycle. The callback receives state operations
-such as `get`, `set`, and `reset`, but no `commit()` method or backing store
-data. Returning successfully commits once; throwing discards every staged write:
+Valdres owns the transaction lifecycle. The callback receives a cursor with
+`get`, `set`, `update`, `reset`, `delete`, and `scope`, but no `commit()`
+method or backing store data. Returning successfully commits once and hands
+back the callback's return value; throwing discards every staged write:
 
 ```ts
-myStore.txn(({ set }) => {
-    set(statusAtom, "saving")
+myStore.txn(tx => {
+    tx.set(statusAtom, "saving")
     throw new Error("save failed")
 })
 
@@ -74,36 +76,55 @@ myStore.txn(({ set }) => {
 ```
 
 If an operation intentionally needs multiple publish points, use separate
-`store.txn()` calls. Each call is an explicit atomic boundary.
+`store.txn()` calls. Each call is an explicit atomic boundary. Work deferred
+from inside a callback, for example with `queueMicrotask` or a promise
+continuation that starts a new transaction, is such a separate operation: it is
+not part of the original atomic update, and subscribers will have seen the
+state in between.
+
+## Use the cursor
+
+While the callback runs, Store operations captured from outside it throw
+`TransactionPhaseError`. This applies to every Store from the same Valdres
+runtime: the Store running the transaction, its scopes, and unrelated Stores
+in other trees. Read and write through the cursor, and reach scopes of the same
+tree with `tx.scope`:
+
+```ts
+myStore.txn(tx => {
+    const name = tx.get(firstName) // not myStore.get(firstName)
+    tx.scope("draft").set(firstName, name)
+})
+```
+
+A transaction cannot write a Store in another tree. Run a separate transaction
+on that Store after this one returns.
 
 ## Updater functions
 
-Inside a transaction, `set` works the same as outside — you can pass values or updater functions:
+As outside a transaction, `set` stores a value and `update` calls an updater
+with the current staged value:
 
 ```ts
 const countA = atom(0)
 const countB = atom(0)
 
-myStore.txn(({ set }) => {
-    set(countA, prev => prev + 1)
-    set(countB, prev => prev + 10)
+myStore.txn(tx => {
+    tx.update(countA, prev => prev + 1)
+    tx.update(countB, prev => prev + 10)
+    tx.set(countA, 100) // stores 100
 })
 ```
 
-As with `store.set`, a synchronous transaction write returns its staged value,
-while a Promise or promise-returning updater returns a real `Promise`. The
-transaction callback itself must remain synchronous—capture the returned Promise
-if work outside the transaction needs to await settlement.
+Transaction writes return `undefined`.
 
-```ts
-let settlement: Promise<number>
+## Notification failures
 
-myStore.txn(({ set }) => {
-    settlement = set(countA, Promise.resolve(10))
-})
-
-await settlement!
-```
+Subscribers run after the transaction commits. If one throws, the remaining
+subscribers still run, then `txn` throws a `SubscriberNotificationError` whose
+`committed` property is `true`. The transaction's writes are already applied, so
+do not run it again; see
+[Notification failures](/react/store#notification-failures).
 
 ## When to use transactions
 
@@ -123,21 +144,18 @@ await settlement!
 When an item is dragged from one list to another, you need to remove it from the source and add it to the target atomically:
 
 ```ts
-import { atom, atomFamily, store } from "valdres"
+import { atom, family, store } from "valdres"
 
-const listItemsAtom = atomFamily()  // listId → itemId[]
-const itemAtom = atomFamily()       // itemId → item data
+const listItemsAtom = family((listId: string) => atom<string[]>([]))
 
 const myStore = store()
 
-function moveItem(itemId, fromListId, toListId) {
-    myStore.txn(({ set }) => {
-        set(listItemsAtom(fromListId), ids =>
-            ids.filter(id => id !== itemId)
+function moveItem(itemId: string, fromListId: string, toListId: string) {
+    myStore.txn(tx => {
+        tx.update(listItemsAtom(fromListId), ids =>
+            ids.filter(id => id !== itemId),
         )
-        set(listItemsAtom(toListId), ids =>
-            [...ids, itemId]
-        )
+        tx.update(listItemsAtom(toListId), ids => [...ids, itemId])
     })
     // Components subscribed to either list update once
     // The item is never "missing" from both lists
@@ -146,17 +164,18 @@ function moveItem(itemId, fromListId, toListId) {
 
 ## Performance
 
-Transactions aren't just about correctness — they're a performance optimization. Without them, a selector depending on 10 atoms would recompute 10 times during a bulk update. With a transaction, it recomputes once.
+Transactions aren't just about correctness — they're a performance optimization. Without them, a subscribed selector depending on 10 atoms would recompute 10 times during a bulk update. With a transaction, it recomputes once.
 
 ```ts
 const atoms = Array.from({ length: 100 }, () => atom(0))
 const sum = selector(get => atoms.reduce((acc, a) => acc + get(a), 0))
+myStore.sub(sum, () => render(myStore.get(sum)))
 
 // Without txn: sum recomputes 100 times
 atoms.forEach(a => myStore.set(a, 1))
 
 // With txn: sum recomputes once
-myStore.txn(({ set }) => {
-    atoms.forEach(a => set(a, 1))
+myStore.txn(tx => {
+    atoms.forEach(a => tx.set(a, 1))
 })
 ```

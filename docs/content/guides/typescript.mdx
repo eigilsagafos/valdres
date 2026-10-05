@@ -70,7 +70,8 @@ const countAtom = atom(0)
 myStore.get(countAtom)               // number
 myStore.set(countAtom, 42)           // OK
 myStore.set(countAtom, "hello")      // Type error!
-myStore.set(countAtom, prev => prev + 1) // prev is number
+myStore.update(countAtom, prev => prev + 1) // prev is number
+myStore.set(countAtom, prev => prev + 1) // Type error: set stores a value
 ```
 
 ## Async atoms
