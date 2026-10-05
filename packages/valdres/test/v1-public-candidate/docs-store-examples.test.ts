@@ -1,16 +1,19 @@
 import { describe, expect, test } from "bun:test"
 import {
     CallbackCapabilityError,
+    DormantExternalReadError,
     InvalidSynchronousAtomValueError,
     InvalidTransactionCallbackResultError,
     ScopeNotFoundError,
     StoreDisposedError,
     StoreTreeMismatchError,
+    SettleLimitError,
     SubscriberNotificationError,
     TransactionClosedError,
     TransactionPhaseError,
     atom,
     collection,
+    externalAtom,
     family,
     selector,
     store,
@@ -118,6 +121,32 @@ describe("docs: store", () => {
         }
     })
 
+    test("notification callbacks cannot sample a dormant external atom", () => {
+        const external = externalAtom({
+            getSnapshot: () => 1,
+            subscribe: () => () => {},
+        })
+        const derived = selector(get => get(external) + 1)
+        for (const read of [external, derived]) {
+            const myStore = store()
+            const countAtom = atom(0)
+            myStore.sub(countAtom, () => {
+                myStore.get(read)
+            })
+            const error = thrownBy(() => myStore.set(countAtom, 1))
+            expect(error).toBeInstanceOf(SubscriberNotificationError)
+            expect((error as SubscriberNotificationError).cause).toBeInstanceOf(
+                DormantExternalReadError,
+            )
+            expect(myStore.get(countAtom)).toBe(1)
+
+            // Once subscribed, the same read is allowed.
+            const stop = myStore.sub(read, () => {})
+            expect(() => myStore.set(countAtom, 2)).not.toThrow()
+            stop()
+        }
+    })
+
     test("deferred work is a separate operation", async () => {
         const myStore = store()
         const countAtom = atom(0)
@@ -195,6 +224,39 @@ describe("docs: store", () => {
             ),
         ).toBeInstanceOf(InvalidTransactionCallbackResultError)
         expect(myStore.get(atomA)).toBe(5)
+    })
+
+    test("a subscriber failure replaces the txn return value", () => {
+        const myStore = store()
+        const priceAtom = atom(0)
+        myStore.sub(priceAtom, () => {
+            throw new Error("ui")
+        })
+        let total: unknown = "unset"
+        const error = thrownBy(() => {
+            total = myStore.txn(txn => {
+                txn.set(priceAtom, 100)
+                return txn.get(priceAtom) * 2
+            })
+        })
+        expect(error).toBeInstanceOf(SubscriberNotificationError)
+        expect(total).toBe("unset")
+        expect(myStore.get(priceAtom)).toBe(100)
+    })
+
+    test("the settle round limit reports committed rounds", () => {
+        const myStore = store()
+        const x = atom(0)
+        const y = atom(0)
+        myStore.sub(x, { settle: tx => tx.set(y, tx.get(y) + 1) })
+        myStore.sub(y, { settle: tx => tx.set(x, tx.get(x) + 1) })
+        const error = thrownBy(() => myStore.set(x, 1))
+        expect(error).toBeInstanceOf(SubscriberNotificationError)
+        expect((error as SubscriberNotificationError).committed).toBe(true)
+        expect((error as SubscriberNotificationError).cause).toBeInstanceOf(
+            SettleLimitError,
+        )
+        expect(myStore.get(y)).toBeGreaterThan(0)
     })
 
     test("transactions use the cursor, not captured Stores", () => {

@@ -165,9 +165,12 @@ unsub()
 ```
 
 A callback runs after the update has committed. It may read committed state
-with `get`, on this or any other Store, and it may unsubscribe. It cannot change
-state: calling `set`, `update`, `reset`, `delete`, `txn`, `sub`, `scope`, or
-`dispose` on any Store, or creating a Store, throws `CallbackCapabilityError`.
+with `get`, on this or any other Store, and it may unsubscribe. One read is not
+allowed: sampling an `externalAtom` that has no subscriber, directly or through
+a selector, throws `DormantExternalReadError`. Subscribe to that State first, or
+read it outside the callback. A callback cannot change state either: calling
+`set`, `update`, `reset`, `delete`, `txn`, `sub`, `scope`, or `dispose` on any
+Store, or creating a Store, throws `CallbackCapabilityError`.
 
 To write in response to a change, either:
 
@@ -248,7 +251,9 @@ callback that throws discards every staged write. Callback transactions
 intentionally expose no manual `commit()` or backing store `data`.
 
 The transaction hands back whatever the callback returned, so a value read
-against its view can come straight out:
+against its view can come straight out. If a subscriber then fails, `txn`
+throws a [`SubscriberNotificationError`](#notification-failures) instead and the
+return value is lost, although the writes committed:
 
 ```ts
 const total = myStore.txn(txn => {
@@ -339,8 +344,9 @@ external source changes its value; `settle` never runs then.
   the final state.
 - **Order.** `settle` handlers run in the order their triggers changed, then in
   registration order. One whose trigger changes again after it has run runs
-  again in the next round. At most 64 rounds run; after that the update fails
-  with a `SettleLimitError` cause.
+  again in the next round. At most 64 rounds run. Then the write that started
+  the update throws a `SubscriberNotificationError` (`committed: true`) with a
+  `SettleLimitError` cause; commits from the rounds that ran stay applied.
 - **Failure isolation.** A `settle` handler that throws, or returns a promise,
   discards its own staged writes. Other handlers still run, and earlier commits
   stay. Failures are reported after subscribers run, as causes of a
@@ -386,12 +392,12 @@ any transaction, it reaches other scopes of its tree only through `tx.scope`,
 and cannot write a Store in another tree. The two phases differ in what they
 may do:
 
-|                    | `notify` (or a plain callback) | `settle`                                     |
-| ------------------ | ------------------------------ | -------------------------------------------- |
-| Runs               | after the update settles, once | during the update, before any `notify`       |
-| Can write state    | no                             | yes, through its transaction                 |
-| Reads              | `store.get` of committed state | `tx.get` of the latest state plus its writes |
-| Unsubscribe inside | allowed                        | not allowed                                  |
+|                    | `notify` (or a plain callback)                                | `settle`                                     |
+| ------------------ | ------------------------------------------------------------- | -------------------------------------------- |
+| Runs               | after the update settles, once                                | during the update, before any `notify`       |
+| Can write state    | no                                                            | yes, through its transaction                 |
+| Reads              | `store.get` of committed state, except dormant external atoms | `tx.get` of the latest state plus its writes |
+| Unsubscribe inside | allowed                                                       | not allowed                                  |
 
 The guarantee holds per update and per store. Two external sources that are
 invalidated one after the other for the same DOM event produce two updates.
