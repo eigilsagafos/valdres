@@ -132,6 +132,23 @@ remains uninstrumented. This addition does not close `moved.inspect`: legacy
 snapshot, `onChange`, and application-value enumeration remain unavailable, and
 exact experimental report-row types may continue to iterate before 1.0.
 
+`core.transaction.reset-all` adds the experimental `Transaction.resetAll()`
+cursor operation, the whole-child-scope reset that `legacy.unset-all` now names
+as its replacement; there is still no Store-level form. Its two contract IDs are
+`scope.reset-all-untouched-child`, under which a reset child scope inherits
+values and, in every collection, membership order as an untouched child of its
+parent would, including for its later writes in the transaction, and
+`collection.reset-all-descendant-order`, under which a descendant mirrors the
+restored order only if it mirrored the scope before, stages no row change of its
+own there, and its own rows agree, while every other descendant keeps its own
+order history. The `V1M-RESETALL-001` to `-007` owners exercise the reference
+model; `V1M-RESETALL-008` is a seeded differential of the public runtime against
+that model. Ordinary single-state reset contracts are unchanged. The operation
+was reviewed under the working name `resetOwned`; the IDs map one-to-one from
+`core.transaction.reset-owned`, `scope.reset-owned-untouched-child`,
+`collection.reset-owned-descendant-order` and `V1M-RESETOWNED-NNN`. The old name
+is not exported and has no alias.
+
 `FamilyKey` now means exactly
 `string | number | bigint | boolean | symbol | null | undefined`; it no longer
 accepts Date, Array, object, Map, or Set values. Structured family inputs

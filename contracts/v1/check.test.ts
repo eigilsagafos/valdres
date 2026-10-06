@@ -51,7 +51,7 @@ describe("v1 contract manifest validation", () => {
             E: 237,
         })
         expect(result.testDispositionNeedsReview).toBe(0)
-        expect(result.testOwners).toBe(31)
+        expect(result.testOwners).toBe(39)
         expect(result.testInventorySubjects).toBe(1830)
         expect(result.testDispositionScopeSubjects).toBe(1640)
         expect(result.testCaseClassificationRemaining).toBe(0)
