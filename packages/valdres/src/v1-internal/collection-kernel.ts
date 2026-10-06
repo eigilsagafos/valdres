@@ -218,6 +218,33 @@ interface MembershipPresenceTimeline {
     readonly birth: EnablingBirth | undefined
 }
 
+/** Inspection-only placements for a restored (bulk-reset) membership: rows it
+ * gains are inserts and rows it loses are removals, as `applyCommit` reports
+ * them for ordinary membership changes. Pure reordering reports neither. */
+const restoredMembershipChanges = (
+    before: readonly CollectionRowHandle[],
+    after: readonly CollectionRowHandle[],
+): Map<CollectionRowHandle, MembershipPresenceTimeline> => {
+    const changes = new Map<CollectionRowHandle, MembershipPresenceTimeline>()
+    const kept = new Set(after)
+    for (const row of before)
+        if (!kept.has(row))
+            changes.set(row, {
+                baselinePresent: true,
+                transitions: [],
+                birth: undefined,
+            })
+    const previous = new Set(before)
+    for (const row of after)
+        if (!previous.has(row))
+            changes.set(row, {
+                baselinePresent: false,
+                transitions: [],
+                birth: 0,
+            })
+    return changes
+}
+
 interface DraftCoordinate {
     readonly scope: StoreScopeNode
     readonly row: CollectionRowHandle
@@ -2343,6 +2370,15 @@ export const createCollectionKernel = (
                 node.existing !== undefined && !changed
                     ? before
                     : Object.freeze([...rows])
+            if (
+                changed &&
+                node.existing !== undefined &&
+                extensionRecorder(node.scope) !== undefined
+            )
+                node.membershipChanges = restoredMembershipChanges(
+                    before,
+                    node.finalRows,
+                )
             if (node.existing?.ordered !== undefined && changed) {
                 node.orderedRebuild = node.finalRows
                 ;(orderedNodes ??= []).push(node)
