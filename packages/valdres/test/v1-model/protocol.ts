@@ -107,6 +107,8 @@ export type TransactionStep =
           target: TargetRef
           as: string
       }>
+    /** Transaction.resetAll(): cursor-only bulk clear of one child scope. */
+    | Readonly<{ kind: "reset-all"; cursor: string }>
     | Readonly<{ kind: "attempt"; steps: readonly TransactionStep[] }>
     | Readonly<{ kind: "raise"; code: string }>
     | Readonly<{ kind: "return"; value: ValueToken }>

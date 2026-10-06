@@ -120,6 +120,9 @@ interface Draft {
     >
     nextSequence: number
     nextCollectionSnapshot: number
+    /** resetAll() markers: the cleared scope and the marker sequence. An
+     * explicit clear restores parent inheritance in every collection. */
+    readonly clears: Array<Readonly<{ scope: ScopeId; sequence: number }>>
     result?: ValueToken
 }
 
@@ -433,6 +436,7 @@ export class ReferenceModel {
             collectionOutcomes: new Map(),
             nextSequence: 1,
             nextCollectionSnapshot: 1,
+            clears: [],
         }
         try {
             this.executeTransactionSteps(draft, steps)
@@ -503,6 +507,15 @@ export class ReferenceModel {
                         draft,
                         this.cursor(draft, step.cursor),
                         step.mutation,
+                    )
+                    break
+                case "reset-all":
+                    this.stageResetAll(
+                        draft,
+                        this.liveScope(
+                            draft.tree,
+                            this.cursor(draft, step.cursor),
+                        ),
                     )
                     break
                 case "read": {
@@ -660,6 +673,281 @@ export class ReferenceModel {
         }
     }
 
+    /**
+     * resetAll(): a marker plus one reset intent per state the child scope
+     * owns in its draft view. Row resets are staged in the parent's current
+     * draft order, which defines how rows revealed together are ordered in
+     * history-keeping descendants. Every reset is validated before any intent
+     * is staged, so a failed clear stages nothing.
+     */
+    private stageResetAll(draft: Draft, scope: ScopeRecord): void {
+        if (scope.parent === null)
+            throw new ModelFault("RESET_ALL_REQUIRES_CHILD_SCOPE")
+        const ownedAtoms: AtomId[] = []
+        for (const atomId of this.atoms.keys()) {
+            const intent = lastIntent(draft.intents, scope.id, "atom", atomId)
+            const owned =
+                intent?.mutation.targetKind === "atom"
+                    ? intent.mutation.kind === "set"
+                    : scope.atomLocals.has(atomId)
+            if (owned) ownedAtoms.push(atomId)
+        }
+        const ownedRows: RowId[] = []
+        for (const rowId of this.rows.keys()) {
+            const intent = lastIntent(draft.intents, scope.id, "row", rowId)
+            const owned =
+                intent?.mutation.targetKind === "row"
+                    ? intent.mutation.kind !== "reset"
+                    : scope.rowLocals.has(rowId)
+            if (owned) ownedRows.push(rowId)
+        }
+        const parent = this.liveScope(draft.tree, scope.parent)
+        const parentOrder = new Map<RowId, number>()
+        for (const collectionId of this.collections.keys()) {
+            const outcome = this.readCollectionDraft(
+                draft,
+                parent,
+                collectionId,
+            )
+            if (outcome.kind === "rows")
+                outcome.rows.forEach((rowId, index) =>
+                    parentOrder.set(rowId, index),
+                )
+        }
+        ownedRows.sort(
+            (left, right) =>
+                (parentOrder.get(left) ?? Number.MAX_SAFE_INTEGER) -
+                    (parentOrder.get(right) ?? Number.MAX_SAFE_INTEGER) ||
+                this.row(left).order - this.row(right).order,
+        )
+        // validate every atom reset (lazy fallbacks may fail) before staging
+        for (const atomId of ownedAtoms) {
+            const probe = this.intent(draft, scope.id, {
+                targetKind: "atom",
+                atom: atomId,
+                kind: "reset",
+            })
+            this.readAtomDraft(draft, scope, atomId, [...draft.intents, probe])
+        }
+        const sequence = draft.nextSequence
+        draft.nextSequence += 1
+        for (const atomId of ownedAtoms)
+            this.stageMutation(draft, scope.id, {
+                kind: "reset-atom",
+                atom: atomId,
+            })
+        for (const rowId of ownedRows)
+            this.stageMutation(draft, scope.id, {
+                kind: "reset-row",
+                row: rowId,
+            })
+        draft.clears.push({ scope: scope.id, sequence })
+    }
+
+    /** Latest resetAll() marker of a scope, if any. An explicit clear
+     * restores parent inheritance in every collection, whether or not the
+     * scope owned rows there. */
+    private latestClear(
+        draft: Draft,
+        scopeId: ScopeId,
+    ): (typeof draft.clears)[number] | undefined {
+        let latest: (typeof draft.clears)[number] | undefined
+        for (const clear of draft.clears)
+            if (clear.scope === scopeId) latest = clear
+        return latest
+    }
+
+    /** A scope's order is restore-derived when it was cleared or mirrors a
+     * restore-derived parent (never cleared itself). */
+    private restoreDerived(
+        draft: Draft,
+        scope: ScopeRecord,
+        collectionId: CollectionId,
+    ): boolean {
+        if (draft.clears.length === 0) return false
+        if (this.latestClear(draft, scope.id) !== undefined) return true
+        return this.follows(draft, scope, collectionId)
+    }
+
+    /**
+     * The mirroring rule for an uncleared descendant of a restore-derived
+     * parent: it had the parent's committed order before the transaction, it
+     * staged no effective row change in the collection, and each committed
+     * local row agrees with the parent's restored presence.
+     */
+    private follows(
+        draft: Draft,
+        scope: ScopeRecord,
+        collectionId: CollectionId,
+    ): boolean {
+        if (scope.parent === null) return false
+        if (this.latestClear(draft, scope.id) !== undefined) return false
+        const parent = this.liveScope(draft.tree, scope.parent)
+        if (!this.restoreDerived(draft, parent, collectionId)) return false
+        if (
+            !sameStrings(
+                this.peekMembership(draft.tree, scope, collectionId).rows,
+                this.peekMembership(draft.tree, parent, collectionId).rows,
+            )
+        )
+            return false
+        if (this.stagedEffectiveRowChange(draft, scope, collectionId))
+            return false
+        const parentRows = new Set(
+            this.restoreDerivedRows(draft, parent, collectionId),
+        )
+        for (const [rowId, local] of scope.rowLocals) {
+            if (this.row(rowId).collection !== collectionId) continue
+            if ((local.kind === "present") !== parentRows.has(rowId))
+                return false
+        }
+        return true
+    }
+
+    /** True when a staged row intent actually changed the scope's local. */
+    private stagedEffectiveRowChange(
+        draft: Draft,
+        scope: ScopeRecord,
+        collectionId: CollectionId,
+    ): boolean {
+        const locals = new Map<RowId, RowLocal | undefined>()
+        for (const intent of draft.intents) {
+            if (
+                intent.scope !== scope.id ||
+                intent.mutation.targetKind !== "row" ||
+                this.row(intent.mutation.row).collection !== collectionId
+            )
+                continue
+            const rowId = intent.mutation.row
+            const before = locals.has(rowId)
+                ? locals.get(rowId)
+                : scope.rowLocals.get(rowId)
+            const after: RowLocal | undefined =
+                intent.mutation.kind === "present"
+                    ? {
+                          kind: "present",
+                          value: requiredValue(intent.mutation.value),
+                      }
+                    : intent.mutation.kind === "absent"
+                      ? ABSENT_LOCAL
+                      : undefined
+            if (!rowLocalEqual(before, after)) return true
+            locals.set(rowId, after)
+        }
+        return false
+    }
+
+    /**
+     * Restore-derived order. A follower copies its parent. A cleared scope
+     * takes the committed order of the nearest non-restore-derived ancestor,
+     * keeps rows continuously present in the restore view, and appends
+     * births by intent sequence. In the restore view, every cleared scope
+     * below that ancestor starts with no local state and ignores its own
+     * intents before its latest clear.
+     */
+    private restoreDerivedRows(
+        draft: Draft,
+        scope: ScopeRecord,
+        collectionId: CollectionId,
+    ): readonly RowId[] {
+        const clear = this.latestClear(draft, scope.id)
+        if (clear === undefined)
+            return this.restoreDerivedRows(
+                draft,
+                this.liveScope(draft.tree, scope.parent!),
+                collectionId,
+            )
+        const restored = new Map<ScopeId, number>()
+        restored.set(scope.id, clear.sequence)
+        let top = this.liveScope(draft.tree, scope.parent!)
+        while (this.restoreDerived(draft, top, collectionId)) {
+            const topClear = this.latestClear(draft, top.id)
+            if (topClear !== undefined) restored.set(top.id, topClear.sequence)
+            top = this.liveScope(draft.tree, top.parent!)
+        }
+        const route: ScopeRecord[] = []
+        for (
+            let current: ScopeRecord | undefined = scope;
+            current !== undefined;
+            current =
+                current.parent === null
+                    ? undefined
+                    : this.liveScope(draft.tree, current.parent)
+        )
+            route.push(current)
+        const base = this.peekMembership(draft.tree, top, collectionId).rows
+        const presentIn = (
+            locals: ReadonlyMap<ScopeId, RowLocal | undefined>,
+        ): boolean => {
+            for (const routeScope of route) {
+                const local = locals.get(routeScope.id)
+                if (local?.kind === "present") return true
+                if (local?.kind === "absent") return false
+            }
+            return false
+        }
+        const placements = new Map<RowId, MembershipPlacement>()
+        for (const rowId of this.collection(collectionId).rows) {
+            const locals = new Map<ScopeId, RowLocal | undefined>()
+            for (const routeScope of route)
+                locals.set(
+                    routeScope.id,
+                    restored.has(routeScope.id)
+                        ? undefined
+                        : routeScope.rowLocals.get(rowId),
+                )
+            let present = presentIn(locals)
+            let placement: MembershipPlacement = present
+                ? BASELINE_MEMBERSHIP_PLACEMENT
+                : ABSENT_MEMBERSHIP_PLACEMENT
+            for (const intent of draft.intents) {
+                if (
+                    intent.mutation.targetKind !== "row" ||
+                    intent.mutation.row !== rowId ||
+                    !locals.has(intent.scope)
+                )
+                    continue
+                const clear = restored.get(intent.scope)
+                if (clear !== undefined && intent.sequence < clear) continue
+                locals.set(
+                    intent.scope,
+                    intent.mutation.kind === "present"
+                        ? {
+                              kind: "present",
+                              value: requiredValue(intent.mutation.value),
+                          }
+                        : intent.mutation.kind === "absent"
+                          ? intent.scope === draft.tree.root
+                              ? undefined
+                              : ABSENT_LOCAL
+                          : undefined,
+                )
+                const next = presentIn(locals)
+                if (!present && next)
+                    placement = { kind: "birth", sequence: intent.sequence }
+                else if (present && !next)
+                    placement = ABSENT_MEMBERSHIP_PLACEMENT
+                present = next
+            }
+            placements.set(rowId, placement)
+        }
+        const births = [...placements]
+            .filter(([, placement]) => placement.kind === "birth")
+            .map(([rowId, placement]) => ({
+                rowId,
+                sequence: (placement as { sequence: number }).sequence,
+            }))
+            .sort((left, right) =>
+                left.sequence === right.sequence
+                    ? this.row(left.rowId).order - this.row(right.rowId).order
+                    : left.sequence - right.sequence,
+            )
+        return Object.freeze([
+            ...base.filter(rowId => placements.get(rowId)?.kind === "baseline"),
+            ...births.map(birth => birth.rowId),
+        ])
+    }
+
     private stageAtomSet(
         draft: Draft,
         scope: ScopeRecord,
@@ -706,7 +994,8 @@ export class ReferenceModel {
 
     private commitDraft(draft: Draft): string | undefined {
         const finalIntents = collapseIntents(draft.intents)
-        if (finalIntents.size === 0) return undefined
+        if (finalIntents.size === 0 && draft.clears.length === 0)
+            return undefined
         const touchedAtoms = new Set<AtomId>()
         const touchedRows = new Set<RowId>()
         for (const intent of finalIntents.values()) {
@@ -845,9 +1134,7 @@ export class ReferenceModel {
         const atomOutcomes = new Map<string, FallbackOutcome>()
         const rowOutcomes = new Map<string, EffectiveRowOutcome>()
         const memberships = new Map<string, MembershipSnapshot>()
-        const collections = new Set<CollectionId>()
-        for (const rowId of touchedRows)
-            collections.add(this.row(rowId).collection)
+        const collections = this.affectedCollections(draft, touchedRows)
         for (const scope of liveScopes(tree)) {
             for (const atomId of touchedAtoms) {
                 atomOutcomes.set(
@@ -884,15 +1171,22 @@ export class ReferenceModel {
             sourceChanged: boolean
         }>[]
     }> {
-        const collections = new Set<CollectionId>()
-        for (const rowId of touchedRows)
-            collections.add(this.row(rowId).collection)
+        const collections = this.affectedCollections(draft, touchedRows)
         const deltas: EffectiveRowDelta[] = []
         const membershipChanges: Array<{
             scope: ScopeId
             collection: CollectionId
             sourceChanged: boolean
         }> = []
+        const restoreRows = new Map<string, readonly RowId[]>()
+        if (draft.clears.length > 0)
+            for (const scope of liveScopes(draft.tree))
+                for (const collectionId of collections)
+                    if (this.restoreDerived(draft, scope, collectionId))
+                        restoreRows.set(
+                            membershipKey(scope.id, collectionId),
+                            this.restoreDerivedRows(draft, scope, collectionId),
+                        )
         for (const scope of liveScopes(tree)) {
             for (const collectionId of collections) {
                 const collection = this.collection(collectionId)
@@ -924,10 +1218,13 @@ export class ReferenceModel {
                           this.row(right.rowId).order
                         : left.sequence - right.sequence,
                 )
-                const nextRows = [
-                    ...survivors,
-                    ...births.map(birth => birth.rowId),
-                ]
+                // restore-derived scopes are evaluated against the
+                // pre-commit draft (`draft.tree` still holds committed state)
+                const nextRows = restoreRows.has(
+                    membershipKey(scope.id, collectionId),
+                )
+                    ? restoreRows.get(membershipKey(scope.id, collectionId))!
+                    : [...survivors, ...births.map(birth => birth.rowId)]
                 const inheritedRows =
                     scope.parent === null
                         ? EMPTY_ROWS
@@ -995,6 +1292,17 @@ export class ReferenceModel {
             deltas,
             membershipChanges: Object.freeze(membershipChanges),
         }
+    }
+
+    private affectedCollections(
+        draft: Draft,
+        touchedRows: ReadonlySet<RowId>,
+    ): Set<CollectionId> {
+        if (draft.clears.length > 0) return new Set(this.collections.keys())
+        const collections = new Set<CollectionId>()
+        for (const rowId of touchedRows)
+            collections.add(this.row(rowId).collection)
+        return collections
     }
 
     private notificationTargets(
@@ -1413,6 +1721,14 @@ export class ReferenceModel {
     ): ReadOutcome {
         const collection = this.collection(collectionId)
         const baseline = this.peekMembership(draft.tree, scope, collectionId)
+        if (this.restoreDerived(draft, scope, collectionId))
+            return this.draftRowsOutcome(
+                draft,
+                scope,
+                collectionId,
+                baseline,
+                this.restoreDerivedRows(draft, scope, collectionId),
+            )
         const placements = new Map<RowId, MembershipPlacement>()
         const births: Array<{ rowId: RowId; sequence: number }> = []
         for (const rowId of collection.rows) {
@@ -1435,6 +1751,22 @@ export class ReferenceModel {
                 : left.sequence - right.sequence,
         )
         const nextRows = [...survivors, ...births.map(birth => birth.rowId)]
+        return this.draftRowsOutcome(
+            draft,
+            scope,
+            collectionId,
+            baseline,
+            nextRows,
+        )
+    }
+
+    private draftRowsOutcome(
+        draft: Draft,
+        scope: ScopeRecord,
+        collectionId: CollectionId,
+        baseline: MembershipSnapshot,
+        nextRows: readonly RowId[],
+    ): ReadOutcome {
         const key = membershipKey(scope.id, collectionId)
         const previous = draft.collectionOutcomes.get(key)
         if (previous !== undefined && sameStrings(previous.rows, nextRows)) {

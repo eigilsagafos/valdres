@@ -320,6 +320,113 @@ describe("docs: store", () => {
         expect(failures[0]).toBeInstanceOf(StoreTreeMismatchError)
     })
 
+    test("resetAll restores the parent's values and order in one commit", () => {
+        const movies = collection<string, string>()
+        const root = store()
+        for (const key of ["a", "b", "c", "d"]) root.set(movies(key), key)
+        const keys = (target: { get: typeof root.get }) =>
+            target.get(movies).map(row => row.key)
+
+        const draft = root.scope("draft")
+        draft.delete(movies("b"))
+        expect(keys(draft)).toEqual(["a", "c", "d"])
+        root.txn(tx => tx.scope(draft).resetAll())
+        expect(keys(draft)).toEqual(["a", "b", "c", "d"])
+
+        // one-at-a-time reset reveals b at the end
+        const loop = root.scope("loop")
+        loop.delete(movies("b"))
+        loop.reset(movies("b"))
+        expect(keys(loop)).toEqual(["a", "c", "d", "b"])
+
+        // rebuild in place: one notification, same handle
+        const snapshot = new Map([
+            ["c", "C"],
+            ["e", "E"],
+        ])
+        draft.delete(movies("a"))
+        let notified = 0
+        const stop = draft.sub(movies, () => notified++)
+        root.txn(tx => {
+            const cursor = tx.scope(draft)
+            cursor.resetAll()
+            for (const [key, value] of snapshot) cursor.set(movies(key), value)
+        })
+        stop()
+        expect(keys(draft)).toEqual(["a", "b", "c", "d", "e"])
+        expect(draft.get(movies("c"))).toBe("C")
+        expect(notified).toBe(1)
+        expect(root.scope("draft")).toBe(draft)
+    })
+
+    test("resetAll rejects roots and arguments, and is all or nothing", () => {
+        const countAtom = atom(0)
+        const root = store()
+        const draft = root.scope("draft")
+        draft.set(countAtom, 1)
+        expect(thrownBy(() => root.txn(tx => tx.resetAll()))).toBeInstanceOf(
+            TypeError,
+        )
+        expect(
+            thrownBy(() =>
+                root.txn(tx =>
+                    Reflect.apply(tx.scope(draft).resetAll, undefined, [
+                        countAtom,
+                    ]),
+                ),
+            ),
+        ).toBeInstanceOf(TypeError)
+        expect(draft.get(countAtom)).toBe(1)
+
+        let leaked: Transaction | undefined
+        root.txn(tx => {
+            leaked = tx.scope(draft)
+        })
+        expect(thrownBy(() => leaked!.resetAll())).toBeInstanceOf(
+            TransactionClosedError,
+        )
+
+        const boom = new Error("initializer failed")
+        const lazyAtom = atom.lazy<number>(() => {
+            throw boom
+        })
+        draft.set(lazyAtom, 5)
+        root.txn(tx => {
+            const cursor = tx.scope(draft)
+            expect(thrownBy(() => cursor.resetAll())).toBe(boom)
+            expect(cursor.get(countAtom)).toBe(1)
+        })
+        expect(draft.get(countAtom)).toBe(1)
+        expect(draft.get(lazyAtom)).toBe(5)
+    })
+
+    test("resetAll is applied even when a subscriber fails afterwards", () => {
+        const countAtom = atom(0)
+        const root = store()
+        const draft = root.scope("draft")
+        draft.set(countAtom, 3)
+        draft.sub(countAtom, () => {
+            throw new Error("subscriber failed")
+        })
+        const error = thrownBy(() =>
+            root.txn(tx => tx.scope(draft).resetAll()),
+        )
+        expect(error).toBeInstanceOf(SubscriberNotificationError)
+        expect((error as SubscriberNotificationError).committed).toBe(true)
+        expect(draft.get(countAtom)).toBe(0)
+    })
+
+    test("a settle handler on a child scope can reset its own scope", () => {
+        const trigger = atom(0)
+        const countAtom = atom(0)
+        const root = store()
+        const draft = root.scope("draft")
+        draft.set(countAtom, 5)
+        draft.sub(trigger, { settle: tx => tx.resetAll() })
+        root.set(trigger, 1)
+        expect(draft.get(countAtom)).toBe(0)
+    })
+
     test("named scopes are shared and disposal ends them for everyone", () => {
         const myStore = store()
         const nameAtom = atom("Alice")
@@ -491,5 +598,25 @@ describe("docs: scoped-stores guide", () => {
             tx.scope(editorStore).reset(nameAtom)
         })
         expect(root.get(nameAtom)).toBe("Carol")
+    })
+
+    test("resetAll rebuilds a draft in one transaction", () => {
+        const nameAtom = atom("Alice")
+        const ageAtom = atom(30)
+        const root = store()
+        const draft = root.scope("draft")
+        draft.set(nameAtom, "Bob")
+        draft.set(ageAtom, 40)
+        const seen: string[] = []
+        draft.sub(nameAtom, () => seen.push(draft.get(nameAtom)))
+
+        root.txn(tx => {
+            const scoped = tx.scope("draft")
+            scoped.resetAll()
+            scoped.set(nameAtom, "Dana")
+        })
+        expect(draft.get(nameAtom)).toBe("Dana")
+        expect(draft.get(ageAtom)).toBe(30)
+        expect(seen).toEqual(["Dana"])
     })
 })
