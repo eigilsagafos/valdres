@@ -62,7 +62,8 @@ myStore.txn(tx => {
 ## Atomic lifecycle
 
 Valdres owns the transaction lifecycle. The callback receives a cursor with
-`get`, `set`, `update`, `reset`, `delete`, and `scope`, but no `commit()`
+`get`, `set`, `update`, `reset`, `delete`, `scope`, and the experimental
+[`resetAll`](/react/store#resetting-a-scope-resetall), but no `commit()`
 method or backing store data. Returning successfully commits once and hands
 back the callback's return value; throwing discards every staged write:
 

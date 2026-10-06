@@ -71,8 +71,9 @@ childStore.get(nameAtom) // "Charlie" — the parent's value again
 ```
 
 `reset` works on one atom or [collection](/react/collection) row at a time.
-To discard all of a scope's edits, dispose it and start a new scope; see
-[Lifetime](#lifetime).
+To discard all of a scope's edits but keep the scope and its subscriptions, use
+the experimental [`resetAll`](/react/store#resetting-a-scope-resetall) in a
+transaction. To end the scope itself, dispose it; see [Lifetime](#lifetime).
 
 ## Selectors in scopes
 
@@ -179,6 +180,26 @@ draft.get(nameAtom) // "Bob" — inherited from the parent now
 Inside a transaction, use the cursor and `tx.scope`, not captured Store
 handles: calling `draft.get(...)` there throws `TransactionPhaseError`.
 `tx.scope(name)` throws `ScopeNotFoundError` if no live scope has that name.
+
+To rebuild a draft from scratch without replacing it, reset everything it owns
+and write its new contents in one transaction. The experimental `resetAll`
+restores the parent's values and collection order, and subscribers to the
+draft see a single change:
+
+```ts
+root.txn(tx => {
+    const scoped = tx.scope("draft")
+    scoped.resetAll()
+    scoped.set(nameAtom, "Dana")
+})
+
+draft.get(nameAtom) // "Dana"
+draft.get(ageAtom) // inherited from the parent
+```
+
+`resetAll` works only on a child scope's cursor and leaves descendant scopes'
+own values in place. See [the store reference](/react/store#resetting-a-scope-resetall)
+for ordering, descendants, and errors.
 
 ## Lifetime
 
