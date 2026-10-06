@@ -169,6 +169,18 @@ export interface RootTransaction {
     delete<Key extends CollectionKey, Value extends CollectionValue>(
         row: CollectionRow<Key, Value>,
     ): void
+    /**
+     * Experimental. Stages `reset` for every Atom and collection row this
+     * child-scope cursor owns in its draft view, including writes staged
+     * earlier in this transaction, so the scope inherits as an untouched child
+     * of its parent: in every collection, membership follows the parent's
+     * order, and later writes in the transaction order as they would in an
+     * untouched child. Descendants keep their own overrides; a descendant
+     * that mirrored the scope's rows, stages no row change of its own and
+     * whose own rows agree keeps mirroring it. Takes no arguments; throws a
+     * TypeError on a root cursor.
+     */
+    resetAll(): void
     scope(target: string | CommittedStoreTree): RootTransaction
     scope<Result>(
         target: string | CommittedStoreTree,

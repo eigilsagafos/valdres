@@ -88,6 +88,8 @@ export type StoreTreeCounter =
     | "familyOwnerRetentionSetsCreated"
     | "familyOwnerRetains"
     | "familyOwnerReleases"
+    | "ownedAtomRetains"
+    | "ownedAtomSweptReferences"
 
 export interface SelectorRecord {
     readonly lifecycleInClosure?: boolean
@@ -231,6 +233,68 @@ export class WeakHandleSet<Value extends object> {
 }
 
 /**
+ * Enumerable, non-retaining superset index of the ordinary Atoms a child
+ * scope owns. Atoms are held only through WeakRefs, so indexing an override
+ * never extends an Atom's lifetime beyond what `atomOverrides` (a WeakMap)
+ * already implies. Releases are lazy: a reset leaves its entry in place, so
+ * repeated own/release cycles of one Atom cost a single WeakMap probe. Entries
+ * whose Atom was collected or is no longer owned are swept whenever the set
+ * reaches twice its last swept size, which bounds it by
+ * O(max(64, 2 x peak owned)) at amortized O(1) per acquisition.
+ */
+export class WeakOwnedAtoms {
+    #byAtom = new WeakMap<AnyAtom, WeakRef<AnyAtom>>()
+    readonly #references = new Set<WeakRef<AnyAtom>>()
+    #sweepAt = 64
+
+    constructor(
+        readonly scope: StoreScopeNode,
+        readonly onSwept?: (removed: number) => void,
+    ) {}
+
+    /** Returns true when the Atom was not yet indexed. */
+    add(atom: AnyAtom): boolean {
+        if (this.#byAtom.has(atom)) return false
+        const reference = new WeakRef(atom)
+        this.#byAtom.set(atom, reference)
+        this.#references.add(reference)
+        if (this.#references.size >= this.#sweepAt) this.sweep()
+        return true
+    }
+
+    /** Removes collected or released entries; returns how many. */
+    sweep(): number {
+        let removed = 0
+        for (const reference of this.#references) {
+            const atom = reference.deref()
+            if (atom !== undefined && this.scope.atomOverrides.has(atom))
+                continue
+            if (atom !== undefined) this.#byAtom.delete(atom)
+            this.#references.delete(reference)
+            removed++
+        }
+        this.#sweepAt = Math.max(64, this.#references.size * 2)
+        if (removed !== 0) this.onSwept?.(removed)
+        return removed
+    }
+
+    /** Appends live Atoms in acquisition order. */
+    collect(into: AnyAtom[]): void {
+        let removed = 0
+        for (const reference of this.#references) {
+            const atom = reference.deref()
+            if (atom !== undefined) {
+                into.push(atom)
+                continue
+            }
+            this.#references.delete(reference)
+            removed++
+        }
+        if (removed !== 0) this.onSwept?.(removed)
+    }
+}
+
+/**
  * Persistent ownership and inheritance stay scope-qualified:
  *
  *     named parent --strong name--> child generation
@@ -241,6 +305,7 @@ export class WeakHandleSet<Value extends object> {
  *     scope        --weak key-----> Atom/Selector records
  *     sidecar      --strong pin---> locally Present/Absent row
  *     scope        --strong pin---> owned family Atom override
+ *     child scope  --WeakRef-------> owned ordinary Atom (resetAll index)
  *
  * Only the named identity table owns children. Weak route indexes are routing
  * accelerators, so abandoned anonymous scopes and State records remain GC-able.
@@ -258,7 +323,9 @@ export class StoreScopeNode
     readonly name: string | undefined
     readonly children: WeakHandleSet<StoreScopeNode>
     readonly namedChildren = new Map<string, StoreScopeNode>()
-    atomOverrides = new WeakMap<AnyAtom, unknown>();
+    atomOverrides = new WeakMap<AnyAtom, unknown>()
+    /** Child scopes only; absent until the first ordinary Atom override. */
+    ownedAtoms: WeakOwnedAtoms | undefined;
     declare [REACQUIRABLE_ATOMS]:
         | (Set<AnyAtom> & { release(coordinator: StoreScopeCoordinator): void })
         | undefined
@@ -437,6 +504,7 @@ export class StoreScopeNode
         })
         this.#liveAtomViews.clear()
         this.atomOverrides = new WeakMap()
+        this.ownedAtoms = undefined
         this[REACQUIRABLE_ATOMS]?.release(this.coordinator)
         this[REACQUIRABLE_ATOMS] = undefined
         this.#atomViews = new WeakMap()
