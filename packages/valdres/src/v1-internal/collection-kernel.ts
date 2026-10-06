@@ -119,6 +119,9 @@ interface RowViewRecord {
 
 interface MembershipRecord {
     ordered?: OrderedMembership | undefined
+    /** Set once this scope has changed local row ownership in the collection;
+     * cleared when a bulk scope reset rebases the order onto the parent. */
+    localHistory?: boolean
     indexedChildren?: WeakHandleSet<MembershipRecord>
     snapshotDirty?: boolean
     readonly scope: StoreScopeNode
@@ -161,6 +164,10 @@ interface MembershipPlanNode {
     membershipChanges?: Map<CollectionRowHandle, MembershipPresenceTimeline>
     installed: MembershipRecord | undefined
     orderedPatch?: { removals: object[]; births: object[] }
+    /** Bulk scope reset: order is rebuilt as an untouched child's would be. */
+    rebase?: RebaseMarker
+    follower?: boolean
+    orderedRebuild?: readonly CollectionRowHandle[]
     affected: boolean
     containsAffected: boolean
 }
@@ -172,6 +179,13 @@ interface MembershipSettlementPlan extends CollectionCommitSource {
 }
 
 interface ScopedCollectionCommitPlan extends CollectionCommitPlan {
+    readonly historyMarks?:
+        | readonly Readonly<{
+              scope: StoreScopeNode
+              collection: CollectionHandle
+              history: boolean
+          }>[]
+        | undefined
     readonly rows: readonly RowApplyPlan[]
     readonly rowSettlements: readonly RowSettlementPlan[]
     readonly membershipInstalls: readonly MembershipPlanNode[]
@@ -204,6 +218,33 @@ interface MembershipPresenceTimeline {
     readonly birth: EnablingBirth | undefined
 }
 
+/** Inspection-only placements for a restored (bulk-reset) membership: rows it
+ * gains are inserts and rows it loses are removals, as `applyCommit` reports
+ * them for ordinary membership changes. Pure reordering reports neither. */
+const restoredMembershipChanges = (
+    before: readonly CollectionRowHandle[],
+    after: readonly CollectionRowHandle[],
+): Map<CollectionRowHandle, MembershipPresenceTimeline> => {
+    const changes = new Map<CollectionRowHandle, MembershipPresenceTimeline>()
+    const kept = new Set(after)
+    for (const row of before)
+        if (!kept.has(row))
+            changes.set(row, {
+                baselinePresent: true,
+                transitions: [],
+                birth: undefined,
+            })
+    const previous = new Set(before)
+    for (const row of after)
+        if (!previous.has(row))
+            changes.set(row, {
+                baselinePresent: false,
+                transitions: [],
+                birth: 0,
+            })
+    return changes
+}
+
 interface DraftCoordinate {
     readonly scope: StoreScopeNode
     readonly row: CollectionRowHandle
@@ -219,6 +260,27 @@ interface DraftCoordinate {
 interface MembershipMemo {
     readonly revision: number
     readonly rows: readonly CollectionRowHandle[]
+}
+
+const isDescendantOf = (
+    scope: StoreScopeNode,
+    ancestor: StoreScopeNode,
+): boolean => {
+    for (
+        let current = scope.parent;
+        current !== undefined;
+        current = current.parent
+    )
+        if (current === ancestor) return true
+    return false
+}
+
+/** One bulk-reset scope in a draft: events before `start` no longer shape
+ * its order; `collections` are those whose order may differ from the parent. */
+interface RebaseMarker {
+    readonly start: number
+    readonly end: number
+    readonly collections: Set<CollectionHandle>
 }
 
 interface DraftRowLane {
@@ -246,6 +308,10 @@ interface DraftLane {
     >
     nextDiscoveryIndex: number
     hasAcceptedIntent: boolean
+    rebased?: Map<StoreScopeNode, RebaseMarker>
+    /** Every scope explicitly reset in this draft, including resets that
+     * restore no collection yet; `rebased` holds those that restore one. */
+    cleared?: Map<StoreScopeNode, RebaseMarker>
 }
 
 export interface CollectionDraftInspection {
@@ -620,54 +686,7 @@ export const createCollectionKernel = (
             return birth
         }
 
-        const route: StoreScopeNode[] = []
-        const local = new Map<StoreScopeNode, CollectionDraftLocal["kind"]>()
-        let current: StoreScopeNode | undefined = scope
-        while (current !== undefined) {
-            route.push(current)
-            local.set(
-                current,
-                freezeBaseline(readBaseline(current, row, collection)).local
-                    .kind,
-            )
-            current = current.parent
-        }
-        const events: PresenceEvent[] = []
-        const rowLane = lane.byRow.get(row)
-        if (rowLane !== undefined) {
-            for (const routeScope of route) {
-                const scopeHistory = rowLane.historyByScope.get(routeScope)
-                if (scopeHistory !== undefined) events.push(...scopeHistory)
-            }
-            events.sort((first, second) => first.sequence - second.sequence)
-        }
-        const isPresent = (): boolean => {
-            for (const routeScope of route) {
-                const kind = local.get(routeScope)
-                if (kind === "present") return true
-                if (kind === "absent") return false
-            }
-            return false
-        }
-        let present = isPresent()
-        let birth: EnablingBirth | undefined = present
-            ? BASELINE_BIRTH
-            : undefined
-        for (const event of events) {
-            local.set(
-                event.scope,
-                event.kind === "present"
-                    ? "present"
-                    : event.kind === "absent"
-                      ? "absent"
-                      : "none",
-            )
-            const nextPresent = isPresent()
-            if (!present && nextPresent) birth = event.sequence
-            else if (!nextPresent) birth = undefined
-            present = nextPresent
-        }
-        return birth
+        return replayRouteBirth(lane, scope, row, collection, undefined)
     }
 
     const createRowView = (
@@ -1048,6 +1067,28 @@ export const createCollectionKernel = (
         )
     }
 
+    /** Invalidates every draft read derived from a collection's membership:
+     * scope membership memos and memoized draft query results. */
+    const invalidateCollectionReads = (
+        lane: DraftLane,
+        collection: CollectionHandle,
+    ): void => {
+        advanceMembershipRevision(lane, collection)
+        const queryRevision = lane.queryRevisionByCollection?.get(collection)
+        if (queryRevision !== undefined)
+            lane.queryRevisionByCollection!.set(collection, queryRevision + 1)
+    }
+
+    /** True while a bulk scope reset in this draft restores `collection`. */
+    const restoringCollection = (
+        lane: DraftLane,
+        collection: CollectionHandle,
+    ): boolean => {
+        for (const marker of lane.rebased?.values() ?? [])
+            if (marker.collections.has(collection)) return true
+        return false
+    }
+
     const coordinateFor = (
         draft: TreeDraft,
         scope: StoreScopeNode,
@@ -1208,6 +1249,9 @@ export const createCollectionKernel = (
             collectionScopeHistory = []
             byCollection.set(coordinate.scope, collectionScopeHistory)
         }
+        // The scope's first staged event in this collection ends any mirroring
+        // of a restored ancestor (the follower rule requires no staged history).
+        const firstScopeEvent = collectionScopeHistory.length === 0
         collectionScopeHistory.push(event)
         let placementChanged = false
         for (const before of affectedCoordinates) {
@@ -1232,7 +1276,14 @@ export const createCollectionKernel = (
                 placementChanged = true
             }
         }
-        if (placementChanged) {
+        if (
+            placementChanged ||
+            (firstScopeEvent &&
+                lane.rebased !== undefined &&
+                restoringCollection(lane, coordinate.collection) &&
+                rebaseFor(lane, coordinate.scope, coordinate.collection) ===
+                    undefined)
+        ) {
             advanceMembershipRevision(lane, coordinate.collection)
         }
         // Query results depend on row values as well as membership. Advance only
@@ -1376,6 +1427,310 @@ export const createCollectionKernel = (
         )
     }
 
+    const resetAllRows = (draft: TreeDraft, scope: StoreScopeNode): void => {
+        const start = draft.generation
+        const candidates: CollectionRowHandle[] = []
+        const committed = scopeSidecars.get(scope)?.ownedRows
+        if (committed !== undefined)
+            for (const row of committed) candidates.push(row)
+        // Then rows this draft staged in the scope, in first-staging order
+        // (coordinates created only by reads carry no plan index).
+        const staged = lanes.get(draft)?.byScope.get(scope)
+        if (staged !== undefined) {
+            const planned: DraftCoordinate[] = []
+            for (const coordinate of staged.values()) {
+                if (coordinate.planIndex !== undefined) planned.push(coordinate)
+            }
+            planned.sort((a, b) => a.planIndex! - b.planIndex!)
+            for (const coordinate of planned) candidates.push(coordinate.row)
+        }
+        const visited = new Set<CollectionRowHandle>()
+        const owned: CollectionRowHandle[] = []
+        for (const row of candidates) {
+            if (visited.has(row)) continue
+            visited.add(row)
+            const coordinate = staged?.get(row)
+            if (coordinate !== undefined) {
+                if (currentLocal(coordinate).kind === "none") continue
+            } else if (committed?.has(row) !== true) continue
+            owned.push(row)
+        }
+        // Rows the reset reveals are births in descendants that keep their own
+        // order history; stage them in the parent's current order so that
+        // order is defined rather than an ownership-acquisition artifact.
+        // Staging order is observable only in descendants with their own
+        // history, so scopes without children skip the parent walk.
+        if (owned.length > 1 && !scope.children.isEmpty()) {
+            const pending = new Set(owned)
+            const ordered: CollectionRowHandle[] = []
+            for (const collection of new Set(owned.map(collectionForRow)))
+                for (const row of readDraftCollection(
+                    draft,
+                    scope.parent!,
+                    collection,
+                ))
+                    if (pending.delete(row)) ordered.push(row)
+            for (const row of owned) if (pending.has(row)) ordered.push(row)
+            owned.length = 0
+            owned.push(...ordered)
+        }
+        for (const row of owned) stageReset(draft, scope, row)
+        // Order restoration: every collection this scope owned rows in, staged
+        // rows in, or ever diverged in is rebased onto its parent's order.
+        const collections = new Set<CollectionHandle>()
+        for (const row of visited) collections.add(collectionForRow(row))
+        scopeSidecars.get(scope)?.liveMemberships?.forEach(record => {
+            if (record.localHistory) collections.add(record.atom)
+        })
+        const lane = laneFor(draft)
+        // An explicit reset also restores every collection an ancestor restores
+        // in this draft, owned rows or not: the scope must read, and order its
+        // later writes, as an untouched child of the restored parent rather
+        // than as a descendant keeping its own history. Elsewhere a scope that
+        // never diverged already orders as an untouched child.
+        for (
+            let ancestor = scope.parent;
+            ancestor !== undefined;
+            ancestor = ancestor.parent
+        )
+            for (const collection of lane.rebased?.get(ancestor)?.collections ??
+                [])
+                collections.add(collection)
+        const previous = lane.cleared?.get(scope)
+        if (previous !== undefined)
+            for (const collection of previous.collections)
+                collections.add(collection)
+        const marker: RebaseMarker = {
+            start,
+            end: draft.generation,
+            collections,
+        }
+        ;(lane.cleared ??= new Map()).set(scope, marker)
+        if (collections.size === 0) return
+        ;(lane.rebased ??= new Map()).set(scope, marker)
+        // Descendants reset earlier in this draft restore these collections
+        // too, whatever order the resets ran in.
+        for (const [descendant, cleared] of lane.cleared) {
+            if (descendant === scope || !isDescendantOf(descendant, scope))
+                continue
+            for (const collection of collections)
+                cleared.collections.add(collection)
+            lane.rebased.set(descendant, cleared)
+        }
+        for (const collection of collections)
+            invalidateCollectionReads(lane, collection)
+        draft.markRow(draft.generation)
+    }
+
+    /** A descendant keeps mirroring a restored ancestor only if it mirrored
+     * that parent before this transaction, staged nothing of its own in the
+     * collection, and none of its local rows changes membership against the
+     * parent's new rows. Otherwise it keeps its own order history. */
+    const mirrorsParent = (
+        lane: DraftLane,
+        scope: StoreScopeNode,
+        collection: CollectionHandle,
+        scopeBefore: readonly CollectionRowHandle[],
+        parentBefore: readonly CollectionRowHandle[],
+        parentAfter: () => readonly CollectionRowHandle[],
+    ): boolean => {
+        if (lane.historyByCollectionScope.get(collection)?.get(scope)?.length)
+            return false
+        if (scopeBefore.length !== parentBefore.length) return false
+        for (let index = 0; index < scopeBefore.length; index++)
+            if (scopeBefore[index] !== parentBefore[index]) return false
+        let present: Set<CollectionRowHandle> | undefined
+        for (const row of scopeSidecars.get(scope)?.ownedRows ?? []) {
+            if (bindings.lookupRow(row) !== collection) continue
+            present ??= new Set(parentAfter())
+            if (
+                (committedLocal(scope, row).kind === "present") !==
+                present.has(row)
+            )
+                return false
+        }
+        return true
+    }
+
+    const rebaseFor = (
+        lane: DraftLane,
+        scope: StoreScopeNode,
+        collection: CollectionHandle,
+    ): RebaseMarker | undefined => {
+        const marker = lane.rebased?.get(scope)
+        return marker?.collections.has(collection) ? marker : undefined
+    }
+
+    const hasRestoredAncestor = (
+        lane: DraftLane,
+        scope: StoreScopeNode,
+        collection: CollectionHandle,
+    ): boolean => {
+        for (
+            let ancestor = scope.parent;
+            ancestor !== undefined;
+            ancestor = ancestor.parent
+        )
+            if (rebaseFor(lane, ancestor, collection) !== undefined) return true
+        return false
+    }
+
+    /** Draft-read form of the mirror rule below a rebased (or following) scope. */
+    const followsRebase = (
+        draft: TreeDraft,
+        lane: DraftLane,
+        scope: StoreScopeNode,
+        collection: CollectionHandle,
+    ): boolean => {
+        if (rebaseFor(lane, scope, collection) !== undefined) return false
+        const parent = scope.parent
+        if (parent === undefined) return false
+        if (
+            rebaseFor(lane, parent, collection) === undefined &&
+            !followsRebase(draft, lane, parent, collection)
+        )
+            return false
+        return mirrorsParent(
+            lane,
+            scope,
+            collection,
+            membershipRows(materializeMembership(scope, collection)),
+            membershipRows(materializeMembership(parent, collection)),
+            () => readDraftCollection(draft, parent, collection),
+        )
+    }
+
+    /** Birth replay along the scope route. With a `chainTop`, every scope
+     * reset by a bulk scope reset BELOW that scope starts with no local state
+     * and ignores its events before the reset (an untouched-equivalent view);
+     * `chainTop` and its ancestors keep their actual history. */
+    const replayRouteBirth = (
+        lane: DraftLane,
+        scope: StoreScopeNode,
+        row: CollectionRowHandle,
+        collection: CollectionHandle,
+        chainTop: StoreScopeNode | undefined,
+    ): EnablingBirth | undefined => {
+        const route: StoreScopeNode[] = []
+        const restored = new Set<StoreScopeNode>()
+        const local = new Map<StoreScopeNode, CollectionDraftLocal["kind"]>()
+        let current: StoreScopeNode | undefined = scope
+        let inChain = chainTop !== undefined
+        while (current !== undefined) {
+            if (current === chainTop) inChain = false
+            route.push(current)
+            if (inChain && rebaseFor(lane, current, collection) !== undefined)
+                restored.add(current)
+            local.set(
+                current,
+                restored.has(current)
+                    ? "none"
+                    : freezeBaseline(readBaseline(current, row, collection))
+                          .local.kind,
+            )
+            current = current.parent
+        }
+        const events: PresenceEvent[] = []
+        const rowLane = lane.byRow.get(row)
+        if (rowLane !== undefined) {
+            for (const routeScope of route) {
+                const marker = restored.has(routeScope)
+                    ? rebaseFor(lane, routeScope, collection)
+                    : undefined
+                for (const event of rowLane.historyByScope.get(routeScope) ??
+                    [])
+                    if (marker === undefined || event.sequence >= marker.start)
+                        events.push(event)
+            }
+            events.sort((first, second) => first.sequence - second.sequence)
+        }
+        const isPresent = (): boolean => {
+            for (const routeScope of route) {
+                const kind = local.get(routeScope)
+                if (kind === "present") return true
+                if (kind === "absent") return false
+            }
+            return false
+        }
+        let present = isPresent()
+        let birth: EnablingBirth | undefined = present
+            ? BASELINE_BIRTH
+            : undefined
+        for (const event of events) {
+            local.set(
+                event.scope,
+                event.kind === "present"
+                    ? "present"
+                    : event.kind === "absent"
+                      ? "absent"
+                      : "none",
+            )
+            const nextPresent = isPresent()
+            if (!present && nextPresent) birth = event.sequence
+            else if (!nextPresent) birth = undefined
+            present = nextPresent
+        }
+        return birth
+    }
+
+    /** Untouched-child order: `base` (the committed order of `chainTop`, the
+     * nearest scope whose order is not restore-derived) filtered to
+     * continuously present rows, then births in sequence order. */
+    const rebasedRows = (
+        lane: DraftLane,
+        scope: StoreScopeNode,
+        collection: CollectionHandle,
+        base: readonly CollectionRowHandle[],
+        chainTop: StoreScopeNode,
+    ): CollectionRowHandle[] => {
+        const history = lane.historyByCollectionScope.get(collection)
+        const births = new Map<CollectionRowHandle, EnablingBirth | undefined>()
+        let routeScope: StoreScopeNode | undefined = scope
+        while (routeScope !== undefined) {
+            for (const event of history?.get(routeScope) ?? [])
+                if (!births.has(event.row))
+                    births.set(
+                        event.row,
+                        replayRouteBirth(
+                            lane,
+                            scope,
+                            event.row,
+                            collection,
+                            chainTop,
+                        ),
+                    )
+            routeScope = routeScope.parent
+        }
+        const next: CollectionRowHandle[] = []
+        for (const row of base) {
+            if (!births.has(row) || births.get(row) === BASELINE_BIRTH)
+                next.push(row)
+        }
+        const born: { row: CollectionRowHandle; birth: number }[] = []
+        for (const [row, birth] of births)
+            if (typeof birth === "number") born.push({ row, birth })
+        born.sort((first, second) => first.birth - second.birth)
+        for (const { row } of born) next.push(row)
+        return next
+    }
+
+    /** Draft-read restore chain: climb past every rebased or following
+     * ancestor. The first other scope's committed order is the base. */
+    const restoreChainTop = (
+        draft: TreeDraft,
+        lane: DraftLane,
+        scope: StoreScopeNode,
+        collection: CollectionHandle,
+    ): StoreScopeNode => {
+        let top = scope.parent!
+        while (
+            rebaseFor(lane, top, collection) !== undefined ||
+            followsRebase(draft, lane, top, collection)
+        )
+            top = top.parent!
+        return top
+    }
+
     const readDraftRow: CollectionDraftKernel["readDraftRow"] = (
         draft,
         scope,
@@ -1406,6 +1761,44 @@ export const createCollectionKernel = (
         let byCollection = lane.membershipMemo.get(scope)
         const current = byCollection?.get(collection)
         if (current?.revision === revision) return current.rows
+        if (
+            lane.rebased !== undefined &&
+            (rebaseFor(lane, scope, collection) !== undefined ||
+                followsRebase(draft, lane, scope, collection))
+        ) {
+            let next: readonly CollectionRowHandle[]
+            if (rebaseFor(lane, scope, collection) !== undefined) {
+                const top = restoreChainTop(draft, lane, scope, collection)
+                next = rebasedRows(
+                    lane,
+                    scope,
+                    collection,
+                    membershipRows(materializeMembership(top, collection)),
+                    top,
+                )
+            } else next = readDraftCollection(draft, scope.parent!, collection)
+            // Same identity rules as ordinary draft reads: the committed array
+            // or the previous draft snapshot when the ordered rows are equal.
+            const committedRows = membershipRows(
+                materializeMembership(scope, collection),
+            )
+            const rows = sameRowsWhileProducingSnapshot(
+                scope,
+                committedRows,
+                next,
+            )
+                ? committedRows
+                : current !== undefined &&
+                    sameRowsWhileProducingSnapshot(scope, current.rows, next)
+                  ? current.rows
+                  : Object.freeze([...next])
+            if (byCollection === undefined) {
+                byCollection = new Map()
+                lane.membershipMemo.set(scope, byCollection)
+            }
+            byCollection.set(collection, { revision, rows })
+            return rows
+        }
 
         const baseline =
             readBaselineOverride === undefined &&
@@ -1563,6 +1956,13 @@ export const createCollectionKernel = (
         const rowSettlements: RowSettlementPlan[] = []
         const membershipInstalls: MembershipPlanNode[] = []
         const membershipSettlements: MembershipSettlementPlan[] = []
+        let historyMarks:
+            | {
+                  scope: StoreScopeNode
+                  collection: CollectionHandle
+                  history: boolean
+              }[]
+            | undefined
         const considered = new WeakSet<RowViewRecord>()
         const nodesByRecord = new WeakMap<
             MembershipRecord,
@@ -1921,10 +2321,77 @@ export const createCollectionKernel = (
             >
         }
 
+        const isFollowerNode = (node: MembershipPlanNode): boolean =>
+            (node.follower ??=
+                node.rebase === undefined &&
+                node.parent !== undefined &&
+                (node.parent.rebase !== undefined ||
+                    isFollowerNode(node.parent)) &&
+                mirrorsParent(
+                    lane,
+                    node.scope,
+                    node.atom,
+                    node.beforeRows,
+                    node.parent.beforeRows,
+                    () => finalRowsFor(node.parent!),
+                ))
+
+        /** Rebased scopes take an untouched child's order; followers copy it. */
+        const restoredRowsFor = (
+            node: MembershipPlanNode,
+        ): readonly CollectionRowHandle[] | undefined => {
+            if (lane.rebased === undefined) return undefined
+            let rows: readonly CollectionRowHandle[]
+            if (node.rebase !== undefined) {
+                // Same restore chain as draft reads: skip rebased AND following
+                // ancestors, whose committed order is stale this transaction.
+                let base = node.parent!
+                while (base.rebase !== undefined || isFollowerNode(base))
+                    base = base.parent!
+                rows = rebasedRows(
+                    lane,
+                    node.scope,
+                    node.atom,
+                    base.beforeRows,
+                    base.scope,
+                )
+            } else if (isFollowerNode(node)) {
+                // A rebased or following parent always resolves to real rows.
+                rows = finalRowsFor(node.parent!)
+            } else return undefined
+            const before = node.beforeRows
+            const changed = !sameRowsWhileProducingSnapshot(
+                node.scope,
+                before,
+                rows,
+            )
+            node.membershipChangedFromBefore = changed
+            node.finalRows =
+                node.existing !== undefined && !changed
+                    ? before
+                    : Object.freeze([...rows])
+            if (
+                changed &&
+                node.existing !== undefined &&
+                extensionRecorder(node.scope) !== undefined
+            )
+                node.membershipChanges = restoredMembershipChanges(
+                    before,
+                    node.finalRows,
+                )
+            if (node.existing?.ordered !== undefined && changed) {
+                node.orderedRebuild = node.finalRows
+                ;(orderedNodes ??= []).push(node)
+            }
+            return node.finalRows
+        }
+
         const finalRowsFor = (
             node: MembershipPlanNode,
         ): readonly CollectionRowHandle[] => {
             if (node.finalRows !== undefined) return node.finalRows
+            const restored = restoredRowsFor(node)
+            if (restored !== undefined) return restored
             if (node.existing?.ordered !== undefined) {
                 const placements = placementsFor(node)
                 const removals: object[] = []
@@ -2120,6 +2587,13 @@ export const createCollectionKernel = (
             const localKindChanged = baseline.local.kind !== local.kind
             if (localKindChanged) {
                 ensureMembershipPath(coordinate.scope, coordinate.collection)
+                if (coordinate.scope.parent !== undefined) {
+                    ;(historyMarks ??= []).push({
+                        scope: coordinate.scope,
+                        collection: coordinate.collection,
+                        history: true,
+                    })
+                }
             }
             const baselinePlacement =
                 baseline.effective.kind === "present"
@@ -2133,6 +2607,15 @@ export const createCollectionKernel = (
                         coordinate.collection,
                     ),
                 )
+                // A row that left and returned within this draft (delete then
+                // reset) moves without changing ownership; the scope's order
+                // now has its own history, which a bulk reset must restore.
+                if (!localKindChanged && coordinate.scope.parent !== undefined)
+                    (historyMarks ??= []).push({
+                        scope: coordinate.scope,
+                        collection: coordinate.collection,
+                        history: true,
+                    })
             }
 
             const materialized = scopeSidecars
@@ -2178,6 +2661,51 @@ export const createCollectionKernel = (
                 }
             }
         }
+
+        if (lane.rebased !== undefined)
+            for (const [scope, marker] of lane.rebased) {
+                const scopeHistory = lane.historyByCollectionScope
+                for (const collection of marker.collections) {
+                    const node = ensureMembershipPath(scope, collection)
+                    node.rebase = marker
+                    markAffected(collectionSlot(collection), node)
+                    // Order stays parent-aligned unless the scope re-owned
+                    // collection rows after the reset.
+                    ;(historyMarks ??= []).push({
+                        scope,
+                        collection,
+                        history: (
+                            scopeHistory.get(collection)?.get(scope) ?? []
+                        ).some(event => event.sequence >= marker.end),
+                    })
+                }
+            }
+        // A descendant of a restored scope that staged row events of its own
+        // keeps its order history (the mirror rule), even when the events
+        // cancel out. Plan it, so that order is installed and recorded as its
+        // own rather than lazily re-inherited from the restored parent when
+        // its membership was never materialized.
+        if (lane.rebased !== undefined)
+            for (const [collection, byScope] of lane.historyByCollectionScope) {
+                if (!restoringCollection(lane, collection)) continue
+                for (const [scope, events] of byScope) {
+                    if (
+                        events.length === 0 ||
+                        rebaseFor(lane, scope, collection) !== undefined ||
+                        !hasRestoredAncestor(lane, scope, collection)
+                    )
+                        continue
+                    markAffected(
+                        collectionSlot(collection),
+                        ensureMembershipPath(scope, collection),
+                    )
+                    ;(historyMarks ??= []).push({
+                        scope,
+                        collection,
+                        history: true,
+                    })
+                }
+            }
 
         for (const slot of collectionSlots) {
             const top = slot.top
@@ -2249,11 +2777,18 @@ export const createCollectionKernel = (
             node.membershipChangedFromBefore = false
         }
         let indexPlan: ScopedCollectionCommitPlan["indexPlan"]
+        const rebuilt =
+            lane.rebased === undefined
+                ? undefined
+                : orderedNodes?.filter(
+                      node => node.orderedRebuild !== undefined,
+                  )
         if (
             indexes !== undefined &&
-            lane.planOrder.some(coordinate =>
+            (lane.planOrder.some(coordinate =>
                 indexes!.active(coordinate.collection),
-            )
+            ) ||
+                rebuilt?.some(node => indexes!.active(node.atom)))
         ) {
             const changed = new Map<MembershipRecord, Set<object>>()
             for (const coordinate of lane.planOrder) {
@@ -2279,10 +2814,55 @@ export const createCollectionKernel = (
                 }
             }
             const deltas: IndexScopeDelta[] = []
+            for (const node of rebuilt ?? []) {
+                // A rebuilt order re-ranks every row from the current nextRank.
+                const record = node.existing!
+                const ordered = record.ordered!
+                const ranks = new Map<object, number>()
+                node.orderedRebuild!.forEach((row, index) =>
+                    ranks.set(row, ordered.nextRank + index),
+                )
+                const changes = []
+                for (const row of new Set([
+                    ...ordered.entries.keys(),
+                    ...node.orderedRebuild!,
+                ])) {
+                    const before = committedOutcome(record.scope, row)
+                    const after = draftOutcome(
+                        lane,
+                        record.scope,
+                        row,
+                        record.atom,
+                    )
+                    changes.push({
+                        row,
+                        before:
+                            before.kind === "present"
+                                ? before.value
+                                : undefined,
+                        after:
+                            after.kind === "present" ? after.value : undefined,
+                        rank: ranks.get(row),
+                    })
+                }
+                if (changes.length)
+                    deltas.push({
+                        scope: record.scope,
+                        collection: record.atom,
+                        changes,
+                    })
+            }
             for (const [record, rows] of changed) {
                 if (record.ordered === undefined) continue
+                if (nodesByRecord.get(record)?.orderedRebuild !== undefined)
+                    continue
                 const node = nodeForRecord(record)
-                const placements = placementsFor(node)
+                // A restore-derived record whose order is unchanged keeps its
+                // ranks: discarded pre-reset births must not re-rank rows.
+                const restored =
+                    lane.rebased !== undefined &&
+                    (node.rebase !== undefined || isFollowerNode(node))
+                const placements = restored ? undefined : placementsFor(node)
                 const changes = []
                 for (const row of rows) {
                     const before = committedOutcome(record.scope, row)
@@ -2292,7 +2872,7 @@ export const createCollectionKernel = (
                         row,
                         record.atom,
                     )
-                    const birth = placements.get(row)?.birth
+                    const birth = placements?.get(row)?.birth
                     if (sameOutcome(before, after) && typeof birth !== "number")
                         continue
                     changes.push({
@@ -2324,6 +2904,7 @@ export const createCollectionKernel = (
             commit: commitPlan,
             indexPlan,
             orderedNodes,
+            historyMarks,
             rows: Object.freeze(rows),
             rowSettlements: Object.freeze(rowSettlements),
             membershipInstalls: Object.freeze(membershipInstalls),
@@ -2438,6 +3019,21 @@ export const createCollectionKernel = (
         }
         for (const node of plan.orderedNodes ?? []) {
             const record = node.existing!
+            if (node.orderedRebuild !== undefined) {
+                const ordered = record.ordered!
+                const nextRank = ordered.nextRank
+                ordered.entries.clear()
+                ordered.tail = undefined
+                ordered.nextRank = nextRank
+                for (const row of node.orderedRebuild) ordered.append(row)
+                record.snapshotDirty = true
+                record.served = servedMembership(
+                    record.scope,
+                    EMPTY_ROWS,
+                    record.served.token,
+                )
+                continue
+            }
             const patch = node.orderedPatch!
             if (!node.membershipChangedFromBefore) continue
             for (const row of patch.removals) record.ordered!.remove(row)
@@ -2479,6 +3075,13 @@ export const createCollectionKernel = (
                 attachMembership(record, parent)
             }
         }
+        if (plan.historyMarks !== undefined)
+            for (const { scope, collection, history } of plan.historyMarks) {
+                const record = scopeSidecars
+                    .get(scope)
+                    ?.memberships?.get(collection)
+                if (record !== undefined) record.localHistory = history
+            }
     }
 
     const settleCommit = (
@@ -2693,6 +3296,11 @@ export const createCollectionKernel = (
             return record.served
         },
         plan: planCommit,
+        resetAll: (draftValue: object, scopeValue: object): void =>
+            resetAllRows(
+                draftValue as TreeDraft,
+                scopeValue as StoreScopeNode,
+            ),
         stageSet,
         stageUpdate,
         stageDelete,

@@ -51,4 +51,6 @@ export const enum StoreTreeCounterId {
     nonConvergenceTerminations = 48,
     lifecycleRetains = 49,
     lifecycleReleases = 50,
+    ownedAtomRetains = 51,
+    ownedAtomSweptReferences = 52,
 }

@@ -150,7 +150,7 @@ export interface RuntimeDomainRecords {
         apply(
             scope: import("./scope-node").StoreScopeNode,
             intent: import("./tree-transaction").AtomIntent,
-        ): void
+        ): boolean
     }
     readonly atoms: WeakMap<object, AtomDefinition>
     readonly selectors: WeakMap<object, SelectorDefinition<AnyState, any>>
@@ -217,6 +217,8 @@ export interface OptionalCollectionVTable {
         session?: ControlFaultSession,
     ): ServedSelectorOutcome<object> | undefined
     plan(draft: object): CollectionCommitPlan | undefined
+    /** Stages reset for every row the scope owns in its draft view. */
+    resetAll?(draft: object, scope: object): void
 }
 
 const NOT_THENABLE = Object.freeze({ kind: "not-thenable" as const })

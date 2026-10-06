@@ -319,6 +319,24 @@ assert.deepEqual(target.get(sessions), [secondSession])
 target.set(firstSession, { id: "first", revision: 3 })
 assert.deepEqual(target.get(sessions), [secondSession, firstSession])
 
+// Transaction.resetAll (experimental): a child scope's bulk reset restores
+// inheritance, including the parent's membership order, in one transaction.
+const resetRoot = core.store()
+resetRoot.txn(transaction => {
+    transaction.set(firstSession, { id: "first", revision: 1 })
+    transaction.set(secondSession, { id: "second", revision: 1 })
+})
+const resetDraft = resetRoot.scope("packed-reset-draft")
+resetDraft.delete(firstSession)
+resetDraft.set(count, 41)
+resetDraft.set(firstSession, { id: "first", revision: 9 })
+assert.deepEqual(resetDraft.get(sessions), [secondSession, firstSession])
+resetRoot.txn(transaction => transaction.scope(resetDraft).resetAll())
+assert.deepEqual(resetDraft.get(sessions), [firstSession, secondSession])
+assert.equal(resetDraft.get(firstSession).revision, 1)
+assert.equal(resetDraft.get(count), resetRoot.get(count))
+assert.throws(() => resetRoot.txn(transaction => transaction.resetAll()), TypeError)
+
 const privateCollectionKey = "DO_NOT_EXPOSE_PACKED_COLLECTION_KEY"
 const privateCollectionValue = "DO_NOT_EXPOSE_PACKED_COLLECTION_VALUE"
 const namedSessions = core.collection({ name: "packed-sessions" })
@@ -1219,6 +1237,14 @@ stopPackedReaction()
 target.sub(count, { settle: async transaction => transaction.set(count, 1) })
 // @ts-expect-error at least one handler is required.
 target.sub(count, {})
+const packedResetChild: Store = target.scope("packed-reset")
+target.txn((transaction: Transaction) => {
+    const cursor: Transaction = transaction.scope(packedResetChild)
+    const cleared: void = cursor.resetAll()
+    void cleared
+    // @ts-expect-error resetAll takes no arguments.
+    cursor.resetAll(count)
+})
 export const packedSettleLimit: SettleLimitError = new SettleLimitError()
 export const packedExternalSource: ExternalSource<number> = {
     getSnapshot: () => 1,

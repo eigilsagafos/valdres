@@ -223,8 +223,10 @@ myStore.txn(tx => {
 ```
 
 The callback receives a transaction cursor with `get`, `set`, `update`,
-`reset`, `delete`, and `scope`. Its reads include the writes staged so far. The
-cursor's methods can be destructured: `myStore.txn(({ get, set }) => …)`.
+`reset`, `delete`, `scope`, and the experimental
+[`resetAll`](#resetting-a-scope-resetall). Its reads include the writes
+staged so far. The cursor's methods can be destructured:
+`myStore.txn(({ get, set }) => …)`.
 
 The transaction exposes the same collection-row operations, and any error
 aborts Atom and row writes together:
@@ -285,6 +287,107 @@ myStore.txn(tx => {
 result. A missing named scope throws `ScopeNotFoundError`, and a Store from a
 different tree throws `StoreTreeMismatchError`. The cursor closes when the
 callback returns; using it afterwards throws `TransactionClosedError`.
+
+## Resetting a scope: `resetAll`
+
+<div className="callout callout-note">
+    <div className="callout-title">Experimental</div>
+    `resetAll` is experimental during the beta.
+</div>
+
+`tx.scope(child).resetAll()` discards everything a child scope owns in one
+step: every atom and family member it set, and every collection row it set or
+deleted, including writes staged earlier in the same transaction. The scope then
+reads as an untouched child of its parent, including collection order:
+
+```ts
+const movies = collection<string, string>()
+const root = store()
+for (const key of ["a", "b", "c", "d"]) root.set(movies(key), key)
+
+const draft = root.scope("draft")
+draft.delete(movies("b"))
+draft.get(movies) // a, c, d
+
+root.txn(tx => tx.scope(draft).resetAll())
+draft.get(movies) // a, b, c, d: the parent's order
+```
+
+Resetting the same rows one at a time with `reset` reveals `b` at the end
+(`a, c, d, b`), because each reveal is a new placement. `resetAll` restores
+the parent's order instead.
+
+The scope itself stays: its handle, its subscriptions, and its descendant scopes
+remain. That makes it the way to rebuild a draft in place. Clear it and
+write its new contents in the same transaction, and subscribers see one change
+from the old contents to the new:
+
+```ts
+root.txn(tx => {
+    const cursor = tx.scope(draft)
+    cursor.resetAll()
+    for (const [key, value] of snapshot) cursor.set(movies(key), value)
+})
+```
+
+- **Child cursors only.** `resetAll` exists only on transaction cursors;
+  there is no `Store.resetAll`. It takes no arguments. On the transaction's
+  root cursor, or with an argument, it throws `TypeError` and stages nothing.
+  The other cursor rules apply too: after the callback returns it throws
+  `TransactionClosedError`.
+- **All or nothing.** Every atom is resolved before anything is staged. If one
+  fails, for example a lazy atom whose initializer throws when the scope falls
+  back to it, `resetAll` throws and stages nothing. Its resets are ordinary
+  staged writes: an error escaping the callback discards them with the rest,
+  and writes made after it in the same transaction apply on top.
+- **Values and notifications.** Each state then reads the parent's value as of
+  the end of the transaction, unless the transaction writes it again. Equality
+  and notification work exactly as for `reset`: a subscriber is notified once
+  if its value changed by `Object.is`, and an atom's custom `equal` is not
+  consulted. A scope that is otherwise untouched and aligned with its parent
+  serves unchanged results, so resetting it publishes nothing. Having no row
+  overrides is not enough: a scope can still keep an order of its own from
+  earlier writes (for example a row deleted and then reset), and restoring
+  that order publishes membership and query changes. A reset that changes
+  nothing may still do transaction bookkeeping.
+- **Order.** In every collection, whether or not the scope owned rows there,
+  membership becomes what an untouched child of the parent reads: the parent's
+  order, followed by rows that became present later in the same transaction, in
+  the order those writes happened. Writes to the scope after the reset order
+  as they would in that untouched child. `reset(row)` keeps its own behavior.
+- **Descendants.** Descendant scopes keep their own values: a descendant that
+  inherits a reset atom is notified once if its value changes, and a
+  descendant's own override is untouched and not notified. A descendant keeps
+  following the restored order if, before the transaction, it showed the same
+  rows in the same order as the scope, it writes no rows of that collection in
+  the transaction, and its own rows agree with the restored ones. Any other
+  descendant keeps its own order and adds the rows the reset reveals after its
+  existing rows, in the parent's order. `resetAll` never clears descendants
+  and never moves a scope to another parent.
+- **The current parent.** The scope inherits the parent's state as it is in
+  this transaction, not as it was when the scope was first written. Rows the
+  parent has gained since become visible. To hide one, `delete` it in the scope
+  after the reset.
+- **`settle`.** `settle` handlers whose triggers change run after the commit,
+  as for any update. They see the reset state and may write the scope again. A
+  `settle` handler registered on a child scope can call `tx.resetAll()` on
+  its own cursor.
+- **Errors after the commit.** If `txn` throws after the commit applied, the
+  reset stays applied. That includes a `SubscriberNotificationError` (always
+  `committed: true`) and other failures surfacing after apply, such as a
+  `RuntimeMismatchError`. Only an error before the commit, inside the callback
+  or while staging, discards the reset.
+- **Cost.** Valdres gives no linear complexity or latency bound for
+  `resetAll`. It scans what the scope owns, restores order, and does
+  bookkeeping. A cold membership read inside the transaction, below nested
+  reset or mirroring scopes, can do comparison work on the order of the
+  collection size times the depth squared, in addition to those scans and that
+  bookkeeping. Warm reads are memoized and skip that search, until a write that
+  affects the collection makes the next read cold again. Supporting
+  `resetAll` also adds small costs elsewhere: ordinary child-scope transactions
+  do conditional bookkeeping to record when a scope's order becomes its own,
+  and plain Stores run an inspection check on restored memberships without
+  allocating inspection details.
 
 ## Writing during a change: `settle`
 

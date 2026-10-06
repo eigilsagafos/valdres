@@ -256,6 +256,7 @@ describe("v1 public root", () => {
     test("exposes stable readonly bound Transaction operation fields", () => {
         const count = atom(0)
         const target = store()
+        const childScope = target.scope("child")
 
         target.txn(transaction => {
             const operations: (keyof Transaction)[] = [
@@ -264,9 +265,16 @@ describe("v1 public root", () => {
                 "update",
                 "reset",
                 "delete",
+                "resetAll",
                 "scope",
             ]
             expect(Object.keys(transaction)).toEqual(operations)
+            // the reviewed working name has no alias, on cursors or Stores
+            expect("resetOwned" in transaction).toBe(false)
+            expect("resetOwned" in transaction.scope(childScope)).toBe(false)
+            expect("resetAll" in target).toBe(false)
+            expect("resetAll" in childScope).toBe(false)
+            expect("resetOwned" in target).toBe(false)
             expect(Object.isFrozen(transaction)).toBe(true)
             for (const operation of operations) {
                 expect(transaction[operation]).toBe(transaction[operation])
@@ -275,13 +283,19 @@ describe("v1 public root", () => {
                 ).toMatchObject({ writable: false, configurable: false })
             }
 
-            const { get, set, update, reset, scope } = transaction
+            const { get, set, update, reset, resetAll, scope } = transaction
             set(count, 2)
             update(count, current => current + 1)
             expect(get(count)).toBe(3)
             reset(count)
             expect(get(count)).toBe(0)
             expect(scope(target)).toBeDefined()
+            expect(() => resetAll()).toThrow(TypeError)
+            const child = scope(childScope)
+            child.set(count, 4)
+            const { resetAll: resetChild } = child
+            resetChild()
+            expect(child.get(count)).toBe(0)
         })
     })
 

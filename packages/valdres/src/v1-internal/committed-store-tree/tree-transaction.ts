@@ -554,6 +554,11 @@ export interface TreeTransactionHost {
         target: Atom<unknown> | CollectionRow<any, any>,
         input?: unknown,
     ): void
+    resetAll(
+        draft: TreeDraft,
+        scope: StoreScopeNode,
+        argumentCount: number,
+    ): void
     transactionScope<Result>(
         draft: TreeDraft,
         scope: StoreScopeNode,
@@ -569,6 +574,7 @@ class RootTransactionCursor implements RootTransaction {
     declare readonly update: RootTransaction["update"]
     declare readonly reset: RootTransaction["reset"]
     declare readonly delete: RootTransaction["delete"]
+    declare readonly resetAll: RootTransaction["resetAll"]
     declare readonly scope: {
         (target: string | CommittedStoreTree): RootTransaction
         <Result>(
@@ -620,6 +626,9 @@ class RootTransactionCursor implements RootTransaction {
                 "delete",
                 row,
             )) as RootTransaction["delete"]
+        this.resetAll = function (): void {
+            host.resetAll(draft, scope, arguments.length)
+        }
         this.scope = (<Result>(
             ...args:
                 | [target: string | CommittedStoreTree]

@@ -70,6 +70,7 @@ import {
 } from "./scratch-selector-host"
 import {
     StoreScopeNode,
+    WeakOwnedAtoms,
     type AtomViewRecord,
     type AnySelector,
     type OutcomeToken,
@@ -423,10 +424,11 @@ class RetainedFamilyAtoms extends Set<AnyAtom> {
 // Family construction installs this optional policy. Ordinary stores retain
 // only the dispatch; a family Atom still has exactly the same scope ownership.
 class ReacquirableAtoms extends WeakSet<object> {
-    apply(scope: StoreScopeNode, { atom, kind }: AtomIntent): void {
+    /** Returns true when a `set` was retained as a family-member override. */
+    apply(scope: StoreScopeNode, { atom, kind }: AtomIntent): boolean {
         let retained = scope[REACQUIRABLE_ATOMS]
         if (kind === "set") {
-            if (!this.has(atom)) return
+            if (!this.has(atom)) return false
             if (retained === undefined) {
                 retained = scope[REACQUIRABLE_ATOMS] = new RetainedFamilyAtoms()
                 scope.coordinator.recordCounter(
@@ -439,12 +441,14 @@ class ReacquirableAtoms extends WeakSet<object> {
                 scope.coordinator.recordCounter(
                     StoreTreeCounterId.familyOwnerRetains,
                 )
+            return true
         } else {
             if (retained?.delete(atom))
                 scope.coordinator.recordCounter(
                     StoreTreeCounterId.familyOwnerReleases,
                 )
             if (retained?.size === 0) scope[REACQUIRABLE_ATOMS] = undefined
+            return false
         }
     }
 }
@@ -527,9 +531,11 @@ export const createInternalStoreTreeInstrumentation =
             nonConvergenceTerminations: 48,
             lifecycleRetains: 49,
             lifecycleReleases: 50,
+            ownedAtomRetains: 51,
+            ownedAtomSweptReferences: 52,
         })
 
-        const STORE_TREE_COUNTER_COUNT = 51
+        const STORE_TREE_COUNTER_COUNT = 53
         const counters = new Uint32Array(STORE_TREE_COUNTER_COUNT)
         const instrumentation: InternalStoreTreeInstrumentation = Object.freeze(
             {
@@ -1691,6 +1697,17 @@ class CommittedStoreTreeHost
         atom: AnyAtom,
         session: SelectorEvaluationSession<AnyState>,
     ): void {
+        draft.stage(scope, this.#resolveAtomReset(draft, scope, atom, session))
+    }
+
+    /** Resolves one reset intent without staging it; may run lazy fallback
+     * initializers and throws their error outcome, like a direct reset. */
+    #resolveAtomReset(
+        draft: TreeDraft,
+        scope: StoreScopeNode,
+        atom: AnyAtom,
+        session: SelectorEvaluationSession<AnyState>,
+    ): AtomIntent {
         this.#getDraftAtomBaseline(draft, scope, atom, session)
         const after =
             scope.parent === undefined
@@ -1711,14 +1728,58 @@ class CommittedStoreTreeHost
         if (after.outcome.kind !== "value") throw after.outcome.error
         const publishDraftFallback =
             after.reachesFallback && draft.hasFallback(atom)
-        draft.stage(
-            scope,
-            Object.freeze({
-                kind: "reset",
-                atom,
-                publishDraftFallback,
-            }),
+        return Object.freeze({
+            kind: "reset",
+            atom,
+            publishDraftFallback,
+        })
+    }
+
+    /**
+     * Stages `reset` for every Atom and collection row the child scope owns in
+     * its draft view: committed ownership in acquisition order, then states
+     * first staged by this draft. Every Atom reset is resolved before any is
+     * staged, so a resolution failure leaves the draft untouched.
+     */
+    resetAll(
+        draft: TreeDraft,
+        scope: StoreScopeNode,
+        argumentCount: number,
+    ): void {
+        assertCursorOperationAllowed(
+            this.#domain,
+            draft.transaction,
+            draft.active,
         )
+        this.#assertScopeLive(scope)
+        if (argumentCount !== 0) {
+            throw new TypeError("Transaction.resetAll accepts no arguments")
+        }
+        if (scope.parent === undefined) {
+            throw new TypeError(
+                "Transaction.resetAll requires a child scope cursor",
+            )
+        }
+        const candidates: AnyAtom[] = []
+        scope.ownedAtoms?.collect(candidates)
+        scope[REACQUIRABLE_ATOMS]?.forEach(atom => candidates.push(atom))
+        draft.forEachIntent((intentScope, intent) => {
+            if (Object.is(intentScope, scope)) candidates.push(intent.atom)
+        })
+        const session = new SelectorEvaluationSession<AnyState>()
+        const resets: AtomIntent[] = []
+        const visited = new Set<AnyAtom>()
+        for (const atom of candidates) {
+            if (visited.has(atom)) continue
+            visited.add(atom)
+            const staged = draft.getIntent(scope, atom)
+            if (staged === undefined) {
+                if (!scope.atomOverrides.has(atom)) continue
+            } else if (staged.kind === "reset") continue
+            resets.push(this.#resolveAtomReset(draft, scope, atom, session))
+        }
+        for (const intent of resets) draft.stage(scope, intent)
+        this.#domain[COLLECTION_KERNEL]?.resetAll?.(draft, scope)
     }
 
     #getDraftAtomBaseline(
@@ -2161,8 +2222,38 @@ class CommittedStoreTreeHost
         if (intent.kind === "set") {
             scope.atomOverrides.set(intent.atom, intent.value)
         } else scope.atomOverrides.delete(intent.atom)
-        this.#domain[REACQUIRABLE_ATOMS]?.apply(scope, intent)
+        const family = this.#domain[REACQUIRABLE_ATOMS]?.apply(scope, intent)
+        // Child-scope ordinary Atom ownership is indexed weakly for
+        // resetAll; family members are already enumerable through their
+        // retention set, and root scopes have no parent to reset to.
+        if (scope.parent !== undefined && family !== true) {
+            // Lazy release: a reset leaves its (weak) entry for the next
+            // sweep to drop (resetAll skips entries no longer owned), so
+            // own/release cycles of the same Atom pay only a WeakMap probe
+            // after the first acquisition.
+            if (
+                intent.kind === "set" &&
+                (scope.ownedAtoms ?? this.#createOwnedAtoms(scope)).add(
+                    intent.atom,
+                )
+            )
+                this.recordCounter(StoreTreeCounterId.ownedAtomRetains)
+        }
         return entry.ownershipChanged
+    }
+
+    // Kept out of line so #applyPlanOwner allocates no closure context.
+    #createOwnedAtoms(scope: StoreScopeNode): WeakOwnedAtoms {
+        return (scope.ownedAtoms = new WeakOwnedAtoms(
+            scope,
+            this.#counters === undefined
+                ? undefined
+                : removed =>
+                      this.recordCounter(
+                          StoreTreeCounterId.ownedAtomSweptReferences,
+                          removed,
+                      ),
+        ))
     }
 
     #rewirePlanAtomView({ scope, intent }: AtomApplyPlan): void {

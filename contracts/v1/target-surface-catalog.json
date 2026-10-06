@@ -83,6 +83,7 @@
         "core.transaction.delete",
         "core.transaction.get",
         "core.transaction.reset",
+        "core.transaction.reset-all",
         "core.transaction.scope",
         "core.transaction.set",
         "core.transaction.update",
@@ -742,6 +743,13 @@
             "package": "valdres",
             "subpath": ".",
             "name": "Transaction.reset"
+        },
+        {
+            "id": "core.transaction.reset-all",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.resetAll"
         },
         {
             "id": "core.transaction.scope",

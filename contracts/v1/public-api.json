@@ -2659,6 +2659,37 @@
             "notes": "Transaction reset stages local-ownership removal."
         },
         {
+            "id": "core.transaction.reset-all",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Transaction.resetAll",
+                "status": "experimental"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Replace a beta unsetAll() of a child scope with transaction.scope(child).resetAll() inside the transaction that rebuilds it; outside a transaction, wrap it in store.txn.",
+                "typeError": "Any argument or a root-scope cursor throws TypeError before work; there is no Store-level resetAll.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "transaction.one-tree-draft",
+                "transaction.scope-cursor-no-savepoint",
+                "scope.live-inheritance",
+                "scope.reset-all-untouched-child",
+                "collection.membership-order",
+                "collection.reset-all-descendant-order"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Transaction.resetAll(): void is experimental during the beta and exists only as a cursor operation. On a child-scope cursor it stages, in the shared draft, a reset of every Atom (including family members) and collection row the scope owns in its draft view: committed ownership plus writes staged earlier in the transaction. Every Atom reset is resolved before any is staged, so a resolution failure such as a failing lazy fallback throws and stages nothing. Any argument, or a root cursor, throws TypeError before work; closed-cursor, disposal, and transaction-phase rules are those of every cursor operation. Values follow ordinary reset: the scope inherits each state from its parent's final draft view unless the transaction writes it again, served outcomes compare by Object.is, and a scope that is otherwise untouched and aligned with its parent serves unchanged results and publishes nothing; a scope with no row overrides can still have local ordering history, and restoring that order can publish membership and query changes; an empty reset may still perform transaction bookkeeping. In every collection, whether or not the scope owned rows there, membership is restored to what an untouched child of the parent reads: the parent's order, then rows enabled later in the transaction in intent order, and the scope's later writes in the transaction order as they would in that untouched child, independent of the order of resets and of which memberships were read. Nested reset scopes take their base order from the nearest ancestor that is neither reset nor mirroring one. Draft reads, committed reads, and indexed query ranks agree with that membership. Descendants keep their own overrides. A descendant mirrors the restored order only if its ordered rows equaled the scope's before the transaction, it stages no row change of its own in the collection, and its own rows agree with the restored presence; every other descendant keeps its own order history, with rows the reset reveals ordered by their staging in the parent's current order. The reset is part of one atomic draft: an escaping error aborts it with every other intent, while failures after apply (subscriber errors, escaped selector errors, RuntimeMismatchError) do not roll it back. Ordinary single-state reset is unchanged; resetAll does not reparent, select historical snapshots, or clear descendants. No linear complexity or latency bound is promised: a cold draft membership read below nested reset or mirroring scopes can do comparison work on the order of collection size times depth squared, in addition to ownership scans and other bookkeeping, while warm memoized reads skip that search until an affecting write invalidates them. Ordinary child-scope transactions gain conditional ordering-history bookkeeping, and plain Stores may execute an inspection guard on restored memberships without allocating inspection details."
+        },
+        {
             "id": "core.transaction.scope",
             "kind": "method",
             "owner": "core",
@@ -4622,10 +4653,11 @@
                 "mode": "remove",
                 "replacementIds": [
                     "core.store.reset",
-                    "core.transaction.reset"
+                    "core.transaction.reset",
+                    "core.transaction.reset-all"
                 ],
                 "semver": "breaking",
-                "codemod": "Rewrite to core.store.reset, core.transaction.reset.",
+                "codemod": "Rewrite a whole-child-scope clear to transaction.scope(child).resetAll() (core.transaction.reset-all) inside store.txn; reset individual states with core.store.reset or core.transaction.reset.",
                 "typeError": "The beta-only surface is absent from the v1 declarations.",
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
@@ -4635,7 +4667,7 @@
                 "transaction.one-tree-draft"
             ],
             "decisionStatus": "approved",
-            "notes": "The kernel has no whole-scope hidden ownership reset command."
+            "notes": "The beta ScopedStore/ScopedTransaction unsetAll methods are removed. The experimental Transaction.resetAll cursor operation is the whole-child-scope reset; there is no Store-level convenience form."
         },
         {
             "id": "moved.inspect",
