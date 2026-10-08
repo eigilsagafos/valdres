@@ -13,13 +13,34 @@ the [v1 compatibility contract](https://valdres.dev/guides/compatibility).
 The repository is still in Changesets prerelease mode. At the time this runbook
 was written, `.changeset/pre.json` has `"mode": "pre"` and `"tag": "beta"`. Do
 not assume that merging a Version Packages PR will publish to `latest` while
-that is true: Changesets publishes prereleases to the tag in this file.
+that is true: Changesets publishes prereleases to the tag in this file — with
+one exception. A package whose every published version is already a `beta`
+prerelease (no non-prerelease `latest`) is published to `latest` instead
+(`@changesets/cli` `getPublishPlan`, `publishedState === "only-pre"`). That is
+why the media packages' `1.0.0-beta.9` and `@valdres/browser-keyboard`'s
+`1.0.0-beta.10` are on `latest` while their `beta` tag still names the legacy
+`1.0.0-beta.8`, and it applies to `@valdres/browser-online`, `-focus` and
+`-visibility` too. `bunx changeset publish-plan` shows the tag before publishing.
+A successful publish of such a package leaves `beta` on the previous version:
+that is the planned outcome, not a partial release. Moving `beta` to the new
+version is a separate, owner-authorized step after publication (see
+[Publish and dist-tag verification](#publish-and-dist-tag-verification)).
 
 The release cohort is `valdres`, `valdres-react`, the five migrated browser
 media packages: `@valdres/browser-color-scheme`, `@valdres/browser-contrast`,
 `@valdres/browser-reduced-motion`, `@valdres/browser-reduced-data` and
 `@valdres/browser-reduced-transparency` — plus `@valdres/browser-keyboard`,
-`@valdres/hotkeys` and `@valdres-react/hotkeys`.
+`@valdres/browser-online`, `@valdres/browser-focus`,
+`@valdres/browser-visibility`, `@valdres/hotkeys` and `@valdres-react/hotkeys`.
+`@valdres/browser-presence` is migrated but not yet in the cohort: its
+dependency ranges must first exclude the legacy focus/visibility `1.0.0-beta.8`.
+Until then, its published `1.0.0-beta.7` (`latest`) and `1.0.0-beta.8` (`beta`)
+depend on `^1.0.0-beta.7` and `^1.0.0-beta.8` of focus and visibility, so fresh
+installs resolve the migrated releases, and their selector composes them at
+runtime. Their declarations already fail full library checking
+(`skipLibCheck: false`, TS2314 on `Selector`) against the v1 core, checked at
+`1.0.0-beta.39` and `1.0.0-beta.42`. That predates the migrated releases and is
+no reason to release presence early.
 Angular, Vue, Svelte, Solid, the
 remaining feature packages, and the compatibility packages stay on their last
 legacy beta versions until each is migrated and certified.
@@ -60,7 +81,11 @@ floors, pinned by equality in `scripts/hotkeys-packages.test.ts`: `valdres`
 `^1.0.0-beta.10` and `valdres-react` `^1.0.0-beta.8` (the releases carrying the
 keydown bridge and `useStore(store?)`), and `@valdres-react/hotkeys` requires
 `@valdres/hotkeys` `^1.0.0-beta.8` — the published `1.0.0-beta.7` still carries
-the retired callback API. Do not combine beta.24 or later with a
+the retired callback API. Online, focus and visibility declare `^1.0.0-beta.39`,
+pinned by equality in `scripts/browser-status-packages.test.ts`; the packed gate,
+`scripts/test-browser-status-packed-consumer.ts`, also executes that floor
+against the published `1.0.0-beta.39`. Do not
+combine beta.24 or later with a
 deferred adapter, plugin, or compatibility package until that package is
 migrated.
 
@@ -182,14 +207,29 @@ npm view valdres dist-tags --json
 npm view valdres@latest version
 ```
 
-For betas, each exact package version must be on `beta` and `latest` must remain
-the previous stable release. For RCs, the new version must be on `rc` and
+For betas, each exact package version must be on the tag `bunx changeset
+publish-plan` reported for it, which is the tag `changeset publish` uses:
+
+- `beta` for a package that already has a version outside the `beta` line on
+  npm, such as `valdres` and `valdres-react`, whose `latest` is the legacy
+  `0.2.0-pre.28`. Their `latest` must remain unchanged.
+- `latest` for an only-pre package (see
+  [Current prerelease state](#current-prerelease-state)). Its `beta` tag still
+  names the previous version after a successful publish.
+
+Version publication is complete when every planned version resolves both
+explicitly and through its planned tag. Aligning an only-pre package's `beta`
+tag with that version is a separate, owner-authorized step that starts only
+after that check: `npm dist-tag add <name>@<version> beta` for the packages just
+published. Never move a tag backwards; if a tag has advanced past the
+expected version, stop and reconcile. Do not move `latest` by hand. For RCs, the new version must be on `rc` and
 `latest` must remain unchanged. For the v1 stable release, `valdres@latest` and
 `dist-tags.latest` must both resolve to exactly `1.0.0`. Repeat the checks for
 every package listed as published by Changesets. A version that exists only by
 explicit lookup has not completed the intended release.
 
-Install the published tag (`valdres@beta`, `valdres@rc`, or `valdres@latest`)
+Install the published tag (`valdres@beta`, `valdres@rc`, `valdres@latest`, or
+an only-pre package's planned tag)
 into a clean consumer after the tag has converged and run one final import/type
 smoke test. If a publish is partial, stop: reconcile the versions and tags
 before retrying the workflow.

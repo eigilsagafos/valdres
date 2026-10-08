@@ -6,13 +6,10 @@
 "@valdres/bandwidth": patch
 "@valdres/browser-device-motion": patch
 "@valdres/browser-device-orientation": patch
-"@valdres/browser-focus": patch
 "@valdres/browser-geolocation": patch
-"@valdres/browser-online": patch
 "@valdres/browser-presence": patch
 "@valdres/browser-screen": patch
 "@valdres/browser-screen-details": patch
-"@valdres/browser-visibility": patch
 "@valdres/browser-window": patch
 "@valdres/color-mode": minor
 "@valdres/public-ip": patch

@@ -331,12 +331,14 @@ jobs:
 
     browser-status:
         name: Browser status packages
-        # @valdres/browser-online, -focus, -visibility and -presence: migrated
-        # to externalAtom and tested, but NOT release-eligible yet, so this job
-        # is deliberately absent from publish's needs. Its own job rather than
-        # entries in browser-media: these sources are event-signalled rather
-        # than media queries, and focus owns a shared per-document hub, so the
-        # suites and packed fixtures differ in kind.
+        # @valdres/browser-online, -focus, -visibility and -presence, migrated
+        # to externalAtom. Online, focus and visibility are release-eligible, so
+        # this job gates `publish`: the revision that publishes them must have
+        # passed their suites, both tsconfig type-checks and the packed gate.
+        # Presence is tested here too but stays release-ignored until its
+        # focus/visibility ranges exclude the legacy builds. Its own job rather
+        # than entries in browser-media: these sources are event-signalled
+        # rather than media queries, and focus owns a shared per-document hub.
         runs-on: ubuntu-22.04
         permissions:
             contents: read
@@ -467,11 +469,11 @@ jobs:
               run: bun run test:v1-beta:packed
 
     publish:
-        # browser-media, browser-keyboard and hotkeys joined this list when
-        # their packages stopped being release-ignored: the revision that
-        # publishes them must have passed their suites, both tsconfig
-        # type-checks and the packed-consumer gate.
-        needs: [test, valdres-package, browser-media, browser-keyboard, hotkeys]
+        # browser-media, browser-keyboard, hotkeys and browser-status joined
+        # this list when their packages stopped being release-ignored: the
+        # revision that publishes them must have passed their suites, both
+        # tsconfig type-checks and the packed-consumer gate.
+        needs: [test, valdres-package, browser-media, browser-keyboard, hotkeys, browser-status]
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         runs-on: ubuntu-22.04
         environment: npm-publish

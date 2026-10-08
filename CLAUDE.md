@@ -118,9 +118,11 @@ asserts the complement holds. Move a package between them in one change.
 
 Today that is `valdres`, `valdres-react`, the five migrated
 `@valdres/browser-{color-scheme,contrast,reduced-motion,reduced-data,reduced-transparency}`
-packages, `@valdres/browser-keyboard`, and `@valdres/hotkeys` with
-`@valdres-react/hotkeys`. The remaining browser packages and both color-mode
-packages are still ignored.
+packages, `@valdres/browser-keyboard`, `@valdres/browser-{online,focus,visibility}`,
+and `@valdres/hotkeys` with `@valdres-react/hotkeys`. `@valdres/browser-presence`
+is migrated but stays ignored until its focus/visibility ranges exclude the legacy
+`1.0.0-beta.8` builds. The remaining browser packages and both color-mode packages
+are still ignored.
 
 A changeset may not name both ignored and non-ignored packages — Changesets
 rejects the whole repository's `changeset status` with "Mixed changesets …".
