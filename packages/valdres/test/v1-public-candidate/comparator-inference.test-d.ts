@@ -234,6 +234,26 @@ export type LiteralCases = [
     Expect<Equal<typeof literalSelectorDeep, Selector<number>>>,
 ]
 
+// A never-returning initializer or read function infers never with or without
+// a comparator; a broad comparator no longer turns it into unknown. Name the
+// type explicitly instead.
+const throwing = (): never => {
+    throw new Error("hydrate first")
+}
+const neverLazy = atom.lazy(() => throwing())
+const neverLazyBroad = atom.lazy(() => throwing(), { equal: broadEqual })
+const neverSelectorDeep = selector(() => throwing(), { equal: deepEqual })
+const explicitNeverLazy = atom.lazy<unknown>(() => throwing(), {
+    equal: broadEqual,
+})
+
+export type NeverCases = [
+    Expect<Equal<typeof neverLazy, Atom<never>>>,
+    Expect<Equal<typeof neverLazyBroad, Atom<never>>>,
+    Expect<Equal<typeof neverSelectorDeep, Selector<never>>>,
+    Expect<Equal<typeof explicitNeverLazy, Atom<unknown>>>,
+]
+
 // Named exact comparators and predeclared options objects still type-check
 // when the read function is context-sensitive (`get => ...`), which
 // TypeScript checks only after the other arguments.

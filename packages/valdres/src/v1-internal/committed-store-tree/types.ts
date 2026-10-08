@@ -147,28 +147,33 @@ export interface SelectorOptions<Value> {
     readonly equal?: (previous: Value, next: Value) => boolean
 }
 
-// The public factories pass Value to `options.equal` through these aliases so
-// the comparator never infers or widens Value: it comes from the initial
-// value, initializer or read function alone. Both are exactly Value once Value
-// is known, so they change only inference, never which comparators type-check.
-// Otherwise a broad comparator such as `deepEqual` contributes an `unknown`
-// candidate that beats an `any` value (TypeScript 5.6+), and any inference
-// through the options stops a literal initial value from widening.
+// The public atom, atom.lazy and selector factories type `options.equal`
+// through these aliases so that Value comes from the initial value,
+// initializer or read function alone. Each is exactly Value once Value is
+// known, so the comparator is still checked against, and contextually typed
+// by, Value. Without them, `atom(untyped, { equal: deepEqual })` inferred
+// `Atom<unknown>` on TypeScript 5.6+ and `atom(0, { equal: numberEqual })`
+// inferred `Atom<0>`. Backing tests:
+// test/v1-public-candidate/comparator-inference.test-d.ts.
 //
-// The intrinsic `NoInfer` is avoided twice over: published declarations would
-// need TypeScript 5.4, and for a context-sensitive read function
-// (`get => ...`) TypeScript checks the options before inferring from the
-// function, so a named comparator would be checked against
-// `EqualFunc<unknown>` and rejected.
+// Both aliases are plain conditional / indexed-access types so the published
+// declarations keep type-checking on TypeScript releases before 5.4, which
+// lack the `NoInfer` utility (verified from 4.9 against the installed
+// declarations). `NoInfer<Value>` in all three signatures was also tried on
+// TypeScript 5.9.2 and rejected `selector(get => get(count), { equal:
+// numberEqual })` and a predeclared `SelectorOptions` object with "not
+// assignable to EqualFunc<unknown>" (NamedComparatorCases).
 
-// Blocks inference from the comparator entirely, keeping literal widening for
-// an eager atom's top-level initial value.
+// Eager atom: blocks inference from the comparator entirely. Its initial value
+// is a top-level argument, and any comparator inference, even a discarded
+// lower-priority one, stopped `atom(1, ...)` from widening to number
+// (LiteralCases, NamedComparatorCases).
 export type UninferredValue<Value> = [Value][Value extends unknown ? 0 : never]
 
-// Infers through a conditional type, below every inference from the
-// initializer or read function, so it is discarded once those infer Value but
-// stands in for Value while TypeScript checks a named comparator before it
-// reads a context-sensitive function.
+// atom.lazy and selector: still infers from the comparator, but below the
+// initializer or read function, so the function's result wins (AnyCases,
+// rejected) while a named comparator next to a context-sensitive `get => ...`
+// function still type-checks (NamedComparatorCases).
 export type ComparatorValue<Value> = [Value] extends [unknown] ? Value : never
 
 export type AtomUpdater<Value> = (current: Value) => Value
