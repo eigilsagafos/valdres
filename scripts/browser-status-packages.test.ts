@@ -1,12 +1,13 @@
 /**
- * Guards the browser-status lane's metadata and its testing-only status. Picked
- * up by CI's existing `bun test scripts/` step.
+ * Guards the browser-status lane's metadata and release state. Picked up by
+ * CI's existing `bun test scripts/` step.
  *
- * The packages are migrated and gated by the `browser-status` job, but not
- * release-eligible: they are still Changesets-ignored, off the publishable
- * list, and the job does not gate `publish`. The release-enablement change has
- * to flip the assertions below deliberately, in one change, rather than
- * drifting into a half-enabled state.
+ * Stage A: online, focus and visibility are release-eligible (off the
+ * Changesets ignore list, on the publishable list, `browser-status` gates
+ * `publish`). Presence stays release-ignored until Stage B raises its
+ * focus/visibility ranges past the legacy builds. Each package's
+ * `releaseEligible` flag is the single claim checked here, so a package cannot
+ * drift into a half-enabled state.
  */
 import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
@@ -14,8 +15,15 @@ import { join } from "node:path"
 import {
     BROWSER_STATUS_CORE_PEER_RANGE,
     BROWSER_STATUS_FLOOR,
+    BROWSER_STATUS_LEGACY_VERSION,
     BROWSER_STATUS_PACKAGES,
 } from "./lib/browser-status-packages"
+import {
+    STAGE_A_PACKAGES,
+    loadChangesetParser,
+    readReleaseNoteState,
+    stageANoteProblems,
+} from "./lib/browser-status-release-note"
 import { BROWSER_MEDIA_PACKAGES } from "./lib/browser-media-packages"
 import { PUBLISHABLE_PACKAGE_DIRS } from "./lib/publishable-packages"
 
@@ -40,13 +48,18 @@ const changesetFiles = (dir = join(ROOT, ".changeset")): string[] =>
             : []
     })
 
-const frontMatterNames = (file: string): string[] => {
-    const match = readFileSync(file, "utf8").match(/^---\n([\s\S]*?)\n---/)
-    if (match === null) return []
-    return [...match[1]!.matchAll(/^"([^"]+)":/gm)].map(entry => entry[1]!)
-}
+// Changesets' own parser: any valid YAML key style, malformed files rejected.
+const parseChangeset = await loadChangesetParser(ROOT)
+const frontMatterNames = (file: string): string[] =>
+    parseChangeset(readFileSync(file, "utf8")).releases.map(
+        release => release.name,
+    )
 
 const names = BROWSER_STATUS_PACKAGES.map(pkg => pkg.name) as string[]
+const eligible = BROWSER_STATUS_PACKAGES.filter(pkg => pkg.releaseEligible).map(
+    pkg => pkg.name,
+) as string[]
+const PRESENCE = "@valdres/browser-presence"
 const ignored = (): string[] =>
     JSON.parse(read(ROOT, ".changeset", "config.json")).ignore
 
@@ -100,24 +113,66 @@ describe("browser-status lane", () => {
                 }
             })
 
-            test("is tested but not release-eligible yet", () => {
-                expect(ignored()).toContain(name)
-                expect(PUBLISHABLE_PACKAGE_DIRS).not.toContain(dir)
+            test("release eligibility matches its stage, in both halves of the pipeline", () => {
+                const release = BROWSER_STATUS_PACKAGES.find(
+                    pkg => pkg.name === name,
+                )!.releaseEligible
+                // These must move together: `changeset publish` publishes every
+                // non-ignored package, but only listed packages are prepacked.
+                expect(ignored().includes(name)).toBe(!release)
+                expect(PUBLISHABLE_PACKAGE_DIRS.includes(dir)).toBe(release)
             })
 
-            test("carries no changeset mixed with a released package", () => {
-                // Changesets rejects a changeset naming both ignored and
-                // non-ignored packages for the whole repository.
+            test("carries no changeset mixing ignored and released packages", () => {
+                // Changesets rejects a mixed changeset for the whole repository.
                 const ignore = ignored()
                 for (const file of changesetFiles()) {
                     const front = frontMatterNames(file)
                     if (!front.includes(name)) continue
-                    const released = front.filter(other => !ignore.includes(other))
-                    expect({ file, released }).toEqual({ file, released: [] })
+                    const mixed =
+                        front.some(other => ignore.includes(other)) &&
+                        front.some(other => !ignore.includes(other))
+                    expect({ file, mixed }).toEqual({ file, mixed: false })
                 }
             })
         })
     }
+
+    test("Stage A's migration note holds its pending, consumed or released state", () => {
+        // Follows the one note by id (scripts/lib/browser-status-release-note.ts);
+        // fixture cases for each lifecycle state live next to it.
+        expect(stageANoteProblems(readReleaseNoteState(ROOT), parseChangeset)).toEqual(
+            [],
+        )
+    })
+
+    test("Stage A's packages stay release-eligible", () => {
+        for (const name of STAGE_A_PACKAGES) expect(eligible).toContain(name)
+    })
+
+    test("presence stays release-ignored while its ranges admit the legacy builds", () => {
+        const manifest = JSON.parse(
+            read(ROOT, "packages/@valdres/browser-presence", "package.json"),
+        )
+        const admitsLegacy = [
+            "@valdres/browser-focus",
+            "@valdres/browser-visibility",
+        ].some(dep =>
+            Bun.semver.satisfies(
+                BROWSER_STATUS_LEGACY_VERSION,
+                manifest.dependencies[dep],
+            ),
+        )
+        const releasable =
+            !ignored().includes(PRESENCE) ||
+            PUBLISHABLE_PACKAGE_DIRS.includes("packages/@valdres/browser-presence")
+        expect({ admitsLegacy, releasable }).not.toEqual({
+            admitsLegacy: true,
+            releasable: true,
+        })
+        // Stage A: presence is still the ignored one.
+        expect(eligible).not.toContain(PRESENCE)
+    })
 
     test("online, focus and visibility each publish one external atom", () => {
         for (const [dir, atom] of [
@@ -154,14 +209,14 @@ describe("browser-status lane", () => {
         expect(selector).toContain('from "@valdres/browser-visibility"')
     })
 
-    test("has a CI job that does not gate publish", () => {
+    test("has a CI job that gates publish", () => {
         const workflow = read(ROOT, ".github", "workflows", "ci.yaml")
         expect(workflow).toMatch(/^    browser-status:\n/m)
         const needs = workflow.match(
             /^    publish:[\s\S]*?\n        needs: \[([^\]]*)\]/m,
         )
         expect(needs).not.toBeNull()
-        expect(needs![1]!.split(",").map(job => job.trim())).not.toContain(
+        expect(needs![1]!.split(",").map(job => job.trim())).toContain(
             "browser-status",
         )
     })

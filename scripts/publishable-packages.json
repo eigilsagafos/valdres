@@ -7,6 +7,9 @@
   "packages/@valdres/browser-reduced-data",
   "packages/@valdres/browser-reduced-transparency",
   "packages/@valdres/browser-keyboard",
+  "packages/@valdres/browser-online",
+  "packages/@valdres/browser-focus",
+  "packages/@valdres/browser-visibility",
   "packages/@valdres/hotkeys",
   "packages/@valdres-react/hotkeys"
 ]

@@ -89,6 +89,26 @@ describe("generated release metadata scope", () => {
         ])
     })
 
+    test("accepts the Version Packages list once online, focus and visibility release", () => {
+        // The exact file list `bun run version-packages` produced for Stage A in
+        // an isolated release simulation (presence stays ignored and unbumped).
+        accepts([
+            ...[
+                "browser-status-external-atom-migration",
+                "browser-status-release-stage-a",
+            ].map(id =>
+                renamed(`.changeset/${id}.md`, `.changeset/pre/${id}.md`),
+            ),
+            modified("bun.lock"),
+            ...["browser-focus", "browser-online", "browser-visibility"].flatMap(
+                pkg => [
+                    modified(`packages/@valdres/${pkg}/CHANGELOG.md`),
+                    modified(`packages/@valdres/${pkg}/package.json`),
+                ],
+            ),
+        ])
+    })
+
     test.each([
         ["runtime source", "packages/valdres/src/index.ts"],
         [
@@ -118,6 +138,14 @@ describe("generated release metadata scope", () => {
         [
             "unlisted browser package",
             "packages/@valdres/browser-geolocation/package.json",
+        ],
+        [
+            "still-ignored presence manifest",
+            "packages/@valdres/browser-presence/package.json",
+        ],
+        [
+            "runtime file in a Stage A browser package",
+            "packages/@valdres/browser-focus/src/lib/focusHub.ts",
         ],
         [
             "unlisted color-mode package",

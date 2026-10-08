@@ -9,23 +9,45 @@
  * focus shares one ref-counted listener pair per document, and presence is a
  * selector over focus and visibility that owns no listener of its own.
  *
- * Listing a package here is a TESTING claim only. Release eligibility is
- * governed separately by `.changeset/config.json` and
- * `scripts/publishable-packages.json`, and all four are still ignored.
+ * Every package listed here is tested by the `browser-status` job. Release
+ * eligibility is a separate, per-package claim (`releaseEligible`) that
+ * `scripts/browser-status-packages.test.ts` checks against
+ * `.changeset/config.json` and `scripts/publishable-packages.json`.
+ *
+ * Stage A releases online, focus and visibility. Presence stays
+ * release-ignored until Stage B: its plain-semver focus/visibility ranges still
+ * admit the legacy pre-migration `1.0.0-beta.8` builds, and Changesets will not
+ * raise them (`bumpVersionsWithWorkspaceProtocolOnly`).
  */
 export const BROWSER_STATUS_PACKAGES = [
-    { name: "@valdres/browser-online", dir: "packages/@valdres/browser-online" },
-    { name: "@valdres/browser-focus", dir: "packages/@valdres/browser-focus" },
+    {
+        name: "@valdres/browser-online",
+        dir: "packages/@valdres/browser-online",
+        releaseEligible: true,
+    },
+    {
+        name: "@valdres/browser-focus",
+        dir: "packages/@valdres/browser-focus",
+        releaseEligible: true,
+    },
     {
         name: "@valdres/browser-visibility",
         dir: "packages/@valdres/browser-visibility",
+        releaseEligible: true,
     },
     // Last: it composes the two before it.
     {
         name: "@valdres/browser-presence",
         dir: "packages/@valdres/browser-presence",
+        releaseEligible: false,
     },
 ] as const
+
+/**
+ * The last published focus/visibility version that predates the migration.
+ * Presence may only become release-eligible once its ranges exclude it.
+ */
+export const BROWSER_STATUS_LEGACY_VERSION = "1.0.0-beta.8"
 
 /**
  * The exact `valdres` peer range every package must declare. `externalAtom`
