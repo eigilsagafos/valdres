@@ -332,13 +332,13 @@ jobs:
     browser-status:
         name: Browser status packages
         # @valdres/browser-online, -focus, -visibility and -presence, migrated
-        # to externalAtom. Online, focus and visibility are release-eligible, so
-        # this job gates `publish`: the revision that publishes them must have
-        # passed their suites, both tsconfig type-checks and the packed gate.
-        # Presence is tested here too but stays release-ignored until its
-        # focus/visibility ranges exclude the legacy builds. Its own job rather
-        # than entries in browser-media: these sources are event-signalled
-        # rather than media queries, and focus owns a shared per-document hub.
+        # to externalAtom. All four are release-eligible, so this job gates
+        # `publish`: the revision that publishes them must have passed their
+        # suites, both tsconfig type-checks and the packed gate, which also
+        # fails if presence's focus/visibility ranges admit the legacy builds.
+        # Its own job rather than entries in browser-media: these sources are
+        # event-signalled rather than media queries, and focus owns a shared
+        # per-document hub.
         runs-on: ubuntu-22.04
         permissions:
             contents: read

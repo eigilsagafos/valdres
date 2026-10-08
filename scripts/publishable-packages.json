@@ -10,6 +10,7 @@
   "packages/@valdres/browser-online",
   "packages/@valdres/browser-focus",
   "packages/@valdres/browser-visibility",
+  "packages/@valdres/browser-presence",
   "packages/@valdres/hotkeys",
   "packages/@valdres-react/hotkeys"
 ]

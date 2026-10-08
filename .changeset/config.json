@@ -23,7 +23,6 @@
         "@valdres/browser-device-motion",
         "@valdres/browser-device-orientation",
         "@valdres/browser-geolocation",
-        "@valdres/browser-presence",
         "@valdres/browser-screen",
         "@valdres/browser-screen-details",
         "@valdres/browser-window",
