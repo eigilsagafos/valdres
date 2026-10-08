@@ -7,7 +7,7 @@ description: Create a reactive piece of state
 
 <div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
   <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
-  <code className="text-sm font-mono text-accent-500">atom&lt;T&gt;(defaultValue: T, options?: AtomOptions): Atom&lt;T&gt;</code>
+  <code className="text-sm font-mono text-accent-500">atom&lt;T&gt;(value: T, options?: AtomOptions&lt;T&gt;): Atom&lt;T&gt;</code>
   <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
     Creates a reactive piece of state
@@ -21,43 +21,95 @@ An atom holds a single value that can be read and written from any component or 
 ```ts
 import { atom } from "valdres"
 
-// Simple atom with a default value
+// An atom with an initial value
 const countAtom = atom(0)
 
-// Legacy, not Valdres v1: an async initializer
-const userAtom = atom(() =>
-    fetch("/api/user").then(res => res.json())
-)
-
-// With a name for debugging and error messages
+// A name for debugging and error messages
 const nameAtom = atom("default", { name: "nameAtom" })
+
+// A lazy initial value, computed synchronously on each Store's first read
+const settingsAtom = atom.lazy(() => JSON.parse(localStorage.getItem("settings") ?? "{}"))
 ```
+
+`atom(value)` stores `value` exactly as given, including functions:
+`atom(() => 0)` holds the function itself, not `0`. Use `atom.lazy(initialize)`
+for an initial value computed on first read. The initializer runs synchronously,
+once per Store that reads the atom; returning a Promise throws
+`InvalidSynchronousAtomValueError`.
 
 ## Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `defaultValue` | `T \| () => T \| Promise<T>` | Initial value, or a function that returns one |
-| `options.name` | `string` | Optional name for debugging, devtools, and validation error messages |
-| `options.schema` | `Schema<T>` | Schema for runtime validation and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
-| `options.schemaValidation` | `boolean` | Per-atom override of the store's `schemaValidation` flag — `true` always validates this atom, `false` exempts it |
-| `options.mutable` | `boolean` | Opt out of development/test deep-freezing. Required for mutable built-ins and host objects that cannot be frozen safely. |
-| `options.maxAge` | `Reactive<number>` | Legacy, not in v1. Re-fetch interval in milliseconds (requires async default). Accepts a number, atom, or selector. |
-| `options.staleWhileRevalidate` | `Reactive<number>` | Legacy, not in v1. Serve stale data for this many ms while re-fetching. Accepts a number, atom, or selector. |
-| `options.staleIfError` | `Reactive<number>` | Legacy, not in v1. Serve stale data for this many ms after re-fetch errors. Accepts a number, atom, or selector. |
+| `value` | `T` | The initial value. Stored as-is, functions included. |
+| `options.name` | `string` | Optional name for debugging and error messages |
+| `options.equal` | `(previous: T, next: T) => boolean` | Decides whether a write changes the atom. Defaults to `Object.is`. |
 
-## Immutability and exotic values
+`AtomOptions` contains only `name` and `equal`, for both `atom` and
+`atom.lazy`. Options from earlier betas are listed under
+[Legacy pre-1.0 API](#legacy-pre-10-api).
 
-In development mode, Valdres deep-freezes immutable values on every accepted
-write so accidental in-place changes fail immediately. This includes plain
-object and array atom values; Error objects and Promise handles remain usable
-while their object surface is frozen. Production builds skip this development
-check.
+## Writing
+
+`store.set(atom, value)` stores `value` and never calls it, so a function value
+is stored as a function. `store.update(atom, updater)` calls `updater` with the
+current value and stores what it returns. See [store](/valdres/store#writing-state).
+
+```ts
+myStore.set(countAtom, 42)
+myStore.update(countAtom, count => count + 1) // 43
+myStore.reset(countAtom) // back to 0
+```
+
+## Immutability and reference sharing
+
+Valdres stores the exact value you write and hands that same reference to every
+reader: `store.get`, selectors, and subscribers. It never copies or freezes
+values, in development or production. Keeping stored values immutable is the
+caller's responsibility: treat values read from a store as read-only, and update
+state by writing a new value.
+
+In-place mutation is unsupported. Mutating a stored object changes what every
+reader sees without notifying anyone, and writing the same reference back is
+not a change under the default `Object.is` equality, so subscribers and
+dependent selectors keep stale results.
+
+```ts
+const todosAtom = atom<Todo[]>([])
+
+// Unsupported: mutates the shared array and notifies no one
+myStore.get(todosAtom).push(todo)
+
+// Supported: write a new array
+myStore.update(todosAtom, todos => [...todos, todo])
+```
+
+`Map`, `Set`, `Date`, typed arrays, browser API objects, and other built-ins or
+host objects are stored as-is under the same contract. Replace them rather than
+mutating them, or store an immutable plain-data representation.
+
+## Equality
+
+`Object.is` is the default `equal`, so writing a new object notifies even when
+it is structurally equal to the current value. Structural equality is opt-in:
+to keep the previous reference and skip notifications for structurally equal
+replacements, pass `deepEqual` from the separate `valdres/equality` entry:
+
+```ts
+import { deepEqual } from "valdres/equality"
+
+const documentAtom = atom({ blocks: [] }, { equal: deepEqual })
+```
+
+No `equal` function can detect an in-place mutation written back under the same
+reference: the previous and next values are the same object.
+
+## Development and production builds
 
 In runtimes with `process.env`, `NODE_ENV` selects the mode. Process-less CDN
 and edge runtimes default to production. To select the process-less debugging
-entry and retain development-only deep-freeze, validation diagnostics, warnings,
-and instrumentation, enable the package's `development` export condition in the
+entry and retain development-only validation diagnostics, warnings, and
+instrumentation, enable the package's `development` export condition in the
 bundler consistently across the entire application, including framework
 adapters. Do not mix default and development entrypoints: they intentionally
 use isolated runtime graphs.
@@ -72,41 +124,35 @@ Bun's bundler enables the `development` export condition by default. Use
 adding only `--conditions=production` does not disable Bun's development
 condition.
 
-`Object.freeze` cannot make mutable built-ins or host objects reliably
-immutable. This includes `Map`, `Set`, `WeakMap`, `WeakSet`, `Date`,
-`ArrayBuffer`, `SharedArrayBuffer`, `DataView`, typed arrays, browser API
-objects, and other branded exotic values. Valdres rejects such values with an
-actionable error instead of storing something that only appears frozen.
-Ordinary class instances have their own property graph frozen, like plain
-objects. Store an immutable plain-data representation when possible, or opt out
-explicitly:
+Neither mode copies, freezes, or deeply compares stored values.
 
-```ts
-const bytesAtom = atom(new Uint8Array(), { mutable: true })
-```
-
-With `mutable: true`, Valdres does not protect the value from in-place changes.
-Use replacement updates (or an appropriate custom `equal` function) so writes
-still produce notifications. The default equality function compares binary
-buffers and views by their visible bytes.
-
-It compares every own enumerable property, including symbol-keyed ones and
-properties set alongside the contents of an array, `Map`, or `Set`, so a write
-that changes only one of those is still a change. A custom `valueOf` or
-`toString` narrows the comparison but never replaces it — two values that
-stringify alike but hold different properties are different values.
-
-Binary buffers and views are the one exception: they are compared by their
-bytes alone. Enumerating the keys of a typed array costs time proportional to
-its length, so properties attached beside the bytes are not compared — keep
-such metadata in a separate atom.
-
-## Async atoms
+## Legacy pre-1.0 API
 
 <div className="callout callout-warning">
   <div className="callout-title">Legacy — not in Valdres 1.0</div>
-  In Valdres 1.0, atom values are synchronous and `atom(fn)` stores `fn` itself as the value. The examples in this section are legacy, pre-v1 examples.
+  Everything below documents earlier betas and is kept for migration. Valdres 1.0
+  atoms have no async values, caching, `cacheMeta`, schema validation, or
+  `mutable` option: atom values are synchronous and `AtomOptions` contains only
+  `name` and `equal`. These are legacy, pre-v1 examples — not Valdres v1
+  examples.
 </div>
+
+### Legacy options
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `defaultValue` | `T \| () => T \| Promise<T>` | Initial value, or a function that returns one |
+| `options.schema` | `Schema<T>` | Schema for runtime validation and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
+| `options.schemaValidation` | `boolean` | Per-atom override of the store's `schemaValidation` flag — `true` always validates this atom, `false` exempts it |
+| `options.mutable` | `boolean` | Opt out of development/test deep-freezing. Required for mutable built-ins and host objects that cannot be frozen safely. |
+| `options.maxAge` | `Reactive<number>` | Re-fetch interval in milliseconds (requires async default). Accepts a number, atom, or selector. |
+| `options.staleWhileRevalidate` | `Reactive<number>` | Serve stale data for this many ms while re-fetching. Accepts a number, atom, or selector. |
+| `options.staleIfError` | `Reactive<number>` | Serve stale data for this many ms after re-fetch errors. Accepts a number, atom, or selector. |
+
+Earlier betas deep-froze values in development and compared them with deep
+structural equality by default. Valdres 1.0 does neither.
+
+### Async atoms
 
 <div className="callout callout-tip">
   <div className="callout-title">Tip</div>
@@ -122,16 +168,11 @@ const dataAtom = atom(async () => {
 })
 ```
 
-## Caching & revalidation
-
-<div className="callout callout-warning">
-  <div className="callout-title">Legacy — not in Valdres 1.0</div>
-  `maxAge`, `staleWhileRevalidate`, `staleIfError` and `cacheMeta` are not part of Valdres 1.0. The examples in this section are legacy, pre-v1 examples.
-</div>
+### Caching & revalidation
 
 Async atoms support built-in stale-while-revalidate caching via `maxAge`, `staleWhileRevalidate`, and `staleIfError`. This is useful for data that should periodically refresh from an API while keeping the UI responsive.
 
-### maxAge
+#### maxAge
 
 Sets how often the atom re-fetches its data (in milliseconds). Revalidation only happens while the atom has active subscribers.
 
@@ -147,7 +188,7 @@ const pricesAtom = atom(
 
 When `maxAge` expires, the atom calls its default function again. Without `staleWhileRevalidate`, the atom immediately enters a loading state (returns a pending promise), which triggers `Suspense` in React.
 
-### staleWhileRevalidate
+#### staleWhileRevalidate
 
 Keeps serving the previous value while the re-fetch is in progress, instead of showing a loading state. The value updates seamlessly once the new data resolves.
 
@@ -166,7 +207,7 @@ const pricesAtom = atom(
 
 This means your UI never shows a loading spinner on re-fetches — users see the previous data until the fresh data arrives.
 
-### staleIfError
+#### staleIfError
 
 Extends the stale window when re-fetches fail. Instead of surfacing an error to the UI, the atom keeps serving the last successful value for the specified duration.
 
@@ -187,7 +228,7 @@ const pricesAtom = atom(
 
 If the re-fetch fails within the `staleIfError` window (measured from the last successful fetch), the previous value is preserved. Once the window expires, the rejected promise is surfaced so error boundaries can handle it.
 
-### Example: API response with caching
+#### Example: API response with caching
 
 ```ts
 import { atom } from "valdres"
@@ -226,7 +267,7 @@ const currentUserAtom = atom<User>(
   Revalidation is only active while the atom has subscribers. When all components unsubscribe, the interval is cleared. The next subscription triggers a fresh fetch.
 </div>
 
-### Reactive cache configuration
+#### Reactive cache configuration
 
 Cache options can be dynamic by passing an atom or selector instead of a static number. When the config value changes, the revalidation interval automatically restarts with the new timing.
 
@@ -262,7 +303,7 @@ const dataAtom = atom(
 )
 ```
 
-### cacheMeta
+#### cacheMeta
 
 Use `cacheMeta()` to get a reactive selector that exposes the caching state of an atom. This is useful for showing loading indicators during revalidation or displaying when data was last refreshed.
 
@@ -300,7 +341,7 @@ Returns `null` for atoms that don't have `maxAge` configured.
 
 <div id="cache-demo" className="not-prose" />
 
-## Schema validation
+### Schema validation
 
 Pass a `schema` — any [Standard Schema](https://standard-schema.dev) (Zod,
 Valibot, ArkType, …) or `parse()`-style validator — to validate the atom's
@@ -328,5 +369,5 @@ behavior, and limitations.
 - [family](/valdres/family) — one atom per key
 - [collection](/valdres/collection) — keyed records you can enumerate
 - [selector](/valdres/selector) — derive computed state from atoms
-- [Schema Validation](/guides/schema-validation) — runtime validation and type inference
+- [Schema Validation](/guides/schema-validation) — legacy, pre-1.0 runtime validation
 - [useAtom](/react/useAtom) — read and write an atom in your components

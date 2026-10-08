@@ -21,7 +21,7 @@ import {
     islandDefine,
     readValdresVersion,
 } from "../src/islands-build"
-import { v1Unavailable } from "../src/islands/unavailable"
+import { v1Unavailable } from "../src/legacy-status"
 
 // Bundling the islands and running each browser fixture in its own process
 // takes well under a second locally; leave room for a slow runner.

@@ -1,5 +1,35 @@
 import { mdxToMarkdown } from "../../scripts/lib/mdx-to-markdown"
 import type { CompiledDoc } from "./compile-mdx"
+import {
+    isV1Unavailable,
+    legacyExampleLabel,
+    legacyNoticeTitle,
+    legacyPageNotice,
+    playgroundLegacyLabel,
+    unmigratedAdapter,
+    v1Unavailable,
+} from "./legacy-status"
+
+// The same legacy notices the rendered page shows (components/LegacyNotice,
+// render.tsx), in the same words, for the Markdown twin and llms-full.txt.
+function toMarkdown(doc: CompiledDoc, siteUrl: string): string {
+    const framework = doc.framework ?? "react"
+    const adapter = unmigratedAdapter(framework)
+    return mdxToMarkdown(doc.rawContent, {
+        liveUrl: `${siteUrl}${doc.route}`,
+        keepFramework: framework,
+        pageNotice: isV1Unavailable(doc.packageName)
+            ? { title: legacyNoticeTitle, body: legacyPageNotice(doc.packageName) }
+            : undefined,
+        frameworkBlockNote: adapter && legacyExampleLabel(adapter),
+        playgroundNote: playgroundLegacyLabel,
+    })
+}
+
+const unmigratedAdapters = Object.keys(v1Unavailable)
+    .filter(key => key.startsWith("valdres-"))
+    .map(key => `\`${key}\``)
+    .join(", ")
 
 // Shared (core/plugin) pages exist once per framework from one MDX source.
 // For LLM artifacts we list/emit each source once with its canonical (react)
@@ -19,7 +49,10 @@ function entry(doc: CompiledDoc, siteUrl: string): string {
     const desc = doc.frontmatter.description
         ? `: ${doc.frontmatter.description}`
         : ""
-    return `- [${doc.frontmatter.title}](${siteUrl}${doc.route}.md)${desc}`
+    const status = isV1Unavailable(doc.packageName)
+        ? ` — ${legacyNoticeTitle} (legacy, pre-v1 API)`
+        : ""
+    return `- [${doc.frontmatter.title}](${siteUrl}${doc.route}.md)${desc}${status}`
 }
 
 export async function generateLlmsTxt(
@@ -64,6 +97,8 @@ export async function generateLlmsTxt(
         "",
         "## Framework bindings",
         "",
+        `Only \`valdres-react\` is migrated to Valdres v1. ${unmigratedAdapters} are not yet migrated: their pages and framework-specific examples document the legacy, pre-v1 API.`,
+        "",
         ...adapters.map(d => entry(d, siteUrl)),
         "",
         "## Plugins (work with every framework)",
@@ -77,15 +112,12 @@ export async function generateLlmsTxt(
     // llms-full.txt — full content, each source once, rendered to clean
     // markdown (JSX components resolved/stripped) with its canonical URL.
     const fullLines = [
-        "<SYSTEM>This is the full developer documentation for Valdres — reactive state management for React, Vue, Svelte, Solid, and Angular. Shared (core/plugin) pages are included once; they exist per framework at /react/…, /vue/…, /svelte/…, /solid/…, /angular/… with the examples adapted.</SYSTEM>",
+        `<SYSTEM>This is the full developer documentation for Valdres — reactive state management for React, Vue, Svelte, Solid, and Angular. Shared (core/plugin) pages are included once; they exist per framework at /react/…, /vue/…, /svelte/…, /solid/…, /angular/… with the examples adapted. Pages and examples marked "${legacyNoticeTitle}" or "Legacy" document the pre-v1 API, not Valdres v1; only valdres-react is migrated to v1.</SYSTEM>`,
         "",
     ]
 
     for (const doc of unique) {
-        const md = mdxToMarkdown(doc.rawContent, {
-            liveUrl: `${siteUrl}${doc.route}`,
-            keepFramework: doc.framework ?? "react",
-        })
+        const md = toMarkdown(doc, siteUrl)
         fullLines.push(`Source: ${siteUrl}${doc.route}.md`, "", md.trim(), "", "---", "")
     }
 
@@ -104,10 +136,7 @@ export async function generateMarkdownPages(
         docs.map(doc =>
             Bun.write(
                 `${distDir}${doc.route}.md`,
-                mdxToMarkdown(doc.rawContent, {
-                    liveUrl: `${siteUrl}${doc.route}`,
-                    keepFramework: doc.framework ?? "react",
-                }),
+                toMarkdown(doc, siteUrl),
             ),
         ),
     )

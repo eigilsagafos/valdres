@@ -5,6 +5,14 @@ description: Opt-in runtime validation for atoms and selectors with schema-drive
 
 # Schema Validation
 
+<div className="callout callout-warning">
+  <div className="callout-title">Legacy — not in Valdres 1.0</div>
+  This guide documents schema validation from earlier betas. Valdres 1.0 has no
+  `schema` or `schemaValidation` option and no `store()` options: `AtomOptions`
+  and `SelectorOptions` contain only `name` and `equal`. These are legacy,
+  pre-v1 examples — not Valdres v1 examples.
+</div>
+
 Atoms and selectors accept an optional `schema` that validates values at
 runtime — and types your state without a generic. Validation is **opt-in per
 store** and off by default, so it adds zero cost unless you turn it on.

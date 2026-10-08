@@ -10,7 +10,7 @@ description: Create derived state from atoms or other selectors
         Signature
     </div>
     <code className="text-sm font-mono text-accent-500">
-        selector&lt;T&gt;(getter: (get: GetFn) =&gt; T): Selector&lt;T&gt;
+        selector&lt;T&gt;(getter: (get: GetValue) =&gt; T, options?: SelectorOptions&lt;T&gt;): Selector&lt;T&gt;
     </code>
     <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
@@ -41,48 +41,40 @@ const fullNameSelector = selector(get => {
 
 ## Parameters
 
-| Parameter                  | Type                | Description                                                                                                                                                           |
-| -------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getter`                   | `(get: GetFn) => T` | A function that computes the derived value. Use `get()` to read atoms or other selectors.                                                                             |
-| `options.name`             | `string`            | Optional name for debugging, devtools, and validation error messages                                                                                                  |
-| `options.schema`           | `Schema<T>`         | Schema for runtime validation of the selector's result, and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
-| `options.schemaValidation` | `boolean`           | Per-selector override of the store's `schemaValidation` flag — `true` always validates this selector, `false` exempts it                                              |
-| `options.mutable`          | `boolean`           | Opt out of development/test deep-freezing. Required when results contain mutable built-ins or host objects that cannot be frozen safely.                              |
+| Parameter       | Type                                | Description                                                                                |
+| --------------- | ----------------------------------- | ------------------------------------------------------------------------------------------ |
+| `getter`        | `(get: GetValue) => T`              | Computes the derived value synchronously. Use `get()` to read atoms or other selectors.    |
+| `options.name`  | `string`                            | Optional name for debugging and error messages                                             |
+| `options.equal` | `(previous: T, next: T) => boolean` | Decides whether a recomputed result is a change. Defaults to `Object.is`.                  |
+
+`SelectorOptions` contains only `name` and `equal`. Options from earlier betas
+are listed under [Legacy pre-1.0 API](#legacy-pre-10-api).
+
+## Results are synchronous and shared by reference
+
+A selector's result must be synchronous. Returning a Promise or other thenable
+makes reading the selector throw an error with code
+`VALDRES_INVALID_SYNCHRONOUS_SELECTOR_RESULT`.
 
 Selectors follow the same
-[immutability and exotic-value contract](/valdres/atom#immutability-and-exotic-values)
-as atoms. When a selector returns a value from a mutable atom unchanged, mark
-the selector `mutable: true` as well so its cache does not attempt to
-deep-freeze that value.
+[immutability and reference-sharing contract](/valdres/atom#immutability-and-reference-sharing)
+as atoms. A selector result is cached by reference and never copied or frozen:
+`store.get` and every subscriber receive the same object, and a selector that
+returns an atom value unchanged shares that atom's reference. Do not mutate a
+selector result or the values its getter reads; return a new value instead.
 
-## Async selectors
-
-Selectors can return a promise. They work with `Suspense` in React. Note that
-the getter itself must be a sync function that _returns_ a promise —
-`selector()` rejects `async` functions at creation time:
-
-```ts
-const userDataSelector = selector(get => {
-    const userId = get(userIdAtom)
-    return fetch(`/api/users/${userId}`).then(res => res.json())
-})
-```
-
-## Schema validation
-
-A selector's `schema` validates its computed result on every evaluation — a
-runtime contract that catches a selector drifting from its declared shape:
+With the default `Object.is` equality, a recomputation that returns a new but
+structurally equal object notifies subscribers. Pass `deepEqual` from
+`valdres/equality` as `equal` to keep the previous result instead:
 
 ```ts
-const fullNameSelector = selector(
-    get => `${get(firstNameAtom)} ${get(lastNameAtom)}`,
-    { name: "fullName", schema: z.string() },
+import { deepEqual } from "valdres/equality"
+
+const visibleTodosSelector = selector(
+    get => get(todosAtom).filter(todo => !todo.done),
+    { equal: deepEqual },
 )
 ```
-
-Validation is opt-in per store (`store({ schemaValidation: true })`) or per
-selector (`schemaValidation: true`). See the
-[Schema Validation guide](/guides/schema-validation).
 
 ## Evaluation errors
 
@@ -180,9 +172,56 @@ try {
 }
 ```
 
+## Legacy pre-1.0 API
+
+<div className="callout callout-warning">
+  <div className="callout-title">Legacy — not in Valdres 1.0</div>
+  Everything below documents earlier betas and is kept for migration. Valdres 1.0
+  selectors have no async results, schema validation, or `mutable` option:
+  results are synchronous and `SelectorOptions` contains only `name` and
+  `equal`. These are legacy, pre-v1 examples — not Valdres v1 examples.
+</div>
+
+### Legacy options
+
+| Parameter                  | Type        | Description                                                                                                                                                           |
+| -------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `options.schema`           | `Schema<T>` | Schema for runtime validation of the selector's result, and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
+| `options.schemaValidation` | `boolean`   | Per-selector override of the store's `schemaValidation` flag — `true` always validates this selector, `false` exempts it                                              |
+| `options.mutable`          | `boolean`   | Opt out of development/test deep-freezing. Required when results contain mutable built-ins or host objects that cannot be frozen safely.                              |
+
+### Async selectors
+
+Selectors can return a promise. They work with `Suspense` in React. Note that
+the getter itself must be a sync function that _returns_ a promise —
+`selector()` rejects `async` functions at creation time:
+
+```ts
+const userDataSelector = selector(get => {
+    const userId = get(userIdAtom)
+    return fetch(`/api/users/${userId}`).then(res => res.json())
+})
+```
+
+### Schema validation
+
+A selector's `schema` validates its computed result on every evaluation — a
+runtime contract that catches a selector drifting from its declared shape:
+
+```ts
+const fullNameSelector = selector(
+    get => `${get(firstNameAtom)} ${get(lastNameAtom)}`,
+    { name: "fullName", schema: z.string() },
+)
+```
+
+Validation is opt-in per store (`store({ schemaValidation: true })`) or per
+selector (`schemaValidation: true`). See the
+[Schema Validation guide](/guides/schema-validation).
+
 ## See also
 
 - [family](/valdres/family) — one selector per key
-- [Schema Validation](/guides/schema-validation) — runtime validation and type
-  inference
+- [Schema Validation](/guides/schema-validation) — legacy, pre-1.0 runtime
+  validation
 - [useValue](/react/useValue) — read a selector value in your components

@@ -14,7 +14,8 @@ import {
     type BenchSummary,
 } from "./components/BenchmarkTables"
 import type { CompiledDoc } from "./compile-mdx"
-import { LegacyNotice, isV1Unavailable } from "./components/LegacyNotice"
+import { LegacyNotice, withCode } from "./components/LegacyNotice"
+import { isV1Unavailable, playgroundLegacyLabel, unmigratedAdapter } from "./legacy-status"
 import type { Framework } from "./frameworks"
 
 const PERFORMANCE_ROUTE = "/guides/performance"
@@ -131,14 +132,15 @@ export async function renderPages(
 
         // Sandpack installs packages from npm, where `latest` is still the
         // pre-v1 release, so every playground is labelled as a legacy example.
+        // Labels and notices share their wording with the Markdown outputs
+        // through ./legacy-status.ts.
         const Playground = ({ code }: { code: string }) => (
             <div className="not-prose my-6">
                 <div
                     data-legacy-example="sandpack"
                     className="mb-2 text-xs font-medium text-amber-600 dark:text-amber-400"
                 >
-                    Legacy example, not Valdres v1: this playground installs{" "}
-                    <code>valdres-react@latest</code>, which is still the pre-v1 release.
+                    {withCode(playgroundLegacyLabel)}
                 </div>
                 <div
                     data-playground
@@ -158,8 +160,8 @@ export async function renderPages(
         // An adapter not yet migrated to v1 gets a legacy label on each block.
         const FrameworkBlock = ({ fw, children }: { fw: string; children?: any }) => {
             if (fw !== framework) return null
-            const adapter = `valdres-${fw}`
-            return isV1Unavailable(adapter) ? (
+            const adapter = unmigratedAdapter(fw)
+            return adapter ? (
                 <>
                     <LegacyNotice integration={adapter} label />
                     {children}
