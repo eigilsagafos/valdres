@@ -1,15 +1,8 @@
-import { globalAtom } from "valdres"
-import { subscribe } from "../lib/subscribe"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { visibilitySource } from "../lib/visibilitySource"
+import type { PageVisibility } from "../types/PageVisibility"
 
-const getInitial = (): DocumentVisibilityState => {
-    if (typeof document === "undefined") return "visible"
-    return document.visibilityState
-}
-
-export const visibilityAtom = globalAtom<DocumentVisibilityState>(
-    getInitial,
-    {
-        name: "@valdres/browser-visibility/visibility",
-        onMount: () => subscribe(),
-    },
+export const visibilityAtom: ExternalAtom<PageVisibility> = externalAtom(
+    visibilitySource,
+    { name: "@valdres/browser-visibility/visibility" },
 )

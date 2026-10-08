@@ -1,12 +1,6 @@
-import { globalAtom } from "valdres"
-import { subscribe } from "../lib/subscribe"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { focusSource } from "../lib/focusSource"
 
-const getInitial = () => {
-    if (typeof document === "undefined") return true
-    return document.hasFocus()
-}
-
-export const focusAtom = globalAtom<boolean>(getInitial, {
+export const focusAtom: ExternalAtom<boolean> = externalAtom(focusSource, {
     name: "@valdres/browser-focus/focus",
-    onMount: () => subscribe(),
 })

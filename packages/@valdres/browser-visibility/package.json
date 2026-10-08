@@ -21,6 +21,7 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../../scripts/rewrite-declaration-imports.ts dist/types",
+        "typecheck:tests": "bunx tsgo --noEmit -p tsconfig.tests.json",
         "dev": "bun run dev/server.ts",
         "test": "bun test",
         "test:ci": "bun test"
@@ -37,7 +38,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.19"
+        "valdres": "^1.0.0-beta.39"
     },
     "publishConfig": {
         "access": "public",
