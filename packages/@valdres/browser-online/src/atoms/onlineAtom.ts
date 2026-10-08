@@ -1,12 +1,6 @@
-import { globalAtom } from "valdres"
-import { subscribe } from "../lib/subscribe"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { onlineSource } from "../lib/onlineSource"
 
-const getInitial = () => {
-    if (typeof navigator === "undefined") return true
-    return navigator.onLine
-}
-
-export const onlineAtom = globalAtom<boolean>(getInitial, {
+export const onlineAtom: ExternalAtom<boolean> = externalAtom(onlineSource, {
     name: "@valdres/browser-online/online",
-    onMount: () => subscribe(),
 })
