@@ -19,11 +19,13 @@ prerelease (no non-prerelease `latest`) is published to `latest` instead
 (`@changesets/cli` `getPublishPlan`, `publishedState === "only-pre"`). That is
 why the media packages' `1.0.0-beta.9` and `@valdres/browser-keyboard`'s
 `1.0.0-beta.10` are on `latest` while their `beta` tag still names the legacy
-`1.0.0-beta.8`, and it applies to `@valdres/browser-online`, `-focus` and
-`-visibility` too. `bunx changeset publish-plan` shows the tag before publishing.
-A successful publish of such a package leaves `beta` on the previous version:
-that is the planned outcome, not a partial release. Moving `beta` to the new
-version is a separate, owner-authorized step after publication (see
+`1.0.0-beta.8`. Online, focus and visibility `1.0.0-beta.9` were published to
+`latest` the same way, and their `beta` tags were moved afterwards. It applies
+to `@valdres/browser-presence` too. `bunx changeset publish-plan` shows the tag
+before publishing. A successful publish of such a package leaves `beta` on the
+previous version: that is the planned outcome, not a partial release. Moving
+`beta` to the new version is a separate, owner-authorized step after
+publication (see
 [Publish and dist-tag verification](#publish-and-dist-tag-verification)).
 
 The release cohort is `valdres`, `valdres-react`, the five migrated browser
@@ -31,16 +33,14 @@ media packages: `@valdres/browser-color-scheme`, `@valdres/browser-contrast`,
 `@valdres/browser-reduced-motion`, `@valdres/browser-reduced-data` and
 `@valdres/browser-reduced-transparency` — plus `@valdres/browser-keyboard`,
 `@valdres/browser-online`, `@valdres/browser-focus`,
-`@valdres/browser-visibility`, `@valdres/hotkeys` and `@valdres-react/hotkeys`.
-`@valdres/browser-presence` is migrated but not yet in the cohort: its
-dependency ranges must first exclude the legacy focus/visibility `1.0.0-beta.8`.
-Until then, its published `1.0.0-beta.7` (`latest`) and `1.0.0-beta.8` (`beta`)
-depend on `^1.0.0-beta.7` and `^1.0.0-beta.8` of focus and visibility, so fresh
-installs resolve the migrated releases, and their selector composes them at
-runtime. Their declarations already fail full library checking
-(`skipLibCheck: false`, TS2314 on `Selector`) against the v1 core, checked at
-`1.0.0-beta.39` and `1.0.0-beta.42`. That predates the migrated releases and is
-no reason to release presence early.
+`@valdres/browser-visibility`, `@valdres/browser-presence`, `@valdres/hotkeys`
+and `@valdres-react/hotkeys`. Presence joined last: its focus/visibility ranges
+had to exclude the legacy `1.0.0-beta.8` first. Its legacy `1.0.0-beta.7` and
+`1.0.0-beta.8` depend on `^1.0.0-beta.7` and `^1.0.0-beta.8` of focus and
+visibility, so they resolve and compose the migrated releases at runtime, but
+their declarations fail full library checking (`skipLibCheck: false`, TS2314 on
+`Selector`) against the v1 core, checked at `1.0.0-beta.39` and
+`1.0.0-beta.42`.
 Angular, Vue, Svelte, Solid, the
 remaining feature packages, and the compatibility packages stay on their last
 legacy beta versions until each is migrated and certified.
@@ -84,7 +84,10 @@ keydown bridge and `useStore(store?)`), and `@valdres-react/hotkeys` requires
 the retired callback API. Online, focus and visibility declare `^1.0.0-beta.39`,
 pinned by equality in `scripts/browser-status-packages.test.ts`; the packed gate,
 `scripts/test-browser-status-packed-consumer.ts`, also executes that floor
-against the published `1.0.0-beta.39`. Do not
+against the published `1.0.0-beta.39`. Presence additionally requires focus and
+visibility `^1.0.0-beta.9`, the first migrated releases, pinned by equality in
+the same test; the packed gate fails if that range admits the legacy
+`1.0.0-beta.8`. Do not
 combine beta.24 or later with a
 deferred adapter, plugin, or compatibility package until that package is
 migrated.

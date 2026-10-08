@@ -2,12 +2,12 @@
  * Guards the browser-status lane's metadata and release state. Picked up by
  * CI's existing `bun test scripts/` step.
  *
- * Stage A: online, focus and visibility are release-eligible (off the
- * Changesets ignore list, on the publishable list, `browser-status` gates
- * `publish`). Presence stays release-ignored until Stage B raises its
- * focus/visibility ranges past the legacy builds. Each package's
- * `releaseEligible` flag is the single claim checked here, so a package cannot
- * drift into a half-enabled state.
+ * All four packages are release-eligible (off the Changesets ignore list, on
+ * the publishable list, `browser-status` gates `publish`): online, focus and
+ * visibility since Stage A, presence since Stage B raised its focus/visibility
+ * ranges past the legacy builds. Each package's `releaseEligible` flag is the
+ * single claim checked here, so a package cannot drift into a half-enabled
+ * state.
  */
 import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
@@ -17,6 +17,7 @@ import {
     BROWSER_STATUS_FLOOR,
     BROWSER_STATUS_LEGACY_VERSION,
     BROWSER_STATUS_PACKAGES,
+    BROWSER_STATUS_PRESENCE_DEPENDENCY_RANGE,
 } from "./lib/browser-status-packages"
 import {
     STAGE_A_PACKAGES,
@@ -150,18 +151,16 @@ describe("browser-status lane", () => {
         for (const name of STAGE_A_PACKAGES) expect(eligible).toContain(name)
     })
 
-    test("presence stays release-ignored while its ranges admit the legacy builds", () => {
+    test("presence never releases with ranges that admit the legacy builds", () => {
         const manifest = JSON.parse(
             read(ROOT, "packages/@valdres/browser-presence", "package.json"),
         )
-        const admitsLegacy = [
+        const ranges = [
             "@valdres/browser-focus",
             "@valdres/browser-visibility",
-        ].some(dep =>
-            Bun.semver.satisfies(
-                BROWSER_STATUS_LEGACY_VERSION,
-                manifest.dependencies[dep],
-            ),
+        ].map(dep => manifest.dependencies[dep])
+        const admitsLegacy = ranges.some(range =>
+            Bun.semver.satisfies(BROWSER_STATUS_LEGACY_VERSION, range),
         )
         const releasable =
             !ignored().includes(PRESENCE) ||
@@ -170,8 +169,13 @@ describe("browser-status lane", () => {
             admitsLegacy: true,
             releasable: true,
         })
-        // Stage A: presence is still the ignored one.
-        expect(eligible).not.toContain(PRESENCE)
+        // Stage B: presence releases, requiring the first migrated releases.
+        expect(eligible).toContain(PRESENCE)
+        expect(ranges).toEqual([
+            BROWSER_STATUS_PRESENCE_DEPENDENCY_RANGE,
+            BROWSER_STATUS_PRESENCE_DEPENDENCY_RANGE,
+        ])
+        expect(admitsLegacy).toBe(false)
     })
 
     test("online, focus and visibility each publish one external atom", () => {
