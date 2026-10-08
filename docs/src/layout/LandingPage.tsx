@@ -658,16 +658,17 @@ function highlightShared() {
 
 function highlightReact() {
     return [
-        `${kw("import")} ${plain("{ useAtom }")} ${kw("from")} ${str('"valdres-react"')}`,
+        `${kw("import")} ${plain("{ useUpdateAtom, useValue }")} ${kw("from")} ${str('"valdres-react"')}`,
         `${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,
         ``,
         `${kw("export function")} ${fn("Counter")}${plain("() {")}`,
-        `  ${kw("const")} ${plain("[count, setCount] =")} ${fn("useAtom")}${plain("(countAtom)")}`,
+        `  ${kw("const")} ${plain("count =")} ${fn("useValue")}${plain("(countAtom)")}`,
+        `  ${kw("const")} ${plain("updateCount =")} ${fn("useUpdateAtom")}${plain("(countAtom)")}`,
         ``,
         `  ${kw("return")} ${plain("(")}`,
         `    ${plain("<")}${tag("div")}${plain(">")}`,
         `      ${plain("<")}${tag("span")}${plain(">")}{count}${plain("</")}${tag("span")}${plain(">")}`,
-        `      ${plain("<")}${tag("button")} ${name("onClick")}${plain("={() =>")} ${fn("setCount")}${plain("(c => c + 1)}>+</")}${tag("button")}${plain(">")}`,
+        `      ${plain("<")}${tag("button")} ${name("onClick")}${plain("={() =>")} ${fn("updateCount")}${plain("(c => c + 1)}>+</")}${tag("button")}${plain(">")}`,
         `    ${plain("</")}${tag("div")}${plain(">")}`,
         `  ${plain(")")}`,
         `${plain("}")}`,
@@ -676,6 +677,7 @@ function highlightReact() {
 
 function highlightVue() {
     return [
+        `${comment("&lt;!-- Legacy example, not Valdres v1: valdres-vue is not yet migrated --&gt;")}`,
         `${plain("<")}${tag("script")} ${name("setup")}${plain(">")}`,
         `${kw("import")} ${plain("{ useAtom }")} ${kw("from")} ${str('"valdres-vue"')}`,
         `${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,
@@ -694,6 +696,7 @@ function highlightVue() {
 
 function highlightSvelte() {
     return [
+        `${comment("&lt;!-- Legacy example, not Valdres v1: valdres-svelte is not yet migrated --&gt;")}`,
         `${plain("<")}${tag("script")}${plain(">")}`,
         `  ${kw("import")} ${plain("{ fromState }")} ${kw("from")} ${str('"valdres-svelte"')}`,
         `  ${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,
@@ -710,6 +713,7 @@ function highlightSvelte() {
 
 function highlightSolid() {
     return [
+        `${comment("// Legacy example, not Valdres v1: valdres-solid is not yet migrated")}`,
         `${kw("import")} ${plain("{ createAtom }")} ${kw("from")} ${str('"valdres-solid"')}`,
         `${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,
         ``,
@@ -728,6 +732,7 @@ function highlightSolid() {
 
 function highlightAngular() {
     return [
+        `${comment("// Legacy example, not Valdres v1: valdres-angular is not yet migrated")}`,
         `${kw("import")} ${plain("{ Component }")} ${kw("from")} ${str('"@angular/core"')}`,
         `${kw("import")} ${plain("{ injectAtom }")} ${kw("from")} ${str('"valdres-angular"')}`,
         `${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,

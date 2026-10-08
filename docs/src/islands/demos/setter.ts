@@ -39,7 +39,7 @@ export function mountSetterDemo(el: HTMLElement) {
     set0.onclick = () => demoStore.set(countAtom, 0)
     set10.onclick = () => demoStore.set(countAtom, 10)
     set100.onclick = () => demoStore.set(countAtom, 100)
-    incBtn.onclick = () => demoStore.set(countAtom, (c: number) => c + 1)
+    incBtn.onclick = () => demoStore.update(countAtom, c => c + 1)
 
     // Display area (separate from setter)
     const displayRow = document.createElement("div")
@@ -53,7 +53,7 @@ export function mountSetterDemo(el: HTMLElement) {
     display.setAttribute("style", valueStyle)
     display.textContent = "0"
 
-    demoStore.sub(countAtom, () => {
+    const unsubscribe = demoStore.sub(countAtom, () => {
         display.textContent = String(demoStore.get(countAtom))
     })
 
@@ -61,4 +61,10 @@ export function mountSetterDemo(el: HTMLElement) {
     displayRow.append(displayLabel, display)
     container.append(label, hint, row, displayRow)
     el.appendChild(container)
+
+    return () => {
+        unsubscribe()
+        demoStore.dispose()
+        container.remove()
+    }
 }

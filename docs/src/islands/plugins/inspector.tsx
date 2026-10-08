@@ -12,7 +12,6 @@ import {
 } from "react"
 import { createRoot } from "react-dom/client"
 import { Provider, useStore } from "valdres-react"
-import { isPromiseLike } from "valdres"
 import { docsStore } from "../shared-store"
 
 export type InspectorRow = {
@@ -78,19 +77,11 @@ function defaultFormat(value: any): ReactNode {
 
 function RowValue({ state, format }: Omit<InspectorRow, "label">) {
     const store = useStore()
-    // Read without suspending: useValue would throw an async atom's pending
-    // promise to React and not re-render until it resolves, hiding the live
-    // setSelf() updates a measurement emits while running. Subscribing to the
-    // store instead surfaces every intermediate value; a still-pending promise
-    // just shows "…".
     const value = useSyncExternalStore(
         cb => store.sub(state as any, cb),
         () => store.get(state as any),
         () => store.get(state as any),
     )
-    if (isPromiseLike(value)) {
-        return <span className="text-zinc-400 dark:text-zinc-500">…</span>
-    }
     return <>{(format ?? defaultFormat)(value)}</>
 }
 
@@ -130,7 +121,6 @@ function EventLog({
 
     useEffect(() => {
         const add = (value: unknown) => {
-            if (isPromiseLike(value)) return
             setEntries(prev =>
                 [
                     { id: nextId.current++, time: new Date().toLocaleTimeString(), value },
@@ -216,14 +206,19 @@ function Inspector({ config }: { config: InspectorConfig }) {
     )
 }
 
-/** Build a mount function for the plugin-demo registry from a declarative config. */
+/**
+ * Build a mount function for the plugin-demo registry from a declarative
+ * config. The returned cleanup unmounts the root, releasing its subscriptions.
+ */
 export function inspector(config: InspectorConfig) {
     return (el: HTMLElement) => {
         el.innerHTML = ""
-        createRoot(el).render(
+        const root = createRoot(el)
+        root.render(
             <Provider store={docsStore}>
                 <Inspector config={config} />
             </Provider>,
         )
+        return () => root.unmount()
     }
 }

@@ -1,13 +1,14 @@
-import { useAtom } from "valdres-react"
+import { useUpdateAtom, useValue } from "valdres-react"
 import { countAtom } from "./shared-store"
 
 export function ReactCounter() {
-    const [count, setCount] = useAtom(countAtom)
+    const count = useValue(countAtom)
+    const updateCount = useUpdateAtom(countAtom)
 
     return (
-        <div className="island-card" onClick={() => setCount(c => (c as number) + 1)}>
+        <div className="island-card" onClick={() => updateCount(c => c + 1)}>
             <span className="island-count" style={{ color: "#61DAFB" }}>
-                {count as number}
+                {count}
             </span>
         </div>
     )

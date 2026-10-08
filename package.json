@@ -47,8 +47,9 @@
         "check-size": "bun run scripts/check-valdres-package.ts --build --checks=size",
         "check:contracts-v1": "bunx tsgo --noEmit -p contracts/v1/tsconfig.json && bun contracts/v1/generate-frozen-test-inventory.ts --check && bun contracts/v1/generate-test-dispositions.ts --check && bun contracts/v1/generate-production-source-dispositions.ts && bun contracts/v1/check.ts && VALDRES_ALLOW_ROOT_BUN_TEST=1 bun test contracts/v1/check.test.ts contracts/v1/production-source-dispositions.test.ts",
         "gen-readmes": "bun run scripts/gen-readmes.ts",
-        "docs:build": "bun --filter 'valdres-svelte' build && bun run docs/build.ts",
-        "docs:dev": "bun --filter 'valdres-svelte' build && bun run docs/dev.ts"
+        "docs:build": "bun run docs/build.ts",
+        "docs:dev": "bun run docs/dev.ts",
+        "test:docs": "cd docs && bun test"
     },
     "workspaces": [
         "packages/*",

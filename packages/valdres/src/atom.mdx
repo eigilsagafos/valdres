@@ -24,7 +24,7 @@ import { atom } from "valdres"
 // Simple atom with a default value
 const countAtom = atom(0)
 
-// Atom with an async initializer
+// Legacy, not Valdres v1: an async initializer
 const userAtom = atom(() =>
     fetch("/api/user").then(res => res.json())
 )
@@ -42,9 +42,9 @@ const nameAtom = atom("default", { name: "nameAtom" })
 | `options.schema` | `Schema<T>` | Schema for runtime validation and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
 | `options.schemaValidation` | `boolean` | Per-atom override of the store's `schemaValidation` flag — `true` always validates this atom, `false` exempts it |
 | `options.mutable` | `boolean` | Opt out of development/test deep-freezing. Required for mutable built-ins and host objects that cannot be frozen safely. |
-| `options.maxAge` | `Reactive<number>` | Re-fetch interval in milliseconds (requires async default). Accepts a number, atom, or selector. |
-| `options.staleWhileRevalidate` | `Reactive<number>` | Serve stale data for this many ms while re-fetching. Accepts a number, atom, or selector. |
-| `options.staleIfError` | `Reactive<number>` | Serve stale data for this many ms after re-fetch errors. Accepts a number, atom, or selector. |
+| `options.maxAge` | `Reactive<number>` | Legacy, not in v1. Re-fetch interval in milliseconds (requires async default). Accepts a number, atom, or selector. |
+| `options.staleWhileRevalidate` | `Reactive<number>` | Legacy, not in v1. Serve stale data for this many ms while re-fetching. Accepts a number, atom, or selector. |
+| `options.staleIfError` | `Reactive<number>` | Legacy, not in v1. Serve stale data for this many ms after re-fetch errors. Accepts a number, atom, or selector. |
 
 ## Immutability and exotic values
 
@@ -103,6 +103,11 @@ such metadata in a separate atom.
 
 ## Async atoms
 
+<div className="callout callout-warning">
+  <div className="callout-title">Legacy — not in Valdres 1.0</div>
+  In Valdres 1.0, atom values are synchronous and `atom(fn)` stores `fn` itself as the value. The examples in this section are legacy, pre-v1 examples.
+</div>
+
 <div className="callout callout-tip">
   <div className="callout-title">Tip</div>
   When you pass a function as the default value, it becomes an async atom. The function is called lazily — only when the atom is first read.
@@ -118,6 +123,11 @@ const dataAtom = atom(async () => {
 ```
 
 ## Caching & revalidation
+
+<div className="callout callout-warning">
+  <div className="callout-title">Legacy — not in Valdres 1.0</div>
+  `maxAge`, `staleWhileRevalidate`, `staleIfError` and `cacheMeta` are not part of Valdres 1.0. The examples in this section are legacy, pre-v1 examples.
+</div>
 
 Async atoms support built-in stale-while-revalidate caching via `maxAge`, `staleWhileRevalidate`, and `staleIfError`. This is useful for data that should periodically refresh from an API while keeping the UI responsive.
 
