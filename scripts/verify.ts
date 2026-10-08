@@ -18,6 +18,8 @@
  * SCOPE: every pull-request job in ci.yaml — `test`, `browser-media` (the five
  * migrated browser media packages: suites, both tsconfigs, packed consumers),
  * `browser-keyboard` (the same three gates for the keyboard package),
+ * `browser-status` (the same three gates for the online, focus, visibility
+ * and presence packages),
  * `hotkeys` (suites, both tsconfigs and packed consumers for the two
  * hotkeys packages) and `valdres-package` (the published-tarball gate: publint, ATTW, size
  * budgets; ~13s). It does NOT cover the manual-only legacy docs workflows or
@@ -81,6 +83,7 @@ const JOBS = [
     "test",
     "browser-media",
     "browser-keyboard",
+    "browser-status",
     "hotkeys",
     "valdres-package",
 ]
@@ -191,6 +194,18 @@ const SKIPPED_ACTIONS: Record<
         reason: SETUP_BUN,
     },
     "browser-keyboard / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
+    "browser-status / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "browser-status / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "browser-status / actions/setup-node": {
         action: "actions/setup-node",
         reason: SETUP_NODE,
     },
