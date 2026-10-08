@@ -1214,6 +1214,7 @@ import {
 } from "valdres/inspect"
 
 import { query } from "valdres/query"
+import { deepEqual } from "valdres/equality"
 interface PackedEntityIndexes { kind: "task" | "person" }
 const indexedEntities = collection<string, { kind: "task" | "person" }, string, PackedEntityIndexes>({
     indexes: { kind: entity => entity.kind },
@@ -1225,6 +1226,32 @@ void indexedRows
 
 const count = atom(0)
 const doubled = selector(get => get(count) * 2)
+
+// Comparators are checked against, never infer, the installed factories' Value.
+type PackedIsAny<Value> = 0 extends 1 & Value ? true : false
+type PackedSame<Left, Right> =
+    (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+        ? true
+        : false
+declare const packedUntyped: any
+const packedAnyAtom = atom(packedUntyped, { equal: deepEqual })
+const packedAnyLazy = atom.lazy(() => packedUntyped, { equal: deepEqual })
+const packedAnySelector = selector(() => packedUntyped.positions, { equal: deepEqual })
+const packedWidenedAtom = atom(1, { equal: deepEqual })
+const packedNumberEqual = (previous: number, next: number) => previous === next
+const packedNamedSelector = selector(get => get(count), { equal: packedNumberEqual })
+const packedComparatorInference: [
+    PackedIsAny<typeof packedAnyAtom extends Atom<infer Value> ? Value : never>,
+    PackedIsAny<typeof packedAnyLazy extends Atom<infer Value> ? Value : never>,
+    PackedIsAny<typeof packedAnySelector extends Selector<infer Value> ? Value : never>,
+    PackedSame<typeof packedWidenedAtom, Atom<number>>,
+    PackedSame<typeof packedNamedSelector, Selector<number>>,
+] = [true, true, true, true, true]
+void packedComparatorInference
+// @ts-expect-error A literal comparator cannot narrow an inferred number Value.
+atom(1, { equal: (previous: 1, next: 1) => previous === next })
+// @ts-expect-error Selector comparators are checked against the read result.
+selector(get => get(count), { equal: (previous: string, next: string) => previous === next })
 const target: Store = store()
 const stopPackedReaction: () => void = target.sub(doubled, {
     settle: (transaction: Transaction) => {

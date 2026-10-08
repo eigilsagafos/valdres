@@ -147,6 +147,30 @@ export interface SelectorOptions<Value> {
     readonly equal?: (previous: Value, next: Value) => boolean
 }
 
+// The public factories pass Value to `options.equal` through these aliases so
+// the comparator never infers or widens Value: it comes from the initial
+// value, initializer or read function alone. Both are exactly Value once Value
+// is known, so they change only inference, never which comparators type-check.
+// Otherwise a broad comparator such as `deepEqual` contributes an `unknown`
+// candidate that beats an `any` value (TypeScript 5.6+), and any inference
+// through the options stops a literal initial value from widening.
+//
+// The intrinsic `NoInfer` is avoided twice over: published declarations would
+// need TypeScript 5.4, and for a context-sensitive read function
+// (`get => ...`) TypeScript checks the options before inferring from the
+// function, so a named comparator would be checked against
+// `EqualFunc<unknown>` and rejected.
+
+// Blocks inference from the comparator entirely, keeping literal widening for
+// an eager atom's top-level initial value.
+export type UninferredValue<Value> = [Value][Value extends unknown ? 0 : never]
+
+// Infers through a conditional type, below every inference from the
+// initializer or read function, so it is discarded once those infer Value but
+// stands in for Value while TypeScript checks a named comparator before it
+// reads a context-sensitive function.
+export type ComparatorValue<Value> = [Value] extends [unknown] ? Value : never
+
 export type AtomUpdater<Value> = (current: Value) => Value
 
 /** A scope-bound revocable view over one internal StoreTree draft. */

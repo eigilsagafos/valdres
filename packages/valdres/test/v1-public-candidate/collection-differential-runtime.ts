@@ -434,7 +434,7 @@ class CollectionRuntimeDriverImpl implements CollectionRuntimeDriver {
         } else if (fallback.kind === "lazy") {
             runtime = atom.lazy(() => this.#decode(fallback.value), options)
         } else {
-            runtime = atom.lazy(() => {
+            runtime = atom.lazy<unknown>(() => {
                 throw new RuntimeProgramFault(fallback.code)
             }, options)
         }
