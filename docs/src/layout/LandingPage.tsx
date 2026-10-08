@@ -677,6 +677,7 @@ function highlightReact() {
 
 function highlightVue() {
     return [
+        `${comment("&lt;!-- Legacy example, not Valdres v1: valdres-vue is not yet migrated --&gt;")}`,
         `${plain("<")}${tag("script")} ${name("setup")}${plain(">")}`,
         `${kw("import")} ${plain("{ useAtom }")} ${kw("from")} ${str('"valdres-vue"')}`,
         `${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,
@@ -695,6 +696,7 @@ function highlightVue() {
 
 function highlightSvelte() {
     return [
+        `${comment("&lt;!-- Legacy example, not Valdres v1: valdres-svelte is not yet migrated --&gt;")}`,
         `${plain("<")}${tag("script")}${plain(">")}`,
         `  ${kw("import")} ${plain("{ fromState }")} ${kw("from")} ${str('"valdres-svelte"')}`,
         `  ${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,
@@ -711,6 +713,7 @@ function highlightSvelte() {
 
 function highlightSolid() {
     return [
+        `${comment("// Legacy example, not Valdres v1: valdres-solid is not yet migrated")}`,
         `${kw("import")} ${plain("{ createAtom }")} ${kw("from")} ${str('"valdres-solid"')}`,
         `${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,
         ``,
@@ -729,6 +732,7 @@ function highlightSolid() {
 
 function highlightAngular() {
     return [
+        `${comment("// Legacy example, not Valdres v1: valdres-angular is not yet migrated")}`,
         `${kw("import")} ${plain("{ Component }")} ${kw("from")} ${str('"@angular/core"')}`,
         `${kw("import")} ${plain("{ injectAtom }")} ${kw("from")} ${str('"valdres-angular"')}`,
         `${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,

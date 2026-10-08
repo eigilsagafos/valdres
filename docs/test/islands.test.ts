@@ -15,6 +15,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import {
+    bundleClient,
     bundleDemos,
     bundleLanding,
     islandDefine,
@@ -38,6 +39,7 @@ beforeAll(async () => {
     version = await readValdresVersion(rootDir)
     const define = islandDefine(version, "production")
     for (const [name, bundle] of [
+        ["client.js", bundleClient],
         ["demos.js", bundleDemos],
         ["landing.js", bundleLanding],
     ] as const) {
@@ -93,6 +95,13 @@ describe("v1 module boundary", () => {
         expect(legacy.filter(file => bundled.includes(file))).toEqual([])
     })
 
+    test("client.js stays valdres-free beside demos.js and landing.js", () => {
+        // A realm accepts one valdres runtime, and client.js loads on every page.
+        expect(
+            bundledInputs["client.js"].filter(input => input.startsWith(join(rootDir, "packages"))),
+        ).toEqual([])
+    })
+
     test("the boundary check sees the real module graph", () => {
         // Guards the assertions above against a metafile that lists nothing.
         for (const source of [
@@ -142,6 +151,14 @@ describe("landing.js", () => {
     test("the React counter runs and unmigrated cards show notices", () => {
         expectAllPass(runFixture("landing.ts", outdir))
     })
+})
+
+describe("site theme", () => {
+    for (const layout of ["docs", "landing"]) {
+        test(`${layout}: follows the OS for "system", never over an explicit choice, without accumulating listeners`, () => {
+            expectAllPass(runFixture("theme.ts", outdir, layout))
+        })
+    }
 })
 
 describe("todo and family demos", () => {

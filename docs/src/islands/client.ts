@@ -1,3 +1,5 @@
+import { initTheme } from "./theme"
+
 // ════════════════════════════════════════════
 // Prefetch — hover-triggered, delegated on document
 // ════════════════════════════════════════════
@@ -458,16 +460,8 @@ if (storedFw && storedFw !== (initialFramework || "react")) {
     localStorage.setItem("valdres-framework", initialFramework)
 }
 
-// Theme toggle
-const themeToggle = document.getElementById("theme-toggle")
-if (themeToggle) {
-    themeToggle.addEventListener("click", () => {
-        document.documentElement.classList.add("theme-transition")
-        const isDark = document.documentElement.classList.toggle("dark")
-        localStorage.setItem("theme", isDark ? "dark" : "light")
-        setTimeout(() => document.documentElement.classList.remove("theme-transition"), 350)
-    })
-}
+// Theme toggle + OS-theme following
+initTheme()
 
 // Mobile sidebar open/close
 function initMobileSidebarListeners() {

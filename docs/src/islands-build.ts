@@ -101,12 +101,13 @@ type IslandBuildOptions = {
 }
 
 /** `client.js` — island loader only: no framework, no valdres, no defines. */
-export const bundleClient = ({ outdir, minify }: IslandBuildOptions) =>
+export const bundleClient = ({ outdir, minify, metafile }: IslandBuildOptions) =>
     Bun.build({
         entrypoints: [`${docsDir}/src/islands/client.ts`],
         outdir,
         minify,
         naming: "client.js",
+        ...(metafile && { metafile }),
     })
 
 /** `demos.js` + `playground-bundle.js` — the API/plugin demos on every page. */

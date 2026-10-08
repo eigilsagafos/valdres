@@ -14,6 +14,7 @@ import {
     type BenchSummary,
 } from "./components/BenchmarkTables"
 import type { CompiledDoc } from "./compile-mdx"
+import { LegacyNotice, isV1Unavailable } from "./components/LegacyNotice"
 import type { Framework } from "./frameworks"
 
 const PERFORMANCE_ROUTE = "/guides/performance"
@@ -128,13 +129,24 @@ export async function renderPages(
             frameworkMap = { ...firstPageMap }
         }
 
+        // Sandpack installs packages from npm, where `latest` is still the
+        // pre-v1 release, so every playground is labelled as a legacy example.
         const Playground = ({ code }: { code: string }) => (
-            <div
-                data-playground
-                data-code={code}
-                className="not-prose my-6 py-16 text-center text-sm text-zinc-500 dark:text-zinc-400"
-            >
-                Loading playground…
+            <div className="not-prose my-6">
+                <div
+                    data-legacy-example="sandpack"
+                    className="mb-2 text-xs font-medium text-amber-600 dark:text-amber-400"
+                >
+                    Legacy example, not Valdres v1: this playground installs{" "}
+                    <code>valdres-react@latest</code>, which is still the pre-v1 release.
+                </div>
+                <div
+                    data-playground
+                    data-code={code}
+                    className="py-16 text-center text-sm text-zinc-500 dark:text-zinc-400"
+                >
+                    Loading playground…
+                </div>
             </div>
         )
 
@@ -143,8 +155,29 @@ export async function renderPages(
         // Renders its children only on the matching framework's variant of the
         // page. Since each plugin/core page is a distinct per-framework route,
         // the other frameworks' blocks are never shipped in this route's HTML.
-        const FrameworkBlock = ({ fw, children }: { fw: string; children?: any }) =>
-            fw === framework ? <>{children}</> : null
+        // An adapter not yet migrated to v1 gets a legacy label on each block.
+        const FrameworkBlock = ({ fw, children }: { fw: string; children?: any }) => {
+            if (fw !== framework) return null
+            const adapter = `valdres-${fw}`
+            return isV1Unavailable(adapter) ? (
+                <>
+                    <LegacyNotice integration={adapter} label />
+                    {children}
+                </>
+            ) : (
+                <>{children}</>
+            )
+        }
+
+        // A page about an integration not yet migrated to v1 opens with a
+        // notice under its title.
+        const legacyIntegration = isV1Unavailable(doc.packageName) ? doc.packageName : undefined
+        const h1 = (props: any) => (
+            <>
+                <h1 {...props} />
+                {legacyIntegration && <LegacyNotice integration={legacyIntegration} />}
+            </>
+        )
 
         // Placeholder for an interactive plugin demo, hydrated by demos.ts.
         const PluginDemo = ({ plugin }: { plugin: string }) => (
@@ -164,12 +197,13 @@ export async function renderPages(
                       const children = result.apiName ?? props.children
                       return <a {...props} href={result.href}>{children}</a>
                   },
+                  h1,
                   Playground,
                   BenchmarkTables: BenchmarkTablesBound,
                   FrameworkBlock,
                   PluginDemo,
               }
-            : { Playground, BenchmarkTables: BenchmarkTablesBound, FrameworkBlock, PluginDemo }
+            : { h1, Playground, BenchmarkTables: BenchmarkTablesBound, FrameworkBlock, PluginDemo }
 
         const headings =
             doc.route === PERFORMANCE_ROUTE
