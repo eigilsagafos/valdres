@@ -460,7 +460,7 @@ if (storedFw && storedFw !== (initialFramework || "react")) {
 
 // Theme toggle
 const themeToggle = document.getElementById("theme-toggle")
-if (themeToggle && !document.getElementById("react-island")) {
+if (themeToggle) {
     themeToggle.addEventListener("click", () => {
         document.documentElement.classList.add("theme-transition")
         const isDark = document.documentElement.classList.toggle("dark")

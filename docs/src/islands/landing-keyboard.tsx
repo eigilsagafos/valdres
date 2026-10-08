@@ -169,9 +169,11 @@ function Keyboard() {
 }
 
 export function mountKeyboardDemo(el: HTMLElement) {
-    createRoot(el).render(
+    const root = createRoot(el)
+    root.render(
         <Provider store={docsStore}>
             <Keyboard />
         </Provider>,
     )
+    return () => root.unmount()
 }

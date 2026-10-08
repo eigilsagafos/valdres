@@ -32,15 +32,21 @@ export function mountResetCounterDemo(el: HTMLElement) {
     reset.style.marginLeft = "8px"
     reset.textContent = "Reset"
 
-    minus.onclick = () => demoStore.set(countAtom, (c: number) => c - 1)
-    plus.onclick = () => demoStore.set(countAtom, (c: number) => c + 1)
-    reset.onclick = () => demoStore.set(countAtom, 0)
+    minus.onclick = () => demoStore.update(countAtom, c => c - 1)
+    plus.onclick = () => demoStore.update(countAtom, c => c + 1)
+    reset.onclick = () => demoStore.reset(countAtom)
 
-    demoStore.sub(countAtom, () => {
+    const unsubscribe = demoStore.sub(countAtom, () => {
         display.textContent = String(demoStore.get(countAtom))
     })
 
     row.append(minus, display, plus, reset)
     container.append(label, row)
     el.appendChild(container)
+
+    return () => {
+        unsubscribe()
+        demoStore.dispose()
+        container.remove()
+    }
 }

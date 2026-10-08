@@ -658,16 +658,17 @@ function highlightShared() {
 
 function highlightReact() {
     return [
-        `${kw("import")} ${plain("{ useAtom }")} ${kw("from")} ${str('"valdres-react"')}`,
+        `${kw("import")} ${plain("{ useUpdateAtom, useValue }")} ${kw("from")} ${str('"valdres-react"')}`,
         `${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,
         ``,
         `${kw("export function")} ${fn("Counter")}${plain("() {")}`,
-        `  ${kw("const")} ${plain("[count, setCount] =")} ${fn("useAtom")}${plain("(countAtom)")}`,
+        `  ${kw("const")} ${plain("count =")} ${fn("useValue")}${plain("(countAtom)")}`,
+        `  ${kw("const")} ${plain("updateCount =")} ${fn("useUpdateAtom")}${plain("(countAtom)")}`,
         ``,
         `  ${kw("return")} ${plain("(")}`,
         `    ${plain("<")}${tag("div")}${plain(">")}`,
         `      ${plain("<")}${tag("span")}${plain(">")}{count}${plain("</")}${tag("span")}${plain(">")}`,
-        `      ${plain("<")}${tag("button")} ${name("onClick")}${plain("={() =>")} ${fn("setCount")}${plain("(c => c + 1)}>+</")}${tag("button")}${plain(">")}`,
+        `      ${plain("<")}${tag("button")} ${name("onClick")}${plain("={() =>")} ${fn("updateCount")}${plain("(c => c + 1)}>+</")}${tag("button")}${plain(">")}`,
         `    ${plain("</")}${tag("div")}${plain(">")}`,
         `  ${plain(")")}`,
         `${plain("}")}`,

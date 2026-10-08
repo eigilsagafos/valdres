@@ -4,7 +4,7 @@ import { demoContainerStyle, demoLabelStyle, buttonStyle, valueStyle, secondaryT
 export function mountValueDisplayDemo(el: HTMLElement) {
     const demoStore = store()
     const countAtom = atom(0)
-    const doubledSelector = selector(get => (get(countAtom) as number) * 2)
+    const doubledSelector = selector(get => get(countAtom) * 2)
 
     const container = document.createElement("div")
     container.setAttribute("style", demoContainerStyle)
@@ -54,17 +54,24 @@ export function mountValueDisplayDemo(el: HTMLElement) {
     plus.setAttribute("style", buttonStyle)
     plus.textContent = "+"
 
-    minus.onclick = () => demoStore.set(countAtom, (c: number) => c - 1)
-    plus.onclick = () => demoStore.set(countAtom, (c: number) => c + 1)
+    minus.onclick = () => demoStore.update(countAtom, c => c - 1)
+    plus.onclick = () => demoStore.update(countAtom, c => c + 1)
 
-    demoStore.sub(countAtom, () => {
+    const unsubscribeValue = demoStore.sub(countAtom, () => {
         valueDisplay.textContent = String(demoStore.get(countAtom))
     })
-    demoStore.sub(doubledSelector, () => {
+    const unsubscribeDoubled = demoStore.sub(doubledSelector, () => {
         doubledDisplay.textContent = String(demoStore.get(doubledSelector))
     })
 
     btnRow.append(minus, plus)
     container.append(label, hint, row, btnRow)
     el.appendChild(container)
+
+    return () => {
+        unsubscribeValue()
+        unsubscribeDoubled()
+        demoStore.dispose()
+        container.remove()
+    }
 }

@@ -27,14 +27,20 @@ export function mountCounterDemo(el: HTMLElement) {
     plus.setAttribute("style", buttonStyle)
     plus.textContent = "+"
 
-    minus.onclick = () => demoStore.set(countAtom, (c: number) => c - 1)
-    plus.onclick = () => demoStore.set(countAtom, (c: number) => c + 1)
+    minus.onclick = () => demoStore.update(countAtom, c => c - 1)
+    plus.onclick = () => demoStore.update(countAtom, c => c + 1)
 
-    demoStore.sub(countAtom, () => {
+    const unsubscribe = demoStore.sub(countAtom, () => {
         display.textContent = String(demoStore.get(countAtom))
     })
 
     row.append(minus, display, plus)
     container.append(label, row)
     el.appendChild(container)
+
+    return () => {
+        unsubscribe()
+        demoStore.dispose()
+        container.remove()
+    }
 }

@@ -36,6 +36,17 @@ describe("docs island gate wiring", () => {
         )
     })
 
+    test("runs the docs demo tests in both manual docs lanes, not in PR CI", () => {
+        const DEMOS = "bun run test:docs"
+        expect(workflow("ci.yaml")).not.toContain(DEMOS)
+        expect(workflow("docs-ci.yml")).toContain(DEMOS)
+        const publish = workflow("publish-docs.yaml")
+        expect(publish).toContain(DEMOS)
+        expect(publish.indexOf(DEMOS)).toBeLessThan(
+            publish.indexOf("upload-pages-artifact"),
+        )
+    })
+
     test("keeps the full legacy docs build manual during the v1 beta", () => {
         const docs = workflow("docs-ci.yml")
         expect(docs).toContain("workflow_dispatch:")

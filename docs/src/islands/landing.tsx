@@ -2,13 +2,14 @@ import { createRoot } from "react-dom/client"
 import { Provider } from "valdres-react"
 import { docsStore, countAtom } from "./shared-store"
 import { ReactCounter } from "./react-counter"
-import { mountVueCounter } from "./vue-counter"
-import { mountSvelteCounter } from "./svelte-counter"
-import { mountSolidCounter } from "./solid-counter"
-import { mountAngularCounter } from "./angular-counter"
 import { mountKeyboardDemo } from "./landing-keyboard"
 import { mountOnlineDemo } from "./landing-online"
-import { mountLocationDemo } from "./landing-location"
+import { mountV1Unavailable } from "./unavailable"
+
+// The Vue, Svelte, Solid and Angular adapters and @valdres/browser-geolocation
+// are not migrated to Valdres v1, so their cards show a notice and their
+// islands (vue-counter.ts, svelte-counter.ts, solid-counter.ts,
+// angular-counter.ts, landing-location.tsx) stay out of this bundle.
 
 // Mount React island
 const reactRoot = document.getElementById("react-island")
@@ -20,28 +21,14 @@ if (reactRoot) {
     )
 }
 
-// Mount Vue island
-const vueRoot = document.getElementById("vue-island")
-if (vueRoot) {
-    mountVueCounter(vueRoot)
-}
-
-// Mount Svelte island
-const svelteRoot = document.getElementById("svelte-island")
-if (svelteRoot) {
-    mountSvelteCounter(svelteRoot)
-}
-
-// Mount Solid island
-const solidRoot = document.getElementById("solid-island")
-if (solidRoot) {
-    mountSolidCounter(solidRoot)
-}
-
-// Mount Angular island
-const angularRoot = document.getElementById("angular-island")
-if (angularRoot) {
-    mountAngularCounter(angularRoot)
+for (const [id, key] of [
+    ["vue-island", "valdres-vue"],
+    ["svelte-island", "valdres-svelte"],
+    ["solid-island", "valdres-solid"],
+    ["angular-island", "valdres-angular"],
+] as const) {
+    const el = document.getElementById(id)
+    if (el) mountV1Unavailable(el, key, { compact: true })
 }
 
 // Mount keyboard island
@@ -58,11 +45,10 @@ if (onlineRoot) {
     mountOnlineDemo(onlineRoot)
 }
 
-// Mount location island
+// Location island
 const locationRoot = document.getElementById("landing-location-island")
 if (locationRoot) {
-    locationRoot.innerHTML = ""
-    mountLocationDemo(locationRoot)
+    mountV1Unavailable(locationRoot, "@valdres/browser-geolocation", { compact: true })
 }
 
 // Prevent text selection on rapid clicks
@@ -73,20 +59,4 @@ document.querySelectorAll(".island-card").forEach(card => {
 // Wire up reset button
 document.getElementById("demo-reset")?.addEventListener("click", () => {
     docsStore.set(countAtom, 0)
-})
-
-// Also wire up all theme toggles on the page to use the valdres store
-import {
-    userSelectedColorModeAtom,
-    colorModeSelector,
-    type UserSelectedColorMode,
-} from "@valdres/color-mode"
-
-document.querySelectorAll("#theme-toggle").forEach(btn => {
-    btn.addEventListener("click", () => {
-        const current = docsStore.get(colorModeSelector)
-        const next: UserSelectedColorMode = current === "dark" ? "light" : "dark"
-        docsStore.set(userSelectedColorModeAtom, next)
-        localStorage.setItem("theme", next)
-    })
 })

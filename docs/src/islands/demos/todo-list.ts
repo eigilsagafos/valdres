@@ -1,4 +1,4 @@
-import { atom, atomFamily, selector, store } from "valdres"
+import { atom, family, selector, store } from "valdres"
 import { demoContainerStyle, demoLabelStyle, buttonStyle, inputStyle, secondaryTextStyle } from "./styles"
 
 export function mountTodoListDemo(el: HTMLElement) {
@@ -7,15 +7,14 @@ export function mountTodoListDemo(el: HTMLElement) {
     type Todo = { id: number; text: string; done: boolean }
     let nextId = 1
 
-    const todoFamily = atomFamily<Todo, number>(id => ({
-        id,
-        text: "",
-        done: false,
-    }))
-    const todoIdsAtom = atom<number[]>([])
+    const todoAtom = family((id: number) => atom<Todo>({ id, text: "", done: false }))
+    const todoIdsAtom = atom<readonly number[]>([])
+    // One derived view of the whole list: it depends on the id list and on
+    // every listed todo, so a single subscription sees adds, toggles and removes.
+    const todosSelector = selector(get => get(todoIdsAtom).map(id => get(todoAtom(id))))
     const remainingSelector = selector(get => {
-        const ids = get(todoIdsAtom) as number[]
-        return ids.filter(id => !(get(todoFamily(id)) as Todo).done).length
+        const ids = get(todoIdsAtom)
+        return ids.filter(id => !get(todoAtom(id)).done).length
     })
 
     const container = document.createElement("div")
@@ -54,19 +53,23 @@ export function mountTodoListDemo(el: HTMLElement) {
         const text = input.value.trim()
         if (!text) return
         const id = nextId++
-        demoStore.set(todoFamily(id), { id, text, done: false })
-        demoStore.set(todoIdsAtom, (ids: number[]) => [...ids, id])
+        demoStore.txn(tx => {
+            tx.set(todoAtom(id), { id, text, done: false })
+            tx.update(todoIdsAtom, ids => [...ids, id])
+        })
         input.value = ""
     }
 
     addBtn.onclick = addTodo
     input.onkeydown = (e) => { if (e.key === "Enter") addTodo() }
 
+    // Runs as a subscription notification: it only reads committed state.
+    // Writes happen in the DOM event handlers, outside the notification.
     function renderList() {
-        const ids = demoStore.get(todoIdsAtom) as number[]
+        const todos = demoStore.get(todosSelector)
         list.innerHTML = ""
-        for (const id of ids) {
-            const todo = demoStore.get(todoFamily(id)) as Todo
+        for (const todo of todos) {
+            const { id } = todo
             const row = document.createElement("div")
             row.style.cssText = "display: flex; align-items: center; gap: 8px; padding: 4px 0;"
 
@@ -75,7 +78,7 @@ export function mountTodoListDemo(el: HTMLElement) {
             checkbox.checked = todo.done
             checkbox.style.cssText = "accent-color: oklch(0.7 0.18 80); width: 16px; height: 16px;"
             checkbox.onchange = () => {
-                demoStore.set(todoFamily(id), (t: Todo) => ({ ...t, done: !t.done }))
+                demoStore.update(todoAtom(id), t => ({ ...t, done: !t.done }))
             }
 
             const text = document.createElement("span")
@@ -84,31 +87,34 @@ export function mountTodoListDemo(el: HTMLElement) {
             text.style.flex = "1"
 
             const removeBtn = document.createElement("button")
-            removeBtn.textContent = "\u00d7"
+            removeBtn.textContent = "×"
             removeBtn.style.cssText = "border: none; background: none; color: inherit; cursor: pointer; opacity: 0.4; font-size: 18px; padding: 0 4px;"
             removeBtn.onclick = () => {
-                demoStore.set(todoIdsAtom, (ids: number[]) => ids.filter(i => i !== id))
+                // Resetting the member drops this Store's value, so the
+                // family can release it.
+                demoStore.txn(tx => {
+                    tx.update(todoIdsAtom, ids => ids.filter(i => i !== id))
+                    tx.reset(todoAtom(id))
+                })
             }
 
             row.append(checkbox, text, removeBtn)
             list.appendChild(row)
         }
-        const remaining = demoStore.get(remainingSelector) as number
-        const total = ids.length
+        const remaining = demoStore.get(remainingSelector)
+        const total = todos.length
         status.textContent = total === 0 ? "No todos yet" : `${remaining} of ${total} remaining`
     }
 
-    demoStore.sub(todoIdsAtom, renderList)
-    // Also sub to each todo for checkbox changes - we'll re-render the whole list
-    // This is fine for a small demo
-    demoStore.sub(todoIdsAtom, () => {
-        const ids = demoStore.get(todoIdsAtom) as number[]
-        for (const id of ids) {
-            demoStore.sub(todoFamily(id), renderList)
-        }
-    })
+    const unsubscribe = demoStore.sub(todosSelector, renderList)
 
     container.append(label, inputRow, list, status)
     el.appendChild(container)
     renderList()
+
+    return () => {
+        unsubscribe()
+        demoStore.dispose()
+        container.remove()
+    }
 }

@@ -1,27 +1,30 @@
-import { atom, atomFamily, selectorFamily, selector, store } from "valdres"
-import { demoContainerStyle, demoLabelStyle, buttonStyle, inputStyle, secondaryTextStyle } from "./styles"
+import { atom, family, selector, store } from "valdres"
+import { demoContainerStyle, demoLabelStyle, buttonStyle, secondaryTextStyle } from "./styles"
 
 export function mountFamilyDemo(el: HTMLElement) {
     const demoStore = store()
 
+    type User = { id: number; name: string; score: number }
     let nextId = 1
-    const userFamily = atomFamily<{ id: number; name: string; score: number }, number>(id => ({
+    const userFamily = family((id: number) => atom<User>({
         id,
         name: `User ${id}`,
         score: Math.floor(Math.random() * 100),
     }))
-    const userIdsAtom = atom<number[]>([])
-    const userLabelFamily = selectorFamily<string, number>(id => get => {
-        const user = get(userFamily(id)) as { name: string; score: number }
+    const userIdsAtom = atom<readonly number[]>([])
+    const userLabelFamily = family((id: number) => selector(get => {
+        const user = get(userFamily(id))
         return `${user.name} (${user.score} pts)`
-    })
+    }))
     const totalScoreSelector = selector(get => {
-        const ids = get(userIdsAtom) as number[]
-        return ids.reduce((sum, id) => {
-            const user = get(userFamily(id)) as { score: number }
-            return sum + user.score
-        }, 0)
+        const ids = get(userIdsAtom)
+        return ids.reduce((sum, id) => sum + get(userFamily(id)).score, 0)
     })
+    // One derived view of the rendered rows: it depends on the id list and on
+    // every listed label, so a single subscription sees adds, scores and removes.
+    const labelsSelector = selector(get =>
+        get(userIdsAtom).map(id => ({ id, label: get(userLabelFamily(id)) })),
+    )
 
     const container = document.createElement("div")
     container.setAttribute("style", demoContainerStyle)
@@ -45,11 +48,12 @@ export function mountFamilyDemo(el: HTMLElement) {
     total.setAttribute("style", secondaryTextStyle)
     total.style.marginTop = "12px"
 
+    // Runs as a subscription notification: it only reads committed state.
+    // Writes happen in the DOM event handlers, outside the notification.
     function renderList() {
-        const ids = demoStore.get(userIdsAtom) as number[]
+        const rows = demoStore.get(labelsSelector)
         list.innerHTML = ""
-        for (const id of ids) {
-            const userLabel = demoStore.get(userLabelFamily(id)) as string
+        for (const { id, label: userLabel } of rows) {
             const row = document.createElement("div")
             row.style.cssText = "display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid oklch(0.5 0 0 / 0.1);"
 
@@ -62,7 +66,7 @@ export function mountFamilyDemo(el: HTMLElement) {
             scoreBtn.style.cssText += "padding: 2px 10px; font-size: 12px;"
             scoreBtn.textContent = "+10"
             scoreBtn.onclick = () => {
-                demoStore.set(userFamily(id), (u: { id: number; name: string; score: number }) => ({
+                demoStore.update(userFamily(id), u => ({
                     ...u,
                     score: u.score + 10,
                 }))
@@ -72,34 +76,37 @@ export function mountFamilyDemo(el: HTMLElement) {
             removeBtn.textContent = "\u00d7"
             removeBtn.style.cssText = "border: none; background: none; color: inherit; cursor: pointer; opacity: 0.4; font-size: 18px; padding: 0 4px;"
             removeBtn.onclick = () => {
-                demoStore.set(userIdsAtom, (ids: number[]) => ids.filter(i => i !== id))
+                // Resetting the member drops this Store's value, so the
+                // family can release it.
+                demoStore.txn(tx => {
+                    tx.update(userIdsAtom, ids => ids.filter(i => i !== id))
+                    tx.reset(userFamily(id))
+                })
             }
 
             row.append(text, scoreBtn, removeBtn)
             list.appendChild(row)
         }
-        const totalScore = demoStore.get(totalScoreSelector) as number
-        total.textContent = ids.length === 0
+        const totalScore = demoStore.get(totalScoreSelector)
+        total.textContent = rows.length === 0
             ? "No users yet \u2014 click Add User"
-            : `Total: ${totalScore} pts across ${ids.length} users`
+            : `Total: ${totalScore} pts across ${rows.length} users`
     }
 
     addBtn.onclick = () => {
         const id = nextId++
-        demoStore.set(userIdsAtom, (ids: number[]) => [...ids, id])
+        demoStore.update(userIdsAtom, ids => [...ids, id])
     }
 
-    // Subscribe to changes
-    demoStore.sub(userIdsAtom, () => {
-        const ids = demoStore.get(userIdsAtom) as number[]
-        for (const id of ids) {
-            demoStore.sub(userFamily(id), renderList)
-        }
-        renderList()
-    })
-    demoStore.sub(totalScoreSelector, renderList)
+    const unsubscribe = demoStore.sub(labelsSelector, renderList)
 
     container.append(label, addBtn, list, total)
     el.appendChild(container)
     renderList()
+
+    return () => {
+        unsubscribe()
+        demoStore.dispose()
+        container.remove()
+    }
 }

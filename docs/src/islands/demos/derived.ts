@@ -5,7 +5,7 @@ export function mountDerivedDemo(el: HTMLElement) {
     const demoStore = store()
     const nameAtom = atom("World")
     const greetingSelector = selector(get => {
-        const name = get(nameAtom) as string
+        const name = get(nameAtom)
         return `Hello, ${name}!`
     })
 
@@ -23,7 +23,7 @@ export function mountDerivedDemo(el: HTMLElement) {
 
     const output = document.createElement("div")
     output.style.cssText = `margin-top: 12px; font-size: 20px; font-weight: 600; color: oklch(0.7 0.18 80);`
-    output.textContent = demoStore.get(greetingSelector) as string
+    output.textContent = demoStore.get(greetingSelector)
 
     const hint = document.createElement("div")
     hint.setAttribute("style", secondaryTextStyle)
@@ -34,10 +34,16 @@ export function mountDerivedDemo(el: HTMLElement) {
         demoStore.set(nameAtom, input.value)
     }
 
-    demoStore.sub(greetingSelector, () => {
-        output.textContent = demoStore.get(greetingSelector) as string
+    const unsubscribe = demoStore.sub(greetingSelector, () => {
+        output.textContent = demoStore.get(greetingSelector)
     })
 
     container.append(label, input, output, hint)
     el.appendChild(container)
+
+    return () => {
+        unsubscribe()
+        demoStore.dispose()
+        container.remove()
+    }
 }

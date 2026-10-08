@@ -96,6 +96,8 @@ type IslandBuildOptions = {
     outdir: string
     minify: boolean
     define: Record<string, string>
+    /** Report the bundled inputs; docs/test checks the v1 module boundary. */
+    metafile?: boolean
 }
 
 /** `client.js` — island loader only: no framework, no valdres, no defines. */
@@ -108,7 +110,7 @@ export const bundleClient = ({ outdir, minify }: IslandBuildOptions) =>
     })
 
 /** `demos.js` + `playground-bundle.js` — the API/plugin demos on every page. */
-export const bundleDemos = ({ outdir, minify, define }: IslandBuildOptions) =>
+export const bundleDemos = ({ outdir, minify, define, metafile }: IslandBuildOptions) =>
     Bun.build({
         entrypoints: [
             `${docsDir}/src/islands/demos.ts`,
@@ -120,10 +122,12 @@ export const bundleDemos = ({ outdir, minify, define }: IslandBuildOptions) =>
         naming: { entry: "[name].js" },
         plugins: [reactDedup],
         define,
+        // Spread: bun-types 1.2 predates the runtime's `metafile` option.
+        ...(metafile && { metafile }),
     })
 
 /** `landing.js` — the home page's per-framework islands (React/Vue/Svelte/…). */
-export const bundleLanding = ({ outdir, minify, define }: IslandBuildOptions) =>
+export const bundleLanding = ({ outdir, minify, define, metafile }: IslandBuildOptions) =>
     Bun.build({
         entrypoints: [`${docsDir}/src/islands/landing.tsx`],
         outdir,
@@ -131,6 +135,8 @@ export const bundleLanding = ({ outdir, minify, define }: IslandBuildOptions) =>
         naming: "landing.js",
         plugins: [reactDedup, sveltePlugin],
         define,
+        // Spread: bun-types 1.2 predates the runtime's `metafile` option.
+        ...(metafile && { metafile }),
     })
 
 /** Bundle names the site loads with a `<script>` tag, in load order. */

@@ -23,6 +23,8 @@ jobs:
             # before its artifact is uploaded.
             - name: Docs island bundles load in a browser
               run: bun run scripts/check-docs-islands.ts
+            - name: Docs demos work on Valdres v1
+              run: bun run test:docs
             - name: Upload website artifact
               uses: actions/upload-pages-artifact@v5
               with:
