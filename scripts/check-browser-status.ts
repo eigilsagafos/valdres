@@ -23,7 +23,21 @@ const steps = BROWSER_STATUS_PACKAGES.flatMap(({ dir }) => [
     {
         dir,
         label: "test typecheck (@ts-expect-error contracts)",
-        command: [TSGO, "--noEmit", "-p", "tsconfig.tests.json"],
+        // --singleThreaded works around a race in tsgo 7.0.0-dev.20260521.1:
+        // multi-threaded, it occasionally corrupts the realpath of a module it
+        // resolved and reports a spurious TS2307/TS2875 (about 1% of these runs
+        // on macOS; never observed single-threaded). It changes scheduling
+        // only, not the files or options checked, and is not a guarantee
+        // against other checker failures. Reconsider after a tsgo upgrade stops
+        // reproducing it multi-threaded. The packages' own `typecheck:tests`
+        // scripts are still multi-threaded.
+        command: [
+            TSGO,
+            "--noEmit",
+            "--singleThreaded",
+            "-p",
+            "tsconfig.tests.json",
+        ],
     },
     { dir, label: "bun test", command: ["bun", "test"] },
 ])
