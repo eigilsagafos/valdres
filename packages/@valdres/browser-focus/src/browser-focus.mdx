@@ -5,7 +5,7 @@ description: Reactive document focus state from the window focus/blur events
 
 # browser-focus
 
-Wraps [`document.hasFocus()`](https://developer.mozilla.org/docs/Web/API/Document/hasFocus) plus the window `focus` / `blur` events as one global atom.
+Whether this window has focus, as a read-only external atom. It follows the window's own `focus` / `blur` events, and samples the same state from [`document.hasFocus()`](https://developer.mozilla.org/docs/Web/API/Document/hasFocus) and `document.activeElement` when nothing is listening.
 
 ## Install
 
@@ -18,6 +18,20 @@ bun add @valdres/browser-focus
 <PluginDemo plugin="browser-focus" />
 
 ## Usage
+
+Every read works through a store, with no adapter at all:
+
+```ts
+import { store } from "valdres"
+import { focusAtom } from "@valdres/browser-focus"
+
+const app = store()
+app.get(focusAtom) // boolean — reads without subscribing
+const stop = app.sub(focusAtom, () => {
+    console.log(app.get(focusAtom) ? "focused" : "blurred")
+})
+stop()
+```
 
 <FrameworkBlock fw="react">
 
@@ -33,74 +47,135 @@ function FocusBadge() {
 
 </FrameworkBlock>
 
-<FrameworkBlock fw="vue">
+<div className="callout callout-note">
+  <div className="callout-title">Adapter support in this beta</div>
 
-```vue
-<script setup>
-import { useValue } from "valdres-vue"
-import { focusAtom } from "@valdres/browser-focus"
+  `valdres-react` is the only adapter migrated to the v1 core. The Vue, Svelte,
+  Solid and Angular adapters cannot read an external atom yet: `valdres-vue`'s
+  `useValue` and `valdres-angular`'s `injectValue` are typed for `Atom | Selector`
+  only, `valdres-solid`'s `createValue` still expects the pre-v1 two-parameter
+  `State`, and `valdres-svelte` exports `fromState`, not the `watch` these pages
+  used to show. Until those adapters ship, read this package with `store.get` /
+  `store.sub` as above.
 
-const focused = useValue(focusAtom) // Ref<boolean>
-</script>
-
-<template>{{ focused ? "Focused" : "Blurred" }}</template>
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="svelte">
-
-```svelte
-<script>
-import { watch } from "valdres-svelte"
-import { focusAtom } from "@valdres/browser-focus"
-
-const focused = watch(focusAtom)
-</script>
-
-{focused.value ? "Focused" : "Blurred"}
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="solid">
-
-```tsx
-import { createValue } from "valdres-solid"
-import { focusAtom } from "@valdres/browser-focus"
-
-function FocusBadge() {
-    const focused = createValue(focusAtom) // () => boolean
-    return <span>{focused() ? "Focused" : "Blurred"}</span>
-}
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="angular">
-
-```ts
-import { Component } from "@angular/core"
-import { injectValue } from "valdres-angular"
-import { focusAtom } from "@valdres/browser-focus"
-
-@Component({
-    selector: "focus-badge",
-    template: `{{ focused.value() ? "Focused" : "Blurred" }}`,
-})
-export class FocusBadge {
-    focused = injectValue(focusAtom) // ValueState<boolean>
-}
-```
-
-</FrameworkBlock>
+</div>
 
 ## Exports
 
 | Export | Kind | Type |
 |--------|------|------|
-| `focusAtom` | atom (read-only) | `boolean` |
+| `focusAtom` | external atom (read-only) | `boolean` |
 
-## Cross-framework
+## Ownership and meaning
 
-A global atom — works in every framework; only the read primitive's name changes (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` in plain JS). The `focus` / `blur` listeners attach on the first subscriber and detach when the last leaves. Returns `true` during SSR. Compose with `@valdres/browser-visibility` for a "user is present" signal (see `@valdres/browser-presence`).
+Focus belongs to the browser, so `focusAtom` is an **external atom**: stores
+cannot write it, and `set`, `reset` and `update` reject it at compile time and at
+runtime.
+
+### Intended meaning
+
+The value describes **this window**: whether it is the focused browsing
+context, as its own `focus` and `blur` events announce. This is narrower than
+`document.hasFocus()`, which also reports `true` while focus is inside a nested
+frame, such as an embedded video player or a payment form. For `focusAtom`, focus
+inside a nested frame means **this window is not focused**. This is the meaning
+the package has always had. If the application should count focus inside a frame
+as presence, it has to derive that itself, for example from its own frame
+messaging.
+
+### What has been measured
+
+Native behavior was checked in Chromium only (Chrome for Testing 151 on macOS),
+using real OS app switches, trusted mouse input into same- and cross-origin
+iframes, and tab switches:
+
+- Leaving the browser fires `blur` on the window, and `hasFocus()` is already
+  `false` when it does. Returning fires `focus`.
+- Focus entering an iframe fires `blur` on the parent window while `hasFocus()`
+  stays `true` and `document.activeElement` is the `<iframe>`. Focus coming back
+  to the parent fires `focus`.
+- Moving between iframes, or leaving and returning to the browser while an iframe
+  holds focus, fires **no** event on the parent window.
+
+There were two runs. The OS app switches were exercised in the earlier run,
+which used the sampler before it tolerated a missing `document.activeElement`. In
+that run, the attached value, dormant samples, and a hub-less variant that
+samples on every read agreed with the intended meaning at every step, including
+six OS-driven `blur`/`focus` transitions. The final code was then run again, but
+macOS declined the app switches, so only the iframe, tab and API steps were
+repeated. Those agreed too. The only code difference between the runs is the
+missing-`activeElement` tolerance, which a regular HTML document never reaches.
+
+The runs show the meaning can be followed in Chromium. They do not show that the
+shared listener pair is necessary in other browsers.
+
+One further Chromium observation came from the run where macOS declined app
+activation. The window was never OS-active, `hasFocus()` stayed `true`, and a tab
+switch fired `visibilitychange` but no `blur`, so `focusAtom` stayed `true` while
+the tab was hidden. `presenceSelector` still read `false`, because the page was
+hidden. This is one observed case, not a guarantee about how any browser pairs
+these events.
+
+**Not verified:** Safari/WebKit, Firefox/Gecko, minimized windows, frames inside
+shadow roots the page cannot inspect (closed roots), `<frame>` and `<object>`
+embeddings, and any other embedding case not listed above.
+
+### Sampling limits
+
+When nothing is listening, a read samples the intended meaning: `hasFocus()`, and
+the focused element is not a frame, following open shadow roots. The sampler
+cannot see into a closed shadow root. If a frame inside one holds focus, the
+sample reports `true`. That is a limit of what the sampler can observe, not a
+measured browser behavior. On a host whose document has no `activeElement`, the
+sample is `hasFocus()` alone.
+
+## Server rendering
+
+`focusAtom` reports `true` when focus cannot be observed. That covers server
+rendering and runtimes without a `document` and its window, such as a server or a
+worker. The seed is fixed and deterministic. `useValue` renders it first and
+switches to the live value after hydration, which is a normal two-pass render,
+not a hydration mismatch.
+
+## Lifetime
+
+The package attaches one `focus` and one `blur` listener per document. Every
+store tree that retains `focusAtom` registers with that one pair, and the pair is
+removed when the last such tree's last retaining subscriber leaves or its store
+is disposed. Child scopes share their root's registration. Importing the package
+attaches nothing.
+
+- **While any store tree retains the source**, the source holds one value: the
+  state the window's events last announced, seeded from a fresh sample when the
+  pair attached. A store that retains nothing reads that same value instead of
+  sampling.
+- **When nothing retains it**, a read samples the window and attaches nothing.
+  The next attachment starts again from a fresh sample.
+
+### Delivery across stores
+
+Sharing one source value does **not** make reads atomic across independent
+stores. On each change, every store is invalidated and notified in turn, in the
+order the stores subscribed. While that is happening, a subscriber in the first
+store can read its own updated value and a not-yet-updated value from another
+store. Once delivery completes successfully, every store agrees.
+
+If a subscriber causes another focus change while a change is being delivered,
+for example by moving focus, intermediate states can be coalesced. One store may
+observe both transitions, while another is notified only once or not at all
+because its value ended where it started. When the feedback converges, every
+store settles on the final state. Do not rely on one notification per native
+event.
+
+Feedback that never converges is different. An example is a subscriber that
+toggles focus on every notification. The core's synchronous work limit stops it
+with an error such as `ExternalSourceNonConvergenceError`, and the store caught
+in the loop can serve that error instead of a value until a later change
+recovers it. Keep subscribers from re-triggering the change they react to.
+
+When one store's subscriber throws, the others are still notified. The failure is
+then rethrown from the native listener so the browser reports it, as an
+`AggregateError` when several stores failed.
+
+Compose with `@valdres/browser-visibility` for a "user is present" signal. See
+`@valdres/browser-presence`.
