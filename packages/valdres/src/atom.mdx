@@ -46,7 +46,8 @@ once per Store that reads the atom; returning a Promise throws
 | `options.equal` | `(previous: T, next: T) => boolean` | Decides whether a write changes the atom. Defaults to `Object.is`. |
 
 `AtomOptions` contains only `name` and `equal`, for both `atom` and
-`atom.lazy`. Options from earlier betas are listed under
+`atom.lazy`. `T` is inferred from the value (or the `atom.lazy` initializer)
+alone; `equal` is checked against `T` but never infers or widens it. Options from earlier betas are listed under
 [Legacy pre-1.0 API](#legacy-pre-10-api).
 
 ## Writing

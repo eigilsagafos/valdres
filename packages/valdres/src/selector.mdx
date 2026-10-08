@@ -47,7 +47,9 @@ const fullNameSelector = selector(get => {
 | `options.name`  | `string`                            | Optional name for debugging and error messages                                             |
 | `options.equal` | `(previous: T, next: T) => boolean` | Decides whether a recomputed result is a change. Defaults to `Object.is`.                  |
 
-`SelectorOptions` contains only `name` and `equal`. Options from earlier betas
+`SelectorOptions` contains only `name` and `equal`. `T` is inferred from the
+getter alone; `equal` is checked against `T` but never infers or widens it.
+Options from earlier betas
 are listed under [Legacy pre-1.0 API](#legacy-pre-10-api).
 
 ## Results are synchronous and shared by reference

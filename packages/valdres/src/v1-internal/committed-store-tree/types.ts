@@ -147,6 +147,35 @@ export interface SelectorOptions<Value> {
     readonly equal?: (previous: Value, next: Value) => boolean
 }
 
+// The public atom, atom.lazy and selector factories type `options.equal`
+// through these aliases so that Value comes from the initial value,
+// initializer or read function alone. Each is exactly Value once Value is
+// known, so the comparator is still checked against, and contextually typed
+// by, Value. Without them, `atom(untyped, { equal: deepEqual })` inferred
+// `Atom<unknown>` on TypeScript 5.6+ and `atom(0, { equal: numberEqual })`
+// inferred `Atom<0>`. Backing tests:
+// test/v1-public-candidate/comparator-inference.test-d.ts.
+//
+// Both aliases are plain conditional / indexed-access types so the published
+// declarations keep type-checking on TypeScript releases before 5.4, which
+// lack the `NoInfer` utility (verified from 4.9 against the installed
+// declarations). `NoInfer<Value>` in all three signatures was also tried on
+// TypeScript 5.9.2 and rejected `selector(get => get(count), { equal:
+// numberEqual })` and a predeclared `SelectorOptions` object with "not
+// assignable to EqualFunc<unknown>" (NamedComparatorCases).
+
+// Eager atom: blocks inference from the comparator entirely. Its initial value
+// is a top-level argument, and any comparator inference, even a discarded
+// lower-priority one, stopped `atom(1, ...)` from widening to number
+// (LiteralCases, NamedComparatorCases).
+export type UninferredValue<Value> = [Value][Value extends unknown ? 0 : never]
+
+// atom.lazy and selector: still infers from the comparator, but below the
+// initializer or read function, so the function's result wins (AnyCases,
+// rejected) while a named comparator next to a context-sensitive `get => ...`
+// function still type-checks (NamedComparatorCases).
+export type ComparatorValue<Value> = [Value] extends [unknown] ? Value : never
+
 export type AtomUpdater<Value> = (current: Value) => Value
 
 /** A scope-bound revocable view over one internal StoreTree draft. */

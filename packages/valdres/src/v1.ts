@@ -114,11 +114,20 @@ interface FamilyFactory {
     ): (...args: Parameters<Factory>) => ReturnType<Factory>
 }
 
+// Comparator option types are inline `import()` types: naming an imported type
+// here would shift Bun's minified identifiers in the emitted JavaScript.
 interface AtomFactory {
-    <Value>(initial: Value, options?: AtomOptions<Value>): Atom<Value>
+    <Value>(
+        initial: Value,
+        options?: AtomOptions<
+            import("./v1-internal/committed-store-tree/types").UninferredValue<Value>
+        >,
+    ): Atom<Value>
     readonly lazy: <Value>(
         initialize: () => Value,
-        options?: AtomOptions<Value>,
+        options?: AtomOptions<
+            import("./v1-internal/committed-store-tree/types").ComparatorValue<Value>
+        >,
     ) => Atom<Value>
 }
 
@@ -143,7 +152,9 @@ export const atom = Object.freeze(atomEager) as AtomFactory
 
 export const selector = <Value>(
     read: (get: StateRead) => Value,
-    options: SelectorOptions<Value> = {},
+    options: SelectorOptions<
+        import("./v1-internal/committed-store-tree/types").ComparatorValue<Value>
+    > = {},
 ): Selector<Value> => createDomainSelector(v1Domain, read, options)
 
 export const externalAtom = <Value>(
