@@ -1,14 +1,19 @@
 import { StrictMode, useEffect, useRef, useState } from "react"
 import { createRoot } from "react-dom/client"
+import { store } from "valdres"
 import { Provider, useValue } from "valdres-react"
-import { visibilityAtom } from "../src"
+import { visibilityAtom, type PageVisibility } from "../src"
 
-type Entry = { at: string; visibility: DocumentVisibilityState }
+// One store owns this demo root. valdres-react has no implicit global
+// store: every Provider names the store its subtree reads.
+const demoStore = store()
+
+type Entry = { at: string; visibility: PageVisibility }
 
 const Demo = () => {
     const visibility = useValue(visibilityAtom)
     const [log, setLog] = useState<Entry[]>([])
-    const lastLogged = useRef<DocumentVisibilityState | null>(null)
+    const lastLogged = useRef<PageVisibility | null>(null)
 
     useEffect(() => {
         if (lastLogged.current === visibility) return
@@ -43,7 +48,7 @@ const Demo = () => {
 const root = createRoot(document.getElementById("root")!)
 root.render(
     <StrictMode>
-        <Provider>
+        <Provider store={demoStore}>
             <Demo />
         </Provider>
     </StrictMode>,

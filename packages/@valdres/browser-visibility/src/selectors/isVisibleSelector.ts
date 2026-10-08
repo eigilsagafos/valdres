@@ -1,7 +1,7 @@
-import { selector } from "valdres"
+import { selector, type Selector } from "valdres"
 import { visibilityAtom } from "../atoms/visibilityAtom"
 
-export const isVisibleSelector = selector(
+export const isVisibleSelector: Selector<boolean> = selector(
     get => get(visibilityAtom) === "visible",
     { name: "@valdres/browser-visibility/isVisible" },
 )
