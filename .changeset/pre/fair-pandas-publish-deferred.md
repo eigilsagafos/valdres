@@ -7,7 +7,6 @@
 "@valdres/browser-device-motion": patch
 "@valdres/browser-device-orientation": patch
 "@valdres/browser-geolocation": patch
-"@valdres/browser-presence": patch
 "@valdres/browser-screen": patch
 "@valdres/browser-screen-details": patch
 "@valdres/browser-window": patch

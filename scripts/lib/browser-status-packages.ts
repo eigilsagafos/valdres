@@ -14,10 +14,11 @@
  * `scripts/browser-status-packages.test.ts` checks against
  * `.changeset/config.json` and `scripts/publishable-packages.json`.
  *
- * Stage A releases online, focus and visibility. Presence stays
- * release-ignored until Stage B: its plain-semver focus/visibility ranges still
- * admit the legacy pre-migration `1.0.0-beta.8` builds, and Changesets will not
- * raise them (`bumpVersionsWithWorkspaceProtocolOnly`).
+ * Stage A released online, focus and visibility as `1.0.0-beta.9`. Stage B
+ * releases presence, whose plain-semver focus/visibility ranges were raised to
+ * `BROWSER_STATUS_PRESENCE_DEPENDENCY_RANGE` by hand first: Changesets will not
+ * raise them (`bumpVersionsWithWorkspaceProtocolOnly`), and the old
+ * `^1.0.0-beta.8` admitted the legacy pre-migration builds.
  */
 export const BROWSER_STATUS_PACKAGES = [
     {
@@ -39,15 +40,22 @@ export const BROWSER_STATUS_PACKAGES = [
     {
         name: "@valdres/browser-presence",
         dir: "packages/@valdres/browser-presence",
-        releaseEligible: false,
+        releaseEligible: true,
     },
 ] as const
 
 /**
  * The last published focus/visibility version that predates the migration.
- * Presence may only become release-eligible once its ranges exclude it.
+ * Presence may only be release-eligible while its ranges exclude it.
  */
 export const BROWSER_STATUS_LEGACY_VERSION = "1.0.0-beta.8"
+
+/**
+ * The exact range presence declares for focus and visibility: the first
+ * migrated releases, published in Stage A. Checked by equality, and the packed
+ * gate fails if it admits `BROWSER_STATUS_LEGACY_VERSION`.
+ */
+export const BROWSER_STATUS_PRESENCE_DEPENDENCY_RANGE = "^1.0.0-beta.9"
 
 /**
  * The exact `valdres` peer range every package must declare. `externalAtom`

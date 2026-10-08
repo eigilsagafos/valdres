@@ -34,6 +34,7 @@ import { gzipSync } from "node:zlib"
 import {
     BROWSER_STATUS_CORE_PEER_RANGE as PEER,
     BROWSER_STATUS_FLOOR,
+    BROWSER_STATUS_LEGACY_VERSION,
     BROWSER_STATUS_PACKAGES,
 } from "./lib/browser-status-packages"
 
@@ -144,16 +145,20 @@ assert.equal(Bun.semver.satisfies("1.0.0-beta.38", PEER), false)
 assert.equal(Bun.semver.satisfies("2.0.0", PEER), false)
 console.log(`peer ${PEER} admits packed core ${coreVersion}, rejects beta.38 and 2.0.0: ok`)
 
-// Presence depends on focus and visibility by plain semver. Report what that
-// range admits: the published 1.0.0-beta.8 copies predate the migration, so
-// release enablement has to raise the floor (see the lane's release plan).
+// Presence depends on focus and visibility by plain semver. The published
+// 1.0.0-beta.8 copies predate the migration, so a range that admits them would
+// let an install pair this presence with a legacy source: fail, don't warn.
 const presenceDeps = packed.get("@valdres/browser-presence")!.manifest.dependencies
 assert.deepEqual(Object.keys(presenceDeps).sort(), ["@valdres/browser-focus", "@valdres/browser-visibility"])
 for (const [dep, range] of Object.entries(presenceDeps as Record<string, string>)) {
     assert.equal(Bun.semver.satisfies(packed.get(dep)!.manifest.version, range), true, `${dep}@${range}`)
-    if (Bun.semver.satisfies("1.0.0-beta.8", range))
-        console.log(`NOTE presence -> ${dep}@${range} still admits the legacy, pre-migration 1.0.0-beta.8`)
+    assert.equal(
+        Bun.semver.satisfies(BROWSER_STATUS_LEGACY_VERSION, range),
+        false,
+        `presence -> ${dep}@${range} admits the legacy, pre-migration ${BROWSER_STATUS_LEGACY_VERSION}`,
+    )
 }
+console.log(`presence ranges exclude the legacy ${BROWSER_STATUS_LEGACY_VERSION}: ok`)
 
 const BROWSERLESS = `import { strict as assert } from "node:assert"
 import { createElement } from "react"

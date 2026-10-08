@@ -90,8 +90,8 @@ describe("generated release metadata scope", () => {
     })
 
     test("accepts the Version Packages list once online, focus and visibility release", () => {
-        // The exact file list `bun run version-packages` produced for Stage A in
-        // an isolated release simulation (presence stays ignored and unbumped).
+        // The exact file list Version Packages PR #423 contained for Stage A
+        // (presence stayed ignored and unbumped).
         accepts([
             ...[
                 "browser-status-external-atom-migration",
@@ -106,6 +106,19 @@ describe("generated release metadata scope", () => {
                     modified(`packages/@valdres/${pkg}/package.json`),
                 ],
             ),
+        ])
+    })
+
+    test("accepts the Version Packages list once presence releases", () => {
+        // The exact file list `bun run version-packages` produced for Stage B in
+        // an isolated release simulation, with main's pending empty changeset.
+        accepts([
+            ...["browser-presence-release-stage-b", "docs-legacy-atom-caching"].map(
+                id => renamed(`.changeset/${id}.md`, `.changeset/pre/${id}.md`),
+            ),
+            modified("bun.lock"),
+            modified("packages/@valdres/browser-presence/CHANGELOG.md"),
+            modified("packages/@valdres/browser-presence/package.json"),
         ])
     })
 
@@ -140,8 +153,8 @@ describe("generated release metadata scope", () => {
             "packages/@valdres/browser-geolocation/package.json",
         ],
         [
-            "still-ignored presence manifest",
-            "packages/@valdres/browser-presence/package.json",
+            "runtime file in the Stage B presence package",
+            "packages/@valdres/browser-presence/src/selectors/presenceSelector.ts",
         ],
         [
             "runtime file in a Stage A browser package",
