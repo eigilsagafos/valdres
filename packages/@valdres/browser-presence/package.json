@@ -1,7 +1,7 @@
 {
     "name": "@valdres/browser-presence",
     "description": "Whether the user is present — tab visible and window focused",
-    "version": "1.0.0-beta.8",
+    "version": "1.0.0-beta.9",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
