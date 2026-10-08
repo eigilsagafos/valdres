@@ -2,7 +2,7 @@
 
 # browser-presence
 
-Read-only boolean for "is the user actually here": `true` when the tab is visible **and** the window is focused. Composes [`browser-visibility`](https://valdres.dev/plugins/browser-visibility) and [`browser-focus`](https://valdres.dev/plugins/browser-focus).
+A read-only boolean for "is the user actually here". It is `true` when the tab is visible **and** the window is focused. It is a selector over [`browser-visibility`](https://valdres.dev/plugins/browser-visibility) and [`browser-focus`](https://valdres.dev/plugins/browser-focus), and it owns no listener or source of its own.
 
 ## Install
 
@@ -10,11 +10,28 @@ Read-only boolean for "is the user actually here": `true` when the tab is visibl
 bun add @valdres/browser-presence
 ```
 
+`@valdres/browser-focus` and `@valdres/browser-visibility` are installed as
+its dependencies.
+
 ## Live example
 
 ▶ Live example: [https://valdres.dev/react/plugins/browser-presence](https://valdres.dev/react/plugins/browser-presence)
 
 ## Usage
+
+Every read works through a store, with no adapter at all:
+
+```ts
+import { store } from "valdres"
+import { presenceSelector } from "@valdres/browser-presence"
+
+const app = store()
+app.get(presenceSelector) // boolean — reads without subscribing
+const stop = app.sub(presenceSelector, () => {
+    if (!app.get(presenceSelector)) markIdle()
+})
+stop()
+```
 
 ```tsx
 import { useValue } from "valdres-react"
@@ -26,15 +43,53 @@ function PresenceDot() {
 }
 ```
 
+> **Adapter support in this beta**
+>
+> `valdres-react` is the only adapter migrated to the v1 core. The Vue, Svelte,
+> Solid and Angular adapters cannot read the external atoms this selector depends
+> on yet: `valdres-vue`'s `useValue` and `valdres-angular`'s `injectValue` are
+> typed for `Atom | Selector` only, `valdres-solid`'s `createValue` still expects
+> the pre-v1 two-parameter `State`, and `valdres-svelte` exports `fromState`, not
+> the `watch` these pages used to show. Until those adapters ship, read this
+> package with `store.get` / `store.sub` as above.
+
 ## Exports
 
 | Export             | Kind                 | Type      |
 | ------------------ | -------------------- | --------- |
 | `presenceSelector` | selector (read-only) | `boolean` |
 
-## Cross-framework
+## Meaning
 
-`presenceSelector` is a global selector — read it with `store.get` / `store.sub` in plain JS. It recomputes whenever the visibility or focus subscription fires.
+`presenceSelector` is `isVisibleSelector && focusAtom`, read from the exact
+definitions those packages export. It inherits their meanings:
+
+- **Visible** means `document.visibilityState === "visible"`.
+- **Focused** means that this window has focus, as announced by its own
+  `focus` / `blur` events. When focus is inside a nested frame, such as an
+  embedded player, the user counts as **away**. See
+  [`browser-focus`](https://valdres.dev/plugins/browser-focus) for why, which browsers that was
+  measured in, and how values reach independent stores.
+
+It reads no browser API itself. Being a selector, it cannot be written.
+
+## Server rendering
+
+Both inputs report their "present" seed when they cannot be observed:
+`"visible"` and `true`. `presenceSelector` therefore reports `true` during server
+rendering and in runtimes without a `document`. `useValue` renders that first and
+switches to the live value after hydration.
+
+## Lifetime
+
+Subscribing to `presenceSelector` retains both inputs in that store tree. That
+means one `visibilitychange` listener for the tree, plus one registration on the
+per-document `focus` / `blur` pair that `browser-focus` shares across stores.
+Both inputs are read on every evaluation, so focus stays attached while the tab is
+hidden and a `blur` announced in that time is not lost. Subscribing to `focusAtom`
+or `isVisibleSelector` directly in the same store reuses the same attachments.
+Everything is released when the tree's last retaining subscriber leaves or the
+store is disposed. Dormant reads attach nothing.
 
 ---
 

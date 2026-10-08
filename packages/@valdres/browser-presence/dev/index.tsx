@@ -1,9 +1,14 @@
 import { StrictMode, useEffect, useRef, useState } from "react"
 import { createRoot } from "react-dom/client"
+import { store } from "valdres"
 import { Provider, useValue } from "valdres-react"
 import { focusAtom } from "@valdres/browser-focus"
 import { visibilityAtom } from "@valdres/browser-visibility"
 import { presenceSelector } from "../src"
+
+// One store owns this demo root. valdres-react has no implicit global
+// store: every Provider names the store its subtree reads.
+const demoStore = store()
 
 type Entry = { at: string; present: boolean }
 
@@ -49,7 +54,7 @@ const Demo = () => {
 const root = createRoot(document.getElementById("root")!)
 root.render(
     <StrictMode>
-        <Provider>
+        <Provider store={demoStore}>
             <Demo />
         </Provider>
     </StrictMode>,

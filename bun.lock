@@ -321,7 +321,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.19",
+        "valdres": "^1.0.0-beta.39",
       },
     },
     "packages/@valdres/browser-reduced-data": {
