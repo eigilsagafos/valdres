@@ -35,37 +35,40 @@ tree-shaking and not the compressed npm tarball. Valdres publishes minified
 JavaScript, and CI measures the packed artifact and representative consumer
 bundles on every relevant change.
 
-## Deep drop-equal is the default
+## Values are shared by reference
 
-Atoms, atom families, selectors, and selector families use deep structural
-equality by default. When the next settled value is deeply equal to the current
-value, Valdres drops the update: it keeps the current value and does not notify
-dependents or subscribers. This avoids rerenders when an immutable update
-recreates an equivalent object or collection.
+Valdres stores the exact value written and hands that reference to every reader.
+It never copies or freezes values, in development or production, so keeping
+them immutable is the caller's responsibility. In-place mutation is unsupported:
+the change reaches every reader without a notification. Replace the value when
+writing.
 
-Deep equality has a cost, and reference changes are sometimes meaningful. Use
-the `equal` option as the explicit escape hatch. `Object.is` gives
-reference/value identity semantics:
+`Object.is` is the default equality for atoms and selectors, including family
+members. Writing a new but structurally equal object is an update and notifies
+dependents and subscribers. Where structurally equal replacements should keep
+the current reference and not notify, pass `deepEqual` from the separate
+`valdres/equality` entry as the `equal` option:
 
 ```ts
 import { atom, selector } from "valdres"
+import { deepEqual } from "valdres/equality"
 
-const documentAtom = atom({ blocks: [] }, { equal: Object.is })
+const documentAtom = atom({ blocks: [] }, { equal: deepEqual })
 const viewSelector = selector(get => render(get(documentAtom)), {
-    equal: Object.is,
+    equal: deepEqual,
 })
 ```
 
-With `equal: Object.is`, replacing an object with a different but structurally
-equal object is an update. In-place mutation remains unsupported because both
-comparators see the same reference; replace the value when writing.
+Deep equality walks the compared values, so use it where pruning redundant
+updates outweighs that cost. No comparator can detect an in-place mutation
+written back under the same reference.
 
 ## Process-less runtimes
 
 When `process.env.NODE_ENV` exists, Valdres follows it. When `process` does not
 exist, as in many edge, worker, and direct-CDN runtimes, the default package
-entry behaves as production. It skips development-only deep-freezing, validation
-diagnostics, warnings, and instrumentation.
+entry behaves as production. It skips development-only validation diagnostics,
+warnings, and instrumentation.
 
 For debugging a process-less application, enable the package's `development`
 export condition. Apply the condition consistently to `valdres` and every
@@ -80,6 +83,13 @@ condition. Bun enables that condition by default for development builds; use
 
 ## Selector-family identity is stable while live
 
+<div className="callout callout-warning">
+  <div className="callout-title">Legacy — not in Valdres 1.0</div>
+  This section describes `selectorFamily` from earlier betas. Valdres 1.0 has
+  no `selectorFamily` and no `release`; its keyed-state primitive is
+  [`family`](/valdres/family), whose cache lifecycle is documented there.
+</div>
+
 Calling a `selectorFamily` repeatedly with the same key returns the same member
 while a caller or live store retains that member. A subscription, dependency
 edge, or an enumerable store's cold cache can provide that retention. The family
@@ -92,6 +102,13 @@ permanent memory entry. Calling `release(...args)` evicts a future family lookup
 but does not invalidate references or store entries that are already live.
 
 ## Runtime and global-name singletons
+
+<div className="callout callout-warning">
+  <div className="callout-title">Legacy — not in Valdres 1.0</div>
+  This section describes `globalStore`, `globalAtomFamily`, and global atom
+  name registration from earlier betas. Valdres 1.0 has none of them; its
+  duplicate-runtime behavior is not documented here yet.
+</div>
 
 Valdres permits multiple copies of the same known version in one JavaScript
 global. The first import claims a `globalThis` instance slot; later copies of

@@ -2,49 +2,11 @@
 // modules must stay out of the island bundles — importing one fails the build,
 // because each still depends on exports v1 removed — so their placeholders
 // render this notice instead. The page content around them is unchanged and
-// still documents the earlier API.
-//
-// docs/test/islands.test.ts asserts that none of these packages enters a
-// bundle and that every placeholder here renders its notice.
+// still documents the earlier API. The list itself lives in ../legacy-status.ts.
 
-export type V1Unavailable = {
-    /** What the reader would have seen running; backticks mark code. */
-    subject: string
-    /** The removed v1 surface it still depends on. */
-    missing: string
-}
+import { legacyNoticeTitle, v1Unavailable, type V1UnavailableKey } from "../legacy-status"
 
-const globalAtomPackage = (name: string, missing = "`globalAtom`"): V1Unavailable => ({
-    subject: `\`${name}\``,
-    missing: `${missing}, which Valdres v1 removed`,
-})
-
-const adapter = (name: string, missing: string): V1Unavailable => ({
-    subject: `\`${name}\``,
-    missing: `${missing}, which Valdres v1 removed`,
-})
-
-export const v1Unavailable = {
-    "@valdres/bandwidth": globalAtomPackage("@valdres/bandwidth", "`globalAtom` and `globalStore`"),
-    "@valdres/browser-device-motion": globalAtomPackage("@valdres/browser-device-motion"),
-    "@valdres/browser-device-orientation": globalAtomPackage("@valdres/browser-device-orientation"),
-    "@valdres/browser-geolocation": globalAtomPackage("@valdres/browser-geolocation", "`globalAtom` and `globalStore`"),
-    "@valdres/browser-screen": globalAtomPackage("@valdres/browser-screen"),
-    "@valdres/browser-screen-details": globalAtomPackage("@valdres/browser-screen-details"),
-    "@valdres/browser-window": globalAtomPackage("@valdres/browser-window"),
-    "@valdres/color-mode": globalAtomPackage("@valdres/color-mode"),
-    "@valdres/public-ip": globalAtomPackage("@valdres/public-ip"),
-    "valdres-vue": adapter("valdres-vue", "`isPromiseLike` and the legacy `storeAdapter` adapter internals"),
-    "valdres-svelte": adapter("valdres-svelte", "`isAtom`, `isPromiseLike`, `applyInitialize`, `hydrate` and the legacy `storeAdapter` adapter internals"),
-    "valdres-solid": adapter("valdres-solid", "`isPromiseLike` and the legacy `storeAdapter` adapter internals"),
-    "valdres-angular": adapter("valdres-angular", "`isPromiseLike` and the legacy `storeAdapter` adapter internals"),
-    "valdres/cache": {
-        subject: "atom caching and revalidation",
-        missing: "async atoms with `maxAge`, `staleWhileRevalidate` and `staleIfError`, and `cacheMeta` — none of which are part of Valdres v1",
-    },
-} satisfies Record<string, V1Unavailable>
-
-export type V1UnavailableKey = keyof typeof v1Unavailable
+export type { V1UnavailableKey }
 
 const code = (text: string) =>
     text.split("`").map((part, i) => {
@@ -76,7 +38,7 @@ export function mountV1Unavailable(
     title.className = compact
         ? "font-semibold text-zinc-600 dark:text-zinc-300"
         : "mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
-    title.textContent = "Not yet migrated to Valdres v1"
+    title.textContent = legacyNoticeTitle
 
     const body = document.createElement("div")
     if (compact) {

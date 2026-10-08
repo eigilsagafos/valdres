@@ -11,6 +11,10 @@
  *   <div id="api-demo"/> / <div id="cache-demo"/>  → dropped
  *   any other JSX element                          → dropped (with a warning)
  *
+ * The docs site passes optional status notes (see MdxToMarkdownOptions) so the
+ * Markdown twins carry the same legacy notices the rendered pages add; README
+ * generation passes none.
+ *
  * Frontmatter and MDX import/export/expression nodes are stripped. Site-absolute
  * links (/react/…, /guides/…, /valdres/…) are rewritten to absolute URLs.
  */
@@ -35,6 +39,8 @@ function getAttr(node: AnyNode, name: string): string | undefined {
     return undefined
 }
 
+const PHRASING = new Set(["text", "inlineCode", "emphasis", "strong", "link", "break"])
+
 function text(value: string): AnyNode {
     return { type: "text", value }
 }
@@ -57,6 +63,24 @@ export type MdxToMarkdownOptions = {
     keepFramework?: string
     /** Collects names of unknown JSX components that were dropped. */
     onWarn?: (message: string) => void
+    /** A titled blockquote inserted right after the page's first `#` heading. */
+    pageNotice?: { title: string; body: string }
+    /** A paragraph emitted before the kept <FrameworkBlock>'s content. */
+    frameworkBlockNote?: string
+    /** A paragraph emitted before each <Playground> link. */
+    playgroundNote?: string
+}
+
+/** Backticks in a note mark inline code. */
+function inline(markdown: string): AnyNode[] {
+    return markdown
+        .split("`")
+        .map((part, i) => (i % 2 ? { type: "inlineCode", value: part } : text(part)))
+        .filter(node => node.type === "inlineCode" || node.value !== "")
+}
+
+function noteParagraph(markdown: string): AnyNode {
+    return { type: "paragraph", children: [{ type: "emphasis", children: inline(markdown) }] }
 }
 
 function makeTransform(opts: MdxToMarkdownOptions) {
@@ -93,19 +117,25 @@ function makeTransform(opts: MdxToMarkdownOptions) {
 
     function handleJsx(node: AnyNode): AnyNode | AnyNode[] | null {
         switch (node.name) {
-            case "FrameworkBlock":
+            case "FrameworkBlock": {
                 // Keep one framework's variant (react unless told otherwise).
-                return getAttr(node, "fw") === (opts.keepFramework ?? "react")
-                    ? transformNodes(node.children ?? [])
-                    : null
+                if (getAttr(node, "fw") !== (opts.keepFramework ?? "react")) return null
+                const kept = transformNodes(node.children ?? [])
+                return opts.frameworkBlockNote
+                    ? [noteParagraph(opts.frameworkBlockNote), ...kept]
+                    : kept
+            }
             case "PluginDemo":
                 return opts.liveUrl
                     ? linkParagraph("▶ Live example", opts.liveUrl)
                     : null
-            case "Playground":
-                return opts.liveUrl
-                    ? linkParagraph("▶ Try it live", opts.liveUrl)
-                    : null
+            case "Playground": {
+                if (!opts.liveUrl) return null
+                const link = linkParagraph("▶ Try it live", opts.liveUrl)
+                return opts.playgroundNote
+                    ? [noteParagraph(opts.playgroundNote), link]
+                    : link
+            }
             case "BenchmarkTables":
                 return linkParagraph(
                     "Benchmarks",
@@ -132,9 +162,14 @@ function makeTransform(opts: MdxToMarkdownOptions) {
                 const classes = classList(node)
                 if (classes.includes("callout")) return calloutToBlockquote(node)
                 // api-demo / cache-demo placeholders and other bare divs: drop the
-                // wrapper but keep any real markdown content inside.
+                // wrapper but keep any real markdown content inside. A div is a
+                // block, so inline content it held (the signature box's code and
+                // labels) becomes its own paragraph; left inline at block level,
+                // it glues the following heading or blockquote onto its line.
                 if (getAttr(node, "id")) return null
-                return transformNodes(node.children ?? [])
+                return transformNodes(node.children ?? []).map(child =>
+                    PHRASING.has(child.type) ? { type: "paragraph", children: [child] } : child,
+                )
             }
             default:
                 if (node.name) warn(`dropped unknown JSX element <${node.name}>`)
@@ -189,6 +224,21 @@ function makeTransform(opts: MdxToMarkdownOptions) {
 
     return (tree: AnyNode) => {
         tree.children = transformNodes(tree.children ?? [])
+        if (opts.pageNotice) {
+            const title = tree.children.findIndex(
+                (n: AnyNode) => n.type === "heading" && n.depth === 1,
+            )
+            tree.children.splice(title + 1, 0, {
+                type: "blockquote",
+                children: [
+                    {
+                        type: "paragraph",
+                        children: [{ type: "strong", children: [text(opts.pageNotice.title)] }],
+                    },
+                    { type: "paragraph", children: inline(opts.pageNotice.body) },
+                ],
+            })
+        }
         visit(tree, "link", (n: AnyNode) => {
             if (typeof n.url === "string" && n.url.startsWith("/")) {
                 n.url = SITE + n.url
