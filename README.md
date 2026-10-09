@@ -321,7 +321,7 @@ The package tables below are auto-generated — do not hand-edit.
 | [`@valdres-react/hotkeys`](https://valdres.dev) | React bindings for @valdres/hotkeys |
 | [`@valdres-react/jotai`](https://valdres.dev/guides/migration) | Jotai API compatibility layer for Valdres |
 | [`@valdres-react/panable`](https://valdres.dev) | React pan and zoom powered by Valdres |
-| [`@valdres-react/recoil`](https://valdres.dev/guides/migration) | Recoil API compatibility layer for Valdres |
+| [`@valdres-react/recoil`](https://valdres.dev/guides/migration) | Recoil 0.7 migration adapter for Valdres: the synchronous API, with explicit refusals |
 <!-- PACKAGES:END -->
 
 ## Development

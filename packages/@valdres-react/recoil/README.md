@@ -2,12 +2,12 @@
 
 # @valdres-react/recoil
 
-Recoil API compatibility layer for Valdres
+Recoil 0.7 migration adapter for Valdres: the synchronous API, with explicit refusals
 
 ## Installation
 
 ```bash
-npm install @valdres-react/recoil
+npm install @valdres-react/recoil react valdres valdres-react
 ```
 
 Part of [Valdres](https://valdres.dev) — reactive state management for React, Vue, Svelte, Solid, and Angular.
