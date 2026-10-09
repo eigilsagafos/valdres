@@ -35,6 +35,8 @@
         "test:browser-keyboard:packed": "bun run scripts/test-browser-keyboard-packed-consumer.ts",
         "test:browser-status": "bun run scripts/check-browser-status.ts",
         "test:browser-status:packed": "bun run scripts/test-browser-status-packed-consumer.ts",
+        "test:browser-geometry": "bun run scripts/check-browser-geometry.ts",
+        "test:browser-geometry:packed": "bun run scripts/test-browser-geometry-packed-consumer.ts",
         "test:hotkeys": "bun run scripts/check-hotkeys.ts",
         "test:hotkeys:packed": "bun run scripts/test-hotkeys-packed-consumer.ts",
         "probe:browser-media": "bun run scripts/browser-media-dispatch-probe/serve.ts",

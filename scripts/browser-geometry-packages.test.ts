@@ -169,10 +169,9 @@ describe("browser-geometry lane", () => {
         })
     }
 
-    test("never gates publish while release-ignored", () => {
-        // The CI job is wired separately (see the integration handoff); when it
-        // exists it must stay out of publish's needs until release enablement.
+    test("has a CI job that does not gate publish while release-ignored", () => {
         const workflow = read(ROOT, ".github", "workflows", "ci.yaml")
+        expect(workflow).toMatch(/^    browser-geometry:\n/m)
         const needs = workflow.match(
             /^    publish:[\s\S]*?\n        needs: \[([^\]]*)\]/m,
         )

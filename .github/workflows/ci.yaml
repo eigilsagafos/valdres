@@ -364,6 +364,41 @@ jobs:
               # focus hub, presence composition, declarations and peer floors.
               run: bun run test:browser-status:packed
 
+    browser-geometry:
+        name: Browser geometry packages
+        # @valdres/browser-window and @valdres/browser-screen, migrated to
+        # externalAtom and tested, but NOT release-eligible yet, so this job is
+        # deliberately absent from publish's needs. Its own job rather than
+        # entries in browser-status: each publishes one identity-cached
+        # snapshot of several metrics, and screen re-creates a resolution
+        # media query as the pixel ratio moves, so the suites and packed
+        # fixtures differ in kind.
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.0
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Browser geometry suites and typechecks
+              # `bun test` plus BOTH tsconfigs per package: tsconfig.tests.json
+              # is what holds the @ts-expect-error read-only contracts.
+              run: bun run test:browser-geometry
+            - name: Validate packed browser geometry consumers
+              # Shadow-packs both packages with core and React, installs the
+              # tarballs into an isolated consumer and checks the artifacts:
+              # browserless import and SSR, per-tree listener accounting,
+              # shared snapshots, coherent rotation, the resolution watch,
+              # declarations and the peer floor.
+              run: bun run test:browser-geometry:packed
+
     hotkeys:
         name: Hotkeys packages
         # `@valdres/hotkeys` and `@valdres-react/hotkeys` are release-eligible,
