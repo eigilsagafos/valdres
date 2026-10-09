@@ -1,15 +1,16 @@
 ---
 title: Migration Guide
-description: Migrate from Recoil or Jotai to Valdres with one line
+description: Migrate from Recoil or Jotai to Valdres with compatibility packages
 ---
 
 # Migration Guide
 
-Valdres provides drop-in compatibility packages for both Recoil and Jotai. You can migrate your entire app by changing a single import — then gradually adopt the native Valdres API at your own pace.
+Valdres provides compatibility packages for both Recoil and Jotai. For the APIs a package supports, you migrate by changing an import — then gradually adopt the native Valdres API at your own pace.
 
 ## From Recoil
 
-Replace your Recoil import with the Valdres compatibility layer:
+`@valdres-react/recoil` is a bounded migration adapter for the synchronous
+part of Recoil's API. Replace your Recoil import:
 
 ```ts
 // Before
@@ -19,17 +20,22 @@ import { atom, selector, useRecoilState } from "recoil"
 import { atom, selector, useRecoilState } from "@valdres-react/recoil"
 ```
 
-Install the package:
+Install the package with its peers:
 
 ```bash
-npm install @valdres-react/recoil
+npm install @valdres-react/recoil valdres valdres-react
 ```
 
-That's it. Most existing Recoil code keeps working — now backed by Valdres under the hood — so you can migrate the import first and adopt the native API at your own pace.
+Atoms, selectors (including writable ones), families, `RecoilRoot`, the state
+hooks and `useRecoilCallback` behave as in Recoil 0.7.7, and run on React 18
+and 19. Async atoms and selectors, atom effects, persistent snapshots and some
+hooks are not supported: using them throws `UnsupportedRecoilFeatureError` or
+fails to import, rather than behaving differently. Check the
+[support matrix](/guides/vs-recoil#the-migration-adapter) before migrating.
 
 <div className="callout callout-tip">
   <div className="callout-title">Why migrate from Recoil?</div>
-  Recoil is no longer actively maintained. Valdres is actively developed, has a zero-dependency core, and doesn't require string keys for atoms.
+  Recoil is no longer maintained and its last release does not run on React 19. Valdres is actively developed, has a zero-dependency core, and doesn't require string keys for atoms.
 </div>
 
 ## From Jotai
@@ -54,7 +60,7 @@ npm install @valdres-react/jotai
 
 Once you've migrated, you can incrementally adopt the native Valdres API:
 
-1. **Replace imports** — Switch from `@valdres-react/recoil` or `@valdres-react/jotai` to `valdres` and `valdres-react`
+1. **Replace imports** — Switch from `@valdres-react/recoil` or `@valdres-react/jotai` to `valdres` and `valdres-react` (inside a `RecoilRoot`, `toValdresState` exposes a Recoil atom or selector to `valdres-react` hooks)
 2. **Use native hooks** — Replace `useRecoilState` with `useAtom`, `useRecoilValue` with `useValue`
 3. **Adopt new features** — Start using transactions, first-class families, and framework-agnostic state
 
