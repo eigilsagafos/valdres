@@ -34,8 +34,9 @@ That's it. Most existing Recoil code keeps working — now backed by Valdres und
 
 ## From Jotai
 
-`@valdres-react/jotai` implements Jotai 3's core API (`atom`, `createStore`,
-`getDefaultStore`, `Provider`, `useAtom`, `useAtomValue`, `useSetAtom`,
+`@valdres-react/jotai` is a partial implementation of Jotai 3's core API
+(`atom`, `createStore`, `getDefaultStore`, `Provider`, `useAtom`,
+`useAtomValue`, `useAtomValueRaw`, `useAtomValueRawSync`, `useSetAtom`,
 `useStore`) on Valdres. Replace your Jotai import with it:
 
 ```ts
@@ -53,18 +54,19 @@ import { atom, createStore } from "@valdres-react/jotai"
   with current Valdres betas.
 </div>
 
-It is not a drop-in replacement for every Jotai app. It is checked against
-Jotai 3.0.1's own test suite and side-by-side tests, and these differ:
+It is not complete Jotai compatibility. It is checked against Jotai 3.0.1's own
+test suite and side-by-side tests, and these differ:
 
 - **Read dependencies before `await`.** A read function's `get` must be called
   before its first `await`; a later `get` throws (`VALDRES_JOTAI_LATE_GET`).
   `await get(asyncAtom)` is fine.
-- **No `signal`** in read options, no `INTERNAL_onInit`, no `jotai/utils`, and
-  no `useAtomValueRaw`/`useAtomValueRawSync`.
-- **No store calls** inside read functions, and listeners cannot operate on a
-  different store.
+- **No `signal`** in read options and no `INTERNAL_onInit`, so `jotai/utils`'
+  `unwrap` does not work. Most other `jotai/utils` helpers and `jotai-family`
+  work with this package's store; `jotai/react/utils` hooks do not.
+- **No store calls** inside read functions.
 - Derived atoms that were read once recompute when their dependencies change
-  even without subscribers, and a few notification-order details differ.
+  even without subscribers, and `selectAtom`/`splitAtom` lose their
+  identity-preserving optimizations.
 
 The [compatibility notes](https://github.com/eigilsagafos/valdres/blob/main/packages/@valdres-react/jotai/COMPATIBILITY.md) list every difference and how each was tested.
 

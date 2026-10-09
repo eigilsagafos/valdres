@@ -7,7 +7,7 @@ description: How Valdres compares to Jotai
 
 Valdres was created due to performance issues encountered building an offline-first process model editor. First with Recoil and then with Jotai due to the apparent abandonment of the Recoil project.
 
-If you are a current Jotai user and want to try Valdres, the `@valdres-react/jotai` compatibility package implements Jotai 3's core API on Valdres. Change your imports:
+If you are a current Jotai user and want to try Valdres, the `@valdres-react/jotai` compatibility package implements part of Jotai 3's core API on Valdres. Change your imports:
 
 ```tsx
 // Before
@@ -16,7 +16,7 @@ import { atom, createStore } from "jotai"
 import { atom, createStore } from "@valdres-react/jotai"
 ```
 
-Its Valdres 1.0 version is not published yet, and it is not a drop-in replacement for every app: read functions must call `get` before their first `await`, and `signal`, `jotai/utils` and some notification-order details differ. See the [migration guide](/guides/migration#from-jotai) and the [compatibility notes](https://github.com/eigilsagafos/valdres/blob/main/packages/@valdres-react/jotai/COMPATIBILITY.md).
+Its Valdres 1.0 version is not published yet, and it is not a drop-in replacement for every app: read functions must call `get` before their first `await`, there is no `signal`, and some `jotai/utils` helpers do not work. See the [migration guide](/guides/migration#from-jotai) and the [compatibility notes](https://github.com/eigilsagafos/valdres/blob/main/packages/@valdres-react/jotai/COMPATIBILITY.md).
 
 ## Similarities
 
