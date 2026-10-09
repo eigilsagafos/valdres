@@ -3,26 +3,16 @@
 // its left/top/width/height (like the OS "arrange displays" panel), with the
 // current and primary screens highlighted. Reads screensAtom / currentScreenAtom
 // live, so it updates when displays are added, removed, or rearranged.
-import { useSyncExternalStore } from "react"
-import { useStore } from "valdres-react"
+import { useValue } from "valdres-react"
 import {
     screensAtom,
     currentScreenAtom,
     type ScreenDetail,
 } from "@valdres/browser-screen-details"
 
-function useAtom<T>(state: unknown): T {
-    const store = useStore()
-    return useSyncExternalStore(
-        cb => store.sub(state as any, cb),
-        () => store.get(state as any) as T,
-        () => store.get(state as any) as T,
-    )
-}
-
 export function ScreenPlacement() {
-    const screens = useAtom<ScreenDetail[]>(screensAtom)
-    const current = useAtom<ScreenDetail | null>(currentScreenAtom)
+    const screens = useValue(screensAtom)
+    const current = useValue(currentScreenAtom)
 
     if (!screens || screens.length === 0) return null
 

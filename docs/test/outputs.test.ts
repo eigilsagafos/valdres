@@ -128,7 +128,9 @@ describe("framework-specific examples", () => {
 
     test("every example for an unmigrated adapter is labelled, on the website and in Markdown", async () => {
         const labelled = docs.filter(doc => doc.framework && unmigratedAdapter(doc.framework) && blocks(doc) > 0)
-        expect(labelled.length).toBeGreaterThan(30)
+        // A vacuity floor, not a target: it shrinks as plugin pages migrate
+        // and drop their non-React examples (24 after the permission lane).
+        expect(labelled.length).toBeGreaterThan(20)
         for (const doc of labelled) {
             const adapter = unmigratedAdapter(doc.framework!)!
             const label = legacyExampleLabel(adapter)
