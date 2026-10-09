@@ -139,27 +139,6 @@ describe("Valdres boundaries surface unchanged", () => {
         )
     })
 
-    test("a listener cannot operate on a different store", () => {
-        const first = createStore()
-        const second = createStore()
-        const a = atom(0)
-        first.sub(a, () => second.set(a, 1))
-        let caught: unknown
-        try {
-            first.set(a, 1)
-        } catch (error) {
-            caught = error
-        }
-        expect(caught).toBeInstanceOf(AggregateError)
-        expect(
-            (caught as AggregateError).errors.map(
-                e => (e as { code?: string }).code,
-            ),
-        ).toEqual(["VALDRES_TRANSACTION_PHASE"])
-        expect(first.get(a)).toBe(1)
-        expect(second.get(a)).toBe(0)
-    })
-
     test("a dependency cycle fails with SelectorCircularDependencyError", () => {
         const store = createStore()
         const left: ReturnType<typeof atom<number>> = atom(get =>
@@ -198,14 +177,16 @@ describe("stores", () => {
     })
 
     test("an unreferenced store and its values are collectable", async () => {
-        let store: ReturnType<typeof createStore> | undefined = createStore()
-        const value = { big: new Array(1000).fill(0) }
-        const a = atom<object>({})
-        a.onMount = () => () => {}
-        store.set(a, value)
-        store.sub(a, () => {})()
-        const detector = new LeakDetector(store)
-        store = undefined
+        // Built in a separate frame: Bun's GC scans the stack conservatively.
+        const useStoreOnce = () => {
+            const store = createStore()
+            const a = atom<object>({})
+            a.onMount = () => () => {}
+            store.set(a, { big: new Array(1000).fill(0) })
+            store.sub(a, () => {})()
+            return new LeakDetector(store)
+        }
+        const detector = useStoreOnce()
         expect(await detector.isLeaking()).toBe(false)
     })
 })

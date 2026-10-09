@@ -2,7 +2,6 @@ import {
     store as createValdresStore,
     type Atom as ValdresAtom,
     type Store as ValdresStore,
-    type Transaction,
 } from "valdres"
 import type { Store } from "../types/jotai"
 import type { AnyAtomConfig, AtomNode } from "./nodeRegistry"
@@ -13,34 +12,24 @@ import { decodeValue, encodeValue } from "./promiseBox"
 type Listener = () => void
 
 interface Mounted {
+    readonly config: AnyAtomConfig
     readonly listeners: Set<Listener>
     unsubscribe: (() => void) | undefined
 }
 
-/**
- * Where a write function's `get` and `set` go while it runs synchronously.
- *
- * - A buffer frame serves a top-level `store.set`. Jotai applies each `set`
- *   immediately but notifies once at the end, so writes are staged here, read
- *   back by later `get`s, and committed in one Valdres transaction. Reads before
- *   the first `set` hit the committed cache, as in Jotai.
- * - A transaction frame serves a listener: listeners run as Valdres `settle`
- *   handlers, so their reads and writes use that handler's transaction.
- */
-interface Frame {
-    open: boolean
-    readonly buffered: boolean
-    read(node: AtomNode): unknown
-    stage(node: AtomNode, value: unknown): void
-    flush(): void
-}
-
 const DISCARD = Symbol("discard staged read")
 
-class BufferFrame implements Frame {
+/**
+ * Where a write function's `get` and `set` go while it runs synchronously.
+ * Jotai applies each `set` immediately but notifies once at the end, so writes
+ * are staged here, read back by later `get`s, and committed in one Valdres
+ * transaction. Reads before the first `set` hit the committed cache.
+ */
+class BufferFrame {
     open = true
-    readonly buffered = true
     private readonly writes = new Map<ValdresAtom<unknown>, unknown>()
+    /** Configs a set changed, even if a later set restored them. */
+    private readonly changed = new Set<AnyAtomConfig>()
 
     constructor(private readonly runtime: StoreRuntime) {}
 
@@ -55,32 +44,23 @@ class BufferFrame implements Frame {
     }
 
     stage(node: AtomNode, value: unknown): void {
-        this.writes.set(node.value!, encodeValue(value))
+        const atom = node.value!
+        const next = encodeValue(value)
+        const previous = this.writes.has(atom)
+            ? this.writes.get(atom)
+            : this.runtime.readOwnValue(atom)
+        if (!Object.is(previous, next)) this.changed.add(node.config)
+        this.writes.set(atom, next)
     }
 
     flush(): void {
         if (this.writes.size === 0) return
         const writes = [...this.writes]
+        const changed = [...this.changed]
         this.writes.clear()
-        this.runtime.commit(writes)
+        this.changed.clear()
+        this.runtime.commit(writes, changed)
     }
-}
-
-class TransactionFrame implements Frame {
-    open = true
-    readonly buffered = false
-
-    constructor(private readonly tx: Transaction) {}
-
-    read(node: AtomNode): unknown {
-        return readNodeState(this.tx.get, node)
-    }
-
-    stage(node: AtomNode, value: unknown): void {
-        this.tx.set(node.value!, encodeValue(value))
-    }
-
-    flush(): void {}
 }
 
 const runtimes = new WeakMap<Store, StoreRuntime>()
@@ -93,23 +73,29 @@ const assertInitialValue = (config: AnyAtomConfig) => {
     if (!("init" in config)) throw new Error("atom not writable")
 }
 
-/** One Jotai store: a private Valdres Store plus Jotai's write, listener and mount protocol. */
+const aggregate = (errors: unknown[]) =>
+    typeof AggregateError === "function"
+        ? new AggregateError(errors)
+        : Object.assign(new Error(), { errors })
+
+/**
+ * One Jotai store: a private Valdres Store plus Jotai's write, listener and
+ * mount protocol. Valdres subscriptions only record which mounted atoms
+ * changed; Jotai listeners, onUnmount and onMount then run in a flush after
+ * the Valdres operation, outside any transaction, as in Jotai's
+ * `flushCallbacks`.
+ */
 export class StoreRuntime implements LifecycleSink {
     readonly api: Store
     private readonly valdres: ValdresStore = createValdresStore()
-    private depth = 0
-    private frame: Frame | undefined
+    private frame: BufferFrame | undefined
+    private lifecycleFrame: BufferFrame | undefined
     private readonly mountedAtoms = new Map<AnyAtomConfig, Mounted>()
     private readonly onUnmounts = new WeakMap<AnyAtomConfig, () => void>()
-    // Work Jotai performs while flushing, after listeners: Store subscriptions
-    // requested inside a listener (Valdres forbids them inside `settle`), then
-    // onUnmount callbacks, then onMount callbacks.
-    private readonly deferred: Array<() => void> = []
+    private readonly changed = new Set<Mounted>()
     private readonly unmounts: AnyAtomConfig[] = []
     private readonly mounts: AnyAtomConfig[] = []
-    private lifecycleFrame: BufferFrame | undefined
     private readonly watchers = new Set<() => void>()
-    private errors: unknown[] = []
 
     constructor() {
         this.api = {
@@ -147,6 +133,10 @@ export class StoreRuntime implements LifecycleSink {
         return readNodeState(this.valdres.get, node)
     }
 
+    readOwnValue(atom: ValdresAtom<unknown>): unknown {
+        return this.valdres.get(atom)
+    }
+
     readStaged(
         node: AtomNode,
         writes: ReadonlyMap<ValdresAtom<unknown>, unknown>,
@@ -164,16 +154,25 @@ export class StoreRuntime implements LifecycleSink {
         return value
     }
 
-    commit(writes: ReadonlyArray<readonly [ValdresAtom<unknown>, unknown]>) {
+    commit(
+        writes: ReadonlyArray<readonly [ValdresAtom<unknown>, unknown]>,
+        changed: readonly AnyAtomConfig[],
+    ) {
         withOperation(this, () => {
             if (writes.length === 1) {
                 this.valdres.set(writes[0]![0], writes[0]![1])
-                return
+            } else {
+                this.valdres.txn(tx => {
+                    for (const [atom, value] of writes) tx.set(atom, value)
+                })
             }
-            this.valdres.txn(tx => {
-                for (const [atom, value] of writes) tx.set(atom, value)
-            })
         })
+        // Jotai notifies an atom's listeners when any set changed it, even if
+        // a later set in the same write restored the committed value.
+        for (const config of changed) {
+            const mounted = this.mountedAtoms.get(config)
+            if (mounted) this.changed.add(mounted)
+        }
     }
 
     private get(config: AnyAtomConfig): unknown {
@@ -185,9 +184,6 @@ export class StoreRuntime implements LifecycleSink {
     private set(config: AnyAtomConfig, args: unknown[]): unknown {
         return this.run(() => {
             const outer = this.frame
-            if (outer?.open && !outer.buffered) {
-                return this.write(outer, config, args)
-            }
             if (outer?.open) {
                 // A store.set inside a write function or onMount: Jotai applies
                 // it and flushes it together with the earlier sets.
@@ -214,19 +210,13 @@ export class StoreRuntime implements LifecycleSink {
         assertInitialValue(config)
         this.run(() => {
             const node = getNode(config)
-            const outer = this.frame
-            if (outer?.open) {
-                outer.stage(node, value)
-                outer.flush()
-                return
-            }
-            const frame = new BufferFrame(this)
+            const frame = this.frame?.open ? this.frame : new BufferFrame(this)
             frame.stage(node, value)
             frame.flush()
         })
     }
 
-    private write(frame: Frame, config: AnyAtomConfig, args: unknown[]) {
+    private write(frame: BufferFrame, config: AnyAtomConfig, args: unknown[]) {
         const get = (target: AnyAtomConfig) =>
             frame.open ? frame.read(getNode(target)) : this.get(target)
         // After the write function returns (an async write past its first
@@ -251,8 +241,7 @@ export class StoreRuntime implements LifecycleSink {
         const node = getNode(config)
         let mounted!: Mounted
         this.run(() => {
-            const outer = this.frame
-            if (outer?.open && outer.buffered) outer.flush()
+            if (this.frame?.open) this.frame.flush()
             mounted = this.mountedAtoms.get(config) ?? this.mount(config, node)
             mounted.listeners.add(listener)
         })
@@ -269,105 +258,93 @@ export class StoreRuntime implements LifecycleSink {
                     return
                 }
                 this.mountedAtoms.delete(config)
-                this.structural(() => mounted.unsubscribe?.())
+                this.changed.delete(mounted)
+                mounted.unsubscribe?.()
             })
         }
     }
 
     private mount(config: AnyAtomConfig, node: AtomNode): Mounted {
         const mounted: Mounted = {
+            config,
             listeners: new Set(),
             unsubscribe: undefined,
         }
         this.mountedAtoms.set(config, mounted)
-        this.structural(() => {
-            mounted.unsubscribe = this.valdres.sub(node.state, {
-                settle: tx => this.deliver(mounted, tx),
-            })
+        // The Valdres callback only records the change; Jotai's listeners run
+        // in flushCallbacks, where they may read, write and (un)subscribe.
+        mounted.unsubscribe = this.valdres.sub(node.state, () => {
+            this.changed.add(mounted)
         })
         return mounted
     }
 
-    // Listeners run as `settle` handlers so they can write synchronously, as
-    // Jotai listeners can. Their failures are collected rather than thrown, so
-    // a throwing listener keeps the writes it made and does not stop the rest.
-    private deliver(mounted: Mounted, tx: Transaction) {
-        const outer = this.frame
-        const frame = new TransactionFrame(tx)
-        this.frame = frame
-        try {
-            for (const listener of [...mounted.listeners]) {
-                try {
-                    listener()
-                } catch (error) {
-                    this.errors.push(error)
-                }
-            }
-        } finally {
-            frame.open = false
-            this.frame = outer
-        }
-    }
-
-    private structural(task: () => void) {
-        const frame = this.frame
-        if (frame?.open && !frame.buffered) this.deferred.push(task)
-        else task()
-    }
-
     private run<T>(operation: () => T): T {
-        this.depth++
         try {
             return withOperation(this, operation)
         } finally {
-            if (this.depth === 1) {
+            const errors = withOperation(this, () => this.flushCallbacks())
+            for (const watcher of [...this.watchers]) {
                 try {
-                    withOperation(this, () => this.flushCallbacks())
-                } finally {
-                    this.depth--
+                    watcher()
+                } catch (error) {
+                    errors.push(error)
                 }
-                for (const watcher of [...this.watchers]) this.guard(watcher)
-                this.throwCollectedErrors()
-            } else {
-                this.depth--
             }
+            if (errors.length > 0) throw aggregate(errors)
         }
     }
 
-    private flushCallbacks() {
+    // Port of Jotai 3.0.1's flushCallbacks order: listeners of changed atoms
+    // (each listener once), then onUnmount, then onMount, repeated while new
+    // work appears. setAtom calls made synchronously by mount callbacks are
+    // applied together after them.
+    private flushCallbacks(): unknown[] {
+        const errors: unknown[] = []
+        const call = (fn: () => void) => {
+            try {
+                fn()
+            } catch (error) {
+                errors.push(error)
+            }
+        }
         while (
-            this.deferred.length > 0 ||
+            this.changed.size > 0 ||
             this.unmounts.length > 0 ||
             this.mounts.length > 0
         ) {
-            if (this.deferred.length > 0) {
-                this.guard(this.deferred.shift()!)
-                continue
+            const callbacks = new Set<Listener>()
+            for (const mounted of this.changed) {
+                for (const listener of mounted.listeners)
+                    callbacks.add(listener)
             }
-            // Like Jotai, apply the setAtom calls these callbacks make
-            // synchronously together, after the callbacks have run.
-            const outer = this.frame
+            this.changed.clear()
+            const unmounts = this.unmounts.splice(0)
+            const mounts = this.mounts.splice(0)
+            for (const listener of callbacks) call(listener)
+            if (unmounts.length === 0 && mounts.length === 0) continue
+            const outerFrame = this.frame
+            const outerLifecycle = this.lifecycleFrame
             const frame = new BufferFrame(this)
             this.frame = frame
             this.lifecycleFrame = frame
             try {
-                for (const config of this.unmounts.splice(0)) {
-                    this.guard(() => {
+                for (const config of unmounts) {
+                    call(() => {
                         const onUnmount = this.onUnmounts.get(config)
                         this.onUnmounts.delete(config)
                         onUnmount?.()
                     })
                 }
-                for (const config of this.mounts.splice(0)) {
-                    this.guard(() => this.runOnMount(config))
-                }
+                for (const config of mounts) call(() => this.runOnMount(config))
             } finally {
                 frame.open = false
-                this.frame = outer
-                this.lifecycleFrame = undefined
-                this.guard(() => frame.flush())
+                this.frame = outerFrame
+                this.lifecycleFrame = outerLifecycle
+                call(() => frame.flush())
             }
         }
+        return errors
     }
 
     private runOnMount(config: AnyAtomConfig) {
@@ -385,23 +362,5 @@ export class StoreRuntime implements LifecycleSink {
         if (typeof onUnmount === "function") {
             this.onUnmounts.set(config, onUnmount as () => void)
         }
-    }
-
-    private guard(task: () => void) {
-        try {
-            task()
-        } catch (error) {
-            this.errors.push(error)
-        }
-    }
-
-    private throwCollectedErrors() {
-        if (this.errors.length === 0) return
-        const errors = this.errors
-        this.errors = []
-        if (typeof AggregateError === "function") {
-            throw new AggregateError(errors)
-        }
-        throw Object.assign(new Error(), { errors })
     }
 }
