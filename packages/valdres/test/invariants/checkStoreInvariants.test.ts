@@ -61,7 +61,7 @@ describe("checkStoreInvariants — corrupted fixtures", () => {
 
         const data = getStoreData(st)
         // s1 owns a dependency set but we drop its stable order marker.
-        data.dependencyOrder.delete(s1)
+        data.graphNodes.get(s1)!.order = -1
         const violations = checkStoreInvariants(st)
         expect(has(violations, "dependency-ownership")).toBe(true)
         unsub()
@@ -94,7 +94,7 @@ describe("checkStoreInvariants — corrupted fixtures", () => {
         expect(checkStoreInvariants(st)).toEqual([])
 
         const data = getStoreData(st)
-        data.liveDependentCount.set(a, -1)
+        data.graphNodes.get(a)!.live = -1
         expect(has(checkStoreInvariants(st), "liveness-counts")).toBe(true)
         unsub()
     })
@@ -108,7 +108,7 @@ describe("checkStoreInvariants — corrupted fixtures", () => {
 
         const data = getStoreData(st)
         // Ground truth for `a` is 1 (one live dependent, s1). Force a mismatch.
-        data.liveDependentCount.set(a, 5)
+        data.graphNodes.get(a)!.live = 5
         expect(has(checkStoreInvariants(st), "liveness-counts")).toBe(true)
         unsub()
     })
@@ -133,7 +133,7 @@ describe("checkStoreInvariants — corrupted fixtures", () => {
         const data = getStoreData(st)
         // sm has a mountable descendant (m) but no own hook — the marker is
         // required. Deleting it must be caught (no-false-negative invariant).
-        data.mountInClosure.delete(sm)
+        data.graphNodes.get(sm)!.mountInClosure = false
         expect(has(checkStoreInvariants(st), "mount-state")).toBe(true)
         unsub()
     })
@@ -327,7 +327,7 @@ describe("checkStoreInvariants — corrupted fixtures", () => {
 
         const data = getStoreData(st)
         // Simulate a liveness bookkeeping leak on an orphaned state.
-        data.liveDependentCount.set(a, 3)
+        data.graphNodes.get(a)!.live = 3
         expect(
             has(
                 checkStoreInvariants(st, { quiescent: true, states: [a] }),

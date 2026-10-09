@@ -6,6 +6,7 @@ import { cacheController } from "./cacheController"
 import {
     isLive,
     onLastDirectSubscriber,
+    peekGraphNode,
     queueOrphanCleanup,
     reconcileLivenessAfterChurn,
     regionHasCycle,
@@ -95,7 +96,7 @@ export const unsubscribe = <V>(
             // scanned once total instead of once per unsubscribe.
             if (
                 isSelector(state) &&
-                data.cycleRiskInClosure.has(state as State<V>) &&
+                peekGraphNode(state as State<V>, data)?.cycleRisk === true &&
                 regionHasCycle(state as State<V>, data)
             ) {
                 // Reconciliation can synchronously unmount a cyclic region, so
