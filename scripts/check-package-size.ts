@@ -161,9 +161,12 @@ try {
         query: `import { collection, store } from "valdres"; import { query } from "valdres/query"; const entities = collection({ indexes: { kind: value => value.kind } }); export const tasks = query(entities, { where: { kind: { eq: "task" } } }); export const app = store();`,
         "all-exports": `export * from "valdres"`,
         inspect: `export * from "valdres/inspect"`,
-        // Same workload as the immutable baseline: the shipped deepEqual
-        // module alone (formerly resolved via the removed valdres/equality).
+        // equality guards the shipped deepEqual module in isolation under its
+        // immutable baseline. dist/equality.js is an internal build entry, not
+        // a package subpath, so the fixture reaches it by file path.
         equality: `export { deepEqual } from "./node_modules/valdres/dist/equality.js"`,
+        // root-deep-equal guards the supported consumer import. It also
+        // retains the root's always-evaluated atom core.
         "root-deep-equal": `export { deepEqual } from "valdres"`,
         "adapter-internals": `export * from "valdres/adapter-internals/v1"`,
         "external-atom": `import { externalAtom, store } from "valdres"; export const clock = externalAtom({ getSnapshot: () => 1, getServerSnapshot: () => 0, subscribe: () => () => {} }); export const app = store(); export const read = () => app.get(clock);`,
