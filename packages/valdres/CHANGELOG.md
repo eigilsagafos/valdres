@@ -1,5 +1,19 @@
 # valdres
 
+## 1.0.0-beta.44
+
+### Minor Changes
+
+- [#431](https://github.com/eigilsagafos/valdres/pull/431)
+  [`5da1c74`](https://github.com/eigilsagafos/valdres/commit/5da1c7411fc03d27273496f7421fd692f5b97f72)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add experimental
+  `Transaction.onCommit(callback): void` for deferred, scope-owned work after a
+  draft commits. Successful no-ops deliver, aborts discard, and disposal cancels
+  pending callbacks. Delivery starts in FIFO order with bounded yielding;
+  asynchronous completion and application retry or cancellation policies remain
+  caller-owned. Callback failures are reported separately from transaction
+  errors.
+
 ## 1.0.0-beta.43
 
 ### Patch Changes
