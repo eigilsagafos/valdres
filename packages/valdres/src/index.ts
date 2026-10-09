@@ -38,6 +38,10 @@ export const presence: PresenceFactory = v1.presence
 export const selector: typeof v1.selector = v1.selector
 export const store: typeof v1.store = v1.store
 
+// Opt-in structural comparator. build.ts keeps it in its own split chunk, so
+// bundles that never import it drop it entirely.
+export { deepEqual } from "./equality"
+
 export const CallbackCapabilityError: typeof v1.CallbackCapabilityError =
     v1.CallbackCapabilityError
 export const InvalidAtomComparatorResultError: typeof v1.InvalidAtomComparatorResultError =

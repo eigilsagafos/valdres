@@ -1088,6 +1088,72 @@ export const externalSmoke = () => {
 console.log(JSON.stringify(externalSmoke()))
 `
 
+// Runs under both runtimes with and without the development condition.
+const deepEqualProbe = String.raw`
+import { strict as assert } from "node:assert"
+import { atom, deepEqual, selector, store } from "valdres"
+
+const expectedGraph = process.env.EXPECTED_VALDRES_GRAPH
+const resolved = import.meta.resolve("valdres")
+assert.equal(
+    resolved.endsWith(
+        expectedGraph === "development"
+            ? "/valdres/dist/development/index.js"
+            : "/valdres/dist/index.js",
+    ),
+    true,
+    resolved,
+)
+assert.equal(typeof deepEqual, "function")
+assert.equal(deepEqual.length, 2)
+assert.equal(deepEqual({ blocks: [1, { id: 2 }] }, { blocks: [1, { id: 2 }] }), true)
+assert.equal(deepEqual({ blocks: [1] }, { blocks: [2] }), false)
+
+const documentAtom = atom({ blocks: [1] }, { equal: deepEqual })
+const visible = selector(get => get(documentAtom).blocks.filter(Boolean), { equal: deepEqual })
+const plain = atom({ blocks: [1] })
+const target = store()
+const before = target.get(documentAtom)
+const visibleBefore = target.get(visible)
+let notifications = 0
+const stop = target.sub(documentAtom, () => notifications++)
+target.set(documentAtom, { blocks: [1] })
+assert.equal(target.get(documentAtom), before)
+assert.equal(target.get(visible), visibleBefore)
+assert.equal(notifications, 0)
+// Object.is remains the default.
+const plainBefore = target.get(plain)
+target.set(plain, { blocks: [1] })
+assert.notEqual(target.get(plain), plainBefore)
+stop()
+target.dispose()
+
+await assert.rejects(import("valdres/equality"))
+console.log(JSON.stringify({ graph: expectedGraph, resolved: resolved.slice(resolved.indexOf("/valdres/")) }))
+`
+
+const deepEqualUnusedEntry = String.raw`
+import { atom, family, selector, store } from "valdres"
+const count = atom(1)
+const doubled = selector(get => get(count) * 2)
+const members = family(id => atom(id.length))
+const target = store()
+console.log(JSON.stringify([target.get(doubled), target.get(members("four"))]))
+`
+
+const deepEqualUsedEntry = String.raw`
+import { atom, deepEqual, store } from "valdres"
+const documentAtom = atom({ blocks: [1] }, { equal: deepEqual })
+const target = store()
+const before = target.get(documentAtom)
+target.set(documentAtom, { blocks: [1] })
+if (target.get(documentAtom) !== before) throw new Error("bundled deepEqual did not keep the previous reference")
+console.log(JSON.stringify({ kept: true }))
+`
+
+// Strings only deepEqual's implementation contains.
+const deepEqualImplementationSentinels = ["unicodeSets", "native code"]
+
 const reactInspectProductionProbe = String.raw`
 import { strict as assert } from "node:assert"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
@@ -1165,6 +1231,7 @@ const typeProbe = String.raw`
 import {
     atom,
     collection,
+    deepEqual,
     externalAtom,
     ExternalSourceOperationError,
     family,
@@ -1244,7 +1311,23 @@ import {
 } from "valdres/inspect"
 
 import { query } from "valdres/query"
-import { deepEqual } from "valdres/equality"
+// @ts-expect-error The valdres/equality subpath was removed; import deepEqual from the root.
+import { deepEqual as removedDeepEqual } from "valdres/equality"
+void removedDeepEqual
+// Root deepEqual declarations stay portable: consumers can re-export it, emit
+// its inferred type, and annotate deepEqual-compared states with public types.
+// (Unannotated exported atoms and selectors are issue #429, independent of
+// the comparator.)
+export { deepEqual as packedReexportedDeepEqual } from "valdres"
+export const packedDeepEqual = deepEqual
+export const packedDeepEqualAtom: Atom<{ blocks: number[] }> = atom(
+    { blocks: [] as number[] },
+    { equal: deepEqual },
+)
+export const packedDeepEqualSelector: Selector<number[]> = selector(
+    get => get(packedDeepEqualAtom).blocks.filter(Boolean),
+    { equal: deepEqual },
+)
 interface PackedEntityIndexes { kind: "task" | "person" }
 const indexedEntities = collection<string, { kind: "task" | "person" }, string, PackedEntityIndexes>({
     indexes: { kind: entity => entity.kind },
@@ -1956,6 +2039,87 @@ try {
         )
     }
 
+    await Promise.all([
+        writeFile(
+            join(standaloneDirectory, "deep-equal-probe.mjs"),
+            deepEqualProbe,
+        ),
+        writeFile(
+            join(standaloneDirectory, "deep-equal-unused.mjs"),
+            deepEqualUnusedEntry,
+        ),
+        writeFile(
+            join(standaloneDirectory, "deep-equal-used.mjs"),
+            deepEqualUsedEntry,
+        ),
+    ])
+    for (const graph of ["production", "development"] as const) {
+        const conditions =
+            graph === "development" ? ["--conditions=development"] : []
+        for (const runtime of ["node", "bun"]) {
+            run(
+                `${runtime} ${graph} root deepEqual and removed valdres/equality`,
+                [runtime, ...conditions, "deep-equal-probe.mjs"],
+                standaloneDirectory,
+                { EXPECTED_VALDRES_GRAPH: graph },
+            )
+        }
+        for (const bundler of ["esbuild", "bun"] as const) {
+            for (const usage of ["unused", "used"] as const) {
+                const outfile = `deep-equal-${usage}-${graph}-${bundler}.mjs`
+                run(
+                    `${bundler} ${graph} bundle with ${usage} root deepEqual`,
+                    bundler === "esbuild"
+                        ? [
+                              "node",
+                              join(
+                                  rootDirectory,
+                                  "node_modules",
+                                  "esbuild",
+                                  "bin",
+                                  "esbuild",
+                              ),
+                              `deep-equal-${usage}.mjs`,
+                              "--bundle",
+                              "--minify",
+                              "--platform=browser",
+                              "--format=esm",
+                              ...conditions,
+                              `--outfile=${outfile}`,
+                              "--log-level=warning",
+                          ]
+                        : [
+                              "bun",
+                              "build",
+                              `deep-equal-${usage}.mjs`,
+                              "--minify",
+                              "--target=browser",
+                              "--format=esm",
+                              ...conditions,
+                              `--outfile=${outfile}`,
+                          ],
+                    standaloneDirectory,
+                )
+                const bundled = await readFile(
+                    join(standaloneDirectory, outfile),
+                    "utf8",
+                )
+                assert.deepEqual(
+                    deepEqualImplementationSentinels.filter(sentinel =>
+                        bundled.includes(sentinel),
+                    ),
+                    usage === "used" ? deepEqualImplementationSentinels : [],
+                    `${bundler} ${graph} bundle with ${usage} deepEqual`,
+                )
+                run(
+                    `execute ${bundler} ${graph} bundle with ${usage} deepEqual`,
+                    ["node", outfile],
+                    standaloneDirectory,
+                )
+            }
+        }
+    }
+
     for (const react of reactMatrix) {
         const consumerDirectory = join(workspace, `react-${react.major}`)
         await mkdir(consumerDirectory, { recursive: true })
@@ -2187,6 +2351,19 @@ try {
             emittedConsumerDeclaration.includes("v1-internal"),
             false,
             "installed collection and ExternalAtom declarations must remain publicly nameable",
+        )
+        for (const deepEqualDeclaration of [
+            /export \{ deepEqual as packedReexportedDeepEqual \} from "valdres";/,
+            /export declare const packedDeepEqual: \(left: unknown, right: unknown\) => boolean;/,
+            /export declare const packedDeepEqualAtom: Atom<\{/,
+            /export declare const packedDeepEqualSelector: Selector<number\[\]>;/,
+        ]) {
+            assert.match(emittedConsumerDeclaration, deepEqualDeclaration)
+        }
+        assert.equal(
+            emittedConsumerDeclaration.includes("equality"),
+            false,
+            "installed deepEqual declarations must name only the root entry",
         )
         run(
             `esbuild browser bundle with React ${react.major}`,

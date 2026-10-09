@@ -1,7 +1,6 @@
 // Type-level half of docs/test/core-claims.test.ts: the option bags and write
 // methods the atom and selector pages document. Checked with tsgo; never run.
-import { atom, selector, store, type AtomOptions, type SelectorOptions } from "valdres"
-import { deepEqual } from "valdres/equality"
+import { atom, deepEqual, selector, store, type AtomOptions, type SelectorOptions } from "valdres"
 
 const app = store()
 const countAtom = atom(0)

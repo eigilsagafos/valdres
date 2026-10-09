@@ -94,10 +94,10 @@ mutating them, or store an immutable plain-data representation.
 `Object.is` is the default `equal`, so writing a new object notifies even when
 it is structurally equal to the current value. Structural equality is opt-in:
 to keep the previous reference and skip notifications for structurally equal
-replacements, pass `deepEqual` from the separate `valdres/equality` entry:
+replacements, pass `deepEqual`:
 
 ```ts
-import { deepEqual } from "valdres/equality"
+import { atom, deepEqual } from "valdres"
 
 const documentAtom = atom({ blocks: [] }, { equal: deepEqual })
 ```

@@ -161,7 +161,10 @@ try {
         query: `import { collection, store } from "valdres"; import { query } from "valdres/query"; const entities = collection({ indexes: { kind: value => value.kind } }); export const tasks = query(entities, { where: { kind: { eq: "task" } } }); export const app = store();`,
         "all-exports": `export * from "valdres"`,
         inspect: `export * from "valdres/inspect"`,
-        equality: `export { deepEqual } from "valdres/equality"`,
+        // Same workload as the immutable baseline: the shipped deepEqual
+        // module alone (formerly resolved via the removed valdres/equality).
+        equality: `export { deepEqual } from "./node_modules/valdres/dist/equality.js"`,
+        "root-deep-equal": `export { deepEqual } from "valdres"`,
         "adapter-internals": `export * from "valdres/adapter-internals/v1"`,
         "external-atom": `import { externalAtom, store } from "valdres"; export const clock = externalAtom({ getSnapshot: () => 1, getServerSnapshot: () => 0, subscribe: () => () => {} }); export const app = store(); export const read = () => app.get(clock);`,
     }
@@ -247,6 +250,22 @@ try {
                 if (JavaScript.includes(storeConstructionSentinel)) {
                     throw new Error(
                         `${name} fixture retained Store construction: ${storeConstructionSentinel}`,
+                    )
+                }
+            }
+        }
+        if (
+            name !== "equality" &&
+            name !== "root-deep-equal" &&
+            name !== "all-exports"
+        ) {
+            const JavaScript = new TextDecoder().decode(bytes)
+            // deepEqual sits in its own split chunk, so bundles that never
+            // import it must drop it, intrinsic lookups included.
+            for (const deepEqualSentinel of ["unicodeSets", "native code"]) {
+                if (JavaScript.includes(deepEqualSentinel)) {
+                    throw new Error(
+                        `fixture "${name}" retained the unused deepEqual implementation: ${deepEqualSentinel}`,
                     )
                 }
             }
