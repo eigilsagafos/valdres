@@ -306,7 +306,7 @@ The package tables below are auto-generated — do not hand-edit.
 | [`@valdres/browser-screen`](https://valdres.dev/react/plugins/browser-screen) | Reactive screen resolution and orientation from window.screen |
 | [`@valdres/browser-screen-details`](https://valdres.dev/react/plugins/browser-screen-details) | Reactive multi-screen layout from the Window Management API |
 | [`@valdres/browser-visibility`](https://valdres.dev/react/plugins/browser-visibility) | Reactive Page Visibility state (visible / hidden) |
-| [`@valdres/browser-window`](https://valdres.dev/react/plugins/browser-window) | Reactive window inner size, tracked through resize events |
+| [`@valdres/browser-window`](https://valdres.dev/react/plugins/browser-window) | Reactive window inner and outer size, tracked through resize events |
 | [`@valdres/color-mode`](https://valdres.dev/react/plugins/color-mode) | Color mode (dark/light theme) state powered by Valdres |
 | [`@valdres/hotkeys`](https://valdres.dev/react/plugins/hotkeys) | Keyboard shortcuts as synchronous Valdres transactions |
 | [`@valdres/public-ip`](https://valdres.dev/react/plugins/public-ip) | Reactive public IP (v4/v6) with stale-while-revalidate |
