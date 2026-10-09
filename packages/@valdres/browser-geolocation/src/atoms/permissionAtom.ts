@@ -1,12 +1,12 @@
-import { globalAtom } from "valdres"
-import type { GlobalAtom } from "valdres"
-import {
-    subscribePermission,
-    type PermissionValue,
-} from "../lib/subscribePermission"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { permissionSource } from "../lib/permissionSource"
+import type { PermissionValue } from "../types/PermissionValue"
 
-export const permissionAtom: GlobalAtom<PermissionValue> =
-    globalAtom<PermissionValue>("prompt", {
-        name: "@valdres/browser-geolocation/permission",
-        onMount: () => subscribePermission(permissionAtom),
-    })
+/**
+ * The `"geolocation"` permission. Never prompts: subscribing only queries the
+ * Permissions API and follows its `change` events.
+ */
+export const permissionAtom: ExternalAtom<PermissionValue> = externalAtom(
+    permissionSource,
+    { name: "@valdres/browser-geolocation/permission" },
+)

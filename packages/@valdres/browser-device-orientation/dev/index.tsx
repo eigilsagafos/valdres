@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client"
 import { Canvas, useFrame } from "@react-three/fiber"
 import { Grid } from "@react-three/drei"
 import * as THREE from "three"
+import { store } from "valdres"
 import { Provider, useValue } from "valdres-react"
 import {
     orientationAtom,
@@ -241,10 +242,11 @@ const Demo = () => {
     )
 }
 
+const app = store()
 const root = createRoot(document.getElementById("root")!)
 root.render(
     <StrictMode>
-        <Provider>
+        <Provider store={app}>
             <Demo />
         </Provider>
     </StrictMode>,

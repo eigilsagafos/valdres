@@ -1,7 +1,7 @@
-import { selector } from "valdres"
-import { positionAtom } from "../atoms/positionAtom"
+import { selector, type Selector } from "valdres"
+import { positionAtom } from "./positionAtom"
 
-export const coordsSelector = selector(
+export const coordsSelector: Selector<{ latitude: number; longitude: number } | null> = selector(
     get => {
         const position = get(positionAtom)
         if (!position) return null

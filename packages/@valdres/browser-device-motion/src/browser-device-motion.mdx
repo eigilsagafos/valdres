@@ -5,11 +5,14 @@ description: Reactive device acceleration and rotation from DeviceMotionEvent
 
 # browser-device-motion
 
-Wraps the `devicemotion` event as global atoms — linear acceleration and rotation rate, plus derived selectors. Values are usually `null` on desktop.
+Wraps the [`devicemotion`](https://developer.mozilla.org/docs/Web/API/Window/devicemotion_event) event as read-only state: linear acceleration, acceleration including gravity and rotation rate, plus derived selectors. Readings are usually `null` on desktops, which have no motion sensors.
 
 <div className="callout callout-note">
   <div className="callout-title">Permission</div>
-  iOS gates motion behind a user gesture — call <code>requestMotionPermission()</code> from a click before subscribing.
+  Subscribing never prompts. Where the browser gates motion behind a prompt
+  (iOS Safari), call <code>requestMotionPermission()</code> directly from a
+  click handler: the browser only shows the prompt for a request made with the
+  gesture's transient activation.
 </div>
 
 ## Install
@@ -24,22 +27,50 @@ bun add @valdres/browser-device-motion
 
 ## Usage
 
+Every read works through a store, with no adapter at all:
+
+```ts
+import { store } from "valdres"
+import {
+    accelerationSelector,
+    motionStatusAtom,
+    permissionAtom,
+    requestMotionPermission,
+} from "@valdres/browser-device-motion"
+
+const app = store()
+app.get(permissionAtom) // "prompt" on iOS until answered
+button.addEventListener("click", () => {
+    // Called inside the click: no `await` before it.
+    void requestMotionPermission()
+})
+const stop = app.sub(accelerationSelector, () => {
+    draw(app.get(accelerationSelector)) // Vector3 | null
+})
+app.get(motionStatusAtom) // "active" while a store listens
+stop()
+```
+
 <FrameworkBlock fw="react">
 
 ```tsx
 import { useValue } from "valdres-react"
 import {
     accelerationSelector,
-    rotationRateSelector,
+    permissionAtom,
     requestMotionPermission,
+    rotationRateSelector,
 } from "@valdres/browser-device-motion"
 
 function Motion() {
+    const permission = useValue(permissionAtom)
     const accel = useValue(accelerationSelector) // Vector3 | null
-    const rot = useValue(rotationRateSelector)   // RotationRateSnapshot | null
+    const rot = useValue(rotationRateSelector) // RotationRateSnapshot | null
     return (
         <div>
-            <button onClick={() => requestMotionPermission()}>Enable</button>
+            {permission === "prompt" && (
+                <button onClick={() => void requestMotionPermission()}>Enable motion</button>
+            )}
             <pre>{JSON.stringify({ accel, rot }, null, 2)}</pre>
         </div>
     )
@@ -48,75 +79,22 @@ function Motion() {
 
 </FrameworkBlock>
 
-<FrameworkBlock fw="vue">
+<div className="callout callout-note">
+  <div className="callout-title">Adapter support in this beta</div>
 
-```vue
-<script setup>
-import { useValue } from "valdres-vue"
-import { accelerationSelector } from "@valdres/browser-device-motion"
+  `valdres-react` is the only adapter migrated to the v1 core. The Vue, Svelte,
+  Solid and Angular adapters cannot read an external atom yet. Until they ship,
+  read this package with `store.get` / `store.sub` as above.
 
-const accel = useValue(accelerationSelector) // Ref<Vector3 | null>
-</script>
-
-<template>{{ accel }}</template>
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="svelte">
-
-```svelte
-<script>
-import { watch } from "valdres-svelte"
-import { accelerationSelector } from "@valdres/browser-device-motion"
-
-const accel = watch(accelerationSelector)
-</script>
-
-{JSON.stringify(accel.value)}
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="solid">
-
-```tsx
-import { createValue } from "valdres-solid"
-import { accelerationSelector } from "@valdres/browser-device-motion"
-
-function Motion() {
-    const accel = createValue(accelerationSelector) // () => Vector3 | null
-    return <pre>{JSON.stringify(accel())}</pre>
-}
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="angular">
-
-```ts
-import { Component } from "@angular/core"
-import { injectValue } from "valdres-angular"
-import { accelerationSelector } from "@valdres/browser-device-motion"
-
-@Component({
-    selector: "motion-view",
-    template: `{{ accel() | json }}`,
-})
-export class MotionView {
-    accel = injectValue(accelerationSelector) // Signal<Vector3 | null>
-}
-```
-
-</FrameworkBlock>
+</div>
 
 ## Exports
 
 | Export | Kind | Type |
 |--------|------|------|
-| `motionAtom` | atom (read-only) | `MotionSnapshot \| null` |
-| `permissionAtom` | atom (read-only) | `PermissionValue` |
-| `motionStatusAtom` | atom (read-only) | `MotionStatus` |
+| `motionAtom` | selector (read-only) | `MotionSnapshot \| null` |
+| `motionStatusAtom` | selector (read-only) | `MotionStatus` |
+| `permissionAtom` | external atom (read-only) | `PermissionValue` |
 | `accelerationSelector` | selector | `Vector3 \| null` |
 | `accelerationIncludingGravitySelector` | selector | `Vector3 \| null` |
 | `accelerationMagnitudeSelector` | selector | `number \| null` |
@@ -126,9 +104,74 @@ export class MotionView {
 | `MotionSnapshot` | type | `{ acceleration, accelerationIncludingGravity, rotationRate: ... \| null; interval: number; timeStamp: number }` |
 | `Vector3` | type | `{ x, y, z: number \| null }` |
 | `RotationRateSnapshot` | type | `{ alpha, beta, gamma: number \| null }` |
-| `MotionStatus` | type | `"unsupported" \| "idle" \| "active"` |
+| `MotionStatus` | type | `"unsupported" \| "insecure" \| "idle" \| "active"` |
 | `PermissionValue` | type | `"granted" \| "denied" \| "prompt" \| "unsupported"` |
 
-## Cross-framework
+## Ownership
 
-The `devicemotion` subscription starts on the first subscriber across all stores and stops when the last one leaves. Read primitive per framework: `useValue` (React/Vue), `createValue` (Solid), `injectValue` (Angular), `watch` (Svelte), or `store.get` / `store.sub`.
+Motion belongs to the device, so every export is read-only: stores cannot
+`set`, `reset` or `update` them, at compile time or at runtime. `motionAtom` and
+`motionStatusAtom` project one source, so a reading and the status it was
+published with are never observed apart.
+
+`motionStatusAtom` is:
+
+- `"unsupported"` without a `window` or a `DeviceMotionEvent` (servers, workers,
+  browsers without the API);
+- `"insecure"` when `window.isSecureContext` is `false` — the API is restricted
+  to secure contexts, so nothing is attached;
+- `"idle"` while no store tree listens;
+- `"active"` while at least one store tree listens. Readings can still be `null`:
+  no sensor, permission not granted yet, or a hidden page (browsers only fire
+  `devicemotion` for visible documents).
+
+## Permission
+
+`permissionAtom` never prompts. Its value is:
+
+- the answer of the last `requestMotionPermission()` that completed, kept for the
+  page's lifetime and shared by every store;
+- while a store subscribes, the Permissions API's combined answer for
+  `accelerometer` and `gyroscope` where the engine knows those names
+  (Chromium), followed through its `change` events. An answer whose operation
+  started earlier never overwrites a newer one. The last answer is kept after
+  the last subscriber leaves, and the next subscription queries again;
+- otherwise `"prompt"` where `DeviceMotionEvent.requestPermission` exists, and
+  `"granted"` where it does not (those browsers fire events without asking);
+- `"unsupported"` without the API or in an insecure context.
+
+`requestMotionPermission()` is the only call that can show a prompt. It calls
+`DeviceMotionEvent.requestPermission()` synchronously, so the transient
+activation of the click that called it is the one the browser checks — do not
+`await` anything before calling it. It never rejects:
+
+| Outcome | Resolves | Recorded |
+|---------|----------|----------|
+| The user grants or denies | `"granted"` / `"denied"` | yes, for every store |
+| No transient activation (`NotAllowedError`) or a host failure | the current value | no — a later gesture can retry |
+| The browser has no `requestPermission` | the current value | no |
+| No API, or an insecure context | `"unsupported"` | no |
+
+Concurrent calls share one request. A browser prompt cannot be cancelled; a
+request that completes after every store was disposed still records its answer,
+which is page truth.
+
+## Server rendering
+
+The server snapshots are fixed seeds: `motionStatusAtom` is `"idle"`,
+`motionAtom` is `null` and `permissionAtom` is `"prompt"`. `useValue` renders
+them first and switches to the live values after hydration. Nothing attaches,
+queries or prompts during a server render.
+
+## Lifetime
+
+One `devicemotion` listener per window is shared by every store tree that
+retains the source and removed with the last one — when the last retaining
+subscriber leaves or its store is disposed. Child scopes share their root's
+registration. The window's latest reading is cached while attached and
+discarded on detach, so a later subscription never reports a stale reading.
+Importing the package and reading without a subscription attach nothing.
+
+Every store tree is invalidated for each reading even when another tree's
+subscriber throws; the failures are rethrown afterwards from the native
+listener, where the browser reports them.

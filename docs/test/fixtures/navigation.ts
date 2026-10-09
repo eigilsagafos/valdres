@@ -195,6 +195,10 @@ const migrated = [
     "browser-reduced-transparency",
     "browser-keyboard",
     "hotkeys",
+    "browser-device-motion",
+    "browser-device-orientation",
+    "browser-geolocation",
+    "browser-screen-details",
 ]
 navigate(
     "/browser-online",
@@ -221,11 +225,7 @@ check(
 // ── unavailable integrations ───────────────────────────────────────────────
 const unmigrated = [
     "bandwidth",
-    "browser-device-motion",
-    "browser-device-orientation",
-    "browser-geolocation",
     "browser-screen",
-    "browser-screen-details",
     "browser-window",
     "color-mode",
     "public-ip",

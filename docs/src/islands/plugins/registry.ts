@@ -38,9 +38,68 @@ import {
     prefersReducedTransparencySelector,
 } from "@valdres/browser-reduced-transparency"
 import { shortcutSelector } from "@valdres/hotkeys"
+import {
+    accelerationIncludingGravitySelector,
+    motionStatusAtom,
+    permissionAtom as motionPermissionAtom,
+    requestMotionPermission,
+    rotationRateSelector,
+} from "@valdres/browser-device-motion"
+import {
+    alphaSelector,
+    betaSelector,
+    compassHeadingSelector,
+    gammaSelector,
+    orientationStatusAtom,
+    permissionAtom as orientationPermissionAtom,
+    requestOrientationPermission,
+} from "@valdres/browser-device-orientation"
+import {
+    coordsSelector,
+    accuracySelector,
+    geolocationErrorAtom,
+    geolocationStatusAtom,
+    permissionAtom as geolocationPermissionAtom,
+    watchGeolocation,
+} from "@valdres/browser-geolocation"
+import {
+    currentScreenAtom,
+    requestScreenDetails,
+    screenDetailsStatusAtom,
+    screenPermissionAtom,
+    screensAtom,
+} from "@valdres/browser-screen-details"
+import { ScreenPlacement } from "./ScreenPlacement"
+import { docsStore } from "../shared-store"
 
 const unavailable = (key: V1UnavailableKey) => (el: HTMLElement) =>
     mountV1Unavailable(el, key)
+
+// The watch belongs to the demo: the button starts it on the shared store,
+// and unmounting the demo (navigating away) stops it.
+const geolocationDemo = (el: HTMLElement) => {
+    let stop: (() => void) | undefined
+    const cleanup = inspector({
+        hint: "Starts navigator.geolocation.watchPosition; your browser may ask first",
+        gated: {
+            buttonLabel: "Share location",
+            request: () => {
+                stop ??= watchGeolocation(docsStore)
+            },
+        },
+        rows: [
+            { label: "geolocationStatusAtom", state: geolocationStatusAtom },
+            { label: "permissionAtom", state: geolocationPermissionAtom },
+            { label: "coordsSelector", state: coordsSelector },
+            { label: "accuracySelector", state: accuracySelector },
+            { label: "geolocationErrorAtom", state: geolocationErrorAtom },
+        ],
+    })(el)
+    return () => {
+        stop?.()
+        cleanup()
+    }
+}
 
 export const pluginDemos: Record<string, (el: HTMLElement) => () => void> = {
     "browser-online": inspector({
@@ -68,7 +127,7 @@ export const pluginDemos: Record<string, (el: HTMLElement) => () => void> = {
         log: { state: visibilityAtom, label: "visibility changes" },
     }),
 
-    "browser-geolocation": unavailable("@valdres/browser-geolocation"),
+    "browser-geolocation": geolocationDemo,
 
     "browser-keyboard": mountKeyboardDemo,
 
@@ -83,9 +142,35 @@ export const pluginDemos: Record<string, (el: HTMLElement) => () => void> = {
         ],
     }),
 
-    "browser-device-motion": unavailable("@valdres/browser-device-motion"),
+    "browser-device-motion": inspector({
+        hint: "Move a phone or tablet; desktops have no motion sensor",
+        gated: { buttonLabel: "Enable motion", request: requestMotionPermission },
+        rows: [
+            { label: "motionStatusAtom", state: motionStatusAtom },
+            { label: "permissionAtom", state: motionPermissionAtom },
+            {
+                label: "accelerationIncludingGravitySelector",
+                state: accelerationIncludingGravitySelector,
+            },
+            { label: "rotationRateSelector", state: rotationRateSelector },
+        ],
+    }),
 
-    "browser-device-orientation": unavailable("@valdres/browser-device-orientation"),
+    "browser-device-orientation": inspector({
+        hint: "Tilt a phone or tablet; desktops have no orientation sensor",
+        gated: {
+            buttonLabel: "Enable orientation",
+            request: requestOrientationPermission,
+        },
+        rows: [
+            { label: "orientationStatusAtom", state: orientationStatusAtom },
+            { label: "permissionAtom", state: orientationPermissionAtom },
+            { label: "alphaSelector", state: alphaSelector },
+            { label: "betaSelector", state: betaSelector },
+            { label: "gammaSelector", state: gammaSelector },
+            { label: "compassHeadingSelector", state: compassHeadingSelector },
+        ],
+    }),
 
     "browser-focus": inspector({
         hint: "Click outside the page or switch tabs/windows and back",
@@ -126,7 +211,25 @@ export const pluginDemos: Record<string, (el: HTMLElement) => () => void> = {
 
     "browser-screen": unavailable("@valdres/browser-screen"),
 
-    "browser-screen-details": unavailable("@valdres/browser-screen-details"),
+    "browser-screen-details": inspector({
+        hint: "Chromium only; connect or rearrange displays after allowing",
+        gated: { buttonLabel: "Allow screens", request: requestScreenDetails },
+        rows: [
+            { label: "screenDetailsStatusAtom", state: screenDetailsStatusAtom },
+            { label: "screenPermissionAtom", state: screenPermissionAtom },
+            {
+                label: "currentScreenAtom",
+                state: currentScreenAtom,
+                format: screen => (screen ? `${screen.label || "screen"} ${screen.width}×${screen.height}` : "null"),
+            },
+            {
+                label: "screensAtom",
+                state: screensAtom,
+                format: screens => `${screens.length} screen(s)`,
+            },
+        ],
+        extra: ScreenPlacement,
+    }),
 
     "color-mode": unavailable("@valdres/color-mode"),
 

@@ -1,0 +1,50 @@
+name: Browser permission packages
+
+# @valdres/browser-device-motion, -device-orientation, -geolocation and
+# -screen-details, migrated to externalAtom and still release-ignored.
+#
+# Deliberately a workflow of its own, NOT a ci.yaml job: these packages are
+# not release-eligible, so nothing here may gate `publish`, and keeping it out
+# of ci.yaml also keeps it out of `scripts/verify.ts`'s job list until a later
+# integration change moves it in (verify reads ci.yaml's jobs at run time).
+# scripts/browser-permission-packages.test.ts checks that this file still runs
+# both gates and that ci.yaml does not reference the lane yet.
+
+on:
+    pull_request:
+        branches: [main]
+    push:
+        branches: [main]
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+    browser-permission:
+        name: Browser permission packages
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.0
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Browser permission suites and typechecks
+              # `bun test` plus BOTH tsconfigs per package: tsconfig.tests.json
+              # is what holds the @ts-expect-error read-only contracts.
+              run: bun run scripts/check-browser-permission.ts
+            - name: Validate packed browser permission consumers
+              # Shadow-packs the four packages with core and React, installs the
+              # tarballs into an isolated consumer and runs them under Node and
+              # Bun against the packed head and the published peer floor:
+              # browserless import and SSR, scripted permission and hardware
+              # outcomes, listener and watch accounting, declarations, peers.
+              run: bun run scripts/test-browser-permission-packed-consumer.ts

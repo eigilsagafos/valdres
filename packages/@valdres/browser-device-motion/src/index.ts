@@ -1,12 +1,12 @@
-export { motionAtom } from "./atoms/motionAtom"
+export { motionAtom } from "./selectors/motionAtom"
+export { motionStatusAtom } from "./selectors/motionStatusAtom"
 export { permissionAtom } from "./atoms/permissionAtom"
-export { motionStatusAtom } from "./atoms/motionStatusAtom"
 export { accelerationSelector } from "./selectors/accelerationSelector"
 export { accelerationIncludingGravitySelector } from "./selectors/accelerationIncludingGravitySelector"
 export { accelerationMagnitudeSelector } from "./selectors/accelerationMagnitudeSelector"
 export { rotationRateSelector } from "./selectors/rotationRateSelector"
 export { intervalSelector } from "./selectors/intervalSelector"
-export { requestMotionPermission } from "./lib/requestMotionPermission"
+export { requestMotionPermission } from "./utils/requestMotionPermission"
 
 export type {
     MotionSnapshot,

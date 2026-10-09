@@ -13,7 +13,7 @@ interface ScreenLike {
     colorDepth: number
     pixelDepth: number
     devicePixelRatio?: number
-    orientation?: { type: OrientationType; angle: number }
+    orientation?: { type: ScreenDetail["orientationType"]; angle: number }
     isPrimary?: boolean
     isInternal?: boolean
 }

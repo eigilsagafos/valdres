@@ -42,7 +42,7 @@ const renderScreen = (screen: ScreenDetail, current: ScreenDetail | null) => {
     `
 }
 
-const renderLayout = (screens: ScreenDetail[], current: ScreenDetail | null) => {
+const renderLayout = (screens: readonly ScreenDetail[], current: ScreenDetail | null) => {
     if (!screens.length) {
         layoutEl.style.height = "0"
         layoutEl.innerHTML = ""

@@ -4,12 +4,13 @@ import { docsStore, countAtom } from "./shared-store"
 import { ReactCounter } from "./react-counter"
 import { mountKeyboardDemo } from "./landing-keyboard"
 import { mountOnlineDemo } from "./landing-online"
+import { mountLocationDemo } from "./landing-location"
 import { mountV1Unavailable } from "./unavailable"
 
-// The Vue, Svelte, Solid and Angular adapters and @valdres/browser-geolocation
-// are not migrated to Valdres v1, so their cards show a notice and their
-// islands (vue-counter.ts, svelte-counter.ts, solid-counter.ts,
-// angular-counter.ts, landing-location.tsx) stay out of this bundle.
+// The Vue, Svelte, Solid and Angular adapters are not migrated to Valdres v1,
+// so their cards show a notice and their islands (vue-counter.ts,
+// svelte-counter.ts, solid-counter.ts, angular-counter.ts) stay out of this
+// bundle.
 
 // Mount React island
 const reactRoot = document.getElementById("react-island")
@@ -48,7 +49,8 @@ if (onlineRoot) {
 // Location island
 const locationRoot = document.getElementById("landing-location-island")
 if (locationRoot) {
-    mountV1Unavailable(locationRoot, "@valdres/browser-geolocation", { compact: true })
+    locationRoot.innerHTML = ""
+    mountLocationDemo(locationRoot)
 }
 
 // Prevent text selection on rapid clicks

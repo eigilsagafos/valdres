@@ -1,7 +1,11 @@
-export { currentScreenAtom } from "./atoms/currentScreenAtom"
+export { screenDetailsAtom } from "./atoms/screenDetailsAtom"
 export { screenPermissionAtom } from "./atoms/screenPermissionAtom"
-export { screensAtom } from "./atoms/screensAtom"
+export { screensAtom } from "./selectors/screensAtom"
+export { currentScreenAtom } from "./selectors/currentScreenAtom"
+export { screenDetailsStatusAtom } from "./selectors/screenDetailsStatusAtom"
 export { requestScreenDetails } from "./utils/requestScreenDetails"
 
 export type { ScreenDetail } from "./types/ScreenDetail"
+export type { ScreenDetailsState } from "./types/ScreenDetailsState"
+export type { ScreenDetailsStatus } from "./types/ScreenDetailsStatus"
 export type { ScreenPermissionState } from "./types/ScreenPermissionState"

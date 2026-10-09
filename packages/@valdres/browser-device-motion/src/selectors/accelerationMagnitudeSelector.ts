@@ -1,9 +1,9 @@
-import { selector } from "valdres"
-import { motionAtom } from "../atoms/motionAtom"
+import { selector, type Selector } from "valdres"
+import { motionAtom } from "./motionAtom"
 
 // Magnitude of the linear acceleration vector (gravity-excluded). Useful for
 // shake detection — pair it with a threshold + debounce in user code.
-export const accelerationMagnitudeSelector = selector(
+export const accelerationMagnitudeSelector: Selector<number | null> = selector(
     get => {
         const a = get(motionAtom)?.acceleration
         if (!a) return null
