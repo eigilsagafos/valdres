@@ -63,9 +63,10 @@ myStore.txn(tx => {
 
 Valdres owns the transaction lifecycle. The callback receives a cursor with
 `get`, `set`, `update`, `reset`, `delete`, `scope`, and the experimental
-[`resetAll`](/react/store#resetting-a-scope-resetall), but no `commit()`
+[`resetAll`](/react/store#resetting-a-scope-resetall) and
+[`onCommit`](/react/store#after-commit-txoncommit), but no `commit()`
 method or backing store data. Returning successfully commits once and hands
-back the callback's return value; throwing discards every staged write:
+back the callback's return value; a throw from the callback discards every staged write:
 
 ```ts
 myStore.txn(tx => {
@@ -75,6 +76,13 @@ myStore.txn(tx => {
 
 // statusAtom was not changed
 ```
+
+For work that must run only after this draft commits, register
+`tx.onCommit(() => ...)`. It also runs for successful no-ops, survives errors
+after apply, and is discarded if the draft aborts. Delivery is deferred beyond
+settlement/notification restrictions; scope disposal cancels pending work and
+`resetAll` does not. Capture values inside the transaction because the cursor
+will be closed at delivery. See [timing, lifetime, and error handling](/react/store#after-commit-txoncommit).
 
 If an operation intentionally needs multiple publish points, use separate
 `store.txn()` calls. Each call is an explicit atomic boundary. Work deferred

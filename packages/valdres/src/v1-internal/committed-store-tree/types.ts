@@ -180,6 +180,25 @@ export type AtomUpdater<Value> = (current: Value) => Value
 
 /** A scope-bound revocable view over one internal StoreTree draft. */
 export interface RootTransaction {
+    /**
+     * Experimental. Start callback after this draft commits and synchronous
+     * settlement/notification restrictions unwind. Successful no-ops deliver;
+     * aborts discard. Later post-apply errors do not discard committed work.
+     *
+     * This cursor's scope owns pending lifetime: disposal cancels unstarted
+     * work; scope(root).onCommit(...) chooses root lifetime without changing
+     * the enclosing draft's rollback boundary. resetAll does not cancel it.
+     *
+     * Starts are FIFO, not asynchronous completions. Delivery is deferred to
+     * a microtask, with task yields under load; browser activation is not
+     * guaranteed. Fake timers may pause delivery until advanced. If the host
+     * discards a wake, a later registration under functioning scheduling
+     * restarts pending work. Returned promises are observed, not awaited.
+     * Throws/rejections use host reportError (or an uncaught task fallback),
+     * never the originating transaction's error channel. The cursor is closed
+     * by execution time. Registration returns void, not a cancellation handle.
+     */
+    onCommit(callback: () => unknown): void
     get<Value>(state: State<Value>): Value
     set<Key extends CollectionKey, Value extends CollectionValue>(
         row: CollectionRow<Key, Value>,

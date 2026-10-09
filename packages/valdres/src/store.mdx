@@ -224,7 +224,8 @@ myStore.txn(tx => {
 
 The callback receives a transaction cursor with `get`, `set`, `update`,
 `reset`, `delete`, `scope`, and the experimental
-[`resetAll`](#resetting-a-scope-resetall). Its reads include the writes
+[`resetAll`](#resetting-a-scope-resetall) and
+[`onCommit`](#after-commit-txoncommit). Its reads include the writes
 staged so far. The cursor's methods can be destructured:
 `myStore.txn(({ get, set }) => …)`.
 
@@ -287,6 +288,133 @@ myStore.txn(tx => {
 result. A missing named scope throws `ScopeNotFoundError`, and a Store from a
 different tree throws `StoreTreeMismatchError`. The cursor closes when the
 callback returns; using it afterwards throws `TransactionClosedError`.
+
+## After commit: `tx.onCommit`
+
+`tx.onCommit(callback): void` is experimental during the beta. Use it when a
+function receives a caller-owned Transaction and needs to start work only if
+that draft commits:
+
+```ts
+import { atom, store, type Transaction } from "valdres"
+
+const app = store()
+const editor = app.scope("editor")
+const selection = atom("")
+
+function copySelection(tx: Transaction) {
+    const text = tx.get(selection)
+    tx.scope(app).onCommit(async () => {
+        await navigator.clipboard.writeText(text)
+        console.log("Copied")
+    })
+}
+
+editor.txn(copySelection)
+```
+
+Capture values with `tx.get` while the cursor is active. Captures preserve the
+references you selected, not a deep copy. Reading a live Store in the callback
+instead sees its state at execution time, potentially including later commits.
+The registering cursor is closed by then; calling `tx.get`, `tx.set`, or even
+`tx.onCommit` inside the callback throws `TransactionClosedError`. Use a live
+Store for later reads or a new transaction for later writes.
+
+### Outcome and lifetime
+
+Registration belongs to the enclosing draft, including registration through
+`tx.scope(...)`. A successful no-op transaction also delivers its callbacks.
+An escaping transaction error, invalid async transaction result, or pre-apply
+validation failure discards the draft's registrations. Once applied, propagation
+or notification errors and independently failing settle handlers do not undo
+those registrations. A thrown `store.txn(...)` call can therefore still have
+committed callbacks; do not retry it to recover a return value.
+
+The registering cursor's scope owns pending lifetime. `tx.onCommit(...)` on an
+editor cursor cancels when that editor is disposed. `tx.scope(app).onCommit(...)`
+explicitly selects root lifetime, so the copy above survives editor disposal.
+It still belongs to the editor transaction's commit/abort boundary. Disposing
+the root cancels pending callbacks in the root and every descendant. Disposal
+between callbacks cancels the remaining affected callbacks in that batch and
+releases their captured references. Work that has already started, including
+an async callback waiting on a Promise, cannot be undone by disposal.
+
+`resetAll` only resets state ownership. It does not erase registrations in the
+same draft or callbacks already waiting to run. Actual Store disposal remains
+restricted inside a transaction: attempting it cannot be used to cancel older
+committed work from an aborting draft. Named scopes are shared, so their shared
+Store disposal ends every pending registration owned by that scope.
+
+### Timing and ordering
+
+Callbacks start after the synchronous operation has returned or thrown and
+settlement and notification restrictions have unwound. They may use live Store
+operations normally. Ordinary transactions, settle callbacks, and subscriber
+notifications retain their existing restrictions; registering a callback does
+not grant extra capabilities inside them.
+
+One shared scheduler starts callbacks in registration/commit FIFO order across
+Stores served by the same runtime copy. A callback's new transaction appends
+its registrations to that queue. Normal delivery begins in a microtask, but a
+bounded drain yields to tasks under load to avoid recursive stack exhaustion
+and starving other work. The current 1,024-entry threshold is an implementation
+scheduling choice, not a permanent public numeric guarantee. Delivery may be
+later than the first microtask. There is no browser user-activation guarantee:
+clipboard or other activation-sensitive APIs can still reject, especially
+after a yield. Commit also does not mean React rendered, the browser painted,
+or a server acknowledged or persisted anything.
+
+Fake timers may pause delivery until their microtasks and timers are advanced.
+If the host discards a scheduled wake (for example, when restoring real timers),
+a later valid `onCommit` registration under functioning host scheduling restarts
+the pending queue, including work from other Stores. FIFO starts, at-most-once
+invocation, and disposal cancellation still apply. Recovery needs that further
+execution opportunity; it cannot progress while the host keeps discarding all
+scheduled work.
+
+FIFO describes callback **starts**, not asynchronous completion. Valdres observes
+returned thenables for rejection but does not await one callback before starting
+the next. An application can supply a serial lane when completion order matters:
+
+```ts
+let tail: Promise<unknown> = Promise.resolve()
+function inOrder(work: () => Promise<unknown>) {
+    const result = tail.then(work)
+    tail = result.catch(() => {}) // one failure must not block the lane
+    return result // return it from onCommit so Valdres observes rejection
+}
+
+editor.txn(tx => {
+    const text = tx.get(selection)
+    tx.scope(app).onCommit(() => inOrder(async () => {
+        await navigator.clipboard.writeText(text)
+        console.log("Copied")
+    }))
+})
+```
+
+Once a callback has enqueued work into this application lane, core disposal
+cannot retract it. Application lifetime checks, latest-only channels, serial
+lanes, retry/idempotency rules, and outbox state machines belong outside core.
+
+### Errors and inspection
+
+Callback throws and returned Promise rejections are reported separately through
+`globalThis.reportError` when available, otherwise by throwing in a later task.
+If the reporter itself throws or returns a rejected thenable, a later task
+throws an `AggregateError` containing both failures. Handle expected failures
+inside the callback. Unhandled reports can terminate a host process. A callback
+failure never rolls back committed state, prevents later callback starts, or
+replaces the originating operation's error.
+
+`onCommit` returns `undefined`: there is no chaining, cancellation handle, or
+per-registration error option. It receives no callback arguments or special
+`this` value. The API has no `on`, `onSuccess`, `onRollback`, or `onFinally`.
+
+Inspection keeps its existing operation/commit model. A registration creates no
+state intent or hook event, and a callback's later Store operation is recorded
+as a separate operation. Callback errors use the host error channel rather than
+changing the initiating inspection record.
 
 ## Resetting a scope: `resetAll`
 

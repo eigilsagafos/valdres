@@ -1,3 +1,4 @@
+import { publishCommit, discardDisposedCommits } from "./commit-hooks"
 import {
     ExternalOperationPhase,
     HostOperationKind,
@@ -1223,6 +1224,7 @@ class CommittedStoreTreeHost
             node.children.clear()
             node.markDisposed()
         }
+        discardDisposedCommits()
         if (Object.is(scope, this.#rootScope)) {
             this.#fallbackRecords = new WeakMap()
             this.#external = undefined
@@ -1281,6 +1283,22 @@ class CommittedStoreTreeHost
             draft.close()
             draft.release()
         }
+    }
+
+    registerCommit(
+        draft: TreeDraft,
+        scope: StoreScopeNode,
+        callback: () => unknown,
+    ): void {
+        assertCursorOperationAllowed(
+            this.#domain,
+            draft.transaction,
+            draft.active,
+        )
+        this.#assertScopeLive(scope)
+        if (typeof callback !== "function")
+            throw new TypeError("Transaction.onCommit requires a function")
+        ;(draft.commitEntries ??= []).push({ scope, callback })
     }
 
     get fallbackRecords(): WeakMap<AnyAtom, DraftAtomOutcome> {
@@ -1979,7 +1997,10 @@ class CommittedStoreTreeHost
             collectionPlan = this.#domain[COLLECTION_KERNEL]?.plan(draft)
             if (collectionPlan === undefined) throw new Error()
         }
-        if (!draft.hasIntents && collectionPlan === undefined) return
+        if (!draft.hasIntents && collectionPlan === undefined) {
+            publishCommit(draft)
+            return
+        }
 
         const singleIntent = draft.singleIntent
         const singleScope = draft.singleIntentScope
@@ -1991,6 +2012,7 @@ class CommittedStoreTreeHost
             draft.getAtomBaseline(singleScope, singleIntent.atom)?.owned ===
                 false
         ) {
+            publishCommit(draft)
             return
         }
 
@@ -2064,6 +2086,8 @@ class CommittedStoreTreeHost
             const collectionOwnershipChanged = collectionPlan.commit(0)
             ownershipChanged ||= collectionOwnershipChanged
         }
+        // Linearization: all owned sources applied; later failures cannot roll back.
+        publishCommit(draft)
         // Rewire every materialized target only after every local source applies.
         if (firstPlan !== undefined) this.#rewirePlanAtomView(firstPlan)
         if (remainingPlan !== undefined) {

@@ -246,12 +246,14 @@ describe("pinned Bun toolchain", () => {
         // docs/designs/selector-failure-propagation.md. 1770 is the same
         // measurement after the experimental Transaction.resetAll
         // (atom-selector-store 19039 - ceiling 17269), certified in
-        // docs/designs/transaction-reset-all.md.
+        // docs/designs/transaction-reset-all.md. 2322 is the owner-approved
+        // revision-3 onCommit measurement (19591 - ceiling 17269), recorded
+        // in docs/designs/transaction-on-commit-prior-art.md.
         const allowance = baseline.policy.coreRetainingGzipAllowance
-        expect(allowance).toBe(1770)
-        // The raw allowance is the same kind of reviewed edit: 4188 is
-        // atom-selector-store 70472 - ceiling 66284 at that point.
-        expect(baseline.policy.coreRetainingRawAllowance).toBe(4188)
+        expect(allowance).toBe(2322)
+        // The raw allowance is the same reviewed revision-3 measurement:
+        // atom-selector-store 72063 - ordinary ceiling 66284.
+        expect(baseline.policy.coreRetainingRawAllowance).toBe(5779)
         for (const budget of [
             baseline.featureBudgets.dist,
             baseline.featureBudgets.packed,
