@@ -4,8 +4,21 @@ import { afterEach, expect } from "bun:test"
 
 GlobalRegistrator.register()
 expect.extend(matchers as never)
-// Vitest matcher used upstream that bun:test lacks.
+// Vitest (and Chai) matchers used upstream that bun:test lacks.
 expect.extend({
+    throws(received: unknown) {
+        let pass = false
+        try {
+            ;(received as () => unknown)()
+        } catch {
+            pass = true
+        }
+        return {
+            pass,
+            message: () =>
+                `expected the function ${pass ? "not " : ""}to throw`,
+        }
+    },
     toHaveBeenCalledExactlyOnceWith(received: unknown, ...expected: unknown[]) {
         const calls = (received as { mock: { calls: unknown[][] } }).mock.calls
         const pass = calls.length === 1 && this.equals(calls[0], expected)

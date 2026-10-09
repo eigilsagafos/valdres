@@ -35,11 +35,7 @@ export type {
     WritableAtom,
 } from "../src/index"
 
-/** Jotai-only hooks that this package does not export (see the docs). */
-const notProvided = (name: string) => () => {
-    throw new Error(`${name} is not provided by @valdres-react/jotai`)
-}
-export const useAtomValueRawSync: typeof reference.useAtomValueRawSync =
-    IMPL === "jotai"
-        ? reference.useAtomValueRawSync
-        : (notProvided("useAtomValueRawSync") as never)
+export const useAtomValueRaw: typeof adapter.useAtomValueRaw =
+    impl.useAtomValueRaw
+export const useAtomValueRawSync: typeof adapter.useAtomValueRawSync =
+    impl.useAtomValueRawSync

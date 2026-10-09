@@ -7,6 +7,8 @@ export { getDefaultStore } from "./getDefaultStore"
 export { Provider } from "./Provider"
 export { useAtom } from "./useAtom"
 export { useAtomValue } from "./useAtomValue"
+export { useAtomValueRaw } from "./useAtomValueRaw"
+export { useAtomValueRawSync } from "./useAtomValueRawSync"
 export { useSetAtom } from "./useSetAtom"
 export { useStore } from "./useStore"
 

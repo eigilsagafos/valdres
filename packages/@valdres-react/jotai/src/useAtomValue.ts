@@ -1,8 +1,7 @@
-import React, { useDebugValue, useEffect, useReducer } from "react"
+import React from "react"
 import type { Atom, ExtractAtomValue, Store } from "./types/jotai"
-import { createContinuablePromise } from "./lib/continuablePromise"
 import { isPromiseLike } from "./lib/promiseBox"
-import { useStore } from "./useStore"
+import { useAtomValueRaw } from "./useAtomValueRaw"
 
 type Options = {
     store?: Store
@@ -15,7 +14,7 @@ type PromiseWithStatus<Value> = PromiseLike<Value> & {
     reason?: unknown
 }
 
-// Port of Jotai 3.0.1's useAtomValueRaw + useAtomValue (MIT).
+// Port of Jotai 3.0.1's useAtomValue (MIT).
 const attachPromiseStatus = <Value>(promise: PromiseWithStatus<Value>) => {
     if (!promise.status) {
         promise.status = "pending"
@@ -34,6 +33,7 @@ const attachPromiseStatus = <Value>(promise: PromiseWithStatus<Value>) => {
 
 const use =
     (React as { use?: <Value>(promise: PromiseLike<Value>) => Value }).use ||
+    // A shim for React 18
     (<Value>(promise: PromiseWithStatus<Value>): Value => {
         if (promise.status === "pending") {
             throw promise
@@ -47,36 +47,6 @@ const use =
         }
     })
 
-type ReducerState = readonly [
-    value: unknown,
-    store: Store,
-    atom: Atom<unknown>,
-    subscribe: (callback: () => void) => () => void,
-]
-
-const createState = (
-    store: Store,
-    atom: Atom<unknown>,
-    value: unknown,
-): ReducerState => [
-    value,
-    store,
-    atom,
-    callback => {
-        const unsub = store.sub(atom, callback)
-        let needsRerender = true
-        try {
-            needsRerender = !Object.is(value, store.get(atom))
-        } catch {
-            // Rerender on error.
-        }
-        if (needsRerender) {
-            callback()
-        }
-        return unsub
-    },
-]
-
 export function useAtomValue<Value>(
     atom: Atom<Value>,
     options?: Options,
@@ -87,38 +57,12 @@ export function useAtomValue<AtomType extends Atom<unknown>>(
 ): Awaited<ExtractAtomValue<AtomType>>
 export function useAtomValue(atom: Atom<unknown>, options?: Options) {
     const { unstable_promiseStatus: promiseStatus = !React.use } = options || {}
-    const store = useStore(options)
-    const [
-        [valueFromReducer, storeFromReducer, atomFromReducer, subscribe],
-        rerender,
-    ] = useReducer(
-        (prev: ReducerState): ReducerState => {
-            const nextValue = store.get(atom)
-            if (prev[1] === store && prev[2] === atom) {
-                return Object.is(prev[0], nextValue)
-                    ? prev
-                    : [nextValue, store, atom, prev[3]]
-            }
-            return createState(store, atom, nextValue)
-        },
-        undefined,
-        () => createState(store, atom, store.get(atom)),
-    )
-    let value = valueFromReducer
-    if (storeFromReducer !== store || atomFromReducer !== atom) {
-        rerender()
-        value = store.get(atom)
-    }
-    useEffect(() => subscribe(rerender), [subscribe])
-    useDebugValue(value)
+    const value = useAtomValueRaw(atom, options)
     if (isPromiseLike(value)) {
-        const continuable = createContinuablePromise(store, value, () =>
-            store.get(atom),
-        )
         if (promiseStatus) {
-            attachPromiseStatus(continuable)
+            attachPromiseStatus(value)
         }
-        return use(continuable)
+        return use(value)
     }
     return value
 }

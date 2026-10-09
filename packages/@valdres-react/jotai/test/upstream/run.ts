@@ -58,6 +58,22 @@ for (const [index, file] of files.entries()) {
 console.log(
     `\n${impl}: ${passed} pass, ${failed} fail across ${files.length} files`,
 )
+if (impl === "valdres") {
+    const listed = Object.values(gaps)
+    const skipped = listed.filter(
+        gap => gap.skip || gap.kind === "not-applicable",
+    ).length
+    const inverted = listed.length - skipped
+    console.log(
+        `matrix: ${passed + failed + skipped} upstream tests = ${passed - inverted} pass + ${inverted} known gaps verified failing + ${skipped} skipped`,
+    )
+    const byReason = new Map<string, number>()
+    for (const gap of listed) {
+        const key = `${gap.kind}${gap.skip ? " (skipped)" : ""}: ${gap.reason}`
+        byReason.set(key, (byReason.get(key) ?? 0) + 1)
+    }
+    for (const [key, count] of byReason) console.log(`  ${count} ${key}`)
+}
 if (problems.length > 0) {
     console.error(`\n${problems.join("\n\n")}`)
     process.exit(1)

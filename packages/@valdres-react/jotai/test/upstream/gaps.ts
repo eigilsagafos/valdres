@@ -25,11 +25,16 @@ const ON_INIT =
     "Jotai's internal INTERNAL_onInit hook throws VALDRES_JOTAI_INTERNAL_ON_INIT_UNSUPPORTED"
 const STORE_IN_READ =
     "store methods inside a read function throw Valdres SelectorCapabilityError"
-const RAW_SYNC = "useAtomValueRawSync is not exported"
 const EAGER =
     "Valdres recomputes a previously read, unsubscribed selector when a dependency changes"
 const MOUNT_ORDER =
     "Valdres attaches sibling dependencies in reverse read order, so their onMount order is reversed"
+const PREVIOUS_VALUE =
+    "a derived atom with init reading itself gets its init or last set value, not its previous computed value"
+// Skipped: the late get() throws inside unwrap's own promise callbacks,
+// outside the test body.
+const UNWRAP =
+    "unwrap needs INTERNAL_onInit, get() in promise callbacks and previous-value self-reads"
 const STACK =
     "a stack overflow is cached as the atom's error, so a later store.sub does not throw it"
 
@@ -116,20 +121,10 @@ export const gaps: Readonly<Record<string, Gap>> = {
         "unsupported",
         LATE_GET,
     ),
-    "can write an atom value on useEffect in children": gap(
-        "react/basic.test.tsx",
-        "not-applicable",
-        RAW_SYNC,
-    ),
     "async chain for multiple sync and async atoms (#443)": gap(
         "react/basic.test.tsx",
         "unsupported",
         LATE_GET,
-    ),
-    "chained derive atom with onMount and useEffect (#897)": gap(
-        "react/basic.test.tsx",
-        "not-applicable",
-        RAW_SYNC,
     ),
     "works a primitive atom and a dependent async atom": gap(
         "react/dependency.test.tsx",
@@ -153,8 +148,6 @@ export const gaps: Readonly<Record<string, Gap>> = {
         "unsupported",
         LATE_GET,
     ),
-    "useAtomValueRawSync observes synchronous onMount updates in both subscribers (#3371)":
-        gap("react/onmount.test.tsx", "not-applicable", RAW_SYNC),
     "create atom with onMount in async get": gap(
         "react/onmount.test.tsx",
         "unsupported",
@@ -267,4 +260,74 @@ export const gaps: Readonly<Record<string, Gap>> = {
         gap("vanilla/store.test.tsx", "unsupported", LATE_GET),
     "notifies subscriber when nested write uses get to read atom with store.set":
         gap("vanilla/store.test.tsx", "unsupported", STORE_IN_READ),
+    "simple async get default": gap(
+        "react/vanilla-utils/atomWithDefault.test.tsx",
+        "unsupported",
+        LATE_GET,
+    ),
+    "refresh async atoms to default values": gap(
+        "react/vanilla-utils/atomWithDefault.test.tsx",
+        "unsupported",
+        LATE_GET,
+    ),
+    "do not update unless equality function says value has changed": gap(
+        "react/vanilla-utils/selectAtom.test.tsx",
+        "divergence",
+        PREVIOUS_VALUE,
+    ),
+    "no unnecessary updates when updating atoms": gap(
+        "react/vanilla-utils/splitAtom.test.tsx",
+        "divergence",
+        PREVIOUS_VALUE,
+    ),
+    "unwrap > should unwrap a promise with no fallback function": gap(
+        "vanilla/utils/unwrap.test.ts",
+        "unsupported",
+        UNWRAP,
+        true,
+    ),
+    "unwrap > should unwrap a promise with fallback function without prev": gap(
+        "vanilla/utils/unwrap.test.ts",
+        "unsupported",
+        UNWRAP,
+        true,
+    ),
+    "unwrap > should unwrap a promise with fallback function with prev": gap(
+        "vanilla/utils/unwrap.test.ts",
+        "unsupported",
+        UNWRAP,
+        true,
+    ),
+    "unwrap > should unwrap an async writable atom": gap(
+        "vanilla/utils/unwrap.test.ts",
+        "unsupported",
+        UNWRAP,
+        true,
+    ),
+    "unwrap > should unwrap to a fulfilled value of an already resolved async atom":
+        gap("vanilla/utils/unwrap.test.ts", "unsupported", UNWRAP, true),
+    "unwrap > should get a fulfilled value after the promise resolves": gap(
+        "vanilla/utils/unwrap.test.ts",
+        "unsupported",
+        UNWRAP,
+        true,
+    ),
+    "unwrap > should throw an error if underlying promise is rejected": gap(
+        "vanilla/utils/unwrap.test.ts",
+        "unsupported",
+        UNWRAP,
+        true,
+    ),
+    "unwrap > should not enter an infinite loop when a rejected source recomputes":
+        gap("vanilla/utils/unwrap.test.ts", "unsupported", UNWRAP, true),
+    "unwrap > should pass the last value to fallback after an error state": gap(
+        "vanilla/utils/unwrap.test.ts",
+        "unsupported",
+        UNWRAP,
+        true,
+    ),
+    "unwrap > should update dependents with the value of the unwrapped atom when the promise resolves":
+        gap("vanilla/utils/unwrap.test.ts", "unsupported", UNWRAP, true),
+    "unwrap > should expose the latest value after a linked async read resolves (#3296)":
+        gap("vanilla/utils/unwrap.test.ts", "unsupported", UNWRAP, true),
 }

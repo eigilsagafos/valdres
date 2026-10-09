@@ -10,6 +10,8 @@ import {
     Provider,
     useAtom,
     useAtomValue,
+    useAtomValueRaw,
+    useAtomValueRawSync,
     useSetAtom,
     useStore,
     type Atom,
@@ -96,6 +98,10 @@ export function Component() {
     setValue(previous => previous + 1)
     const resolved = useAtomValue(asyncDoubled)
     expectType<Equal<typeof resolved, number>>(true)
+    const raw = useAtomValueRaw(asyncDoubled)
+    expectType<Equal<typeof raw, Promise<number>>>(true)
+    const rawSync = useAtomValueRawSync(count, { store })
+    expectType<Equal<typeof rawSync, number>>(true)
     const addNumbers = useSetAtom(add)
     const result: string = addNumbers(1, 2)
     const [, never] = useAtom(doubled)

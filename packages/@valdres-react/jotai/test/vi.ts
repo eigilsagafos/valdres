@@ -25,6 +25,8 @@ export { afterAll, afterEach, beforeAll, beforeEach, expect }
 
 // Bun implements these fake-timer controls; its bundled types predate them.
 const timers = jest as unknown as {
+    clearAllMocks(): void
+    runAllTimers(): void
     useFakeTimers(): void
     useRealTimers(): void
     advanceTimersByTime(ms: number): void
@@ -39,11 +41,17 @@ const stubbed = new Map<string, PropertyDescriptor | undefined>()
 export const vi = {
     fn: mock,
     spyOn,
+    clearAllMocks: () => {
+        timers.clearAllMocks()
+    },
     useFakeTimers: () => {
         timers.useFakeTimers()
     },
     useRealTimers: () => {
         timers.useRealTimers()
+    },
+    runAllTimers: () => {
+        timers.runAllTimers()
     },
     advanceTimersByTime: (ms: number) => {
         timers.advanceTimersByTime(ms)

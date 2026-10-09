@@ -11,6 +11,8 @@ assert.deepEqual(Object.keys(jotai).sort(), [
     "getDefaultStore",
     "useAtom",
     "useAtomValue",
+    "useAtomValueRaw",
+    "useAtomValueRawSync",
     "useSetAtom",
     "useStore",
 ])
