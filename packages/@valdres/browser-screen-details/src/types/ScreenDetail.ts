@@ -11,7 +11,12 @@ export interface ScreenDetail {
     colorDepth: number
     pixelDepth: number
     devicePixelRatio: number
-    orientationType: OrientationType
+    /** The DOM `OrientationType` values, declared here for DOM-less consumers. */
+    orientationType:
+        | "portrait-primary"
+        | "portrait-secondary"
+        | "landscape-primary"
+        | "landscape-secondary"
     orientationAngle: number
     isPrimary: boolean
     isInternal: boolean

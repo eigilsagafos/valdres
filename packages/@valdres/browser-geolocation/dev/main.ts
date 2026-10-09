@@ -4,7 +4,7 @@ import {
     permissionAtom,
     geolocationStatusAtom,
     geolocationErrorAtom,
-    geolocationOptionsAtom,
+    watchGeolocation,
     coordsSelector,
     accuracySelector,
     altitudeSelector,
@@ -86,17 +86,33 @@ const renderSnapshot = () => {
     snapshotEl.textContent = p ? JSON.stringify(p, null, 2) : "—"
 }
 
-const opts = s.get(geolocationOptionsAtom)
-highAccuracyInput.checked = !!opts.enableHighAccuracy
-timeoutInput.value = String(opts.timeout ?? 30000)
-maxAgeInput.value = String(opts.maximumAge ?? 0)
+highAccuracyInput.checked = false
+timeoutInput.value = "30000"
+maxAgeInput.value = "0"
+
+const toggleButton = $("toggle") as HTMLButtonElement
+let stopWatch: (() => void) | undefined
+const readOptions = () => ({
+    enableHighAccuracy: highAccuracyInput.checked,
+    timeout: Number(timeoutInput.value) || 30000,
+    maximumAge: Number(maxAgeInput.value) || 0,
+})
+const start = () => {
+    stopWatch = watchGeolocation(s, readOptions())
+    toggleButton.textContent = "Stop"
+}
+const stop = () => {
+    stopWatch?.()
+    stopWatch = undefined
+    toggleButton.textContent = "Start"
+}
+// The explicit trigger, inside the click, so the gesture's activation holds.
+toggleButton.addEventListener("click", () => (stopWatch ? stop() : start()))
 
 const updateOptions = () => {
-    geolocationOptionsAtom.setSelf({
-        enableHighAccuracy: highAccuracyInput.checked,
-        timeout: Number(timeoutInput.value) || 30000,
-        maximumAge: Number(maxAgeInput.value) || 0,
-    })
+    if (stopWatch === undefined) return
+    stop()
+    start()
 }
 highAccuracyInput.addEventListener("change", updateOptions)
 timeoutInput.addEventListener("change", updateOptions)

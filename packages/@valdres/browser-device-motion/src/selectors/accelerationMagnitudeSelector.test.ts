@@ -1,63 +1,52 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { store } from "valdres"
-import { motionAtom } from "../atoms/motionAtom"
+import type { DeviceHarness } from "../../test/setup/deviceHarness"
+import {
+    FakeDeviceMotionEvent,
+    installMotion,
+} from "../../test/setup/motionFixtures"
 import { accelerationMagnitudeSelector } from "./accelerationMagnitudeSelector"
 
-describe("accelerationMagnitudeSelector", () => {
-    afterEach(() => {
-        motionAtom.resetSelf()
-    })
+let harness: DeviceHarness | undefined
+afterEach(() => {
+    harness?.restore()
+    harness = undefined
+})
 
-    test("returns null when motion is null", () => {
-        const s = store()
-        expect(s.get(accelerationMagnitudeSelector)).toBeNull()
+const magnitudeAfter = (
+    acceleration: DeviceMotionEventAcceleration | null,
+): number | null => {
+    harness = installMotion()
+    const app = store()
+    const stop = app.sub(accelerationMagnitudeSelector, () => {})
+    harness.fire(new FakeDeviceMotionEvent({ acceleration }))
+    const value = app.get(accelerationMagnitudeSelector)
+    stop()
+    app.dispose()
+    return value
+}
+
+describe("accelerationMagnitudeSelector", () => {
+    test("returns null when there is no reading", () => {
+        harness = installMotion()
+        const app = store()
+        expect(app.get(accelerationMagnitudeSelector)).toBeNull()
+        app.dispose()
     })
 
     test("returns null when acceleration is null", () => {
-        motionAtom.setSelf({
-            acceleration: null,
-            accelerationIncludingGravity: null,
-            rotationRate: null,
-            interval: 16,
-            timeStamp: 0,
-        })
-        const s = store()
-        expect(s.get(accelerationMagnitudeSelector)).toBeNull()
+        expect(magnitudeAfter(null)).toBeNull()
     })
 
     test("computes magnitude for a populated vector", () => {
-        motionAtom.setSelf({
-            acceleration: { x: 3, y: 4, z: 0 },
-            accelerationIncludingGravity: null,
-            rotationRate: null,
-            interval: 16,
-            timeStamp: 0,
-        })
-        const s = store()
-        expect(s.get(accelerationMagnitudeSelector)).toBe(5)
+        expect(magnitudeAfter({ x: 3, y: 4, z: 0 })).toBe(5)
     })
 
     test("treats null components as zero", () => {
-        motionAtom.setSelf({
-            acceleration: { x: null, y: null, z: 9 },
-            accelerationIncludingGravity: null,
-            rotationRate: null,
-            interval: 16,
-            timeStamp: 0,
-        })
-        const s = store()
-        expect(s.get(accelerationMagnitudeSelector)).toBe(9)
+        expect(magnitudeAfter({ x: null, y: null, z: 9 })).toBe(9)
     })
 
     test("returns 0 when all components are null", () => {
-        motionAtom.setSelf({
-            acceleration: { x: null, y: null, z: null },
-            accelerationIncludingGravity: null,
-            rotationRate: null,
-            interval: 16,
-            timeStamp: 0,
-        })
-        const s = store()
-        expect(s.get(accelerationMagnitudeSelector)).toBe(0)
+        expect(magnitudeAfter({ x: null, y: null, z: null })).toBe(0)
     })
 })
