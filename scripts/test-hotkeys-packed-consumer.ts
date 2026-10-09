@@ -403,6 +403,35 @@ key("keyup", "ControlLeft", "Control")
 assert.equal(save.defaultPrevented, true)
 assert.deepEqual(app.get(log), ["save"])
 
+// Commit callbacks travel through the public command's caller-owned settle draft.
+const editor = app.scope("commit-editor")
+const commits = []
+let abortCommit = false
+hotkeys.bindHotkey(editor, "x", tx => {
+    tx.onCommit(() => commits.push("editor"))
+    tx.scope(app).onCommit(() => {
+        commits.push("root")
+        app.txn(next => next.set(atom(0), 1))
+    })
+    if (abortCommit) throw new Error("abort commit command")
+})
+key("keydown", "KeyX", "x")
+key("keyup", "KeyX", "x")
+assert.deepEqual(commits, [])
+await new Promise(resolve => setTimeout(resolve, 5))
+assert.deepEqual(commits, ["editor", "root"])
+abortCommit = true
+key("keydown", "KeyX", "x")
+key("keyup", "KeyX", "x")
+await new Promise(resolve => setTimeout(resolve, 5))
+assert.deepEqual(commits, ["editor", "root"])
+abortCommit = false
+key("keydown", "KeyX", "x")
+key("keyup", "KeyX", "x")
+editor.dispose()
+await new Promise(resolve => setTimeout(resolve, 5))
+assert.deepEqual(commits, ["editor", "root", "root"])
+
 // Pre-cancelled keydowns: skipped by default, filtered before arbitration.
 hotkeys.bindHotkey(app, "q", push("q:default"), { priority: 1 })
 hotkeys.bindHotkey(app, "q", push("q:opt-in"), { handleDefaultPrevented: true })
@@ -428,7 +457,15 @@ app.dispose()
 console.log("DOM_OK")
 `,
 )
-console.log(run("dom consumer", ["node", "dom.mjs"], consumer).stdout.trim())
+for (const runtime of ["node", "bun"]) {
+    console.log(
+        run(
+            `${runtime} dom consumer`,
+            [runtime, "dom.mjs"],
+            consumer,
+        ).stdout.trim(),
+    )
+}
 
 await writeFile(
     join(consumer, "react-dom.mjs"),
@@ -537,7 +574,13 @@ const app = store()
 const enabled = atom(true)
 const scope: HotkeyScope = hotkeyScope({ name: "dialog", priority: 10, exclusive: true })
 const options: HotkeyOptions = { enabled, scope, priority: 1, repeat: true, editable: true, preventDefault: true, handleDefaultPrevented: true }
-const command: HotkeyCommand = (tx: Transaction, hit: HotkeyHit) => tx.set(enabled, hit.keyDown.repeat)
+const command: HotkeyCommand = (tx: Transaction, hit: HotkeyHit) => {
+    tx.set(enabled, hit.keyDown.repeat)
+    const registered: void = tx.scope(app).onCommit(async () => { await Promise.resolve() })
+    // @ts-expect-error no supplied cursor in a commit callback
+    tx.onCommit((cursor: Transaction) => cursor.set(enabled, true))
+    void registered
+}
 const stop: () => void = bindHotkey(app, ["Mod+s", "Ctrl+KeyS"], command, options)
 const release: () => void = activateHotkeyScope(app, scope)
 const match: Selector<KeyDown | null> = shortcutSelector("Mod+s")

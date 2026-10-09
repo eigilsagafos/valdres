@@ -156,7 +156,8 @@
             "suppliedCapabilities": [
                 "active Transaction cursor",
                 "same-Tree scope cursors",
-                "draft-overlay reads and mutation intents"
+                "draft-overlay reads and mutation intents",
+                "scope-owned onCommit registration on the active cursor; enclosing draft owns commit or abort"
             ],
             "allowedExternalWork": [
                 "ordinary synchronous application work that does not require rollback"
@@ -184,7 +185,8 @@
             "role": "Lexical sugar over one existing TreeTransaction cursor target.",
             "phase": "drafting",
             "suppliedCapabilities": [
-                "targeted Transaction cursor sharing the outer draft"
+                "targeted Transaction cursor sharing the outer draft",
+                "scope-owned onCommit registration on the active cursor; enclosing draft owns commit or abort"
             ],
             "allowedExternalWork": [
                 "same work allowed to the outer transaction callback"
@@ -566,7 +568,8 @@
             "suppliedCapabilities": [
                 "active Transaction cursor bound to the registration scope",
                 "latest committed reads including earlier settle commits in the boundary",
-                "draft-overlay reads and mutation intents"
+                "draft-overlay reads and mutation intents",
+                "scope-owned onCommit registration on the active cursor; enclosing draft owns commit or abort"
             ],
             "allowedExternalWork": [
                 "ordinary synchronous application work that does not require rollback",
@@ -621,6 +624,32 @@
                 "cache.client-owned-entries"
             ],
             "decisionStatus": "evidence-required"
+        },
+        {
+            "id": "callback.transaction-on-commit",
+            "apiEntryId": "core.transaction.on-commit",
+            "role": "Start application work after the registering draft commits and synchronous operation restrictions unwind.",
+            "phase": "deferred-after-settlement-and-notification",
+            "suppliedCapabilities": [],
+            "allowedExternalWork": [
+                "ordinary application work, including live Store reads, writes, transactions, subscriptions, scope access, and disposal",
+                "asynchronous work whose completion is not ordered by Valdres"
+            ],
+            "rejectedCapturedOperations": [
+                "use of the closed registering Transaction cursor",
+                "ordinary operations on disposed Stores"
+            ],
+            "guardDomain": "none",
+            "errorRule": "Callback throws and rejected thenables are reported separately through globalThis.reportError or an asynchronous task throw. A failing reporter causes a task-thrown AggregateError containing callback and reporter errors. No callback error rolls back the committed draft, replaces the originating operation error, or prevents later callback starts.",
+            "thenableRule": "Returned thenables are observed for rejection without awaiting their completion. FIFO starts do not imply ordered asynchronous completion; started work is not canceled by disposal. Native promise observation uses the intrinsic then method rather than a returned promise's overridable own catch or then.",
+            "resultBoundary": "Returns no capability or result to the originating transaction. Draft commit owns admission; registering scope disposal cancels and releases pending captures, including between callbacks in a selected batch. Successful no-ops deliver; resetAll does not erase registration. Delivery uses a bounded shared scheduler and may yield beyond the first microtask. After host-discarded scheduling, a later valid registration under functioning host scheduling must restart the pending FIFO without duplicating starts or bypassing the shared task budget.",
+            "requiredContractIds": [
+                "transaction.commit-outcome",
+                "lifecycle.scope-owned-commit",
+                "callback.deferred-commit",
+                "callback.commit-error-containment"
+            ],
+            "decisionStatus": "approved"
         }
     ]
 }

@@ -126,6 +126,16 @@ const runtimeBuildEvidence = async (): Promise<RuntimeBuildEvidence> => {
     })
 }
 
+const onCommitProbe = await readFile(
+    join(rootDirectory, "scripts/fixtures/on-commit-consumer.mjs"),
+    "utf8",
+)
+
+const onCommitSchedulerProbe = await readFile(
+    join(rootDirectory, "scripts/fixtures/on-commit-scheduler.mjs"),
+    "utf8",
+)
+
 const coreProbe = String.raw`
 import { strict as assert } from "node:assert"
 import * as core from "valdres"
@@ -1178,6 +1188,26 @@ import {
     type State,
     type Store,
 } from "valdres"
+declare const commitTx: Transaction
+export const commitRegistration: void = commitTx.onCommit(() => {})
+commitTx.onCommit(async () => { await Promise.resolve() })
+commitTx.onCommit(() => 42)
+// @ts-expect-error callback is required
+commitTx.onCommit()
+// @ts-expect-error callback must be a function
+commitTx.onCommit(42)
+// @ts-expect-error callback receives no transaction
+commitTx.onCommit((tx: Transaction) => tx.get(atom(0)))
+// @ts-expect-error registration is not chainable
+commitTx.onCommit(() => {}).onCommit(() => {})
+// @ts-expect-error no event-style registration
+commitTx.on("commit", () => {})
+// @ts-expect-error no rollback hook
+commitTx.onRollback(() => {})
+// @ts-expect-error no success hook
+commitTx.onSuccess(() => {})
+// @ts-expect-error no finally hook
+commitTx.onFinally(() => {})
 export type ExternalFailures = ConstructorParameters<typeof ExternalSourceOperationError>[0]
 export const externalFailures: ExternalFailures = [
     { cause: new Error("application"), phase: "admitting", source: "external-startup", committed: false },
@@ -2018,6 +2048,14 @@ try {
 
         await Promise.all([
             writeFile(join(consumerDirectory, "core-probe.mjs"), coreProbe),
+            writeFile(
+                join(consumerDirectory, "on-commit-probe.mjs"),
+                onCommitProbe,
+            ),
+            writeFile(
+                join(consumerDirectory, "on-commit-scheduler.mjs"),
+                onCommitSchedulerProbe,
+            ),
             writeFile(join(consumerDirectory, "react-probe.mjs"), reactProbe),
             writeFile(
                 join(consumerDirectory, "external-react-probe.mjs"),
@@ -2056,6 +2094,31 @@ try {
             }),
         ])
 
+        for (const runtime of ["node", "bun"]) {
+            run(
+                `${runtime} onCommit probe (React ${react.major} consumer)`,
+                [runtime, "on-commit-probe.mjs"],
+                consumerDirectory,
+            )
+        }
+        for (const runtime of ["node", "bun"]) {
+            const scenarios = [
+                "control",
+                "dropped-microtask",
+                "dropped-timer",
+                "duplicate-wakes",
+                "task-producer",
+                "promise-producer",
+                "promise-errors",
+            ]
+            if (runtime === "bun") scenarios.push("fake-timers")
+            for (const scenario of scenarios)
+                run(
+                    `${runtime} isolated onCommit ${scenario} (React ${react.major} consumer)`,
+                    [runtime, "on-commit-scheduler.mjs", scenario],
+                    consumerDirectory,
+                )
+        }
         run(
             `Node core/domain probe (React ${react.major} consumer)`,
             ["node", "core-probe.mjs"],

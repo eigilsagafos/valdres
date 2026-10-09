@@ -260,6 +260,7 @@ describe("v1 public root", () => {
 
         target.txn(transaction => {
             const operations: (keyof Transaction)[] = [
+                "onCommit",
                 "get",
                 "set",
                 "update",

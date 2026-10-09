@@ -2755,6 +2755,19 @@ function completeCandidate(): any {
 
     for (const entry of set.publicManifest.entries) {
         if (entry.owner === "independent-beta") continue
+        // Claiming completeness must not manufacture approval for an unfrozen
+        // live target. These fixtures exercise legacy-inventory rejection before
+        // the completion gate checks any remaining pending decisions.
+        if (
+            ["stable", "experimental", "internal"].includes(
+                entry.target.status,
+            ) &&
+            !set.targetSurfaceCatalog.frozenPublicCoordinates.some(
+                (coordinate: any) => coordinate.id === entry.id,
+            )
+        ) {
+            continue
+        }
         entry.decisionStatus = "approved"
         entry.migration.evidenceStatus = "complete"
         if (entry.target.status === "pending") {
@@ -2768,8 +2781,10 @@ function completeCandidate(): any {
         }
     }
     for (const entry of set.callbackManifest.entries) {
+        const publicEntry = findPublicEntry(set, entry.apiEntryId)
         if (
-            findPublicEntry(set, entry.apiEntryId).owner !== "independent-beta"
+            publicEntry.owner !== "independent-beta" &&
+            publicEntry.decisionStatus === "approved"
         ) {
             entry.decisionStatus = "approved"
         }

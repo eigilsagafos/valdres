@@ -82,6 +82,7 @@
         "core.transaction-closed-error",
         "core.transaction.delete",
         "core.transaction.get",
+        "core.transaction.on-commit",
         "core.transaction.reset",
         "core.transaction.reset-all",
         "core.transaction.scope",
@@ -178,6 +179,7 @@
         "callback.store-sub-settle",
         "callback.store-subscriber",
         "callback.transaction",
+        "callback.transaction-on-commit",
         "callback.transaction-scope"
     ],
     "independentBetaPublicApiIds": [
@@ -736,6 +738,13 @@
             "package": "valdres",
             "subpath": ".",
             "name": "Transaction.get"
+        },
+        {
+            "id": "core.transaction.on-commit",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.onCommit"
         },
         {
             "id": "core.transaction.reset",

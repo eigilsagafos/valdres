@@ -58,7 +58,8 @@
                     "enum": [
                         "same-runtime-domain",
                         "same-store-tree",
-                        "active-transaction"
+                        "active-transaction",
+                        "none"
                     ]
                 },
                 "errorRule": { "type": "string", "minLength": 1 },

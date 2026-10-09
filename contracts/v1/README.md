@@ -437,3 +437,40 @@ and SHA-256 `c79a4fe44e6caa93c294744ba6ded67ccf2844286d5218e509cfa944f8b6a2d0`.
 No current ShiftX checkout exists in this workspace. `currentShiftX` therefore
 remains `external-handoff-required`; the historical sparse 2024 snapshot can
 inform migration hypotheses but cannot satisfy an evidence gate.
+
+## Experimental transaction commit callbacks
+
+`core.transaction.on-commit` and `callback.transaction-on-commit` describe
+`Transaction.onCommit(callback: () => unknown): void`. The enclosing draft owns
+the outcome, while the registering cursor scope owns pending lifetime. Choosing
+root lifetime does not move the rollback boundary. Successful no-ops deliver,
+pre-apply aborts discard, and post-apply errors preserve committed registrations.
+`resetAll` does not erase them. Actual scope disposal cancels and releases pending
+captures, even between callbacks in a selected batch; started async work remains
+application-owned.
+
+The callback catalog uses `guardDomain: "none"` for delivery after settlement and
+notification restrictions unwind. This does not change registration-time cursor
+guards or any ordinary transaction/subscriber capability. Deferred delivery starts
+in FIFO order and yields under load; no fixed entry-count or first-microtask
+guarantee is public. Thenables are observed, not awaited for completion order.
+Host error reporting is separate from originating operation errors.
+
+Maintained evidence lives in `packages/valdres/test/v1-public-candidate/on-commit*`,
+`test/v1-committed-store-tree/on-commit-retention.test.ts`, `test/v1-inspect/on-commit.test.ts`,
+and the installed core/hotkeys consumer probes. Inspection records later Store
+operations separately and adds no lifecycle diagnostics or payload capture.
+
+The onCommit public and callback entries are `approved` following final owner
+approval of the implementation, scheduling/error-containment evidence, inspection
+policy, and measured cost/pin proposal. Transaction.onCommit is now included in
+`frozenPublicCoordinates`; the independently pinned target and ownership digests
+cover the approved surface. The API remains experimental. Diagnostic checks alone
+do not authorize future status, pin, or budget changes.
+
+Dropped host wakes must not latch the shared scheduler permanently: a later valid
+registration under functioning host scheduling restarts the pending FIFO. Fake
+timers can pause delivery until advanced. Recovery requires a further execution
+opportunity and does not bypass the task budget, duplicate starts, or resurrect
+disposed work. Returned native promises are observed without calling their own
+overridable `catch` or `then` methods, including reporter-returned promises.

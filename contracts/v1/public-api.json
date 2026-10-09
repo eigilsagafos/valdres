@@ -2623,6 +2623,37 @@
             "notes": "Transaction reads use the one evaluator over the scratch overlay."
         },
         {
+            "id": "core.transaction.on-commit",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Transaction.onCommit",
+                "status": "experimental"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Register post-commit work through the caller-owned Transaction cursor. Keep latest-only, serial async, retry, and outbox policies in the application.",
+                "typeError": "Requires one zero-argument callback; returns void, without chaining or a cancellation handle. Closed-cursor, disposal, and callback-capability guards remain in force at registration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "transaction.commit-outcome",
+                "lifecycle.scope-owned-commit",
+                "callback.deferred-commit",
+                "callback.commit-error-containment",
+                "transaction.one-tree-draft",
+                "transaction.scope-cursor-no-savepoint"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Experimental Transaction.onCommit(callback: () => unknown): void. Registration belongs to the enclosing draft, including scope cursors and caught inner scope errors; it does not create a savepoint. The registering cursor scope owns pending lifetime. tx.scope(root).onCommit selects root lifetime without changing the rollback boundary. Successful no-op drafts deliver; pre-apply aborts discard; errors after apply and independently failing settle drafts do not discard already-committed registrations. resetAll changes state ownership only and never erases registrations. Callbacks receive no arguments or capabilities and start after settlement and notification restrictions unwind, in registration/commit FIFO order across Stores in one runtime copy; reentrant commits append to the queue. The shared bounded scheduler yields to tasks under load; the current 1,024-entry threshold is an implementation scheduling choice, not a public numeric guarantee. Delivery can be later than the first microtask and does not guarantee browser user activation, rendering, paint, durability, or remote acknowledgement. Scope disposal cancels and releases pending captures, including during a selected batch; already-started asynchronous work cannot be undone. A captured transaction cursor is closed at delivery. Callback return values are ignored and returned thenables are observed for rejection, never awaited for ordering; FIFO starts do not order asynchronous completion. Synchronous throws and rejections are separately reported through globalThis.reportError, or a task throw if absent. Reporter failures fall back to a task-thrown AggregateError retaining both failures. Callback failure never rolls back state, blocks later callbacks, or replaces the originating operation error. Ordinary transaction, settle, and subscriber restrictions remain unchanged. If host scheduling discards a queued wake, a later valid registration after functioning scheduling resumes restarts pending delivery across Stores, preserving FIFO and at-most-once starts subject to disposal. No recovery is promised without a further execution opportunity or while the host keeps discarding scheduled work."
+        },
+        {
             "id": "core.transaction.reset",
             "kind": "method",
             "owner": "core",

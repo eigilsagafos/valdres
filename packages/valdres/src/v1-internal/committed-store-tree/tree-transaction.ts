@@ -1,3 +1,4 @@
+import type { CommitEntry } from "./commit-hooks"
 import type { SelectorOutcome } from "../selector-evaluator/types"
 import type { AnyAtom, AnyState, RuntimeDomainRecords } from "./runtime-domain"
 import {
@@ -60,6 +61,7 @@ export interface DraftScratchHost<Node extends object = AnyState> {
  * and transaction paths allocate neither a scratch map nor a host.
  */
 export class TreeDraft {
+    commitEntries: CommitEntry[] | undefined
     readonly transaction = Object.freeze({})
     readonly onAllocation: (() => void) | undefined
     #singleIntentScope: StoreScopeNode | undefined
@@ -490,6 +492,7 @@ export class TreeDraft {
     }
 
     release(): void {
+        this.commitEntries = undefined
         const releaseRows = this.#rowRelease
         this.#rowRelease = undefined
         this.#hasRowIntents = false
@@ -541,6 +544,11 @@ export class TreeDraft {
 
 export interface TreeTransactionHost {
     readonly runtimeDomain: RuntimeDomainRecords
+    registerCommit(
+        draft: TreeDraft,
+        scope: StoreScopeNode,
+        callback: () => unknown,
+    ): void
 
     transactionGet<Value>(
         draft: TreeDraft,
@@ -569,6 +577,7 @@ export interface TreeTransactionHost {
 }
 
 class RootTransactionCursor implements RootTransaction {
+    declare readonly onCommit: RootTransaction["onCommit"]
     declare readonly get: <Value>(state: State<Value>) => Value
     declare readonly set: RootTransaction["set"]
     declare readonly update: RootTransaction["update"]
@@ -588,6 +597,7 @@ class RootTransactionCursor implements RootTransaction {
         draft: TreeDraft,
         scope: StoreScopeNode,
     ) {
+        this.onCommit = callback => host.registerCommit(draft, scope, callback)
         this.get = <Value>(state: State<Value>): Value =>
             host.transactionGet(draft, scope, state)
         this.set = ((
