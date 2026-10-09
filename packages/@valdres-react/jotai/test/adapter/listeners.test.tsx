@@ -174,6 +174,58 @@ describe("subscription changes inside listeners", () => {
     })
 })
 
+describe("flush rounds", () => {
+    test("listeners removed or added during a round follow Jotai's snapshot", () => {
+        same(({ atom, createStore }) => {
+            const store = createStore()
+            const a = atom(0)
+            const trace: unknown[] = []
+            let unsubSecond = () => {}
+            store.sub(a, () => {
+                trace.push(["first", store.get(a)])
+                unsubSecond()
+                store.sub(a, () => trace.push(["added", store.get(a)]))
+            })
+            unsubSecond = store.sub(a, () =>
+                trace.push(["second", store.get(a)]),
+            )
+            store.set(a, 1)
+            store.set(a, 2)
+            return trace
+        })
+    })
+
+    test("a mount and unmount in one flush, and errors from both callbacks", () => {
+        same(({ atom, createStore }) => {
+            const store = createStore()
+            const a = atom(0)
+            const b = atom(0)
+            const trace: unknown[] = []
+            b.onMount = () => {
+                trace.push("mount b")
+                throw new Error("mount b failed")
+            }
+            store.sub(a, () => {
+                const unsub = store.sub(b, () => {})
+                unsub()
+                throw new Error("listener failed")
+            })
+            try {
+                store.set(a, 1)
+            } catch (error) {
+                trace.push(
+                    (error as AggregateError).errors.map(e =>
+                        e instanceof AggregateError
+                            ? e.errors.map(inner => (inner as Error).message)
+                            : (e as Error).message,
+                    ),
+                )
+            }
+            return trace
+        })
+    })
+})
+
 describe("errors", () => {
     test("listener errors keep earlier writes and surface as AggregateError", () => {
         same(({ atom, createStore }) => {

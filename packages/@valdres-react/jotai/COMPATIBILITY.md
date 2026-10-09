@@ -98,19 +98,24 @@ The package peers on `valdres` `^1.0.0-beta.44` and `react`
   buffer that later `get`s read back and are committed in one Valdres
   transaction, so derived atoms never see a half-applied write. Reads before the
   first set hit the committed cache.
-- **Listeners**: each mounted atom has one plain Valdres subscription that only
-  records that the atom changed. After the Valdres operation returns, the store
-  runs Jotai's `flushCallbacks`: listeners of changed atoms (each listener once),
-  then `onUnmount`, then `onMount`, repeated while new work appears. Listeners
-  therefore run outside any Valdres transaction and may read, write,
-  (un)subscribe and use other stores, as in Jotai.
+- **Listeners** run in a Jotai-style flush after the Valdres operation; see
+  [Listener and lifecycle flush](#listener-and-lifecycle-flush).
 - **onMount** uses one constant `externalAtom` per writable config with
-  `onMount`. Valdres attaches it while the atom is retained in a store, directly
-  or through dependents, which is Jotai's mount lifetime. Attach and detach run
-  synchronously inside the Valdres call that retained or released it; every
-  Valdres call this package makes runs inside a per-store operation frame, so the
-  event is attributed to that store. A sentinel reached outside such a frame
-  throws `VALDRES_JOTAI_LIFECYCLE_OUTSIDE_OPERATION` instead of guessing.
+  `onMount`. Valdres attaches it while the atom is retained in a Store tree,
+  directly or through dependents, which is Jotai's mount lifetime. Attach and
+  detach run synchronously inside the Valdres call that retained or released it
+  (pinned by core's internal tests, not by a public contract). Attach/detach
+  identifies a Store *tree*, not a Store; the adapter maps it to a Jotai store
+  only because of its isolation:
+  - each Jotai store owns a private root Valdres Store and never creates scopes;
+  - Jotai graphs contain no ExternalAtom that invalidates (the sentinels are
+    constant), so no attach can start outside a Store operation;
+  - every Valdres call the store makes runs inside its per-store operation
+    frame.
+
+  A sentinel reached outside such a frame throws
+  `VALDRES_JOTAI_LIFECYCLE_OUTSIDE_OPERATION` instead of guessing. Exposing these
+  atoms to Valdres States or scopes (interop) would break the attribution.
 - **Promises** are ordinary values in Jotai. Valdres v1 rejects thenables, so
   the adapter stores each one in one canonical inert box: identity and
   `Object.is` change detection are Jotai's. This is separate from dependency
@@ -122,18 +127,72 @@ The package peers on `valdres` `^1.0.0-beta.44` and `react`
 - **Default store** lives in this package, like Jotai's. Valdres core has no
   default or global Store.
 
+## Listener and lifecycle flush
+
+Each mounted Jotai atom has one plain Valdres subscription,
+`store.sub(state, callback)`. The callback runs in Valdres' notify phase, after
+the commit, where Valdres forbids writes and dormant external reads; it does
+neither and only records the mounted atom as changed. A `BufferFrame` also
+records every atom a write's `set` changed, even when a later `set` restored
+the committed value, because Valdres does not notify for a net-zero commit.
+
+Every store method except `get` (`set`, `sub`, the returned unsubscribe, and an
+async write's `set` after its `await`) runs inside a per-store operation frame.
+When the operation's Valdres calls have returned, and so no Valdres transaction,
+`settle` round or notify pass is active, the frame runs a port of Jotai's
+`flushCallbacks`:
+
+1. Collect the listeners of every changed atom into one `Set` and clear the
+   changed set. A listener subscribed to several changed atoms runs once; an
+   atom changed several times in one operation is recorded once.
+2. Take the queued unmounts and mounts (from sentinel detach/attach).
+3. Call the collected listeners. A listener removed by an earlier listener in
+   the same round still runs (Jotai calls its snapshot too); one added runs from
+   the next change.
+4. Run `onUnmount` callbacks, then `onMount` callbacks, with a lifecycle buffer:
+   `setAtom` calls they make synchronously are staged and committed together
+   afterwards. A mount and an unmount of the same atom queued before either ran
+   cancel out.
+5. Repeat while steps 1–4 produced new changes, unmounts or mounts. There is no
+   round limit, as in Jotai.
+6. Run Suspense watchers (continuable promises).
+
+Because listeners run outside every Valdres phase, Valdres' callback, `settle`
+and transaction guards do not apply to them: they read committed values (the
+same objects `store.get` returns), write, subscribe, unsubscribe and use other
+stores. Selector callbacks keep Valdres' guards (G4).
+
+**Reentrant writes.** A `store.set` from a listener is a complete nested
+operation: it commits and runs its own flush before returning, so the listeners
+of what it changed run inside the `set` call, as in Jotai, and the outer flush
+continues with its own snapshot. A `store.set` inside a write function commits
+the outer write's staged sets together with its own, then flushes. `setAtom`
+called from `onMount`/`onUnmount` joins the lifecycle buffer; called later, it is
+an ordinary operation.
+
+**Errors.** Every listener, `onUnmount`, `onMount` and lifecycle commit is
+called in isolation; its error is collected and the flush continues. After the
+flush and watchers, the operation throws `AggregateError` of the collected
+errors (or an `Error` with an `errors` array where `AggregateError` is missing),
+replacing the operation's own result or error, as Jotai's flush does. A nested
+operation's `AggregateError` propagates into the listener that called it and is
+collected there. Writes made before a listener or write function threw stay
+committed.
+
 ## Evidence beyond the upstream suite (`test/adapter/`)
 
 Each scenario runs in-process against real Jotai and this package; traces must
 be equal unless a difference is asserted on both sides.
 
-- `listeners.test.tsx` (10): listener reads see the committed derived object
+- `listeners.test.tsx` (12): listener reads see the committed derived object
   that `store.get` returns; listener writes are visible immediately and notify
   inside the `set`; a write that changes and restores an atom notifies it; one
   listener on several changed atoms runs once; listeners may use other stores,
-  subscribe (mounting immediately) and unsubscribe (unmounting); listener errors
-  keep earlier writes and surface as `AggregateError`; one write renders a
-  component once with the final state.
+  subscribe (mounting immediately) and unsubscribe (unmounting); listeners
+  removed or added during a round follow Jotai's snapshot; a nested
+  subscription whose `onMount` throws and a throwing listener surface as
+  nested `AggregateError`s; listener errors keep earlier writes; one write
+  renders a component once with the final state.
 - `ownership.test.ts` (7): two stores sharing a graph each mount, write and
   unmount their own copy; interleaved operations (one store's `onMount` and
   listeners operating on another) stay attributed; a dependency change in one
@@ -159,69 +218,160 @@ be equal unless a difference is asserted on both sides.
   condition, and the packed declarations under `tsc` (NodeNext,
   `skipLibCheck: false`).
 
-## Gaps: adapter-induced or core policy
+## Where each mismatch arises
 
-| Gap                                                     | Tests | Cause                                                                                          | Without core changes                                                                                         |
-| ------------------------------------------------------- | ----: | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| G1 `get()` after `await`                                |    27 | Core: dependencies are recorded only while a getter runs; its `get` is revoked afterwards      | Emulation possible (store-attributed revision atoms + subscriptions); not built, awaiting the core assessment |
-| G2 `options.signal`                                     |     7 | Core: a getter is not told its Store or whether its result commits                             | Emulation possible with store attribution; not built, same reason                                            |
-| G3 `INTERNAL_onInit`                                    |     7 | Core: no per-store hook that may write during a first read                                     | Partial at best (only first use through a store method)                                                     |
-| G4 Store calls inside reads                             |     2 | Core: selector callbacks may not call Store methods                                           | No faithful option: an untracked read inside a getter does not exist                                         |
-| G5 previous-value self-read (`selectAtom`, `splitAtom`) |     2 | Core: a selector cannot read its own previous result (self-read is a fatal cycle)             | Only with a per-store shadow copy of selector results (a second state store): not done                      |
-| G6 `unwrap`                                             |    11 | G1 + G3 + G5                                                                                   | —                                                                                                            |
-| D1 eager recompute of unsubscribed derived atoms        |     3 | Core policy                                                                                    | None                                                                                                         |
-| D2 sibling `onMount` order                              |     1 | Core: siblings attach in reverse read order (regression of #253)                               | None                                                                                                         |
-| D3 stack overflow                                       |     1 | Core caches stack exhaustion as an ordinary error; the engine leaves no marker to detect it    | None without matching error messages                                                                         |
-| D4 derived values read inside a write after a set       |     — | Core: transaction reads re-evaluate selectors (parked C3)                                      | Alternative (commit before the read) would expose half-applied writes to mounted derived atoms              |
+The statement this evidence supports is narrow: each of the 49 listed gaps
+reproduces with Valdres v1 used through public APIs the way this adapter uses
+them, and none of the listed tests fails because of the listener flush (the
+listener and ownership suites match Jotai). That does not show core must
+change. A mismatch may still be closable in the adapter (see the async and
+previous-value feasibility notes), and several are core policies the owner may
+keep. Core's assessment found no confirmed core defect.
 
-**Eliminated without core changes in this revision:** listeners reading
+| Gap                                                     | Tests | Where it arises                                                                                         |
+| ------------------------------------------------------- | ----: | ------------------------------------------------------------------------------------------------------- |
+| G1 `get()` after `await`                                |    27 | A selector's dependencies are recorded only while its getter runs; its `get` is revoked afterwards     |
+| G2 `options.signal`                                     |     7 | Aborting needs to know whether a store installed or discarded a result; evaluation phase does not say  |
+| G3 `INTERNAL_onInit`                                    |     7 | No per-store hook that may write during a first read                                                    |
+| G4 Store calls inside reads                             |     2 | Selector callbacks may not call Store methods; there is no untracked read inside a getter               |
+| G5 previous-value self-read (`selectAtom`, `splitAtom`) |     2 | A selector reading itself is a cycle, which latches even when caught                                     |
+| G6 `unwrap`                                             |    11 | G1 + G3 + G5                                                                                            |
+| D1 eager recompute of unsubscribed derived atoms        |     3 | Core recomputes every live record of a changed dependency; a policy choice, undocumented either way    |
+| D2 sibling `onMount` order                              |     1 | Siblings attach in reverse read order; a legacy fix (#253) not ported to v1 and not a v1 contract      |
+| D3 stack overflow                                       |     1 | Core caches stack exhaustion as an ordinary error; detecting it here would need message matching       |
+| D4 derived values read inside a write after a set       |     — | Transaction reads re-evaluate selectors (parked transaction-read work)                                  |
+
+**Eliminated without core changes in the previous revision:** listeners reading
 recomputed derived values, listener writes notifying only after the listener
 returned, net-zero writes not notifying, a listener on two atoms running twice,
 cross-store calls from listeners failing (`TransactionPhaseError`), and
-listener (un)subscription being deferred. All came from running listeners as
-`settle` handlers. Adding `useAtomValueRaw`/`RawSync` passes 3 former
-`not-applicable` tests and 14 more upstream tests.
+deferred listener (un)subscription. All came from running listeners as `settle`
+handlers, which core's docs also advise against for re-entrant work. Adding
+`useAtomValueRaw`/`RawSync` passed 3 former `not-applicable` tests and 14 more
+upstream tests.
 
 **Not changed, by decision:** a `store.set` inside a read whose write function
 only reads could reuse the evaluation's `get`, but those reads would become
 tracked dependencies, unlike Jotai.
 
-### Smallest remaining core requirements
+**Separate, unapproved core proposal:** attaching siblings in read order (D2).
+Core prototyped it: read order is restored and all runtime tests pass, but it
+costs +42 B gzip on a zero-headroom size budget. Not part of this PR.
 
-1. **Smallest change:** attach a selector's dependencies in read order (D2).
-   ```ts
-   import { externalAtom, selector, store } from "valdres"
-   const order: string[] = []
-   const ext = (name: string) =>
-       externalAtom({ getSnapshot: () => 0, subscribe: () => (order.push(name), () => {}) })
-   const first = ext("first"), second = ext("second")
-   store().sub(selector(get => (get(first), get(second))), () => {})
-   console.log(order) // ["second", "first"]; #253 established ["first", "second"]
-   ```
-2. **Smallest new capability:** let a selector read its own previous result in
-   the Store it is evaluating for (G5; with G1 and G3 it would also cover
-   `unwrap`). Jotai's official `selectAtom`, `splitAtom` and `unwrap` depend on
-   it.
-   ```ts
-   import { atom, selector, store } from "valdres"
-   const source = atom({ id: 1, name: "a" })
-   const slice: any = selector(get => {
-       let previous: { id: number } | undefined
-       try {
-           previous = get(slice) // Jotai: the previous value; Valdres: a cycle
-       } catch (error) {
-           console.log((error as { code?: string }).code) // VALDRES_SELECTOR_CIRCULAR_DEPENDENCY
-       }
-       const next = { id: get(source).id }
-       return previous?.id === next.id ? previous : next
-   })
-   store().sub(slice, () => {}) // throws SelectorCircularDependencyError: the cycle latches even when caught
-   ```
+## Feasibility: async reads and previous values (prototypes, not integrated)
 
-G1–G3 do not strictly need core: the ownership tests show the per-store
-operation frame attributes every Valdres call this package makes. Whether to
-emulate them that way or add an evaluation-context primitive to core is pending
-the core assessment.
+Two bounded prototypes on local branches from this head (`9df1fa9d`), outside
+the candidate. Numbers are against the same 364-test upstream suite.
+
+### B. Previous computed values (`selectAtom`, `splitAtom`)
+
+Jotai keeps one value slot per atom and store, written by both reads and sets;
+a derived atom with `init` reading itself gets that slot. The prototype keeps,
+per store, the last installed outcome (value or error) of atoms that read
+themselves, and returns it while the atom's stored value (init or last `set`) is
+unchanged since that outcome; otherwise the stored value. The stored value stays
+a Valdres dependency. No selector reads itself, so no core cycle is involved.
+
+- **Passes:** both previous-value gaps (`selectAtom` "do not update unless
+  equality function says value has changed", `splitAtom` "no unnecessary
+  updates when updating atoms"), with no regressions (364 = 305 pass, 47 gaps,
+  12 skipped). 7 new differential tests: per-store isolation, identity across
+  equal updates and the previous error rethrown to the self-read match Jotai.
+- **Ownership:** a `WeakMap` per store keyed by atom, released with the store
+  or the atom (both tested). Outcomes from discarded transaction reads (a
+  write's read after a `set`) are not recorded.
+- **Limitations (asserted against Jotai):** a value read inside a write after a
+  `set` is recomputed for the store, so its identity differs (the
+  transaction-read re-evaluation); eager recomputation of an unsubscribed atom
+  advances its previous value between reads; a `set(self)` to a value equal to
+  the stored one is not seen as a write.
+- **Cost:** about 70 lines; no measurable change on a mounted derived chain.
+  Relies on the same per-store operation attribution as `onMount`.
+- **`unwrap`:** still fails. It also needs `get()` after promise settlement and
+  `INTERNAL_onInit`.
+
+### A. `get()` after `await` and `signal`
+
+The prototype records, per store and atom, the dependencies an async read
+function reads after it returned; after every store operation it re-reads them
+and, on a change, bumps a per-atom revision atom that the selector reads, so the
+store recomputes it. A retained atom keeps its late dependencies retained
+(Jotai mounts them). Each evaluation outside a discarded transaction owns an
+`AbortController`, aborted when a new evaluation in that store replaces its
+unsettled promise.
+
+- **Passes:** 33 of the 45 listed late-`get`, `signal` and `unwrap` tests (26 of
+  27 late-`get`, all 7 `signal`), and 9 of 11 new async scenarios traced
+  against Jotai (late dependencies mounted, unmounted-settled and pending;
+  dependency replacement; abort on replacement but not on unsubscribe; stale
+  completion; unmount/remount; rejection; a bounded late cycle).
+- **Still failing:** #3240 (a captured `get` called inside another atom's read)
+  and all 11 `unwrap` tests.
+- **Divergences:** a write's read of an async atom after a `set` runs the read
+  function twice (once discarded); that discarded evaluation's signal is never
+  aborted and its late reads are untracked.
+- **Lifecycle risks found while building it:** two synchronous infinite loops
+  (a late read failing on the selector capability guard; a dependency failing
+  with a fresh error object each read), both needing special cases. Polling
+  compares values, not Jotai's change epochs: a dependency that changes and
+  changes back between operations is missed, and a dependency that fails
+  differently is treated as unchanged.
+- **Resources:** the per-store records are a strong map, so an async atom created
+  dynamically (for example by a family) that read a late dependency stays
+  retained by its store; Jotai collects it (tested). Every operation re-reads
+  every watched late dependency: with 1,000 settled async atoms an unrelated
+  `set` took about 0.084 ms against Jotai's 0.0025 ms, growing linearly. Every
+  derived atom gains a sentinel and a revision atom: a mounted 3-level derived
+  chain took about 43 ms per 10,000 sets against the candidate's 28 ms
+  (informational, one machine).
+- **Size:** about 245 lines, and it relies on core behavior the assessment says
+  is not a contract (no discarded evaluations outside the adapter's own
+  transaction reads, attach/detach timing).
+
+**Assessment:** this is a second dependency mechanism (late edges, change
+detection by polling, invalidation and retention propagation) maintained beside
+Valdres', with known semantic gaps. It is not proportionate for a compatibility
+layer.
+
+**Smallest concrete missing capability:** a dependency read after a getter
+returned cannot be attached to the value the store installed, so Valdres never
+recomputes it when that dependency changes:
+
+```ts
+import { atom, selector, store } from "valdres"
+const source = atom(1)
+let capturedGet: ((state: typeof source) => number) | undefined
+const user = selector(get => {
+    capturedGet = get
+    return "installed"
+})
+const app = store()
+let notified = 0
+app.sub(user, () => notified++)
+try {
+    capturedGet!(source)
+} catch (error) {
+    console.log((error as { code?: string }).code) // VALDRES_SELECTOR_READ_REVOKED
+}
+app.set(source, 2)
+console.log(notified > 0) // false: no way to add `source` to the installed value
+```
+
+Closing it in core would mean dependency edges added after evaluation, bound to
+the evaluation the Store tree installed (rejected for discarded or replaced
+evaluations), with core-owned invalidation and retention. That reverses v1's
+synchronous dependency model and is a design decision for the owner, not a
+request.
+
+### Recommendation
+
+- **B:** integrable as an adapter-only addition if the owner accepts its
+  documented limitations; it is small and owns no state beyond Jotai's own
+  per-atom slot.
+- **A:** do not integrate. Keep late `get` and `signal` as an explicitly
+  bounded subset (`VALDRES_JOTAI_LATE_GET`, `VALDRES_JOTAI_SIGNAL_UNSUPPORTED`),
+  or take the core design decision above.
+- **`unwrap`:** stays unsupported either way.
 
 ## Other boundaries
 
@@ -234,11 +384,15 @@ the core assessment.
 
 ## Decisions for the owner
 
-- **Signal and late `get`:** emulate with store attribution in the adapter, add
-  a core evaluation-context primitive, or keep throwing (current).
+- **Signal and late `get`:** keep throwing (recommended; the adapter-only
+  prototype is not proportionate) or decide on core-owned late dependency
+  edges. Core advises against exposing evaluation phase or store-specific
+  invalidation.
+- **Previous values:** integrate prototype B (adapter-only) or keep the two
+  `selectAtom`/`splitAtom` gaps.
 - **Promises as values:** keep boxing (adapter-only, invisible to core), or
   reject async atoms outright.
-- **Core policies** behind D1–D4 and G5.
+- **Core policies** behind D1–D4, and the D2 fix with its size allowance.
 - **Valdres interop:** Jotai atoms are configs, not Valdres States; exposing
   their States would be new API.
 - **React utils:** port `jotai/react/utils` as a new entry, or leave them out.
@@ -256,6 +410,13 @@ bun run test:packed      # tarballs, React 18 + 19, Node + Bun, SSR, hydration, 
 
 These are package-local and not part of `bun run verify` or CI; a release would
 need a `jotai` CI job running them.
+
+On the CI-pinned toolchain (Node 24.16.0, Bun 1.4.0), at `9df1fa9d`: `bun run
+verify` passed all 28 steps without a toolchain override; the package's tests,
+both upstream runs and the packed consumer passed. One `typecheck:tests` run
+reported a spurious `TS2307` for `jotai-reference` (the known tsgo
+multi-threaded resolution race); four reruns, including `--singleThreaded`,
+were clean.
 
 **Performance**, informational (one run, median of 7, `NODE_ENV=production`,
 loaded laptop): the adapter took 2–3.5x Jotai's time on micro-benchmarks (a
