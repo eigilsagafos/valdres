@@ -195,6 +195,8 @@ const migrated = [
     "browser-reduced-transparency",
     "browser-keyboard",
     "hotkeys",
+    "browser-window",
+    "browser-screen",
 ]
 navigate(
     "/browser-online",
@@ -211,6 +213,16 @@ for (const [i, name] of migrated.entries()) {
     check(!placeholders[i].querySelector("[data-v1-unavailable]"), `${name}: runs live, no notice`)
 }
 check(placeholders[0].textContent!.includes("onlineAtom"), "browser-online inspector shows onlineAtom")
+const windowDemo = placeholders[migrated.indexOf("browser-window")]!.textContent!
+check(
+    windowDemo.includes("inner") && windowDemo.includes(`${window.innerWidth} × ${window.innerHeight}`),
+    "browser-window inspector shows the live inner size",
+)
+const screenDemo = placeholders[migrated.indexOf("browser-screen")]!.textContent!
+check(
+    screenDemo.includes("devicePixelRatio") && screenDemo.includes(`${window.screen.width} × ${window.screen.height}`),
+    "browser-screen inspector shows the live screen size",
+)
 
 navigate("/guides/introduction")
 check(
@@ -224,14 +236,12 @@ const unmigrated = [
     "browser-device-motion",
     "browser-device-orientation",
     "browser-geolocation",
-    "browser-screen",
     "browser-screen-details",
-    "browser-window",
     "color-mode",
     "public-ip",
 ]
 navigate(
-    "/browser-window",
+    "/public-ip",
     unmigrated.map(name => `<div data-plugin-demo="${name}">Loading demo…</div>`).join(""),
 )
 for (const name of unmigrated) {
