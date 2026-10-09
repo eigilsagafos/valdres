@@ -21,20 +21,30 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../../scripts/rewrite-declaration-imports.ts dist/types",
-        "test": "bun test --reporter=dots"
-    },
-    "dependencies": {
-        "valdres-react": "^1.0.0-beta.4"
+        "typecheck:tests": "bunx tsgo --noEmit -p tsconfig.tests.json",
+        "test": "bun run test:adapter && bun run test:upstream && bun run test:reference",
+        "test:adapter": "bun test",
+        "test:upstream": "bun run test/upstream/run.ts",
+        "test:reference": "JOTAI_IMPL=jotai bun run test/upstream/run.ts",
+        "test:packed": "bun run test/packed/run.ts"
     },
     "devDependencies": {
-        "@happy-dom/global-registrator": "18.0.1",
+        "@happy-dom/global-registrator": "20.0.5",
         "@testing-library/dom": "10.4.1",
+        "@testing-library/jest-dom": "6.9.1",
         "@testing-library/react": "16.3.0",
-        "@testing-library/user-event": "14.6.1",
-        "happy-dom": "18.0.1",
-        "jest-leak-detector": "30.1.0",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "happy-dom": "20.0.5",
+        "jotai-reference": "npm:jotai@3.0.1",
         "react": "19.1.1",
-        "typescript": "5.9.2"
+        "react-dom": "19.1.1",
+        "typescript": "5.9.2",
+        "valdres": "workspace:^"
+    },
+    "peerDependencies": {
+        "react": "^18.0.0 || ^19.0.0",
+        "valdres": "^1.0.0-beta.44"
     },
     "publishConfig": {
         "access": "public",

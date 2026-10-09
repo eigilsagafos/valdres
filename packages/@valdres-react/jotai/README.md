@@ -7,7 +7,7 @@ Jotai API compatibility layer for Valdres
 ## Installation
 
 ```bash
-npm install @valdres-react/jotai
+npm install @valdres-react/jotai react valdres
 ```
 
 Part of [Valdres](https://valdres.dev) — reactive state management for React, Vue, Svelte, Solid, and Angular.

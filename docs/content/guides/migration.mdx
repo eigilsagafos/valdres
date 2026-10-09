@@ -34,7 +34,9 @@ That's it. Most existing Recoil code keeps working — now backed by Valdres und
 
 ## From Jotai
 
-Replace your Jotai import with the Valdres compatibility layer:
+`@valdres-react/jotai` implements Jotai 3's core API (`atom`, `createStore`,
+`getDefaultStore`, `Provider`, `useAtom`, `useAtomValue`, `useSetAtom`,
+`useStore`) on Valdres. Replace your Jotai import with it:
 
 ```ts
 // Before
@@ -44,11 +46,27 @@ import { atom, createStore } from "jotai"
 import { atom, createStore } from "@valdres-react/jotai"
 ```
 
-Install the package:
+<div className="callout callout-warning">
+  <div className="callout-title">Not yet released for Valdres 1.0</div>
+  The Valdres 1.0 version of this package is not published yet. The published
+  `@valdres-react/jotai@1.0.0-beta.3` targets the pre-1.0 core and does not load
+  with current Valdres betas.
+</div>
 
-```bash
-npm install @valdres-react/jotai
-```
+It is not a drop-in replacement for every Jotai app. It is checked against
+Jotai 3.0.1's own test suite and side-by-side tests, and these differ:
+
+- **Read dependencies before `await`.** A read function's `get` must be called
+  before its first `await`; a later `get` throws (`VALDRES_JOTAI_LATE_GET`).
+  `await get(asyncAtom)` is fine.
+- **No `signal`** in read options, no `INTERNAL_onInit`, no `jotai/utils`, and
+  no `useAtomValueRaw`/`useAtomValueRawSync`.
+- **No store calls** inside read functions, and listeners cannot operate on a
+  different store.
+- Derived atoms that were read once recompute when their dependencies change
+  even without subscribers, and a few notification-order details differ.
+
+The [compatibility notes](https://github.com/eigilsagafos/valdres/blob/main/packages/@valdres-react/jotai/COMPATIBILITY.md) list every difference and how each was tested.
 
 ## Gradual adoption
 

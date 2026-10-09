@@ -1,15 +1,8 @@
+import type { Store } from "./types/jotai"
 import { createStore } from "./createStore"
 
-declare global {
-    var _valdresJotaiDefaultStore: ReturnType<typeof createStore> | undefined
-}
+// Like Jotai, provider-less mode uses one store per copy of this module. It is
+// owned by the compatibility layer; Valdres core has no default Store.
+let defaultStore: Store | undefined
 
-const setDefaultStore = () => {
-    const store = createStore("default")
-    globalThis._valdresJotaiDefaultStore = store
-    return store
-}
-
-export const getDefaultStore = () => {
-    return globalThis._valdresJotaiDefaultStore || setDefaultStore()
-}
+export const getDefaultStore = (): Store => (defaultStore ??= createStore())
