@@ -258,6 +258,27 @@ describe("selectorFamily", () => {
         do_not_optimize(vMembers)
         do_not_optimize(jMembers)
 
+        // Settle the family cache BEFORE measuring. WeakValueMap keeps new
+        // entries strong and weakens them in one batch from a queueMicrotask,
+        // so the 10,000 sets above leave one weakening job queued. Nothing
+        // between here and mitata's sampling loop awaits — compare, measureOne
+        // and measure all run synchronously up to mitata's own first await —
+        // and that await sits in a warmup block mitata SKIPS when the cold
+        // first call exceeds its 500µs warmup_threshold. This call lands right
+        // on that boundary, so the job ran before sampling in some processes
+        // and after the whole window in others: a run measured either
+        // WeakRef.deref() on every lookup or the strong entries being returned
+        // directly. That is a 6.6x split on the CI Node runner (~165µs vs
+        // ~1.1ms), flipping per process in base and head alike, and it failed
+        // the +50% catastrophic backstop on PR #337 as a spurious 6.50x.
+        //
+        // Draining the job here pins every process to the weakened cache, which
+        // is what a family holds in every turn after the one that created it —
+        // the strong entries are a transient this benchmark should never have
+        // been sampling. If WeakValueMap ever stops deferring, this drain
+        // becomes a no-op; the symptom is a bimodal p50 on the Node lane.
+        await Promise.resolve()
+
         await compare(
             "selectorFamily: lookup 10,000 retained entries",
             () => {
