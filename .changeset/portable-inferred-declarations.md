@@ -10,4 +10,6 @@ named through `valdres/dist/types/v1.js` or `v1-internal`. The root entry now
 re-exports the `Atom`, `Selector`, `CollectionRow`, `State`, `Store` and
 `Transaction` declarations those values carry instead of wrapping them in new
 aliases, so declarations name them as `import("valdres").Atom<number>` and so
-on. Declarations only; the runtime is unchanged.
+on. Assigning a factory itself to an exported constant
+(`export const myAtom = atom`) is still unsupported; re-export it with
+`export { atom } from "valdres"`. Declarations only; the runtime is unchanged.
