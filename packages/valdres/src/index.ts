@@ -1,4 +1,8 @@
-import type { CollectionIndexSchema } from "./v1-internal/committed-store-tree/types"
+import type {
+    CollectionIndexSchema,
+    CollectionRow,
+} from "./v1-internal/committed-store-tree/types"
+import type { Atom, Selector } from "./v1"
 import * as v1 from "./v1"
 
 interface CollectionFactory {
@@ -80,7 +84,14 @@ export const TransactionPhaseError: typeof v1.TransactionPhaseError =
 export const UndefinedCollectionValueError: typeof v1.UndefinedCollectionValueError =
     v1.UndefinedCollectionValueError
 
-export type Atom<Value> = v1.Atom<Value>
+// Re-export the declarations that inferred values carry, rather than wrapping
+// them in new aliases, so consumer declaration emit can name them via "valdres".
+export type { Atom, CollectionRow, Selector }
+export type {
+    State,
+    Store,
+    Transaction,
+} from "./v1-internal/committed-store-tree/types"
 export type AtomOptions<Value> = v1.AtomOptions<Value>
 export type AtomUpdater<Value> = v1.AtomUpdater<Value>
 export type Collection<
@@ -96,10 +107,6 @@ export type CollectionOptions<
     Input = Key,
     Indexes extends CollectionIndexSchema<Indexes> = never,
 > = v1.CollectionOptions<Key, Value, Input, Indexes>
-export type CollectionRow<
-    Key extends CollectionKey,
-    Value extends CollectionValue,
-> = v1.CollectionRow<Key, Value>
 export type CollectionValue = v1.CollectionValue
 export type EqualFunc<Value> = v1.EqualFunc<Value>
 export type ExternalSource<Value> = v1.ExternalSource<Value>
@@ -107,12 +114,8 @@ export type ExternalAtom<Value> = v1.ExternalAtom<Value>
 export type ExternalAtomOptions = v1.ExternalAtomOptions
 export type FamilyKey = v1.FamilyKey
 export type GetValue = v1.GetValue
-export type Selector<Value> = v1.Selector<Value>
 export type SelectorOptions<Value> = v1.SelectorOptions<Value>
-export type State<Value> = v1.State<Value>
-export type Store = v1.Store
 export type SubscribeFn = v1.SubscribeFn
-export type Transaction = v1.Transaction
 export type TransactionFn<Result = unknown> = v1.TransactionFn<Result>
 
 export type CallbackCapabilityError = InstanceType<

@@ -103,3 +103,24 @@ const [count, setCount] = useAtom(countAtom)  // [number, (v: number | (prev: nu
 const value = useValue(countAtom)              // number
 const setter = useSetAtom(countAtom)           // (v: number | (prev: number) => number) => void
 ```
+
+## Exporting inferred values
+
+Projects that emit declarations (`declaration: true`) can export inferred values without annotations:
+
+```ts
+import { atom, selector, store } from "valdres"
+
+export const countAtom = atom(0)                            // Atom<number>
+export const doubledSelector = selector(get => get(countAtom) * 2) // Selector<number>
+export const appStore = store()                             // Store
+```
+
+The emitted declarations name these through the package, for example `import("valdres").Atom<number>`. The same holds for lazy atoms, family members, collection rows, `presence`, `query`, `scope()` and transaction cursors.
+
+Assigning a factory itself to a new exported constant is not supported: `export const myAtom = atom` fails declaration emit (TS4023 or TS2742) because the factory's own type is not a public export. Re-export it instead:
+
+```ts
+export { atom } from "valdres"
+export { atom as myAtom } from "valdres"
+```

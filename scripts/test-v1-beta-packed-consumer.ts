@@ -1578,6 +1578,122 @@ const structuredKey: FamilyKey = { id: "packed" }
 void structuredKey
 `
 
+// Unannotated exports: declaration emit must name every inferred value through
+// public specifiers, never valdres/dist/types/v1.js or v1-internal (#429).
+const portableProbe = String.raw`
+import { atom, collection, deepEqual, family, presence, selector, store } from "valdres"
+import { createInspectableStore } from "valdres/inspect"
+import { query } from "valdres/query"
+import { useAtom, useStore, useValue } from "valdres-react"
+
+export const count = atom(0)
+export const label = atom("ready", { name: "portable label" })
+export const lazyCount = atom.lazy(() => 1)
+export const lazyItems = atom.lazy(() => [1, 2, 3], { equal: deepEqual })
+export const doubled = selector(get => get(count) * 2)
+export const summary = selector(
+    get => ({ count: get(count), label: get(label) }),
+    { name: "portable summary", equal: deepEqual },
+)
+export const atomFamily = family((id: string) => atom(id))
+export const atomMember = atomFamily("member")
+export const selectorFamily = family((factor: number) =>
+    selector(get => get(count) * factor),
+)
+export const selectorMember = selectorFamily(3)
+export const sessions = collection<
+    string,
+    { readonly kind: "a" | "b" },
+    string,
+    { kind: "a" | "b" }
+>({ indexes: { kind: session => session.kind } })
+export const session = sessions("one")
+export const sessionPresent = presence(session)
+export const kindA = query(sessions, { where: { kind: { eq: "a" } } })
+export const root = store()
+export const child = root.scope("child")
+export const childTransaction = root.txn(transaction => transaction.scope(child))
+export const inspectable = createInspectableStore()
+export const useCount = () => useValue(count)
+export const useCountPair = () => useAtom(count)
+export const useCurrentStore = () => useStore()
+`
+
+// Consumes portableProbe's emitted declarations as an installed package.
+const downstreamProbe = String.raw`
+import {
+    selector,
+    store,
+    type Atom,
+    type CollectionRow,
+    type Selector,
+    type State,
+    type Store,
+    type Transaction,
+} from "valdres"
+import { useValue } from "valdres-react"
+import {
+    atomFamily,
+    child,
+    childTransaction,
+    count,
+    doubled,
+    kindA,
+    lazyCount,
+    lazyItems,
+    root,
+    selectorFamily,
+    session,
+    sessionPresent,
+    summary,
+    useCurrentStore,
+} from "valdres-portable-probe"
+
+type Same<Left, Right> =
+    (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+        ? true
+        : false
+type Session = { readonly kind: "a" | "b" }
+export const downstreamTypes: [
+    Same<typeof count, Atom<number>>,
+    Same<typeof lazyCount, Atom<number>>,
+    Same<typeof lazyItems, Atom<number[]>>,
+    Same<typeof doubled, Selector<number>>,
+    Same<typeof summary, Selector<{ count: number; label: string }>>,
+    Same<ReturnType<typeof atomFamily>, Atom<string>>,
+    Same<ReturnType<typeof selectorFamily>, Selector<number>>,
+    Same<typeof session, CollectionRow<string, Session>>,
+    Same<typeof sessionPresent, Selector<boolean>>,
+    Same<typeof kindA, State<readonly CollectionRow<string, Session>[]>>,
+    Same<typeof root, Store>,
+    Same<typeof child, Store>,
+    Same<typeof childTransaction, Transaction>,
+    Same<ReturnType<typeof useCurrentStore>, Store>,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+
+const target: Store = store()
+target.set(count, 1)
+target.update(lazyCount, current => current + 1)
+const nextSession: Session = { kind: "a" }
+target.set(session, nextSession)
+const read: number = target.get(doubled)
+void read
+// @ts-expect-error Selectors stay read-only downstream.
+target.set(doubled, 1)
+// @ts-expect-error Inferred Atoms keep their Value downstream.
+target.set(count, "one")
+
+export const tripled = selector(get => get(doubled) + get(count))
+export const downstreamChild = child.scope("downstream")
+export const downstreamMembers = {
+    count,
+    lazyCount,
+    member: atomFamily("downstream"),
+    rows: kindA,
+}
+export const useTripled = () => useValue(tripled)
+`
+
 const bundleEntry = String.raw`
 import { atom, collection, family, presence, store } from "valdres"
 import * as reactApi from "valdres-react"
@@ -2365,6 +2481,115 @@ try {
             false,
             "installed deepEqual declarations must name only the root entry",
         )
+        await Promise.all([
+            writeFile(
+                join(consumerDirectory, "portable-probe.ts"),
+                portableProbe,
+            ),
+            writeJson(join(consumerDirectory, "tsconfig.portable.json"), {
+                extends: "./tsconfig.json",
+                compilerOptions: { outDir: "portable-output" },
+                include: ["portable-probe.ts"],
+            }),
+        ])
+        run(
+            `portable unannotated declaration emit with React ${react.major}`,
+            [
+                "node",
+                join(rootDirectory, "node_modules", "typescript", "bin", "tsc"),
+                "-p",
+                "tsconfig.portable.json",
+            ],
+            consumerDirectory,
+        )
+        const portableDeclaration = await readFile(
+            join(consumerDirectory, "portable-output", "portable-probe.d.ts"),
+            "utf8",
+        )
+        for (const expected of [
+            'count: import("valdres").Atom<number>;',
+            'lazyCount: import("valdres").Atom<number>;',
+            'lazyItems: import("valdres").Atom<number[]>;',
+            'doubled: import("valdres").Selector<number>;',
+            'atomFamily: (id: string) => import("valdres").Atom<string>;',
+            'selectorMember: import("valdres").Selector<number>;',
+            'session: import("valdres").CollectionRow<string, {',
+            'sessionPresent: import("valdres").Selector<boolean>;',
+            'kindA: import("valdres").State<readonly import("valdres").CollectionRow<string, {',
+            'root: import("valdres").Store;',
+            'child: import("valdres").Store;',
+            'childTransaction: import("valdres").Transaction;',
+            'inspectable: import("valdres/inspect").InspectableStoreResult;',
+            'useCurrentStore: () => import("valdres").Store;',
+        ]) {
+            assert.ok(
+                portableDeclaration.includes(expected),
+                `portable declaration is missing ${expected}`,
+            )
+        }
+
+        const portablePackage = join(
+            consumerDirectory,
+            "node_modules",
+            "valdres-portable-probe",
+        )
+        await mkdir(portablePackage, { recursive: true })
+        await Promise.all([
+            writeFile(join(portablePackage, "index.d.ts"), portableDeclaration),
+            writeJson(join(portablePackage, "package.json"), {
+                name: "valdres-portable-probe",
+                private: true,
+                type: "module",
+                exports: { ".": { types: "./index.d.ts" } },
+            }),
+            writeFile(
+                join(consumerDirectory, "downstream-probe.ts"),
+                downstreamProbe,
+            ),
+            writeJson(join(consumerDirectory, "tsconfig.downstream.json"), {
+                extends: "./tsconfig.json",
+                compilerOptions: { outDir: "downstream-output" },
+                include: ["downstream-probe.ts"],
+            }),
+        ])
+        run(
+            `downstream declaration consumer with React ${react.major}`,
+            [
+                "node",
+                join(rootDirectory, "node_modules", "typescript", "bin", "tsc"),
+                "-p",
+                "tsconfig.downstream.json",
+            ],
+            consumerDirectory,
+        )
+        const downstreamDeclaration = await readFile(
+            join(
+                consumerDirectory,
+                "downstream-output",
+                "downstream-probe.d.ts",
+            ),
+            "utf8",
+        )
+        assert.match(
+            downstreamDeclaration,
+            /tripled: (?:import\("valdres"\)\.)?Selector<number>;/,
+        )
+        assert.match(
+            downstreamDeclaration,
+            /downstreamChild: (?:import\("valdres"\)\.)?Store;/,
+        )
+        for (const [label, declaration] of [
+            ["portable", portableDeclaration],
+            ["downstream", downstreamDeclaration],
+        ] as const) {
+            for (const internal of ["v1-internal", "dist/types", "v1.js"]) {
+                assert.equal(
+                    declaration.includes(internal),
+                    false,
+                    `${label} declarations must not reference ${internal}`,
+                )
+            }
+        }
         run(
             `esbuild browser bundle with React ${react.major}`,
             [
