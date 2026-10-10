@@ -137,9 +137,9 @@ const createTest = (base: typeof bunTest) => {
     const t = (name: string, fn?: TestFn, options?: number) =>
         register(base, name, fn, options)
     return Object.assign(t, {
+        // No `.only`: bun:test throws when it is even read under CI=true.
         skip: base.skip,
         todo: base.todo,
-        only: base.only,
         each:
             (cases: readonly unknown[]) =>
             (
@@ -187,5 +187,5 @@ export const describe = Object.assign(
                 path.pop()
             }
         }),
-    { skip: bunDescribe.skip, only: bunDescribe.only },
+    { skip: bunDescribe.skip },
 )
