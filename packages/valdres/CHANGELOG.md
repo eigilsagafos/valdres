@@ -1,5 +1,25 @@
 # valdres
 
+## 1.0.0-beta.45
+
+### Minor Changes
+
+- [#440](https://github.com/eigilsagafos/valdres/pull/440)
+  [`810c1c8`](https://github.com/eigilsagafos/valdres/commit/810c1c8f3c8006c96fc732e686a33197c2e9d846)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - **Breaking: import
+  `deepEqual` from `valdres`; the `valdres/equality` subpath is removed.**
+
+    ```diff
+    -import { atom } from "valdres"
+    -import { deepEqual } from "valdres/equality"
+    +import { atom, deepEqual } from "valdres"
+    ```
+
+    `deepEqual` itself is unchanged, and atoms and selectors still default to
+    `Object.is`. It ships in its own chunk, so bundles that never import it
+    still drop it. Importing `valdres/equality` now fails to resolve (Node
+    reports `ERR_PACKAGE_PATH_NOT_EXPORTED`, TypeScript reports TS2307).
+
 ## 1.0.0-beta.44
 
 ### Minor Changes
