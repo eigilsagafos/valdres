@@ -16,7 +16,6 @@
     "exports": {
         ".": "./src/index.ts",
         "./inspect": "./src/inspect.ts",
-        "./equality": "./src/equality.ts",
         "./adapter-internals/v1": "./src/adapter-internals/v1.ts",
         "./query": "./src/query.ts"
     },
