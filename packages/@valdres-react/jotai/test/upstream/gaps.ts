@@ -29,12 +29,10 @@ const EAGER =
     "Valdres recomputes a previously read, unsubscribed selector when a dependency changes"
 const MOUNT_ORDER =
     "Valdres attaches sibling dependencies in reverse read order, so their onMount order is reversed"
-const PREVIOUS_VALUE =
-    "a derived atom with init reading itself gets its init or last set value, not its previous computed value"
 // Skipped: the late get() throws inside unwrap's own promise callbacks,
 // outside the test body.
 const UNWRAP =
-    "unwrap needs INTERNAL_onInit, get() in promise callbacks and previous-value self-reads"
+    "unwrap needs INTERNAL_onInit and get() in promise callbacks"
 const STACK =
     "a stack overflow is cached as the atom's error, so a later store.sub does not throw it"
 
@@ -269,16 +267,6 @@ export const gaps: Readonly<Record<string, Gap>> = {
         "react/vanilla-utils/atomWithDefault.test.tsx",
         "unsupported",
         LATE_GET,
-    ),
-    "do not update unless equality function says value has changed": gap(
-        "react/vanilla-utils/selectAtom.test.tsx",
-        "divergence",
-        PREVIOUS_VALUE,
-    ),
-    "no unnecessary updates when updating atoms": gap(
-        "react/vanilla-utils/splitAtom.test.tsx",
-        "divergence",
-        PREVIOUS_VALUE,
     ),
     "unwrap > should unwrap a promise with no fallback function": gap(
         "vanilla/utils/unwrap.test.ts",

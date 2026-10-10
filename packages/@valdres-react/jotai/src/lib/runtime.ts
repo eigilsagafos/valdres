@@ -6,7 +6,11 @@ import {
 import type { Store } from "../types/jotai"
 import type { AnyAtomConfig, AtomNode } from "./nodeRegistry"
 import { getNode, readNodeState } from "./nodes"
-import { withOperation, type LifecycleSink } from "./operationStack"
+import {
+    withOperation,
+    type LifecycleSink,
+    type Outcome,
+} from "./operationStack"
 import { decodeValue, encodeValue } from "./promiseBox"
 
 type Listener = () => void
@@ -96,6 +100,10 @@ export class StoreRuntime implements LifecycleSink {
     private readonly unmounts: AnyAtomConfig[] = []
     private readonly mounts: AnyAtomConfig[] = []
     private readonly watchers = new Set<() => void>()
+    // Last installed outcome per self-reading config, in this store only.
+    // Evaluations inside readStaged's discarded transaction do not record.
+    private readonly previous = new WeakMap<AnyAtomConfig, Outcome>()
+    private speculative = 0
 
     constructor() {
         this.api = {
@@ -129,8 +137,16 @@ export class StoreRuntime implements LifecycleSink {
         else this.mounts.splice(pending, 1)
     }
 
+    previousOutcome(config: AnyAtomConfig): Outcome | undefined {
+        return this.previous.get(config)
+    }
+
+    recordOutcome(config: AnyAtomConfig, outcome: Outcome): void {
+        if (this.speculative === 0) this.previous.set(config, outcome)
+    }
+
     readCommitted(node: AtomNode): unknown {
-        return readNodeState(this.valdres.get, node)
+        return withOperation(this, () => readNodeState(this.valdres.get, node))
     }
 
     readOwnValue(atom: ValdresAtom<unknown>): unknown {
@@ -142,14 +158,19 @@ export class StoreRuntime implements LifecycleSink {
         writes: ReadonlyMap<ValdresAtom<unknown>, unknown>,
     ): unknown {
         let value: unknown
+        this.speculative++
         try {
-            this.valdres.txn(tx => {
-                for (const [atom, staged] of writes) tx.set(atom, staged)
-                value = readNodeState(tx.get, node)
-                throw DISCARD
-            })
+            withOperation(this, () =>
+                this.valdres.txn(tx => {
+                    for (const [atom, staged] of writes) tx.set(atom, staged)
+                    value = readNodeState(tx.get, node)
+                    throw DISCARD
+                }),
+            )
         } catch (error) {
             if (error !== DISCARD) throw error
+        } finally {
+            this.speculative--
         }
         return value
     }

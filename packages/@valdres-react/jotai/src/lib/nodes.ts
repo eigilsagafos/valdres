@@ -2,7 +2,7 @@ import { atom, externalAtom, selector, type GetValue } from "valdres"
 import { defaultRead, isOwnAtom } from "./atomConfig"
 import { JotaiCompatibilityError, unwrapAtomError } from "./errors"
 import { nodes, type AnyAtomConfig, type AtomNode } from "./nodeRegistry"
-import { currentSink } from "./operationStack"
+import { currentSink, type Outcome } from "./operationStack"
 import { decodeValue, encodeValue, isPromiseLike } from "./promiseBox"
 
 const noSnapshot = (): undefined => undefined
@@ -53,12 +53,33 @@ const evaluate = (
     node: () => AtomNode,
 ): unknown => {
     let active = true
+    let selfRead = false
+    let storedSeen: unknown
     const get = (target: AnyAtomConfig) => {
         if (!active) throw lateGetError(config, target)
         if (target === config) {
             const own = node()
             if (own.value === undefined) throw new Error("no atom init")
-            return decodeValue(valdresGet(own.value))
+            // Jotai keeps one value slot per atom and store, written by both
+            // reads and sets, and a derived atom with init reading itself gets
+            // that slot (selectAtom, splitAtom). Valdres selectors cannot read
+            // themselves, so the store keeps the last installed outcome of such
+            // atoms and returns it while the stored value (init or last set),
+            // which stays a dependency, is unchanged since that outcome.
+            const stored = decodeValue(valdresGet(own.value))
+            if (!own.isPrimitive) {
+                selfRead = true
+                storedSeen = stored
+                const previous = currentSink().previousOutcome(config)
+                if (
+                    previous !== undefined &&
+                    Object.is(previous.stored, stored)
+                ) {
+                    if (!previous.ok) throw previous.error
+                    return previous.value
+                }
+            }
+            return stored
         }
         return readNodeState(valdresGet, getNode(target))
     }
@@ -67,14 +88,20 @@ const evaluate = (
             throw signalError(config)
         },
     })
+    let outcome: Outcome
     try {
         const value = config.read(get, options)
         // Jotai observes every promise a read function returns, so a rejected
         // async atom is never reported as an unhandled rejection.
         if (isPromiseLike(value)) value.then(ignore, ignore)
+        outcome = { ok: true, value, stored: storedSeen }
         return encodeValue(value)
+    } catch (error) {
+        outcome = { ok: false, error, stored: storedSeen }
+        throw error
     } finally {
         active = false
+        if (selfRead) currentSink().recordOutcome(config, outcome!)
     }
 }
 
