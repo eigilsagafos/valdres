@@ -55,18 +55,23 @@ import { atom, createStore } from "@valdres-react/jotai"
 </div>
 
 It is not complete Jotai compatibility. It is checked against Jotai 3.0.1's own
-test suite and side-by-side tests, and these differ:
+test suite and side-by-side tests.
 
-- **Read dependencies before `await`.** A read function's `get` must be called
+**Not supported:**
+
+- **Dependencies read after `await`.** A read function's `get` must be called
   before its first `await`; a later `get` throws (`VALDRES_JOTAI_LATE_GET`).
-  `await get(asyncAtom)` is fine.
-- **No `signal`** in read options and no `INTERNAL_onInit`, so `jotai/utils`'
-  `unwrap` does not work. Most other `jotai/utils` helpers and `jotai-family`
-  work with this package's store; `jotai/react/utils` hooks do not.
-- **No store calls** inside read functions.
-- Derived atoms that were read once recompute when their dependencies change
-  even without subscribers, and `selectAtom`/`splitAtom` lose their
-  identity-preserving optimizations.
+  Promises as atom values, async read functions that read before their first
+  `await`, and `await get(asyncAtom)` are supported.
+- **Cancellation.** There is no `signal` in read options
+  (`VALDRES_JOTAI_SIGNAL_UNSUPPORTED`); replaced promises are not aborted.
+- **`unwrap`** from `jotai/utils`, `INTERNAL_onInit`, **store calls inside read
+  functions**, and **`jotai/react/utils`** hooks.
+
+**Different from Jotai:** derived atoms that were read once recompute when
+their dependencies change even without subscribers; `selectAtom` and
+`splitAtom` pass Jotai's tests but keep some identity differences. Most other
+`jotai/utils` helpers and `jotai-family` work with this package's store.
 
 The [compatibility notes](https://github.com/eigilsagafos/valdres/blob/main/packages/@valdres-react/jotai/COMPATIBILITY.md) list every difference and how each was tested.
 

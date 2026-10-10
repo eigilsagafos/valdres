@@ -1,9 +1,36 @@
 # Jotai compatibility on Valdres v1
 
-`@valdres-react/jotai` is a **partial** implementation of Jotai's core API
-(`jotai`, i.e. `jotai/vanilla` plus `jotai/react`) on the public Valdres v1 API.
-It is not complete Jotai compatibility: the gaps below are listed, tested and
-explained. The package is release-ignored; nothing here is published.
+`@valdres-react/jotai` is a **bounded, partial** implementation of Jotai's core
+API (`jotai`, i.e. `jotai/vanilla` plus `jotai/react`) on the public Valdres v1
+API. It is not complete Jotai compatibility. The package is release-ignored;
+nothing here is published.
+
+## Not supported
+
+These throw or behave differently on purpose; each is covered by tests.
+
+| Jotai feature                                            | Here                                                                               |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `get()` after a read function returned (after `await`)   | throws `VALDRES_JOTAI_LATE_GET`: dependencies are tracked only before the first `await` |
+| read `options.signal` (cancellation)                     | throws `VALDRES_JOTAI_SIGNAL_UNSUPPORTED`; absent from the types                  |
+| `unwrap` from `jotai/utils`                              | does not work (needs both of the above and `INTERNAL_onInit`)                     |
+| `INTERNAL_onInit`                                        | throws `VALDRES_JOTAI_INTERNAL_ON_INIT_UNSUPPORTED`                               |
+| store calls inside a read function                       | Valdres `SelectorCapabilityError`                                                  |
+| `jotai/react/utils`, `jotai/vanilla/internals`           | not provided                                                                       |
+| using these atoms with `valdres-react` or Valdres stores | not provided                                                                       |
+
+### Async: what is and is not supported
+
+- **Supported: promises as values.** An atom may hold a promise, a read function
+  may return one, and async read functions work when every `get` happens before
+  the first `await` (`await get(asyncAtom)` is fine: the `get` call is
+  synchronous). Promise identity and change detection, Suspense (`use()` on
+  React 19, the throwing shim on React 18), error boundaries, and following a
+  replaced promise while suspended match Jotai.
+- **Not supported: dependencies read after `await`.** They are not tracked; the
+  read throws `VALDRES_JOTAI_LATE_GET`, which rejects the atom's promise.
+- **Not supported: cancellation.** There is no `signal`; replaced promises are
+  not aborted.
 
 ## Reference versions
 
@@ -26,29 +53,31 @@ explained. The package is release-ignored; nothing here is published.
 against this package; `test/upstream/gaps.ts` lists each test this package does
 not pass, with its reason.
 
-| Suite                                                                                   | Tests | Real Jotai | This package                                              |
-| --------------------------------------------------------------------------------------- | ----: | ---------: | --------------------------------------------------------- |
-| Core API (`vanilla/*`, `react/*`, incl. `useAtomValueRaw`/`RawSync`)                    |   245 |        245 | 199 pass, 45 gaps verified to fail, 1 skipped             |
-| `jotai/utils` (vanilla and React-hook tests) and jotai-family                           |   119 |        119 | 104 pass, 4 gaps verified to fail, 11 skipped (`unwrap`) |
-| **Total**                                                                               |   364 |        364 | **303 pass, 49 known gaps verified failing, 12 skipped**  |
+| Suite                                                                | Tests | Real Jotai | This package: pass | known failures | skipped |
+| -------------------------------------------------------------------- | ----: | ---------: | -----------------: | -------------: | ------: |
+| Core API (`vanilla/*`, `react/*`, incl. `useAtomValueRaw`/`RawSync`) |   245 |        245 |                199 |             45 |       1 |
+| `jotai/utils` (vanilla and React-hook tests) and jotai-family        |   119 |        119 |                106 |              2 |      11 |
+| **Total**                                                            |   364 |        364 |            **305** |         **47** |  **12** |
 
-A listed gap that starts passing, or a listed gap that matches no test, fails
-the run. Skipped tests are the ones whose failure escapes the test body (a
-rejection thrown inside the library's own promise callbacks).
+Every known failure and skipped test is listed in `test/upstream/gaps.ts`. A
+known failure runs and must still fail: if one starts passing, or a listed test
+no longer exists, the run fails. A skipped test is listed too but not run,
+because its failure escapes the test body (a rejection thrown inside the
+library's own promise callbacks).
 
-Gaps by reason:
+By reason (known failures + skipped = 47 + 12 = 59 listed tests):
 
-| Count | Kind        | Reason                                                                                   |
-| ----: | ----------- | ---------------------------------------------------------------------------------------- |
-|    27 | unsupported | `get()` after the read function returned (`VALDRES_JOTAI_LATE_GET`), 1 skipped         |
-|    11 | unsupported | `unwrap`: `INTERNAL_onInit`, `get()` in promise callbacks, previous-value self-reads (skipped) |
-|     7 | unsupported | read `options.signal` (`VALDRES_JOTAI_SIGNAL_UNSUPPORTED`)                               |
-|     7 | unsupported | `INTERNAL_onInit` (`VALDRES_JOTAI_INTERNAL_ON_INIT_UNSUPPORTED`)                         |
-|     2 | unsupported | Store calls inside a read function (Valdres `SelectorCapabilityError`)                   |
-|     3 | divergence  | previously read, unsubscribed derived atoms recompute eagerly                            |
-|     2 | divergence  | a derived atom with `init` reading itself does not get its previous computed value      |
-|     1 | divergence  | sibling `onMount` order reversed                                                         |
-|     1 | divergence  | stack overflow cached as the atom's error                                                |
+| Reason                                                                         | Known failures | Skipped |
+| ------------------------------------------------------------------------------ | -------------: | ------: |
+| `get()` after the read function returned (`VALDRES_JOTAI_LATE_GET`)            |             26 |       1 |
+| `unwrap` (`INTERNAL_onInit`, `get()` in promise callbacks)                     |              0 |      11 |
+| read `options.signal` (`VALDRES_JOTAI_SIGNAL_UNSUPPORTED`)                     |              7 |       0 |
+| `INTERNAL_onInit` (`VALDRES_JOTAI_INTERNAL_ON_INIT_UNSUPPORTED`)               |              7 |       0 |
+| store calls inside a read function (Valdres `SelectorCapabilityError`)         |              2 |       0 |
+| previously read, unsubscribed derived atoms recompute eagerly                  |              3 |       0 |
+| sibling `onMount` order reversed                                               |              1 |       0 |
+| stack overflow cached as the atom's error                                      |              1 |       0 |
+| **Total**                                                                      |         **47** |  **12** |
 
 ### Supported consumer surface
 
@@ -56,9 +85,14 @@ Gaps by reason:
   `atomWithDefault` (sync), `atomWithLazy`, `atomWithRefresh`, `atomWithStorage`,
   `atomWithObservable` (rxjs and wonka), `freezeAtom`, `RESET`, and
   jotai-family's `atomFamily` and `atomTree`.
-- **Partially:** `selectAtom` and `splitAtom` return correct values but lose
-  their identity-preserving optimizations (previous-value self-read);
-  `atomWithDefault` with an async default reads after `await`.
+- **Upstream tests pass, with known identity differences:** `selectAtom` and
+  `splitAtom`. Their previous-value self-read is supported through the store's
+  previous-result cache (see [How it maps onto Valdres](#how-it-maps-onto-valdres)),
+  but values read inside a write after a `set`, eager recomputation and a
+  `set(self)` to the stored value still differ from Jotai (tested in
+  `test/adapter/previous.test.ts`). They are not claimed fully compatible.
+- **Partially:** `atomWithDefault` with an async default (it reads after
+  `await`).
 - **Not supported:** `unwrap`.
 - **Not provided:** `jotai/react/utils` (`useHydrateAtoms`, `useAtomCallback`,
   `useResetAtom`, `useReducerAtom`). Those hooks bind to Jotai's own React
@@ -98,6 +132,14 @@ The package peers on `valdres` `^1.0.0-beta.44` and `react`
   buffer that later `get`s read back and are committed in one Valdres
   transaction, so derived atoms never see a half-applied write. Reads before the
   first set hit the committed cache.
+- **Previous computed values:** Jotai keeps one value slot per atom and store,
+  written by reads and sets; a derived atom with `init` reading itself (as
+  `selectAtom` and `splitAtom` do) gets that slot. Valdres selectors cannot read
+  themselves, so each store keeps, in a `WeakMap`, the last installed outcome
+  (value or error) of atoms that read themselves, and returns it while the
+  atom's stored value (init or last `set`), which stays a Valdres dependency, is
+  unchanged since. Reads inside a write's discarded staged transaction do not
+  record. See [Review notes](#review-notes).
 - **Listeners** run in a Jotai-style flush after the Valdres operation; see
   [Listener and lifecycle flush](#listener-and-lifecycle-flush).
 - **onMount** uses one constant `externalAtom` per writable config with
@@ -208,6 +250,15 @@ be equal unless a difference is asserted on both sides.
   unmounting while suspended and remounting shows the resolved value; Suspense
   stops observing the store once the promise settles; a replaced promise is
   collectable.
+- `previous.test.ts` (12): `selectAtom` keeps its previous slice per store,
+  never across stores; a self-reading atom keeps identity across equal
+  updates; the previous error is rethrown to the self-read (all equal to
+  Jotai). Asserted differences: a value read inside a write after a `set`, eager
+  recomputation advancing the previous value, a `set(self)` to the stored
+  value. Cache ownership: a write that throws leaves only installed results; a
+  staged read inside a write is not retained; caches are per store; atoms that
+  never read themselves are not cached; cached values are released with their
+  store or atom.
 - `differential.test.ts`, `react.test.tsx`, `boundaries.test.ts`: writes,
   mounts, StrictMode lifecycle, Provider ownership, SSR and hydration, Suspense
   and error boundaries, and the explicit unsupported boundaries.
@@ -220,158 +271,81 @@ be equal unless a difference is asserted on both sides.
 
 ## Where each mismatch arises
 
-The statement this evidence supports is narrow: each of the 49 listed gaps
-reproduces with Valdres v1 used through public APIs the way this adapter uses
-them, and none of the listed tests fails because of the listener flush (the
-listener and ownership suites match Jotai). That does not show core must
-change. A mismatch may still be closable in the adapter (see the async and
-previous-value feasibility notes), and several are core policies the owner may
-keep. Core's assessment found no confirmed core defect.
+The statement this evidence supports is narrow: each listed test reproduces
+with Valdres v1 used through public APIs the way this adapter uses them, and
+none fails because of the listener flush or the previous-result cache (their
+suites match Jotai except the asserted differences). That does not show core
+must change; several items are core policies the owner keeps. Core's
+assessment found no confirmed core defect.
 
-| Gap                                                     | Tests | Where it arises                                                                                         |
-| ------------------------------------------------------- | ----: | ------------------------------------------------------------------------------------------------------- |
-| G1 `get()` after `await`                                |    27 | A selector's dependencies are recorded only while its getter runs; its `get` is revoked afterwards     |
-| G2 `options.signal`                                     |     7 | Aborting needs to know whether a store installed or discarded a result; evaluation phase does not say  |
-| G3 `INTERNAL_onInit`                                    |     7 | No per-store hook that may write during a first read                                                    |
-| G4 Store calls inside reads                             |     2 | Selector callbacks may not call Store methods; there is no untracked read inside a getter               |
-| G5 previous-value self-read (`selectAtom`, `splitAtom`) |     2 | A selector reading itself is a cycle, which latches even when caught                                     |
-| G6 `unwrap`                                             |    11 | G1 + G3 + G5                                                                                            |
-| D1 eager recompute of unsubscribed derived atoms        |     3 | Core recomputes every live record of a changed dependency; a policy choice, undocumented either way    |
-| D2 sibling `onMount` order                              |     1 | Siblings attach in reverse read order; a legacy fix (#253) not ported to v1 and not a v1 contract      |
-| D3 stack overflow                                       |     1 | Core caches stack exhaustion as an ordinary error; detecting it here would need message matching       |
-| D4 derived values read inside a write after a set       |     — | Transaction reads re-evaluate selectors (parked transaction-read work)                                  |
+| Gap                                               | Known failures | Skipped | Where it arises                                                                                        |
+| ------------------------------------------------- | -------------: | ------: | ------------------------------------------------------------------------------------------------------ |
+| G1 `get()` after `await`                          |             26 |       1 | A selector's dependencies are recorded only while its getter runs; its `get` is revoked afterwards    |
+| G2 `options.signal`                               |              7 |       0 | Aborting needs to know whether a store installed or discarded a result; evaluation phase does not say |
+| G3 `INTERNAL_onInit`                              |              7 |       0 | No per-store hook that may write during a first read                                                   |
+| G4 Store calls inside reads                       |              2 |       0 | Selector callbacks may not call Store methods; there is no untracked read inside a getter              |
+| G6 `unwrap`                                       |              0 |      11 | G1 + G3                                                                                                |
+| D1 eager recompute of unsubscribed derived atoms  |              3 |       0 | Core recomputes every live record of a changed dependency; a policy choice, undocumented either way   |
+| D2 sibling `onMount` order                        |              1 |       0 | Siblings attach in reverse read order; a legacy fix (#253) not ported to v1 and not a v1 contract     |
+| D3 stack overflow                                 |              1 |       0 | Core caches stack exhaustion as an ordinary error; detecting it here would need message matching      |
+| D4 derived values read inside a write after a set |              — |       — | Transaction reads re-evaluate selectors (parked transaction-read work); tested in the adapter suites   |
+| **Total**                                         |         **47** |  **12** |                                                                                                        |
 
-**Eliminated without core changes in the previous revision:** listeners reading
-recomputed derived values, listener writes notifying only after the listener
-returned, net-zero writes not notifying, a listener on two atoms running twice,
-cross-store calls from listeners failing (`TransactionPhaseError`), and
-deferred listener (un)subscription. All came from running listeners as `settle`
-handlers, which core's docs also advise against for re-entrant work. Adding
-`useAtomValueRaw`/`RawSync` passed 3 former `not-applicable` tests and 14 more
-upstream tests.
+G5 (previous-value self-read) is closed by the previous-result cache; its
+remaining identity differences are executable tests, not listed upstream gaps.
 
 **Not changed, by decision:** a `store.set` inside a read whose write function
 only reads could reuse the evaluation's `get`, but those reads would become
-tracked dependencies, unlike Jotai.
+tracked dependencies, unlike Jotai. Core policies D1 and D2 are out of scope
+for this package (D2's fix is a separate, unapproved proposal at +42 B gzip).
 
-**Separate, unapproved core proposal:** attaching siblings in read order (D2).
-Core prototyped it: read order is restored and all runtime tests pass, but it
-costs +42 B gzip on a zero-headroom size budget. Not part of this PR.
+## Late `get()` and `signal`: feasibility prototype (not integrated)
 
-## Feasibility: async reads and previous values (prototypes, not integrated)
+A bounded prototype (local branch `proto/jotai-async-reads`, worktree
+`.context/proto-async`, from `9df1fa9d`) recorded, per store and atom, the
+dependencies an async read function reads after it returned; after every store
+operation it re-read them and, on a change, bumped a per-atom revision atom the
+selector reads. Late dependencies of retained atoms were retained, and each
+evaluation outside a discarded transaction owned an `AbortController`.
 
-Two bounded prototypes on local branches from this head (`9df1fa9d`), outside
-the candidate. Numbers are against the same 364-test upstream suite.
+- **Would pass:** 33 of the 45 listed late-`get`, `signal` and `unwrap` tests
+  (26 of 27 late-`get`, all 7 `signal`), and 9 of 11 async scenarios traced
+  against Jotai. #3240 and all 11 `unwrap` tests still failed.
+- **Why it is not integrated:** it is a second dependency mechanism (late
+  edges, change detection by polling, invalidation and retention) beside
+  Valdres'. Building it surfaced two synchronous infinite loops; polling
+  compares values, not Jotai's change epochs; dynamically created async atoms
+  stay retained by their store (Jotai collects them); every operation re-reads
+  every watched dependency (0.084 ms vs Jotai's 0.0025 ms per unrelated `set`
+  with 1,000 settled async atoms); every derived atom pays a sentinel and a
+  revision atom (about 43 vs 28 ms per 10,000 sets on a mounted chain); and it
+  rests on core behavior the assessment says is not a contract.
+- **Missing capability:** a dependency read after a getter returned cannot be
+  attached to the value the store installed:
 
-### B. Previous computed values (`selectAtom`, `splitAtom`)
+  ```ts
+  import { atom, selector, store } from "valdres"
+  const source = atom(1)
+  let capturedGet: ((state: typeof source) => number) | undefined
+  const user = selector(get => {
+      capturedGet = get
+      return "installed"
+  })
+  const app = store()
+  let notified = 0
+  app.sub(user, () => notified++)
+  try {
+      capturedGet!(source)
+  } catch (error) {
+      console.log((error as { code?: string }).code) // VALDRES_SELECTOR_READ_REVOKED
+  }
+  app.set(source, 2)
+  console.log(notified > 0) // false
+  ```
 
-Jotai keeps one value slot per atom and store, written by both reads and sets;
-a derived atom with `init` reading itself gets that slot. The prototype keeps,
-per store, the last installed outcome (value or error) of atoms that read
-themselves, and returns it while the atom's stored value (init or last `set`) is
-unchanged since that outcome; otherwise the stored value. The stored value stays
-a Valdres dependency. No selector reads itself, so no core cycle is involved.
-
-- **Passes:** both previous-value gaps (`selectAtom` "do not update unless
-  equality function says value has changed", `splitAtom` "no unnecessary
-  updates when updating atoms"), with no regressions (364 = 305 pass, 47 gaps,
-  12 skipped). 7 new differential tests: per-store isolation, identity across
-  equal updates and the previous error rethrown to the self-read match Jotai.
-- **Ownership:** a `WeakMap` per store keyed by atom, released with the store
-  or the atom (both tested). Outcomes from discarded transaction reads (a
-  write's read after a `set`) are not recorded.
-- **Limitations (asserted against Jotai):** a value read inside a write after a
-  `set` is recomputed for the store, so its identity differs (the
-  transaction-read re-evaluation); eager recomputation of an unsubscribed atom
-  advances its previous value between reads; a `set(self)` to a value equal to
-  the stored one is not seen as a write.
-- **Cost:** about 70 lines; no measurable change on a mounted derived chain.
-  Relies on the same per-store operation attribution as `onMount`.
-- **`unwrap`:** still fails. It also needs `get()` after promise settlement and
-  `INTERNAL_onInit`.
-
-### A. `get()` after `await` and `signal`
-
-The prototype records, per store and atom, the dependencies an async read
-function reads after it returned; after every store operation it re-reads them
-and, on a change, bumps a per-atom revision atom that the selector reads, so the
-store recomputes it. A retained atom keeps its late dependencies retained
-(Jotai mounts them). Each evaluation outside a discarded transaction owns an
-`AbortController`, aborted when a new evaluation in that store replaces its
-unsettled promise.
-
-- **Passes:** 33 of the 45 listed late-`get`, `signal` and `unwrap` tests (26 of
-  27 late-`get`, all 7 `signal`), and 9 of 11 new async scenarios traced
-  against Jotai (late dependencies mounted, unmounted-settled and pending;
-  dependency replacement; abort on replacement but not on unsubscribe; stale
-  completion; unmount/remount; rejection; a bounded late cycle).
-- **Still failing:** #3240 (a captured `get` called inside another atom's read)
-  and all 11 `unwrap` tests.
-- **Divergences:** a write's read of an async atom after a `set` runs the read
-  function twice (once discarded); that discarded evaluation's signal is never
-  aborted and its late reads are untracked.
-- **Lifecycle risks found while building it:** two synchronous infinite loops
-  (a late read failing on the selector capability guard; a dependency failing
-  with a fresh error object each read), both needing special cases. Polling
-  compares values, not Jotai's change epochs: a dependency that changes and
-  changes back between operations is missed, and a dependency that fails
-  differently is treated as unchanged.
-- **Resources:** the per-store records are a strong map, so an async atom created
-  dynamically (for example by a family) that read a late dependency stays
-  retained by its store; Jotai collects it (tested). Every operation re-reads
-  every watched late dependency: with 1,000 settled async atoms an unrelated
-  `set` took about 0.084 ms against Jotai's 0.0025 ms, growing linearly. Every
-  derived atom gains a sentinel and a revision atom: a mounted 3-level derived
-  chain took about 43 ms per 10,000 sets against the candidate's 28 ms
-  (informational, one machine).
-- **Size:** about 245 lines, and it relies on core behavior the assessment says
-  is not a contract (no discarded evaluations outside the adapter's own
-  transaction reads, attach/detach timing).
-
-**Assessment:** this is a second dependency mechanism (late edges, change
-detection by polling, invalidation and retention propagation) maintained beside
-Valdres', with known semantic gaps. It is not proportionate for a compatibility
-layer.
-
-**Smallest concrete missing capability:** a dependency read after a getter
-returned cannot be attached to the value the store installed, so Valdres never
-recomputes it when that dependency changes:
-
-```ts
-import { atom, selector, store } from "valdres"
-const source = atom(1)
-let capturedGet: ((state: typeof source) => number) | undefined
-const user = selector(get => {
-    capturedGet = get
-    return "installed"
-})
-const app = store()
-let notified = 0
-app.sub(user, () => notified++)
-try {
-    capturedGet!(source)
-} catch (error) {
-    console.log((error as { code?: string }).code) // VALDRES_SELECTOR_READ_REVOKED
-}
-app.set(source, 2)
-console.log(notified > 0) // false: no way to add `source` to the installed value
-```
-
-Closing it in core would mean dependency edges added after evaluation, bound to
-the evaluation the Store tree installed (rejected for discarded or replaced
-evaluations), with core-owned invalidation and retention. That reverses v1's
-synchronous dependency model and is a design decision for the owner, not a
-request.
-
-### Recommendation
-
-- **B:** integrable as an adapter-only addition if the owner accepts its
-  documented limitations; it is small and owns no state beyond Jotai's own
-  per-atom slot.
-- **A:** do not integrate. Keep late `get` and `signal` as an explicitly
-  bounded subset (`VALDRES_JOTAI_LATE_GET`, `VALDRES_JOTAI_SIGNAL_UNSUPPORTED`),
-  or take the core design decision above.
-- **`unwrap`:** stays unsupported either way.
+  Closing it would mean core-owned dependency edges added after evaluation and
+  bound to the installed evaluation, which reverses v1's synchronous model.
+  Not requested.
 
 ## Other boundaries
 
@@ -382,41 +356,68 @@ request.
   overflowing.
 - `toString()` includes `debugLabel` in production builds too.
 
-## Decisions for the owner
+## Decisions recorded
 
-- **Signal and late `get`:** keep throwing (recommended; the adapter-only
-  prototype is not proportionate) or decide on core-owned late dependency
-  edges. Core advises against exposing evaluation phase or store-specific
-  invalidation.
-- **Previous values:** integrate prototype B (adapter-only) or keep the two
-  `selectAtom`/`splitAtom` gaps.
-- **Promises as values:** keep boxing (adapter-only, invisible to core), or
-  reject async atoms outright.
-- **Core policies** behind D1–D4, and the D2 fix with its size allowance.
-- **Valdres interop:** Jotai atoms are configs, not Valdres States; exposing
-  their States would be new API.
-- **React utils:** port `jotai/react/utils` as a new entry, or leave them out.
-- **Release:** stays in `.changeset/config.json` `ignore`. The published
-  `1.0.0-beta.3` does not load against current Valdres; consider deprecating it.
+- Previous computed values: integrated (adapter-only), differences documented.
+- Late `get()`, `signal`, `unwrap`: unsupported, with explicit errors; the
+  async prototype is preserved, not integrated. No new core primitives.
+- No core eager/lazy policy change or sibling attachment-order fix here.
+- No Valdres-state interop, exposed private Store, or `jotai/react/utils`.
+- Release-ignored; no npm deprecation or publication.
+
+## Review notes
+
+The three mechanisms that carry the most risk, with what to check.
+
+### Listener flush (`src/lib/runtime.ts`: `mount`, `run`, `flushCallbacks`)
+
+- The only Valdres subscription per mounted atom records a change in Valdres'
+  notify phase and does nothing else; Jotai listeners never run inside a
+  Valdres transaction, `settle` round or notify pass.
+- `run()` wraps every operation except `get`; its `finally` flushes and then
+  rethrows collected errors as `AggregateError`, replacing the operation's own
+  result or error (Jotai's behavior). Check that nested operations (a listener's
+  `set`) flush before returning and that the outer snapshot continues.
+- Net-zero writes rely on `BufferFrame` recording configs changed by any `set`.
+- Evidence: `listeners.test.tsx` (12, equal to Jotai), upstream `store` and
+  `onmount` files.
+
+### Mount ownership (`src/lib/nodes.ts` `createLifecycle`, `src/lib/operationStack.ts`)
+
+- A sentinel's attach/detach is attributed to the innermost operation frame.
+  This is correct only under the adapter's isolation: one private root Valdres
+  Store per Jotai store, no scopes, no invalidating ExternalAtoms in Jotai
+  graphs, every Valdres call wrapped. Reached outside a frame, it throws
+  `VALDRES_JOTAI_LIFECYCLE_OUTSIDE_OPERATION`.
+- Mount events are applied in the flush after listeners: unmounts, then
+  mounts; a mount and unmount queued before either ran cancel out.
+- Evidence: `ownership.test.ts` (7, equal to Jotai, plus the no-fallback case),
+  upstream `onmount`.
+
+### Previous-result cache (`src/lib/nodes.ts` `evaluate`, `src/lib/runtime.ts` `previous`)
+
+- Only atoms that read themselves are cached (`selfRead`), per store in a
+  `WeakMap` keyed by atom; an entry holds the outcome and the stored value it
+  was computed with.
+- `readStaged` increments `speculative`, so evaluations inside a write's
+  discarded transaction do not record. Every other evaluation under the
+  adapter's isolation is one the store installs; this, too, rests on the
+  isolation (core does discard evaluations elsewhere, for example in scopes or
+  hydration, which this package does not use).
+- `readCommitted` runs inside an operation frame so `get`-triggered evaluations
+  are attributed to their store.
+- Evidence: `previous.test.ts` (12) and the upstream `selectAtom`/`splitAtom`
+  files.
 
 ## Running
 
 ```bash
-cd packages/@valdres-react/jotai
-bun run test             # adapter suites + upstream (adapter) + upstream (real Jotai)
-bun run typecheck:tests  # source and declaration contract
-bun run test:packed      # tarballs, React 18 + 19, Node + Bun, SSR, hydration, types
+bun run test:jotai          # both tsconfigs, adapter suite, upstream vs adapter and vs jotai@3.0.1
+bun run test:jotai:packed   # tarballs, React 18 + 19, Node + Bun, SSR, hydration, dev condition, types
 ```
 
-These are package-local and not part of `bun run verify` or CI; a release would
-need a `jotai` CI job running them.
-
-On the CI-pinned toolchain (Node 24.16.0, Bun 1.4.0), at `9df1fa9d`: `bun run
-verify` passed all 28 steps without a toolchain override; the package's tests,
-both upstream runs and the packed consumer passed. One `typecheck:tests` run
-reported a spurious `TS2307` for `jotai-reference` (the known tsgo
-multi-threaded resolution race); four reruns, including `--singleThreaded`,
-were clean.
+Both run in CI as the `jotai` job and in `bun run verify`. The job is not in
+`publish`'s `needs`, and the package stays out of the publishable list.
 
 **Performance**, informational (one run, median of 7, `NODE_ENV=production`,
 loaded laptop): the adapter took 2–3.5x Jotai's time on micro-benchmarks (a
