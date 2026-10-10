@@ -1581,8 +1581,7 @@ void structuredKey
 // Unannotated exports: declaration emit must name every inferred value through
 // public specifiers, never valdres/dist/types/v1.js or v1-internal (#429).
 const portableProbe = String.raw`
-import { atom, collection, family, presence, selector, store } from "valdres"
-import { deepEqual } from "valdres/equality"
+import { atom, collection, deepEqual, family, presence, selector, store } from "valdres"
 import { createInspectableStore } from "valdres/inspect"
 import { query } from "valdres/query"
 import { useAtom, useStore, useValue } from "valdres-react"
