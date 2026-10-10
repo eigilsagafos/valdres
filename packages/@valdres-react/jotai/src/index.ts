@@ -3,22 +3,25 @@ export { atom } from "./atom"
 export { createStore } from "./createStore"
 export { getDefaultStore } from "./getDefaultStore"
 
-// React hooks
+// React
+export { Provider } from "./Provider"
 export { useAtom } from "./useAtom"
 export { useAtomValue } from "./useAtomValue"
+export { useAtomValueRaw } from "./useAtomValueRaw"
+export { useAtomValueRawSync } from "./useAtomValueRawSync"
 export { useSetAtom } from "./useSetAtom"
 export { useStore } from "./useStore"
-export { Provider } from "./Provider"
 
 // Types
 export type {
     Atom,
-    WritableAtom,
-    PrimitiveAtom,
-    Getter,
-    Setter,
-    ExtractAtomValue,
     ExtractAtomArgs,
     ExtractAtomResult,
+    ExtractAtomValue,
+    Getter,
+    PrimitiveAtom,
     SetStateAction,
-} from "./types"
+    Setter,
+    Store,
+    WritableAtom,
+} from "./types/jotai"
