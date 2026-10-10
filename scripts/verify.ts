@@ -21,7 +21,9 @@
  * `browser-status` (the same three gates for the online, focus, visibility
  * and presence packages),
  * `hotkeys` (suites, both tsconfigs and packed consumers for the two
- * hotkeys packages) and `valdres-package` (the published-tarball gate: publint, ATTW, size
+ * hotkeys packages), `jotai` (the release-ignored Jotai compatibility package:
+ * both tsconfigs, its suites, the upstream suite against it and against the
+ * pinned Jotai, packed consumers) and `valdres-package` (the published-tarball gate: publint, ATTW, size
  * budgets; ~13s). It does NOT cover the manual-only legacy docs workflows or
  * the Bencher gate; those are listed under NOT_COVERED and printed on every
  * run, because a
@@ -85,6 +87,7 @@ const JOBS = [
     "browser-keyboard",
     "browser-status",
     "hotkeys",
+    "jotai",
     "valdres-package",
 ]
 
@@ -218,6 +221,18 @@ const SKIPPED_ACTIONS: Record<
         reason: SETUP_BUN,
     },
     "hotkeys / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
+    "jotai / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "jotai / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "jotai / actions/setup-node": {
         action: "actions/setup-node",
         reason: SETUP_NODE,
     },

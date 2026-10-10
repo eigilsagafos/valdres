@@ -37,6 +37,8 @@
         "test:browser-status:packed": "bun run scripts/test-browser-status-packed-consumer.ts",
         "test:hotkeys": "bun run scripts/check-hotkeys.ts",
         "test:hotkeys:packed": "bun run scripts/test-hotkeys-packed-consumer.ts",
+        "test:jotai": "bun run scripts/check-jotai.ts",
+        "test:jotai:packed": "bun run packages/@valdres-react/jotai/test/packed/run.ts",
         "probe:browser-media": "bun run scripts/browser-media-dispatch-probe/serve.ts",
         "verify": "bun run scripts/verify.ts",
         "changeset": "changeset",
