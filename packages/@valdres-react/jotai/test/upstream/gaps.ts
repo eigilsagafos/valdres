@@ -31,8 +31,7 @@ const MOUNT_ORDER =
     "Valdres attaches sibling dependencies in reverse read order, so their onMount order is reversed"
 // Skipped: the late get() throws inside unwrap's own promise callbacks,
 // outside the test body.
-const UNWRAP =
-    "unwrap needs INTERNAL_onInit and get() in promise callbacks"
+const UNWRAP = "unwrap needs INTERNAL_onInit and get() in promise callbacks"
 const STACK =
     "a stack overflow is cached as the atom's error, so a later store.sub does not throw it"
 
