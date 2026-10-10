@@ -148,7 +148,6 @@ describe("v1 build output", () => {
 
         expect(files).toContain("index.js")
         expect(files).toContain("inspect.js")
-        expect(files).toContain("equality.js")
         expect(files).toContain("adapter-internals/v1.js")
         expect(
             defaultJavaScript.filter(code =>
@@ -161,11 +160,10 @@ describe("v1 build output", () => {
         expect(JavaScript.join("\n")).not.toContain("process.env")
     })
 
-    test("loads root, inspect, equality, and adapter from the built split graph with no ambient writes", async () => {
+    test("loads root, inspect, and adapter from the built split graph with no ambient writes", async () => {
         const dist = await builtDist()
         const rootUrl = pathToFileURL(join(dist, "index.js")).href
         const inspectUrl = pathToFileURL(join(dist, "inspect.js")).href
-        const equalityUrl = pathToFileURL(join(dist, "equality.js")).href
         const adapterUrl = pathToFileURL(
             join(dist, "adapter-internals", "v1.js"),
         ).href
@@ -173,7 +171,6 @@ describe("v1 build output", () => {
             const before = new Set(Reflect.ownKeys(globalThis))
             const root = await import(${JSON.stringify(rootUrl)})
             const inspect = await import(${JSON.stringify(inspectUrl)})
-            const equality = await import(${JSON.stringify(equalityUrl)})
             const adapter = await import(${JSON.stringify(adapterUrl)})
             const count = root.atom(1)
             const target = root.store()
@@ -187,7 +184,7 @@ describe("v1 build output", () => {
                 .map(String)
             console.log(JSON.stringify({
                 addedGlobals,
-                equal: equality.deepEqual(
+                equal: root.deepEqual(
                     { id: 1, nested: [2, 3] },
                     { id: 1, nested: [2, 3] },
                 ),
@@ -195,7 +192,6 @@ describe("v1 build output", () => {
                 inspectedValue: adapter.read(inspected.store, count),
                 root: Object.keys(root).sort(),
                 inspect: Object.keys(inspect).sort(),
-                equality: Object.keys(equality).sort(),
                 adapter: Object.keys(adapter).sort(),
             }))
         `
@@ -238,6 +234,7 @@ describe("v1 build output", () => {
                 "UndefinedCollectionValueError",
                 "atom",
                 "collection",
+                "deepEqual",
                 "externalAtom",
                 "family",
                 "presence",
@@ -245,7 +242,6 @@ describe("v1 build output", () => {
                 "store",
             ],
             inspect: ["createInspectableStore"],
-            equality: ["deepEqual"],
             adapter: [
                 "assertStore",
                 "read",
@@ -293,7 +289,6 @@ describe("v1 build output", () => {
                 exports: {
                     ".": "./dist/index.js",
                     "./inspect": "./dist/inspect.js",
-                    "./equality": "./dist/equality.js",
                     "./adapter-internals/v1": "./dist/adapter-internals/v1.js",
                 },
             }),
@@ -337,9 +332,8 @@ describe("v1 build output", () => {
                 "--input-type=module",
                 "--eval",
                 `
-                    import { atom, family, selector, store } from "valdres-packed-probe"
+                    import { atom, deepEqual, family, selector, store } from "valdres-packed-probe"
                     import { createInspectableStore } from "valdres-packed-probe/inspect"
-                    import { deepEqual } from "valdres-packed-probe/equality"
                     import {
                         assertStore,
                         read,
@@ -378,6 +372,78 @@ describe("v1 build output", () => {
             hydration: 4,
             inspected: 6,
         })
+    })
+
+    test("splits deepEqual out of the root chunk so unused comparators tree-shake in both graphs", async () => {
+        const { build } = await import("esbuild")
+        const dist = await builtDist()
+        const consumer = await temporaryDirectory("valdres-v1-deep-equal-")
+        const packageDirectory = join(consumer, "node_modules", "valdres")
+        await mkdir(packageDirectory, { recursive: true })
+        await cp(dist, join(packageDirectory, "dist"), { recursive: true })
+        await writeFile(
+            join(packageDirectory, "package.json"),
+            JSON.stringify({
+                name: "valdres",
+                type: "module",
+                sideEffects: false,
+                exports: {
+                    ".": {
+                        development: "./dist/development/index.js",
+                        default: "./dist/index.js",
+                    },
+                },
+            }),
+        )
+        // Strings only the comparator's implementation contains.
+        const implementationSentinels = ["unicodeSets", "native code"]
+        const retained = (code: string) =>
+            implementationSentinels.filter(sentinel => code.includes(sentinel))
+
+        for (const development of [false, true]) {
+            const graph = development ? join(dist, "development") : dist
+            expect(
+                retained(await readFile(join(graph, "index.js"), "utf8")),
+            ).toEqual([])
+
+            const bundle = async (contents: string) => {
+                const result = await build({
+                    stdin: { contents, resolveDir: consumer, loader: "js" },
+                    bundle: true,
+                    minify: true,
+                    write: false,
+                    format: "esm",
+                    conditions: development ? ["development"] : [],
+                    logLevel: "silent",
+                })
+                return result.outputFiles[0]!.text
+            }
+            for (const contents of [
+                `export { atom } from "valdres"`,
+                `export { atom, selector, store } from "valdres"`,
+                `export { family, collection, externalAtom } from "valdres"`,
+            ]) {
+                expect(retained(await bundle(contents))).toEqual([])
+            }
+
+            const used = await bundle(
+                `import { atom, deepEqual, store } from "valdres"
+                const value = atom({ id: 1 }, { equal: deepEqual })
+                const target = store()
+                const before = target.get(value)
+                target.set(value, { id: 1 })
+                console.log(JSON.stringify({ kept: target.get(value) === before }))`,
+            )
+            expect(retained(used)).toEqual(implementationSentinels)
+            const bundled = join(
+                consumer,
+                `used-${development ? "development" : "production"}.mjs`,
+            )
+            await writeFile(bundled, used)
+            const result = run(["node", bundled], consumer)
+            expect(result.exitCode, result.stderr).toBe(0)
+            expect(JSON.parse(result.stdout)).toEqual({ kept: true })
+        }
     })
 
     test("removes stale split chunks without deleting type output", async () => {

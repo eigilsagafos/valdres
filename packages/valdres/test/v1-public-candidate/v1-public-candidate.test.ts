@@ -57,6 +57,7 @@ describe("v1 public root", () => {
                 "UndefinedCollectionValueError",
                 "atom",
                 "collection",
+                "deepEqual",
                 "externalAtom",
                 "family",
                 "presence",

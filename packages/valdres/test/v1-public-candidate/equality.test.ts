@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { runInNewContext } from "node:vm"
-import * as equalityApi from "../../src/equality"
-import { deepEqual } from "../../src/equality"
-import { atom, selector, store, type EqualFunc } from "../../src/index"
+import * as equalityModule from "../../src/equality"
+import {
+    atom,
+    deepEqual,
+    selector,
+    store,
+    type EqualFunc,
+} from "../../src/index"
 
 const thrownBy = (operation: () => unknown): unknown => {
     try {
@@ -14,8 +19,9 @@ const thrownBy = (operation: () => unknown): unknown => {
 }
 
 describe("v1 opt-in structural equality", () => {
-    test("exports exactly one two-argument EqualFunc-compatible comparator", () => {
-        expect(Object.keys(equalityApi)).toEqual(["deepEqual"])
+    test("the root re-exports exactly one two-argument EqualFunc-compatible comparator", () => {
+        expect(Object.keys(equalityModule)).toEqual(["deepEqual"])
+        expect(deepEqual).toBe(equalityModule.deepEqual)
         expect(deepEqual.length).toBe(2)
 
         const compareNumbers: EqualFunc<number> = deepEqual

@@ -1889,7 +1889,8 @@ describe("v1 persistent committed StoreTree host", () => {
         const exportedSources = collectStrings(manifest.exports)
             .filter(path => path.endsWith(".ts") || path.endsWith(".tsx"))
             .map(path => resolve(packageRoot, path))
-        expect(exportedSources).toHaveLength(5)
+        expect(exportedSources).toHaveLength(4)
+        expect(Object.keys(manifest.exports)).not.toContain("./equality")
 
         const runtimeEntrypoints = [".", "./adapter-internals/v1"].flatMap(
             subpath =>
@@ -1900,12 +1901,6 @@ describe("v1 persistent committed StoreTree host", () => {
                     .map(path => resolve(packageRoot, path)),
         )
         expect(runtimeEntrypoints).toHaveLength(2)
-        const equalityEntrypoints = collectStrings(
-            manifest.exports["./equality"],
-        )
-            .filter(path => path.endsWith(".ts") || path.endsWith(".tsx"))
-            .map(path => resolve(packageRoot, path))
-        expect(equalityEntrypoints).toHaveLength(1)
         const inspectEntrypoints = collectStrings(manifest.exports["./inspect"])
             .filter(path => path.endsWith(".ts") || path.endsWith(".tsx"))
             .map(path => resolve(packageRoot, path))
@@ -1916,9 +1911,19 @@ describe("v1 persistent committed StoreTree host", () => {
             packageRoot,
         )
         expect(reachable.size).toBeGreaterThan(10)
+        // The root re-exports deepEqual from a leaf module: it imports nothing,
+        // so it can neither join an import cycle nor pull in runtime state.
         expect(
             [...reachable].map(path => relative(packageRoot, path)),
-        ).not.toContain("src/equality.ts")
+        ).toContain("src/equality.ts")
+        expect(
+            [
+                ...collectRuntimeSourceGraph(
+                    [join(packageRoot, "src/equality.ts")],
+                    packageRoot,
+                ),
+            ].map(path => relative(packageRoot, path)),
+        ).toEqual(["src/equality.ts"])
         const v1Runtime = [...reachable]
             .filter(path => path.includes("/src/v1-internal/"))
             .map(path => relative(packageRoot, path))
@@ -1939,14 +1944,6 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(
             [...reachable].filter(path => path.includes("/src/lib/")),
         ).toEqual([])
-
-        const equalityReachable = collectRuntimeSourceGraph(
-            equalityEntrypoints,
-            packageRoot,
-        )
-        expect(
-            [...equalityReachable].map(path => relative(packageRoot, path)),
-        ).toEqual(["src/equality.ts"])
 
         const inspectReachable = collectRuntimeSourceGraph(
             inspectEntrypoints,

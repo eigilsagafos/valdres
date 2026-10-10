@@ -6,8 +6,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
-import { atom, selector, store } from "../../packages/valdres/src/index.ts"
-import { deepEqual } from "../../packages/valdres/src/equality.ts"
+import { atom, deepEqual, selector, store } from "../../packages/valdres/src/index.ts"
 
 const counter = () => {
     let calls = 0
@@ -70,7 +69,7 @@ describe("equality", () => {
         expect(selectorSubscriber.calls).toBe(1)
     })
 
-    test("deepEqual from valdres/equality keeps the previous reference and skips the notification", () => {
+    test("deepEqual from valdres keeps the previous reference and skips the notification", () => {
         const app = store()
         const documentAtom = atom({ blocks: [] as number[] }, { equal: deepEqual })
         const visible = selector(get => get(documentAtom).blocks.filter(Boolean), { equal: deepEqual })
@@ -85,10 +84,12 @@ describe("equality", () => {
         expect(app.get(visible)).toBe(beforeVisible)
     })
 
-    test("valdres/equality stays a separate entry", async () => {
+    test("the root exports deepEqual and no valdres/equality entry remains", async () => {
         const root = await import("../../packages/valdres/src/index.ts")
-        expect("deepEqual" in root).toBe(false)
+        expect(root.deepEqual).toBe(deepEqual)
         expect("deepFreeze" in root).toBe(false)
+        const manifest = await Bun.file(join(import.meta.dir, "../../packages/valdres/package.json")).json()
+        expect(Object.keys(manifest.exports)).not.toContain("./equality")
     })
 })
 
