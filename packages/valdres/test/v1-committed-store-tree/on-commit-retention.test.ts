@@ -1,12 +1,21 @@
-import { expect, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
 import { store, type Transaction } from "../../src/index"
-import { LeakDetector } from "../../../test/src/LeakDetector"
+import { finishRetentionObservation, LeakDetector, retentionPhase } from "../../../test/src/LeakDetector"
+// This module-level hook closes over no test frame. Earlier synchronous markers
+// remain useful even if a timeout prevents this final summary from running.
+afterEach(finishRetentionObservation)
 const tick = () => new Promise(r => setTimeout(r, 5))
-const collect = async (detector: LeakDetector) => {
-    for (let n = 0; n < 3; n++) if (!(await detector.isLeaking())) return true
+const collect = async (detector: LeakDetector, label?: string) => {
+    for (let n = 0; n < 3; n++) {
+        retentionPhase(label, "collection-await-enter", n)
+        const leaking = await detector.isLeaking(undefined, label)
+        retentionPhase(label, leaking ? "collection-await-return-live" : "collection-await-return-collected", n)
+        if (!leaking) return true
+    }
     return false
 }
 test("retained closed cursors do not retain aborted or drained callbacks", async () => {
+    retentionPhase("test", `start platform=${process.platform} arch=${process.arch} bun=${Bun.version}`)
     const s = store(),
         cursors: Transaction[] = []
     const register = (abort: boolean) => {
@@ -15,7 +24,10 @@ test("retained closed cursors do not retain aborted or drained callbacks", async
         try {
             s.txn(tx => {
                 cursors.push(tx)
-                tx.onCommit(() => payload.n)
+                tx.onCommit(() => {
+                    retentionPhase(abort ? "aborted" : "committed", "callback-start")
+                    return payload.n
+                })
                 if (abort) throw new Error("abort")
             })
         } catch {}
@@ -23,11 +35,14 @@ test("retained closed cursors do not retain aborted or drained callbacks", async
     }
     const aborted = register(true),
         committed = register(false)
+    retentionPhase("test", "registrations-complete-wait-enter")
     await tick()
-    expect(await collect(aborted)).toBe(true)
-    expect(await collect(committed)).toBe(true)
+    retentionPhase("test", "wait-return-collection-enter")
+    expect(await collect(aborted, "aborted")).toBe(true)
+    expect(await collect(committed, "committed")).toBe(true)
     expect(cursors).toHaveLength(2)
     s.dispose()
+    retentionPhase("test", "complete")
 })
 test("disposal drops pending captures even when scheduler delivery is held", async () => {
     await tick()

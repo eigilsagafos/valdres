@@ -1,5 +1,20 @@
 import { generateHeapSnapshot } from "bun"
 import { releaseWeakRefs } from "bun:jsc"
+import { writeSync } from "node:fs"
+
+// Temporary, opt-in diagnostic: retain only a string, never a target, detector
+// or callback. Synchronous stderr keeps the last phase visible on test timeout.
+let lastRetentionPhase: string | undefined
+export function retentionPhase(label: string | undefined, phase: string, round = -1): void {
+    if (label === undefined) return
+    lastRetentionPhase = `[onCommit-retention] t=${performance.now().toFixed(3)} label=${label} phase=${phase} round=${round}`
+    writeSync(2, `${lastRetentionPhase}\n`)
+}
+export function finishRetentionObservation(): void {
+    if (lastRetentionPhase === undefined) return
+    writeSync(2, `[onCommit-retention] test-end t=${performance.now().toFixed(3)} last=${lastRetentionPhase}\n`)
+    lastRetentionPhase = undefined
+}
 
 /**
  * Bun-native memory leak detector using WeakRef.
@@ -33,21 +48,39 @@ export class LeakDetector {
         this._ref = new WeakRef(value)
     }
 
-    async isLeaking(maxRounds = 50): Promise<boolean> {
+    async isLeaking(maxRounds = 50, diagnosticLabel?: string): Promise<boolean> {
         // Start from a fresh macrotask so the caller that just dropped its last
         // strong reference has unwound before JSC conservatively scans stack
         // and register spill slots. Without this first gap, full-suite pressure
         // can make a dead object survive every otherwise-identical GC round.
+        retentionPhase(diagnosticLabel, "initial-sleep-enter")
         await Bun.sleep(0)
+        retentionPhase(diagnosticLabel, "initial-sleep-return")
         for (let round = 0; round < maxRounds; round++) {
+            retentionPhase(diagnosticLabel, "release-weak-refs-1-enter", round)
             releaseWeakRefs()
+            retentionPhase(diagnosticLabel, "gc-1-enter", round)
             Bun.gc(true)
-            if (round > 0) generateHeapSnapshot()
+            retentionPhase(diagnosticLabel, "gc-1-return", round)
+            if (round > 0) {
+                retentionPhase(diagnosticLabel, "snapshot-enter", round)
+                generateHeapSnapshot()
+                retentionPhase(diagnosticLabel, "snapshot-return", round)
+            }
+            retentionPhase(diagnosticLabel, "release-weak-refs-2-enter", round)
             releaseWeakRefs()
+            retentionPhase(diagnosticLabel, "gc-2-enter", round)
             Bun.gc(true)
-            if (this._ref.deref() === undefined) return false
+            retentionPhase(diagnosticLabel, "gc-2-return", round)
+            if (this._ref.deref() === undefined) {
+                retentionPhase(diagnosticLabel, "collected", round)
+                return false
+            }
+            retentionPhase(diagnosticLabel, "live-round-sleep-enter", round)
             await Bun.sleep(0)
+            retentionPhase(diagnosticLabel, "live-round-sleep-return", round)
         }
+        retentionPhase(diagnosticLabel, "rounds-exhausted")
         return this._ref.deref() !== undefined
     }
 }
