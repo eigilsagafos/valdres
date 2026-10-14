@@ -1,12 +1,7 @@
 name: Retention capture negative control (expected failure)
 
 on:
-    pull_request:
-        branches: [main]
-        paths:
-            - packages/test/src/retentionCapture.ts
-            - packages/test/diagnostics/**
-            - .github/workflows/retention-capture-control.yml
+    workflow_dispatch:
 
 permissions:
     contents: read

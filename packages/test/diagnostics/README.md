@@ -68,8 +68,10 @@ through the callback's lexical environment to the marked payload. The control
 also accepts `retained-present`, `retained-absent`, `premature-present` and
 `premature-absent`. These copied fixtures live outside normal suite selection,
 are saved with their exact patch and command, and are removed after execution.
-The separate PR-only negative-control workflow intentionally has a failing job
-and uploads its artifacts anyway. It cannot publish and must not be merged.
+The separate manual-only negative-control workflow intentionally has a failing
+job and uploads its artifacts anyway. It cannot publish and does not run during
+normal PR or main CI. Its original native failure and saved retaining path are
+preserved in [the diagnostic run](https://github.com/eigilsagafos/valdres/actions/runs/38579814544).
 
 If a normal failure's graphs still cannot establish a retaining path, the next
 proposal is one bounded fresh-process comparison: the affected test alone
