@@ -76,18 +76,17 @@ A family is only a callable identity cache. It has no membership or enumeration 
 
 ## Opt-in structural equality
 
-`Object.is` remains the default comparator. Import `deepEqual` from the separate equality entry only where structurally equal replacements should retain the previous reference and stop notifications or downstream propagation:
+`Object.is` remains the default comparator. Pass `deepEqual` only where structurally equal replacements should retain the previous reference and stop notifications or downstream propagation:
 
 ```ts
-import { atom } from "valdres"
-import { deepEqual } from "valdres/equality"
+import { atom, deepEqual } from "valdres"
 
 const documentAtom = atom({ blocks: [] }, { equal: deepEqual })
 ```
 
 `deepEqual` recursively compares supported values using SameValueZero primitive leaves, own enumerable string and symbol properties, and native identity for Map keys and Set members. Non-binary objects require the same prototype. Matching binary brands compare visible bytes across realms and ignore attached properties. Functions, Promises, Errors, URLs, weak collections, other opaque platform objects, and DOM nodes compare only by identity. Cyclic structures are unsupported. Reached getters, Proxy traps, `valueOf`, and `toString` hooks can run and throw.
 
-Structural comparison walks the compared values, so use it deliberately on allocation-heavy results where pruning redundant updates outweighs that work. The separate `valdres/equality` entry keeps it out of ordinary root bundles.
+Structural comparison walks the compared values, so use it deliberately on allocation-heavy results where pruning redundant updates outweighs that work. Bundles that never import `deepEqual` drop it.
 
 ## Inspect a Store
 

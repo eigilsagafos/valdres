@@ -40,8 +40,10 @@ test/
   exports. The re-export-only `index.ts` barrel is the intentional exception to
   the one-export guard.
 - `lib/` is internal; `utils/` is public. Put helpers in the right one.
-- `packages/valdres/src/equality.ts` is the opt-in `valdres/equality` entry and
-  intentionally stays outside the root barrel and ordinary root bundles.
+- `packages/valdres/src/equality.ts` holds `deepEqual`, re-exported from the
+  root. It is a build entrypoint but not a package export: that keeps it in its
+  own split chunk, so bundles that never import `deepEqual` drop it. Keep it a
+  leaf module with no imports.
 - `packages/valdres/src/inspect.ts` is the opt-in `valdres/inspect` entry. It
   constructs an instrumented Store inside the singleton public v1 domain; never
   import its recorder from the root entry or add observation state to an

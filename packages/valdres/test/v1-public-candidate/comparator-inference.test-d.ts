@@ -1,6 +1,6 @@
-import { deepEqual } from "../../src/equality"
 import {
     atom,
+    deepEqual,
     selector,
     type Atom,
     type AtomOptions,

@@ -5,6 +5,10 @@ export const buildOptions = {
     entrypoints: [
         "./src/index.ts",
         "./src/inspect.ts",
+        // Not a package export: the root re-exports deepEqual. Keeping it an
+        // entry splits it into its own chunk, which side-effect-free consumer
+        // bundles drop when deepEqual is unused. Inlined into the root graph,
+        // its module-level intrinsic lookups would survive tree-shaking.
         "./src/equality.ts",
         "./src/query.ts",
         "./src/adapter-internals/v1.ts",

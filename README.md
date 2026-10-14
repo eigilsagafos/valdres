@@ -151,13 +151,12 @@ reset reconnects inheritance.
 
 ## Opt-in structural equality
 
-`Object.is` remains the default comparator. Import `deepEqual` from the separate
-equality entry only where structurally equal replacements should retain the
-previous reference and stop notifications or downstream propagation:
+`Object.is` remains the default comparator. Pass `deepEqual` only where
+structurally equal replacements should retain the previous reference and stop
+notifications or downstream propagation:
 
 ```ts
-import { atom } from "valdres"
-import { deepEqual } from "valdres/equality"
+import { atom, deepEqual } from "valdres"
 
 const documentAtom = atom({ blocks: [] }, { equal: deepEqual })
 ```
@@ -173,7 +172,7 @@ run and throw.
 
 Structural comparison walks the compared values, so use it deliberately on
 allocation-heavy results where pruning redundant updates outweighs that work.
-The separate `valdres/equality` entry keeps it out of ordinary root bundles.
+Bundles that never import `deepEqual` drop it.
 
 ## Inspect a Store
 

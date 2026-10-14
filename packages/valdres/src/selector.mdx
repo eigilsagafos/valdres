@@ -66,11 +66,11 @@ returns an atom value unchanged shares that atom's reference. Do not mutate a
 selector result or the values its getter reads; return a new value instead.
 
 With the default `Object.is` equality, a recomputation that returns a new but
-structurally equal object notifies subscribers. Pass `deepEqual` from
-`valdres/equality` as `equal` to keep the previous result instead:
+structurally equal object notifies subscribers. Pass `deepEqual` as `equal`
+to keep the previous result instead:
 
 ```ts
-import { deepEqual } from "valdres/equality"
+import { deepEqual, selector } from "valdres"
 
 const visibleTodosSelector = selector(
     get => get(todosAtom).filter(todo => !todo.done),
