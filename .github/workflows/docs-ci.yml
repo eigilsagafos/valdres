@@ -9,6 +9,8 @@ jobs:
         timeout-minutes: 12
         steps:
             - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: 1.4.0
@@ -22,8 +24,8 @@ jobs:
                   bun build packages/valdres/src/index.ts --target=node --sourcemap=external --outdir=packages/test/diagnostics/closed-cursor-repro
                   mv packages/test/diagnostics/closed-cursor-repro/index.js packages/test/diagnostics/closed-cursor-repro/valdres.mjs
                   sha256sum packages/test/diagnostics/closed-cursor-repro/valdres.mjs
-            - name: Fixed 17 fresh processes (child failures are preserved evidence)
-              run: python3 packages/test/diagnostics/closed-cursor-repro/run.py /tmp/closed-cursor-reproduction
+            - name: Fixed 11 source-layout processes (child failures are preserved evidence)
+              run: python3 packages/test/diagnostics/closed-cursor-repro/run-source.py /tmp/closed-cursor-reproduction
             - name: Preserve exact source and built comparison artifact
               if: always()
               run: |
