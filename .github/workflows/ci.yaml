@@ -399,6 +399,39 @@ jobs:
               # split entries, dispatch and cancellation, declarations, peers.
               run: bun run test:hotkeys:packed
 
+    jotai:
+        name: Jotai compatibility package
+        # `@valdres-react/jotai` is a bounded, partial Jotai 3.0.1
+        # compatibility layer and is NOT release-eligible, so this job is
+        # deliberately absent from publish's needs. It keeps the candidate's
+        # upstream matrix (against the adapter and the pinned real Jotai),
+        # differential suites, declarations and installed-tarball consumers
+        # from regressing.
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.0
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Jotai suites and typechecks
+              # Both tsconfigs, the adapter suite, and the upstream suite
+              # against this package and against jotai@3.0.1.
+              run: bun run test:jotai
+            - name: Validate packed Jotai consumers
+              # Builds and npm-packs valdres and the package with the real
+              # prepack, installs them with React 18 and 19, and runs vanilla,
+              # SSR and DOM fixtures on Node and Bun, the development export
+              # condition, and the packed declarations under tsc.
+              run: bun run test:jotai:packed
+
     valdres-package:
         name: Valdres published-package gate
         runs-on: ubuntu-22.04
