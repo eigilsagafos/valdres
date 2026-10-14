@@ -60,10 +60,26 @@ not pass, with its reason.
 | **Total**                                                            |   364 |        364 |            **305** |         **47** |  **12** |
 
 Every known failure and skipped test is listed in `test/upstream/gaps.ts`. A
-known failure runs and must still fail: if one starts passing, or a listed test
-no longer exists, the run fails. A skipped test is listed too but not run,
-because its failure escapes the test body (a rejection thrown inside the
-library's own promise callbacks).
+known failure runs and must fail with its **documented outcome**, not just
+fail:
+
+- 34 throw (directly or in their cause chain) the documented error code, for
+  example `VALDRES_JOTAI_LATE_GET`;
+- 8 late-`get`/`signal` tests whose visible symptom is an assertion or a
+  missing element must match that exact assertion (matcher, expected and
+  received values) or missing text and rendered DOM, **and** the documented
+  code must have been raised during the test (as a handled rejection or from a
+  scheduled callback);
+- 5 core-policy divergences (eager recompute, sibling order, stack overflow)
+  must match their exact assertion.
+
+An unexpected pass, any other failure, a listed test that no longer exists, or
+a known failure without an expected outcome fails the run
+(`test/upstream/gapCheck.ts`, controls in `test/adapter/gap-harness.test.ts`).
+Replaying the review's mutation (the late-`get` error replaced by an unrelated
+`TypeError` with the same message) fails all 26 late-`get` known failures. A
+skipped test is listed too but not run, because its failure escapes the test
+body (a rejection thrown inside the library's own promise callbacks).
 
 By reason (known failures + skipped = 47 + 12 = 59 listed tests):
 
@@ -85,12 +101,14 @@ By reason (known failures + skipped = 47 + 12 = 59 listed tests):
   `atomWithDefault` (sync), `atomWithLazy`, `atomWithRefresh`, `atomWithStorage`,
   `atomWithObservable` (rxjs and wonka), `freezeAtom`, `RESET`, and
   jotai-family's `atomFamily` and `atomTree`.
-- **Upstream tests pass, with known identity differences:** `selectAtom` and
+- **Upstream tests pass, with known differences:** `selectAtom` and
   `splitAtom`. Their previous-value self-read is supported through the store's
-  previous-result cache (see [How it maps onto Valdres](#how-it-maps-onto-valdres)),
-  but values read inside a write after a `set`, eager recomputation and a
-  `set(self)` to the stored value still differ from Jotai (tested in
-  `test/adapter/previous.test.ts`). They are not claimed fully compatible.
+  previous-result cache (see [How it maps onto Valdres](#how-it-maps-onto-valdres)).
+  For these two utils the remaining differences show up as object identity
+  (a slice read inside a write after a `set`, or recomputed eagerly between
+  reads, may be a new equal object). They are not claimed fully compatible. For
+  other self-reading atoms the same differences change **values**; see
+  [Previous computed values](#previous-computed-values).
 - **Partially:** `atomWithDefault` with an async default (it reads after
   `await`).
 - **Not supported:** `unwrap`.
@@ -139,7 +157,8 @@ The package peers on `valdres` `^1.0.0-beta.44` and `react`
   (value or error) of atoms that read themselves, and returns it while the
   atom's stored value (init or last `set`), which stays a Valdres dependency, is
   unchanged since. Reads inside a write's discarded staged transaction do not
-  record. See [Review notes](#review-notes).
+  record. See [Previous computed values](#previous-computed-values) and
+  [Review notes](#review-notes).
 - **Listeners** run in a Jotai-style flush after the Valdres operation; see
   [Listener and lifecycle flush](#listener-and-lifecycle-flush).
 - **onMount** uses one constant `externalAtom` per writable config with
@@ -176,7 +195,17 @@ Each mounted Jotai atom has one plain Valdres subscription,
 the commit, where Valdres forbids writes and dormant external reads; it does
 neither and only records the mounted atom as changed. A `BufferFrame` also
 records every atom a write's `set` changed, even when a later `set` restored
-the committed value, because Valdres does not notify for a net-zero commit.
+the committed value, because Valdres does not notify for a net-zero commit, so
+that atom's own listeners run as in Jotai.
+
+**Difference: restored writes and derived atoms.** Valdres commits only the
+final value. When a write sets an atom and restores it, no mounted derived atom
+recomputes. Jotai recomputes every mounted dependent of a changed atom once at
+the end of the write, so a derived atom that returns a new object
+(`get => ({ value: get(a) })`) gets a new value and notifies its listeners
+there, while here it keeps its previous object and does not notify. A derived
+atom that returns an equal primitive notifies in neither. Tested on both sides
+in `test/adapter/differential.test.ts`.
 
 Every store method except `get` (`set`, `sub`, the returned unsubscribe, and an
 async write's `set` after its `await`) runs inside a per-store operation frame.
@@ -250,12 +279,12 @@ be equal unless a difference is asserted on both sides.
   unmounting while suspended and remounting shows the resolved value; Suspense
   stops observing the store once the promise settles; a replaced promise is
   collectable.
-- `previous.test.ts` (12): `selectAtom` keeps its previous slice per store,
+- `previous.test.ts` (13): `selectAtom` keeps its previous slice per store,
   never across stores; a self-reading atom keeps identity across equal
   updates; the previous error is rethrown to the self-read (all equal to
   Jotai). Asserted differences: a value read inside a write after a `set`, eager
-  recomputation advancing the previous value, a `set(self)` to the stored
-  value. Cache ownership: a write that throws leaves only installed results; a
+  recomputation advancing the previous value (an unsubscribed counter reads 4
+  where Jotai reads 2), a `set(self)` to the stored value. Cache ownership: a write that throws leaves only installed results; a
   staged read inside a write is not retained; caches are per store; atoms that
   never read themselves are not cached; cached values are released with their
   store or atom.
@@ -291,8 +320,9 @@ assessment found no confirmed core defect.
 | D4 derived values read inside a write after a set |              — |       — | Transaction reads re-evaluate selectors (parked transaction-read work); tested in the adapter suites   |
 | **Total**                                         |         **47** |  **12** |                                                                                                        |
 
-G5 (previous-value self-read) is closed by the previous-result cache; its
-remaining identity differences are executable tests, not listed upstream gaps.
+G5 (previous-value self-read) is closed for the tested upstream cases by the
+previous-result cache; its remaining differences (value-level for general
+self-reading atoms) are executable adapter tests, not listed upstream gaps.
 
 **Not changed, by decision:** a `store.set` inside a read whose write function
 only reads could reuse the evaluation's `get`, but those reads would become
@@ -356,6 +386,49 @@ evaluation outside a discarded transaction owned an `AbortController`.
   overflowing.
 - `toString()` includes `debugLabel` in production builds too.
 
+## Previous computed values
+
+The previous-result cache reproduces Jotai's self-read where the stored value
+and the store's installed outcome agree with Jotai's single value slot. Three
+differences remain. For `selectAtom` and `splitAtom` they are identity-only (a
+new but equal slice); for a general self-reading atom they change values:
+
+- **Eager recomputation.** Valdres recomputes a previously read, unsubscribed
+  selector on every dependency write; Jotai recomputes on the next read. Each
+  extra recomputation advances the previous value. A counter
+  (`get => (get(source), get(count) + 1)`, `init` 0) read once, then after
+  three writes to `source`, reads **4** here and **2** in Jotai.
+- **Reads inside a write after a `set`.** The staged read is discarded; the
+  store installs its own recomputation, so the value the write saw and the one
+  the store holds are separate computations (equal for pure reads, not the
+  same object), and the previous value is not advanced by the staged read.
+- **`set(self)` to the stored value.** Setting a self-reading atom to the value
+  its stored slot already has is not a change for Valdres. With `init` "empty"
+  and a read returning `"kept " + previous` once a previous value exists, a
+  `set(self, "empty")` after one recomputation reads **"kept fresh 1"** here
+  and **"empty"** in Jotai.
+
+All three are asserted against Jotai in `test/adapter/previous.test.ts`.
+
+## Follow-ups before any publication
+
+Recorded, not resolved:
+
+- **Suspense watchers for promises that never settle.** A component suspended
+  on an atom's promise registers a store watcher (`runtime.ts` `watch`,
+  `continuablePromise.ts`) that is removed when the promise settles or the atom
+  moves to a non-promise value. If the promise never settles and the component
+  unmounts, the watcher stays registered for the store's lifetime and costs one
+  `store.get` of that atom per store operation. Jotai's equivalent abort
+  handler is also kept until the promise settles; the cost profile here
+  differs (work per operation, not per change). Assess before publication.
+- **Mount registration before subscription.** `mount()` records the atom in
+  `mountedAtoms` before calling Valdres `sub`. If `sub` threw, the stale entry
+  would make later subscriptions skip subscribing. No path that throws there
+  has been found (selector capability errors are cached, not thrown); the
+  ordering should be made failure-safe or proven unreachable before
+  publication.
+
 ## Decisions recorded
 
 - Previous computed values: integrated (adapter-only), differences documented.
@@ -406,7 +479,7 @@ The three mechanisms that carry the most risk, with what to check.
   hydration, which this package does not use).
 - `readCommitted` runs inside an operation frame so `get`-triggered evaluations
   are attributed to their store.
-- Evidence: `previous.test.ts` (12) and the upstream `selectAtom`/`splitAtom`
+- Evidence: `previous.test.ts` (13) and the upstream `selectAtom`/`splitAtom`
   files.
 
 ## Running

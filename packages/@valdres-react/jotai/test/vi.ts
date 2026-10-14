@@ -19,6 +19,7 @@ import {
 } from "bun:test"
 import { appendFileSync } from "node:fs"
 import { IMPL } from "./impl"
+import { expectKnownFailure } from "./upstream/gapCheck"
 import { gaps } from "./upstream/gaps"
 
 export { afterAll, afterEach, beforeAll, beforeEach, expect }
@@ -105,28 +106,25 @@ const register = (
     if (gap === undefined || IMPL === "jotai") {
         return base(name, fn as never, options as never)
     }
-    if (gap.kind === "not-applicable" || gap.skip) {
+    if (gap.skip) {
         return bunTest.skip(`${name} [${gap.kind}: ${gap.reason}]`, () => {})
     }
     // Inverted by hand: bun's `test.failing` still enforces the upstream
-    // test's `expect.assertions(n)` count after inverting a thrown failure.
+    // test's `expect.assertions(n)` count after inverting a thrown failure,
+    // and accepts any failure; a known gap must fail in its documented way.
     const assertions = expect.assertions
+    const expected = gap.expected
+    if (expected === undefined) {
+        throw new Error(`Known gap "${key}" has no expected outcome in gaps.ts`)
+    }
     return bunTest(
         `${name} [${gap.kind}: ${gap.reason}]`,
         async () => {
             expect.assertions = () => {}
-            let failure: unknown
             try {
-                await (fn as () => unknown)()
-            } catch (error) {
-                failure = error ?? new Error("falsy throw")
+                await expectKnownFailure(key, expected, fn as () => unknown)
             } finally {
                 expect.assertions = assertions
-            }
-            if (failure === undefined) {
-                throw new Error(
-                    `Known gap now passes against the adapter: remove "${key}" from test/upstream/gaps.ts`,
-                )
             }
         },
         options as never,

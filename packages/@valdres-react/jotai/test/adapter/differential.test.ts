@@ -477,6 +477,48 @@ describe("promises as values", () => {
 })
 
 describe("documented differences", () => {
+    test("a write that sets and restores an atom: Jotai recomputes and notifies mounted derived atoms, here only the atom is notified", () => {
+        const scenario = ({ atom, createStore }: Impl) => {
+            const store = createStore()
+            const a = atom(0)
+            let reads = 0
+            const fresh = atom(get => (reads++, { value: get(a) }))
+            const zero = atom(get => get(a) * 0)
+            const log: unknown[] = []
+            store.sub(fresh, () => log.push("fresh notified"))
+            store.sub(zero, () => log.push("zero notified"))
+            store.sub(a, () => log.push("a notified"))
+            const before = store.get(fresh)
+            const readsBefore = reads
+            store.set(
+                atom(null, (_get, set) => {
+                    set(a, 1)
+                    set(a, 0)
+                }),
+            )
+            log.push(`fresh recomputed ${reads - readsBefore}x`)
+            log.push(`fresh same object: ${store.get(fresh) === before}`)
+            return log
+        }
+        // Jotai recomputes every mounted dependent of a changed atom once at
+        // the end of the write; a derived atom returning a new object then
+        // changes and notifies even though its input was restored.
+        expect(scenario(impls.jotai)).toEqual([
+            "a notified",
+            "fresh notified",
+            "fresh recomputed 1x",
+            "fresh same object: false",
+        ])
+        // Valdres commits only the final value, which equals the committed
+        // one, so no derived atom recomputes or notifies; the adapter
+        // notifies the restored atom's own listeners as Jotai does.
+        expect(scenario(impls.valdres)).toEqual([
+            "a notified",
+            "fresh recomputed 0x",
+            "fresh same object: true",
+        ])
+    })
+
     test("a derived object read inside a write is recomputed for the store after a set", () => {
         for (const [impl, sameIdentity] of [
             [impls.jotai, true],

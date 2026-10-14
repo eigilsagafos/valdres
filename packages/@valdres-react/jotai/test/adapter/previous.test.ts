@@ -100,6 +100,25 @@ describe("semantics", () => {
 })
 
 describe("documented differences", () => {
+    test("an unsubscribed self-reading counter counts eager recomputations, so values differ", () => {
+        const [jotai, valdres] = run(impl => {
+            const store = impl.createStore()
+            const source = impl.atom(0)
+            const count: any = impl.atom(get => {
+                get(source)
+                return (get(count) as number) + 1
+            })
+            count.init = 0
+            store.get(count)
+            for (let i = 1; i <= 3; i++) store.set(source, i)
+            return [store.get(count)]
+        })
+        // Jotai recomputes on the next read: 2 evaluations. Valdres recomputes
+        // the warm, unsubscribed selector on every write: 4.
+        expect(jotai).toEqual([2])
+        expect(valdres).toEqual([4])
+    })
+
     test("a value read inside a write after a set is not installed (speculative)", () => {
         const [jotai, valdres] = run(impl => {
             const store = impl.createStore()

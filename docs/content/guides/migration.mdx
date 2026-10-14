@@ -69,9 +69,12 @@ test suite and side-by-side tests.
   functions**, and **`jotai/react/utils`** hooks.
 
 **Different from Jotai:** derived atoms that were read once recompute when
-their dependencies change even without subscribers; `selectAtom` and
-`splitAtom` pass Jotai's tests but keep some identity differences. Most other
-`jotai/utils` helpers and `jotai-family` work with this package's store.
+their dependencies change even without subscribers, which also changes the
+values of atoms that read their own previous value; a write that sets an atom
+and restores it does not recompute or notify mounted derived atoms; and
+`selectAtom` and `splitAtom` pass Jotai's tests but can return new, equal
+objects where Jotai keeps the previous one. Most other `jotai/utils` helpers
+and `jotai-family` work with this package's store.
 
 The [compatibility notes](https://github.com/eigilsagafos/valdres/blob/main/packages/@valdres-react/jotai/COMPATIBILITY.md) list every difference and how each was tested.
 
