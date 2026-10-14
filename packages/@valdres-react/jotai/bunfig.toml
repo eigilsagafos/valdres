@@ -1,2 +1,5 @@
 [test]
 preload = "./test/setup/happyDom.ts"
+# The adapted upstream suite runs one file per process through
+# test/upstream/run.ts (Bun's fake timers leak across files in one process).
+root = "./test/adapter"
