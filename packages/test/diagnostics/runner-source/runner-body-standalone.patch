@@ -1,0 +1,21 @@
+--- closed-cursors.test.ts
++++ runner-body-standalone.ts
+@@ -1,4 +1,4 @@
+-import { afterAll, expect, test } from "bun:test"
++import { afterAll, expect, test } from "../../../test/diagnostics/runner-source/standalone"
+ import { store, type Transaction } from "../../src/index"
+ import { LeakDetector, retentionPhase } from "../../../test/src/LeakDetector"
+ import { flushRetentionCapture } from "../../../test/src/retentionCapture"
+@@ -23,11 +23,8 @@
+         try {
+             s.txn(tx => {
+                 cursors.push(tx)
+-                tx.onCommit(() => {
+-                    retentionPhase(abort ? "aborted" : "committed", "callback-start")
+-                    return payload.n
+-                })
+                 if (abort) throw new Error("abort")
++                return payload.n
+             })
+         } catch {}
+         return detector

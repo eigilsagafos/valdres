@@ -1,0 +1,35 @@
+--- closed-cursors.test.ts
++++ runner-hook-test-retained.test.ts
+@@ -3,6 +3,15 @@
+ import { LeakDetector, retentionPhase } from "../../../test/src/LeakDetector"
+ import { flushRetentionCapture } from "../../../test/src/retentionCapture"
+ afterAll(flushRetentionCapture)
++function registerHook(s: ReturnType<typeof store>, cursors: Transaction[], abort: boolean, callback: (() => unknown) | undefined) {
++    try {
++        s.txn(tx => {
++            cursors.push(tx)
++            tx.onCommit(callback!)
++            if (abort) throw new Error("abort")
++        })
++    } finally { callback = undefined }
++}
+ const tick = () => new Promise(r => setTimeout(r, 5))
+ const collect = async (detector: LeakDetector, label?: string) => {
+     for (let n = 0; n < 3; n++) {
+@@ -21,13 +30,9 @@
+         const payload = { n: 1 }
+         const detector = new LeakDetector(payload, abort ? "aborted" : "committed")
+         try {
+-            s.txn(tx => {
+-                cursors.push(tx)
+-                tx.onCommit(() => {
+-                    retentionPhase(abort ? "aborted" : "committed", "callback-start")
+-                    return payload.n
+-                })
+-                if (abort) throw new Error("abort")
++            registerHook(s, cursors, abort, (globalThis as any).__runnerRetainedEffect = () => {
++                retentionPhase(abort ? "aborted" : "committed", "callback-start")
++                return payload.n
+             })
+         } catch {}
+         return detector

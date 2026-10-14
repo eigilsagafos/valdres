@@ -1,0 +1,17 @@
+--- closed-cursors.test.ts
++++ runner-source-standalone-retained.ts
+@@ -1,4 +1,4 @@
+-import { afterAll, expect, test } from "bun:test"
++import { afterAll, expect, test } from "../../../test/diagnostics/runner-source/standalone"
+ import { store, type Transaction } from "../../src/index"
+ import { LeakDetector, retentionPhase } from "../../../test/src/LeakDetector"
+ import { flushRetentionCapture } from "../../../test/src/retentionCapture"
+@@ -23,7 +23,7 @@
+         try {
+             s.txn(tx => {
+                 cursors.push(tx)
+-                tx.onCommit(() => {
++                tx.onCommit((globalThis as any).__runnerRetainedEffect = () => {
+                     retentionPhase(abort ? "aborted" : "committed", "callback-start")
+                     return payload.n
+                 })

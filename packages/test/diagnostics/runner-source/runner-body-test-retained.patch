@@ -1,0 +1,18 @@
+--- closed-cursors.test.ts
++++ runner-body-test-retained.test.ts
+@@ -21,13 +21,10 @@
+         const payload = { n: 1 }
+         const detector = new LeakDetector(payload, abort ? "aborted" : "committed")
+         try {
+-            s.txn(tx => {
++            s.txn((globalThis as any).__runnerRetainedBody = tx => {
+                 cursors.push(tx)
+-                tx.onCommit(() => {
+-                    retentionPhase(abort ? "aborted" : "committed", "callback-start")
+-                    return payload.n
+-                })
+                 if (abort) throw new Error("abort")
++                return payload.n
+             })
+         } catch {}
+         return detector

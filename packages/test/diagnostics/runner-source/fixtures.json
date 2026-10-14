@@ -1,0 +1,77 @@
+[
+  {
+    "name": "runner-source-test",
+    "file": "packages/valdres/test/retention/runner-source-test.test.ts",
+    "sha256": "1e04a236e453caa86150f3e248a36897b212747d90b3e84810f9704400d8e6d6"
+  },
+  {
+    "name": "runner-source-test-retained",
+    "file": "packages/valdres/test/retention/runner-source-test-retained.test.ts",
+    "sha256": "fb829430aef04de4e2a2b729c0787a8c72f4161378fb6ab965dfc21e78e5b868"
+  },
+  {
+    "name": "runner-source-standalone",
+    "file": "packages/valdres/test/retention/runner-source-standalone.ts",
+    "sha256": "de4f3569f7315a2ba3a67985204164c1c525450925841a4e2019dc03d536f5fa"
+  },
+  {
+    "name": "runner-source-standalone-retained",
+    "file": "packages/valdres/test/retention/runner-source-standalone-retained.ts",
+    "sha256": "ed39b3b90d25a418233114b564e8421d2391b1385c4d5d3660f47338fe9c12d1"
+  },
+  {
+    "name": "runner-bundle-test",
+    "file": "packages/valdres/test/retention/runner-bundle-test.test.ts",
+    "sha256": "58e0f9963b5e54c8d0e226c4d39118570801cf46f833ae8f86456139c92cd702"
+  },
+  {
+    "name": "runner-bundle-test-retained",
+    "file": "packages/valdres/test/retention/runner-bundle-test-retained.test.ts",
+    "sha256": "23345d8eed786d213d9e23fa9f2722de8fe14dd075904bf39725e9d230189fb2"
+  },
+  {
+    "name": "runner-bundle-standalone",
+    "file": "packages/valdres/test/retention/runner-bundle-standalone.ts",
+    "sha256": "d1603df97f48bf423f8d3b089d764b0054fed0abbcddc7b33903d4b9a43d3e8e"
+  },
+  {
+    "name": "runner-bundle-standalone-retained",
+    "file": "packages/valdres/test/retention/runner-bundle-standalone-retained.ts",
+    "sha256": "be102626252e2d995054ff11d38dc751bc62eb4b42f39c971d2a4fcfde4db868"
+  },
+  {
+    "name": "runner-source-test-idle-adapter",
+    "file": "packages/valdres/test/retention/runner-source-test-idle-adapter.test.ts",
+    "sha256": "bedb578ee90a84657d8b25cfb08fc8d03454544ec0a20fdad063aefc569f099d"
+  },
+  {
+    "name": "runner-body-test",
+    "file": "packages/valdres/test/retention/runner-body-test.test.ts",
+    "sha256": "84663f1371581b5db27a517575fcf10a1e1735574e615022c4e6c6e3de81ba0b"
+  },
+  {
+    "name": "runner-body-standalone",
+    "file": "packages/valdres/test/retention/runner-body-standalone.ts",
+    "sha256": "5c7c072f014f9cf39687860b7c7e46df78d266a005a3522177eeea2222369397"
+  },
+  {
+    "name": "runner-body-test-retained",
+    "file": "packages/valdres/test/retention/runner-body-test-retained.test.ts",
+    "sha256": "070990781e42fac6b76925109ec5c12dedbb2fccaa5efc686e08f99f5cf9d69e"
+  },
+  {
+    "name": "runner-hook-test",
+    "file": "packages/valdres/test/retention/runner-hook-test.test.ts",
+    "sha256": "2577468bc8dd05a58886d71ff8ae0f1a1ab923dd5988d50305b66074d3c99dd9"
+  },
+  {
+    "name": "runner-hook-standalone",
+    "file": "packages/valdres/test/retention/runner-hook-standalone.ts",
+    "sha256": "1859befbda6edb3ff0e9605ba43f9e5a7aa15116c60e08496d81c9f3e4ca412a"
+  },
+  {
+    "name": "runner-hook-test-retained",
+    "file": "packages/valdres/test/retention/runner-hook-test-retained.test.ts",
+    "sha256": "40789b01b34cf44d785f8d87209208b0da68a1a7ebd01c5813d2a05b1c6a5707"
+  }
+]

@@ -1,0 +1,8 @@
+--- closed-cursors.test.ts
++++ runner-source-standalone.ts
+@@ -1,4 +1,4 @@
+-import { afterAll, expect, test } from "bun:test"
++import { afterAll, expect, test } from "../../../test/diagnostics/runner-source/standalone"
+ import { store, type Transaction } from "../../src/index"
+ import { LeakDetector, retentionPhase } from "../../../test/src/LeakDetector"
+ import { flushRetentionCapture } from "../../../test/src/retentionCapture"

@@ -1,0 +1,15 @@
+--- closed-cursors.test.ts
++++ runner-body-test.test.ts
+@@ -23,11 +23,8 @@
+         try {
+             s.txn(tx => {
+                 cursors.push(tx)
+-                tx.onCommit(() => {
+-                    retentionPhase(abort ? "aborted" : "committed", "callback-start")
+-                    return payload.n
+-                })
+                 if (abort) throw new Error("abort")
++                return payload.n
+             })
+         } catch {}
+         return detector

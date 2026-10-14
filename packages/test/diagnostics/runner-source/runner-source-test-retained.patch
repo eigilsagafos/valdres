@@ -1,0 +1,11 @@
+--- closed-cursors.test.ts
++++ runner-source-test-retained.test.ts
+@@ -23,7 +23,7 @@
+         try {
+             s.txn(tx => {
+                 cursors.push(tx)
+-                tx.onCommit(() => {
++                tx.onCommit((globalThis as any).__runnerRetainedEffect = () => {
+                     retentionPhase(abort ? "aborted" : "committed", "callback-start")
+                     return payload.n
+                 })
