@@ -11,12 +11,13 @@ versions["head"]=subprocess.check_output(["git","rev-parse","HEAD"],cwd=repo,tex
 assert versions["bun"].startswith("1.4.0"),versions
 assert versions["node"]=="v24.16.0",versions
 jobs=[]
-for fixture in ["fixture-bundle", "fixture-queue", "fixture-direct", "fixture-released", "fixture-queue-retained"]:
+for fixture in ["fixture-bundle", "fixture-queue", "fixture-direct", "fixture-released", "fixture-queue-retained", "fixture-factory-queue", "fixture-factory-queue-retained"]:
     for engine in ["bun","node"]:
         path=str(src/f"{fixture}.test.{'ts' if engine=='bun' else 'mjs'}")
         cmd=["bun","test",path] if engine=="bun" else ["node","--expose-gc","--test",path]
         jobs.append((engine,fixture,fixture.endswith("retained"),cmd))
 jobs.append(("bun","valdres",False,["bun","test",str(src/"portable-source.test.ts")]))
+if len(sys.argv)>2 and sys.argv[2]=="factory": jobs=[job for job in jobs if "factory" in job[1]]
 results=[]
 for engine,stage,retain,cmd in jobs:
     cwd=repo/"packages/valdres" if engine=="bun" else repo
