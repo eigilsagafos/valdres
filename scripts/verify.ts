@@ -176,6 +176,10 @@ const SKIPPED_ACTIONS: Record<
         // has a local equivalent.
         config: TEST_REPORT_CONFIG,
     },
+    "test / Preserve retention evidence even after test failure": {
+        action: "actions/upload-artifact",
+        reason: "uploads already-written diagnostic graphs, phases and JUnit files to GitHub, including after failure. Local verify produces the same files but cannot perform the CI artifact transfer; this does not replace or relax any test gate",
+    },
     "browser-media / actions/checkout": {
         action: "actions/checkout",
         reason: CHECKOUT,
