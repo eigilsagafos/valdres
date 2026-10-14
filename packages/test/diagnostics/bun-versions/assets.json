@@ -1,0 +1,14 @@
+{
+  "1.4.0": {
+    "browser_download_url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.0/bun-linux-x64.zip",
+    "digest": "sha256:2d03fb5fb83ac8b567aca0a281b2ce1a1a19d488f56c2968d88c3f25e92fe452",
+    "size": 36697619,
+    "revision": "34cbb9a40b4bd1bd767d134a7065e66c2432a676"
+  },
+  "1.4.3": {
+    "browser_download_url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.3/bun-linux-x64.zip",
+    "digest": "sha256:3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18",
+    "size": 42015139,
+    "revision": "c6da4a4d3010e5553438c60f6bd76d981976867c"
+  }
+}

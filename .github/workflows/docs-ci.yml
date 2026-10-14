@@ -1,28 +1,28 @@
-# The public site still targets the legacy framework/API surface. Keep its full
-# build available to maintainers while the v1 beta certifies only core
-# and React; ordinary PRs retain the generated-README check in ci.yaml.
-name: Docs
-
+name: Retention Bun versions (diagnostic only)
 on:
     workflow_dispatch:
-
-concurrency:
-    group: docs-${{ github.ref }}
-    cancel-in-progress: true
-
+permissions:
+    contents: read
 jobs:
-    docs:
+    compare:
         runs-on: ubuntu-22.04
+        timeout-minutes: 15
         steps:
             - uses: actions/checkout@v6
-            - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: 1.4.0
-            - name: Install
-              run: bun install --frozen-lockfile
-            - name: Build docs site
-              run: bun run docs:build
-            - name: Docs demos work on Valdres v1
-              run: bun run test:docs
-            - name: READMEs in sync with docs MDX
-              run: bun run scripts/gen-readmes.ts --check
+                  fetch-depth: 0
+            - name: Fixed 32-process comparison (child failures are evidence)
+              run: python3 packages/test/diagnostics/bun-versions/run.py /tmp/retention-bun-versions
+            - name: Preserve orchestration and exact delta
+              if: always()
+              run: |
+                  mkdir -p /tmp/retention-bun-versions/orchestration
+                  cp -R packages/test/diagnostics/bun-versions/. /tmp/retention-bun-versions/orchestration/
+                  git diff 348c943f4a3c73fca170de766776aed4b471c344 HEAD > /tmp/retention-bun-versions/diagnostic.patch
+                  git rev-parse HEAD > /tmp/retention-bun-versions/head.txt
+            - uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: retention-bun-versions-${{ github.run_id }}-${{ github.run_attempt }}
+                  path: /tmp/retention-bun-versions
+                  retention-days: 14
