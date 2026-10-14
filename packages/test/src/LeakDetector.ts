@@ -1,12 +1,15 @@
 import { generateHeapSnapshot } from "bun"
 import { releaseWeakRefs } from "bun:jsc"
 import { writeSync } from "node:fs"
+import { captureRetentionPhase, captureRetentionSnapshot, markRetentionTarget } from "./retentionCapture"
 
 // Temporary, opt-in diagnostic: write only scalar phase data, retaining no
 // test state, target, detector or callback. Synchronous stderr survives timeout.
 export function retentionPhase(label: string | undefined, phase: string, round = -1): void {
     if (label === undefined) return
-    writeSync(2, `[retention-phase] t=${performance.now().toFixed(3)} label=${label} phase=${phase} round=${round}\n`)
+    const line = `[retention-phase] t=${performance.now().toFixed(3)} label=${label} phase=${phase} round=${round}\n`
+    writeSync(2, line)
+    captureRetentionPhase(line)
 }
 
 /**
@@ -37,8 +40,9 @@ export function retentionPhase(label: string | undefined, phase: string, round =
 export class LeakDetector {
     private _ref: WeakRef<object>
 
-    constructor(value: object) {
+    constructor(value: object, diagnosticTarget?: string) {
         this._ref = new WeakRef(value)
+        markRetentionTarget(value, diagnosticTarget)
     }
 
     async isLeaking(maxRounds = 50, diagnosticLabel?: string): Promise<boolean> {
@@ -57,7 +61,7 @@ export class LeakDetector {
             retentionPhase(diagnosticLabel, "gc-1-return", round)
             if (round > 0) {
                 retentionPhase(diagnosticLabel, "snapshot-enter", round)
-                generateHeapSnapshot()
+                captureRetentionSnapshot(generateHeapSnapshot(), diagnosticLabel, round)
                 retentionPhase(diagnosticLabel, "snapshot-return", round)
             }
             retentionPhase(diagnosticLabel, "release-weak-refs-2-enter", round)

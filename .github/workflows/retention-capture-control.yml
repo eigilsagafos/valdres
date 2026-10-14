@@ -1,0 +1,46 @@
+name: Retention capture negative control (expected failure)
+
+on:
+    pull_request:
+        branches: [main]
+        paths:
+            - packages/test/src/retentionCapture.ts
+            - packages/test/diagnostics/**
+            - .github/workflows/retention-capture-control.yml
+
+permissions:
+    contents: read
+
+jobs:
+    retained-callback:
+        runs-on: ubuntu-22.04
+        env:
+            VALDRES_RETENTION_CAPTURE_DIR: /tmp/valdres-retention-control
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.0
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "24.16"
+            - run: bun install --frozen-lockfile
+            - name: Record exact execution context
+              run: |
+                  mkdir -p "$VALDRES_RETENTION_CAPTURE_DIR"
+                  node -p 'JSON.stringify({platform:process.platform,arch:process.arch,versions:process.versions,run:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,sha:process.env.GITHUB_SHA})' > "$VALDRES_RETENTION_CAPTURE_DIR/node-and-job.json"
+                  git rev-parse HEAD > "$VALDRES_RETENTION_CAPTURE_DIR/checkout-sha.txt"
+                  uname -a > "$VALDRES_RETENTION_CAPTURE_DIR/uname.txt"
+            - name: Deliberately retain committed callback (must fail)
+              run: python3 packages/test/diagnostics/retention-control.py retained-committed
+            - name: Identify the known retaining path offline
+              if: always()
+              run: python3 packages/test/diagnostics/analyze-retention.py "$VALDRES_RETENTION_CAPTURE_DIR" --require-control-path
+            - name: Upload evidence from the failed job
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: retention-negative-control-${{ github.run_id }}-${{ github.run_attempt }}
+                  path: /tmp/valdres-retention-control/
+                  retention-days: 14
+                  if-no-files-found: error

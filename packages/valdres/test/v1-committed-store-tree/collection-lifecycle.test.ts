@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import { LeakDetector, retentionPhase } from "../../../test/src/LeakDetector"
+import { flushRetentionCapture } from "../../../test/src/retentionCapture"
+afterAll(flushRetentionCapture)
 import {
     StoreDisposedError,
     TransactionClosedError,
@@ -43,7 +45,7 @@ describe("v1 committed collection row lifecycle", () => {
         const present = (() => {
             let row: ReturnType<typeof sessions> | undefined =
                 sessions("present")
-            const detector = new LeakDetector(row)
+            const detector = new LeakDetector(row, "present")
             const reference = new WeakRef(row)
             runCollectionTransaction(domain, root, (_txn, rows) =>
                 rows.set(row!, 1),
@@ -67,7 +69,7 @@ describe("v1 committed collection row lifecycle", () => {
         const absent = (() => {
             let row: ReturnType<typeof sessions> | undefined =
                 sessions("absent")
-            const detector = new LeakDetector(row)
+            const detector = new LeakDetector(row, "absent")
             const reference = new WeakRef(row)
             runCollectionTransaction(domain, root, (_txn, rows) =>
                 rows.scope(child).delete(row!),

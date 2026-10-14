@@ -1,6 +1,8 @@
-import { expect, test } from "bun:test"
+import { afterAll, expect, test } from "bun:test"
 import { store, type Transaction } from "../../src/index"
 import { LeakDetector, retentionPhase } from "../../../test/src/LeakDetector"
+import { flushRetentionCapture } from "../../../test/src/retentionCapture"
+afterAll(flushRetentionCapture)
 const tick = () => new Promise(r => setTimeout(r, 5))
 const collect = async (detector: LeakDetector, label?: string) => {
     for (let n = 0; n < 3; n++) {
@@ -17,7 +19,7 @@ test("retained closed cursors do not retain aborted or drained callbacks", async
         cursors: Transaction[] = []
     const register = (abort: boolean) => {
         const payload = { n: 1 }
-        const detector = new LeakDetector(payload)
+        const detector = new LeakDetector(payload, abort ? "aborted" : "committed")
         try {
             s.txn(tx => {
                 cursors.push(tx)
