@@ -19,14 +19,20 @@ jobs:
                   node-version: "24.16.0"
             - name: Install pinned lockfile
               run: bun install --frozen-lockfile
-            - name: Fixed phase A comparisons (child failures are evidence)
-              run: python3 packages/test/diagnostics/runner-source/run.py /tmp/retention-runner-boundary
+            - name: Prepare self-contained portable reproduction
+              run: |
+                  python3 packages/test/diagnostics/runner-source/make-portable.py /tmp/runner-upstream-portable
+                  tar -czf /tmp/runner-upstream-portable.tar.gz -C /tmp runner-upstream-portable
+            - name: Fixed phase B portable cases (child failures are evidence)
+              run: python3 /tmp/runner-upstream-portable/packages/test/diagnostics/runner-source/run-portable.py /tmp/retention-runner-boundary native
             - name: Preserve exact diagnostic source and delta
               if: always()
               run: |
                   mkdir -p /tmp/retention-runner-boundary/source
                   cp -R packages/test/diagnostics/runner-source/. /tmp/retention-runner-boundary/source/
                   cp -R packages/valdres/test/retention /tmp/retention-runner-boundary/fixtures
+                  cp /tmp/runner-upstream-portable.tar.gz /tmp/retention-runner-boundary/
+                  cp /tmp/runner-upstream-portable/SOURCE.json /tmp/retention-runner-boundary/portable-source.json
                   git diff 348c943f4a3c73fca170de766776aed4b471c344 HEAD > /tmp/retention-runner-boundary/diagnostic.patch
                   git rev-parse HEAD > /tmp/retention-runner-boundary/head.txt
             - uses: actions/upload-artifact@v4
