@@ -41,9 +41,12 @@ Offline analysis (no GC or live-object access):
 python3 packages/test/diagnostics/analyze-retention.py /path/to/downloaded/capture
 ```
 
-The analyzer reports target/candidate node IDs, near incoming edges and bounded
-paths to the snapshot's reported root. It searches at most 20,000 nodes and 32
-edges in depth per candidate and reports truncation. **No reported root does not
+The analyzer writes `analysis.json` with target/candidate node IDs, near incoming
+edges and bounded paths to the snapshot's reported root. It analyzes only the
+first 20 sorted candidate IDs per target/snapshot; compare `candidateCount` with
+the number of returned candidates for that limit. It searches at most 20,000
+nodes and 32 edges in depth per candidate and reports traversal truncation.
+**No reported root does not
 mean no root**: this JSC format can omit conservative-root edges. Scalar-key
 candidate counts are not identity guarantees. Raw graphs remain available for
 further offline analysis.
