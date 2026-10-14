@@ -1,28 +1,43 @@
-# The public site still targets the legacy framework/API surface. Keep its full
-# build available to maintainers while the v1 beta certifies only core
-# and React; ordinary PRs retain the generated-README check in ci.yaml.
-name: Docs
-
+# Diagnostic branch only: replace the existing manual workflow for one pair.
+# Never merge this branch. No publish job, write permission, or release action.
+name: Retention fresh-process pair
 on:
     workflow_dispatch:
-
-concurrency:
-    group: docs-${{ github.ref }}
-    cancel-in-progress: true
-
+permissions:
+    contents: read
 jobs:
-    docs:
+    process-pair:
         runs-on: ubuntu-22.04
+        env:
+            VALDRES_PAIR_DIR: /tmp/valdres-scope-process-pair
         steps:
             - uses: actions/checkout@v6
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: 1.4.0
-            - name: Install
-              run: bun install --frozen-lockfile
-            - name: Build docs site
-              run: bun run docs:build
-            - name: Docs demos work on Valdres v1
-              run: bun run test:docs
-            - name: READMEs in sync with docs MDX
-              run: bun run scripts/gen-readmes.ts --check
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "24.16"
+            - run: bun install --frozen-lockfile
+            - name: Prepare the same built core and declaration context
+              run: bun run build:v1-beta && bun run build:types:v1-beta
+            - name: Record runtime and checkout
+              run: |
+                  mkdir -p "$VALDRES_PAIR_DIR"
+                  node -p 'JSON.stringify({platform:process.platform,arch:process.arch,versions:process.versions,run:process.env.GITHUB_RUN_ID,sha:process.env.GITHUB_SHA})' > "$VALDRES_PAIR_DIR/node-and-job.json"
+                  bun -e 'console.log(JSON.stringify({version:Bun.version,revision:Bun.revision,versions:process.versions,arch:process.arch}))' > "$VALDRES_PAIR_DIR/bun.json"
+                  git rev-parse HEAD > "$VALDRES_PAIR_DIR/checkout-sha.txt"
+                  uname -a > "$VALDRES_PAIR_DIR/uname.txt"
+            - name: Run isolated test and recorded prefix once each
+              run: python3 packages/test/diagnostics/scope-process-pair.py
+            - name: Analyze saved existing snapshots
+              if: always()
+              run: python3 packages/test/diagnostics/analyze-retention.py "$VALDRES_PAIR_DIR"
+            - name: Preserve pair evidence
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: retention-process-pair-${{ github.run_id }}-${{ github.run_attempt }}
+                  path: /tmp/valdres-scope-process-pair/
+                  retention-days: 14
+                  if-no-files-found: error

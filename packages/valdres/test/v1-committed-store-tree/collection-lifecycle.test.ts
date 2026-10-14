@@ -119,11 +119,13 @@ describe("v1 committed collection row lifecycle", () => {
             rows.scope(child).set(row!, 2),
         )
         const routeRemovesBefore = instrumentation.read("routeRemoves")
-        const detector = new LeakDetector(row)
+        const detector = new LeakDetector(row, "scope-row")
         row = undefined
-        await expectRetained(detector)
+        await expectRetained(detector, "scope-owned")
 
+        retentionPhase("scope-disposal", "dispose-enter")
         child.dispose()
+        retentionPhase("scope-disposal", "dispose-return")
         expect(instrumentation.read("routeRemoves")).toBe(
             routeRemovesBefore + 1,
         )
@@ -131,7 +133,7 @@ describe("v1 committed collection row lifecycle", () => {
         expect(instrumentation.read("routeRemoves")).toBe(
             routeRemovesBefore + 1,
         )
-        await expectCollected(detector)
+        await expectCollected(detector, "scope-released")
     }, 15_000)
 
     test("cold RowViews and their inherited route do not retain row definitions", async () => {
