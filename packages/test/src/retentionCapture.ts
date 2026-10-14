@@ -43,8 +43,8 @@ export function captureRetentionPhase(line: string): void {
 // Graphs contain only numbers/strings/arrays, not live heap references.
 export function captureRetentionSnapshot(snapshot: HeapSnapshot, label: string | undefined, round: number): void {
     if (!directory || label === undefined) return
-    const family = label === "aborted" || label === "committed" ? "onCommit"
-        : /^(present|absent)-(owned|released)$/.test(label) ? "collection" : undefined
+    const family = label === "aborted" || label === "committed" || label.startsWith("commit-") ? "onCommit"
+        : /^(present|absent|scope)-(owned|released)$/.test(label) ? "collection" : undefined
     if (family === undefined) return
     const record = { label, round, time: performance.now(), snapshot }
     const previous = selected[family]

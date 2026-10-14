@@ -1,11 +1,14 @@
 # Retention snapshot capture (diagnostic only)
 
-The two retention timeouts remain unresolved. This capture is not a fix and
+The retention timeouts remain unresolved. This capture is not a fix and
 must not be interpreted as evidence for a conservative-root cause.
 
 Set `VALDRES_RETENTION_CAPTURE_DIR` to an absolute output directory. The normal
-CI test job enables it without changing any test command, order, concurrency,
-assertion, deadline, sleep, GC call or snapshot call. It keeps the **first and
+CI test job enables it. The mandatory [controlled retention lane](../../valdres/test/retention/README.md)
+now runs the seven affected GC cases in fresh processes, individually and with
+explicit accumulated state; ordinary suites keep deterministic lifecycle checks.
+Assertions, deadlines, sleeps, GC calls and snapshot calls inside the GC cases
+are preserved. It keeps the **first and
 latest existing Inspector-format snapshot for each affected test**, at most four
 graphs in memory. The two files' `afterAll` hooks serialize and release those
 graphs outside their timed assertions, including after a failed assertion or
@@ -66,7 +69,7 @@ The original committed-capture assertion must reject the global control holder.
 The saved graph must show `__valdresDeliberatelyRetainedCommitCallback` leading
 through the callback's lexical environment to the marked payload. The control
 also accepts `retained-present`, `retained-absent`, `premature-present` and
-`premature-absent`. These copied fixtures live outside normal suite selection,
+`premature-absent`, plus `retained-scope` and `premature-scope`. These copied fixtures live outside normal suite selection,
 are saved with their exact patch and command, and are removed after execution.
 The separate manual-only negative-control workflow intentionally has a failing
 job and uploads its artifacts anyway. It cannot publish and does not run during

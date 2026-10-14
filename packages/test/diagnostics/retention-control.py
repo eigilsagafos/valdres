@@ -15,8 +15,8 @@ package = root / "packages/valdres"
 mode = sys.argv[1]
 output = Path(os.environ["VALDRES_RETENTION_CAPTURE_DIR"]).resolve()
 output.mkdir(parents=True, exist_ok=True)
-source_name = "on-commit-retention" if mode == "retained-committed" else "collection-lifecycle"
-source = package / f"test/v1-committed-store-tree/{source_name}.test.ts"
+source_name = {"retained-committed": "closed-cursors", "retained-scope": "scope-disposal", "premature-scope": "scope-disposal"}.get(mode, "row-owners")
+source = package / f"test/retention/{source_name}.test.ts"
 original = source.read_text()
 text = original
 if mode == "retained-committed":
@@ -31,13 +31,20 @@ elif mode in {"premature-present", "premature-absent", "retained-present", "reta
     text = text.replace('"./collection-test-transaction"', '"../v1-committed-store-tree/collection-test-transaction"')
     if mode.startswith("premature"):
         owner = "rows" if kind == "present" else "rows.scope(child)"
-        insertion = f'        runCollectionTransaction(domain, root, (_txn, rows) => {owner}.reset(sessions("{kind}")))\n'
+        insertion = f'    runCollectionTransaction(domain, root, (_txn, rows) => {owner}.reset(sessions("{kind}")))\n'
     else:
-        insertion = f'        Object.defineProperty(globalThis, "__valdresDeliberatelyRetainedRow", {{ value: sessions("{kind}") }})\n'
-    point = f'        retentionPhase("{kind}-owned", "ownership-created")'
+        insertion = f'    Object.defineProperty(globalThis, "__valdresDeliberatelyRetainedRow", {{ value: sessions("{kind}") }})\n'
+    point = f'    retentionPhase("{kind}-owned", "ownership-created")'
     assert text.count(point) == 1
     text = text.replace(point, insertion + point, 1)
     test_name = "pins Present and Absent owners until reset"
+elif mode in {"retained-scope", "premature-scope"}:
+    point = '    await expectRetained(detector, "scope-owned")'
+    assert text.count(point) == 1
+    insertion = ('    child.dispose()\n' if mode == "premature-scope" else
+        '    Object.defineProperty(globalThis, "__valdresDeliberatelyRetainedRow", { value: sessions("owned") })\n')
+    text = text.replace(point, insertion + point, 1)
+    test_name = "scope disposal releases pins and detaches MembershipRecord routes exactly once"
 else:
     raise ValueError(mode)
 assert text != original

@@ -1,116 +1,75 @@
-import { afterAll, expect, test } from "bun:test"
-import { store, type Transaction } from "../../src/index"
-import { LeakDetector, retentionPhase } from "../../../test/src/LeakDetector"
-import { flushRetentionCapture } from "../../../test/src/retentionCapture"
-afterAll(flushRetentionCapture)
-const tick = () => new Promise(r => setTimeout(r, 5))
-const collect = async (detector: LeakDetector, label?: string) => {
-    for (let n = 0; n < 3; n++) {
-        retentionPhase(label, "collection-await-enter", n)
-        const leaking = await detector.isLeaking(undefined, label)
-        retentionPhase(label, leaking ? "collection-await-return-live" : "collection-await-return-collected", n)
-        if (!leaking) return true
-    }
-    return false
+import { expect, test } from "bun:test"
+import { store, type Transaction, TransactionClosedError } from "../../src/index"
+
+// GC assertions live in the mandatory fresh-process retention lane. These
+// ordinary-suite checks exercise shared scheduler/lifecycle state without GC.
+const tick = () => new Promise(resolve => setTimeout(resolve, 5))
+const flush = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve()
 }
-test("retained closed cursors do not retain aborted or drained callbacks", async () => {
-    retentionPhase("test", `start platform=${process.platform} arch=${process.arch} bun=${Bun.version}`)
-    const s = store(),
-        cursors: Transaction[] = []
-    const register = (abort: boolean) => {
-        const payload = { n: 1 }
-        const detector = new LeakDetector(payload, abort ? "aborted" : "committed")
-        try {
-            s.txn(tx => {
-                cursors.push(tx)
-                tx.onCommit(() => {
-                    retentionPhase(abort ? "aborted" : "committed", "callback-start")
-                    return payload.n
-                })
-                if (abort) throw new Error("abort")
-            })
-        } catch {}
-        return detector
-    }
-    const aborted = register(true),
-        committed = register(false)
-    retentionPhase("test", "registrations-complete-wait-enter")
+test("closed cursors reject registration after commit and abort; only commits deliver", async () => {
+    const root = store(), cursors: Transaction[] = [], starts: string[] = []
+    const abort = new Error("abort")
+    expect(() => root.txn(tx => {
+        cursors.push(tx)
+        tx.onCommit(() => { starts.push("aborted") })
+        throw abort
+    })).toThrow(abort)
+    root.txn(tx => {
+        cursors.push(tx)
+        tx.onCommit(() => { starts.push("committed") })
+    })
+    expect(starts).toEqual([])
+    for (const cursor of cursors) expect(() => cursor.onCommit(() => {})).toThrow(TransactionClosedError)
     await tick()
-    retentionPhase("test", "wait-return-collection-enter")
-    expect(await collect(aborted, "aborted")).toBe(true)
-    expect(await collect(committed, "committed")).toBe(true)
-    expect(cursors).toHaveLength(2)
-    s.dispose()
-    retentionPhase("test", "complete")
+    expect(starts).toEqual(["committed"])
+    root.dispose()
 })
-test("disposal drops pending captures even when scheduler delivery is held", async () => {
+
+test("disposal cancels held delivery without cancelling another Store", async () => {
     await tick()
-    const root = store(),
-        child = root.scope(),
-        held: (() => void)[] = [],
-        original = globalThis.queueMicrotask
-    globalThis.queueMicrotask = fn => {
-        held.push(fn)
-    }
+    const root = store(), child = root.scope(), other = store()
+    const held: (() => void)[] = [], starts: string[] = []
+    const original = globalThis.queueMicrotask
+    globalThis.queueMicrotask = callback => { held.push(callback) }
     try {
-        const detector = (() => {
-            const payload = { n: 1 }
-            const d = new LeakDetector(payload)
-            child.txn(tx => tx.onCommit(() => payload.n))
-            return d
-        })()
+        child.txn(tx => tx.onCommit(() => { starts.push("child") }))
+        other.txn(tx => tx.onCommit(() => { starts.push("other") }))
         child.dispose()
-        expect(await collect(detector)).toBe(true)
+        expect(starts).toEqual([])
+        for (const wake of held) { wake(); wake() }
+        expect(starts).toEqual(["other"])
     } finally {
         globalThis.queueMicrotask = original
-        for (const run of held) queueMicrotask(run)
-        root.dispose()
+        root.dispose(); other.dispose()
+        for (const wake of held) queueMicrotask(wake)
         await tick()
     }
 })
-test("disposed captures are released while refill generations and recovery attempts are held", async () => {
+
+test("disposed scopes stay cancelled across duplicate refill recovery attempts", async () => {
     await tick()
-    const root = store(),
-        child = root.scope(),
-        other = store()
-    const tasks: (() => void)[] = []
-    const timer = globalThis.setTimeout
-    globalThis.setTimeout = ((fn: () => void) => {
-        tasks.push(fn)
-        return 0
-    }) as typeof setTimeout
-    const flush = async () => {
-        for (let i = 0; i < 10; i++) await Promise.resolve()
-    }
+    const root = store(), child = root.scope(), other = store()
+    const tasks: (() => void)[] = [], starts: number[] = []
+    const original = globalThis.setTimeout
+    globalThis.setTimeout = ((callback: () => void) => { tasks.push(callback); return 0 }) as typeof setTimeout
     try {
         root.txn(tx => {
-            for (let i = 0; i < 1100; i++) tx.onCommit(() => {})
+            for (let i = 0; i < 1100; i++) tx.onCommit(() => { starts.push(i) })
         })
         await flush()
-        expect(tasks.length).toBeGreaterThan(0)
-        const detector = (() => {
-            const payload = { n: 1 }
-            const d = new LeakDetector(payload)
-            child.txn(tx => tx.onCommit(() => payload.n))
-            return d
-        })()
-        // Later publications add recovery attempts in the exhausted generation.
-        for (let i = 0; i < 3; i++) {
-            other.txn(tx => tx.onCommit(() => {}))
+        expect(starts).toHaveLength(1024)
+        child.txn(tx => tx.onCommit(() => { starts.push(-1) }))
+        for (let i = 1100; i < 1103; i++) {
+            other.txn(tx => tx.onCommit(() => { starts.push(i) }))
             await flush()
         }
         child.dispose()
-        expect(await collect(detector)).toBe(true)
-        // Keep all host closures alive, including old generations, during GC.
-        for (const task of tasks.slice().reverse()) {
-            task()
-            task()
-        }
-        expect(await collect(detector)).toBe(true)
+        for (const task of tasks.slice().reverse()) { task(); task() }
+        expect(starts).toEqual(Array.from({ length: 1103 }, (_, i) => i))
     } finally {
-        root.dispose()
-        other.dispose()
-        globalThis.setTimeout = timer
+        root.dispose(); other.dispose()
+        globalThis.setTimeout = original
         for (const task of tasks) task()
         await tick()
     }
