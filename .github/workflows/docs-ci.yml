@@ -1,28 +1,40 @@
-# The public site still targets the legacy framework/API surface. Keep its full
-# build available to maintainers while the v1 beta certifies only core
-# and React; ordinary PRs retain the generated-README check in ci.yaml.
-name: Docs
-
+name: Closed cursor reproduction (no release)
 on:
     workflow_dispatch:
-
-concurrency:
-    group: docs-${{ github.ref }}
-    cancel-in-progress: true
-
+permissions:
+    contents: read
 jobs:
-    docs:
+    reproduce:
         runs-on: ubuntu-22.04
+        timeout-minutes: 12
         steps:
             - uses: actions/checkout@v6
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: 1.4.0
-            - name: Install
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "24.16.0"
+            - name: Install unchanged lockfile
               run: bun install --frozen-lockfile
-            - name: Build docs site
-              run: bun run docs:build
-            - name: Docs demos work on Valdres v1
-              run: bun run test:docs
-            - name: READMEs in sync with docs MDX
-              run: bun run scripts/gen-readmes.ts --check
+            - name: Build identical unminified source graph for both engines
+              run: |
+                  bun build packages/valdres/src/index.ts --target=node --sourcemap=external --outdir=packages/test/diagnostics/closed-cursor-repro
+                  mv packages/test/diagnostics/closed-cursor-repro/index.js packages/test/diagnostics/closed-cursor-repro/valdres.mjs
+                  sha256sum packages/test/diagnostics/closed-cursor-repro/valdres.mjs
+            - name: Fixed 17 fresh processes (child failures are preserved evidence)
+              run: python3 packages/test/diagnostics/closed-cursor-repro/run.py /tmp/closed-cursor-reproduction
+            - name: Preserve exact source and built comparison artifact
+              if: always()
+              run: |
+                  mkdir -p /tmp/closed-cursor-reproduction/source
+                  cp -R packages/test/diagnostics/closed-cursor-repro/. /tmp/closed-cursor-reproduction/source/
+                  git diff 348c943f4a3c73fca170de766776aed4b471c344 HEAD > /tmp/closed-cursor-reproduction/diagnostic.patch
+                  git rev-parse HEAD > /tmp/closed-cursor-reproduction/sha.txt
+            - name: Upload all observations, including failed children
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: closed-cursor-reproduction-${{ github.run_id }}-${{ github.run_attempt }}
+                  path: /tmp/closed-cursor-reproduction
+                  retention-days: 14
