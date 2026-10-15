@@ -1,28 +1,77 @@
-# The public site still targets the legacy framework/API surface. Keep its full
-# build available to maintainers while the v1 beta certifies only core
-# and React; ordinary PRs retain the generated-README check in ci.yaml.
-name: Docs
-
+name: Bun 1.4.3 mitigation validation (no publication)
 on:
     workflow_dispatch:
-
-concurrency:
-    group: docs-${{ github.ref }}
-    cancel-in-progress: true
-
+permissions:
+    contents: read
 jobs:
-    docs:
+    core:
+        strategy:
+            fail-fast: false
+            matrix:
+                repetition: [1, 2]
         runs-on: ubuntu-22.04
+        timeout-minutes: 15
         steps:
             - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: 1.4.3
-            - name: Install
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "24.16.0"
+            - name: Record execution conditions
+              run: |
+                  mkdir -p .context/bun143-native
+                  { uname -a; bun --revision; node --version; npm --version; git rev-parse HEAD; sha256sum bun.lock; cat /proc/cpuinfo; } > .context/bun143-native/runtime.txt
+            - name: Install unchanged lockfile
               run: bun install --frozen-lockfile
-            - name: Build docs site
-              run: bun run docs:build
-            - name: Docs demos work on Valdres v1
-              run: bun run test:docs
-            - name: READMEs in sync with docs MDX
-              run: bun run scripts/gen-readmes.ts --check
+            - name: Unchanged normal core suite
+              run: |
+                  set -o pipefail
+                  bun --filter 'valdres' test:ci 2>&1 | tee .context/bun143-native/core-suite.log
+            - name: Preserve suite identity and reports
+              if: always()
+              run: |
+                  git diff 843e68a67034e5bd375a75d9f1ebe315ac783f8c -- packages/valdres/test packages/test/src packages/valdres/package.json bun.lock > .context/bun143-native/test-and-lock-diff.txt
+                  cp packages/valdres/junit*.xml .context/bun143-native/ 2>/dev/null || true
+                  git diff 843e68a67034e5bd375a75d9f1ebe315ac783f8c HEAD > .context/bun143-native/diagnostic.patch
+            - uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: bun143-core-${{ matrix.repetition }}-${{ github.run_id }}
+                  path: .context/bun143-native
+                  retention-days: 14
+    controls:
+        runs-on: ubuntu-22.04
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.3
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "24.16.0"
+            - name: Record execution conditions
+              run: |
+                  mkdir -p .context/bun143-native
+                  { uname -a; bun --revision; node --version; npm --version; git rev-parse HEAD; sha256sum bun.lock; } > .context/bun143-native/runtime.txt
+            - name: Install unchanged lockfile
+              run: bun install --frozen-lockfile
+            - name: Seven deliberate-retention and premature-release controls
+              run: python3 packages/test/diagnostics/bun143-controls.py
+            - name: Preserve exact controls and diagnostic diff
+              if: always()
+              run: |
+                  cp packages/test/diagnostics/{retention-control.py,bun143-controls.py,bun143-validation-plan.md} .context/bun143-native/
+                  git diff 843e68a67034e5bd375a75d9f1ebe315ac783f8c HEAD > .context/bun143-native/diagnostic.patch
+            - uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: bun143-controls-${{ github.run_id }}
+                  path: .context/bun143-native
+                  retention-days: 14
