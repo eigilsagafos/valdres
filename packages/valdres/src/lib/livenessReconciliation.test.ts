@@ -60,7 +60,7 @@ const checkInvariant = (s: any, states: any[], label: string) => {
     }
     for (const D of states) {
         const exp = expected.get(D) ?? 0
-        const act = data.liveDependentCount.get(D) ?? 0
+        const act = data.graphNodes.get(D)?.live ?? 0
         if (act !== exp)
             throw new Error(
                 `${label}: liveDependentCount mismatch for ${D.name ?? "?"} — expected ${exp}, got ${act}`,
@@ -257,7 +257,7 @@ describe("liveDependentCount stays consistent across dynamic-dep churn", () => {
         expect(s.get(root)).toBe(6)
         for (const id of ["a", "b", "c"])
             expect(
-                typeof getStoreData(s).liveDependentCount.get(leaf(id)),
+                typeof getStoreData(s).graphNodes.get(leaf(id))?.live,
             ).toBe("number")
         // collapse to empty
         s.txn(t => {
@@ -272,10 +272,10 @@ describe("liveDependentCount stays consistent across dynamic-dep churn", () => {
         // shared leaf must be live again, and a deep change must propagate
         for (const id of ["a", "b", "c"]) {
             expect(
-                typeof getStoreData(s).liveDependentCount.get(leaf(id)),
+                typeof getStoreData(s).graphNodes.get(leaf(id))?.live,
             ).toBe("number")
             expect(
-                getStoreData(s).liveDependentCount.get(leaf(id)),
+                getStoreData(s).graphNodes.get(leaf(id))?.live,
             ).toBeGreaterThan(0)
         }
         s.set(ent("a"), { v: 99 })
@@ -300,24 +300,24 @@ describe("liveDependentCount stays consistent across dynamic-dep churn", () => {
         s.sub(root, () => {})
         s.get(root)
         // healthy: every link counts exactly one live dependent
-        expect(getStoreData(s).liveDependentCount.get(mid)).toBe(1)
-        expect(getStoreData(s).liveDependentCount.get(leaf)).toBe(1)
-        expect(getStoreData(s).liveDependentCount.get(a)).toBe(1)
+        expect(getStoreData(s).graphNodes.get(mid)?.live).toBe(1)
+        expect(getStoreData(s).graphNodes.get(leaf)?.live).toBe(1)
+        expect(getStoreData(s).graphNodes.get(a)?.live).toBe(1)
 
         // simulate the bug: a teardown dropped the subtree's counts and the
         // re-add was skipped, so mid/leaf/a read as non-live though `root`
         // (subscribed, outside the churn) still transitively reads them.
-        getStoreData(s).liveDependentCount.delete(mid)
-        getStoreData(s).liveDependentCount.delete(leaf)
-        getStoreData(s).liveDependentCount.delete(a)
+        getStoreData(s).graphNodes.get(mid)!.live = 0
+        getStoreData(s).graphNodes.get(leaf)!.live = 0
+        getStoreData(s).graphNodes.get(a)!.live = 0
         expect(isLive(leaf, getStoreData(s))).toBe(false) // corrupted
 
         // reconcile the region seeded by the "removed" intermediate.
         reconcileLivenessAfterChurn(new Set([mid as any]), getStoreData(s))
 
-        expect(getStoreData(s).liveDependentCount.get(mid)).toBe(1)
-        expect(getStoreData(s).liveDependentCount.get(leaf)).toBe(1)
-        expect(getStoreData(s).liveDependentCount.get(a)).toBe(1)
+        expect(getStoreData(s).graphNodes.get(mid)?.live).toBe(1)
+        expect(getStoreData(s).graphNodes.get(leaf)?.live).toBe(1)
+        expect(getStoreData(s).graphNodes.get(a)?.live).toBe(1)
         expect(isLive(leaf, getStoreData(s))).toBe(true)
     })
 })

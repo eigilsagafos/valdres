@@ -362,7 +362,7 @@ describe("late dependency install", () => {
         // Second read is an existing edge: install returns false and the
         // settle half must not run again — a double settle would count the
         // same edge twice.
-        expect(data.liveDependentCount.get(dep)).toBe(1)
+        expect(data.graphNodes.get(dep)?.live).toBe(1)
         expect(checkStoreInvariants(s, { quiescent: true })).toEqual([])
     })
 
@@ -387,7 +387,7 @@ describe("late dependency install", () => {
         const data = getStoreData(s)
         const unsub = s.sub(sel, () => {})
         expect(await s.get(sel)).toBe(21)
-        expect(data.liveDependentCount.get(dep)).toBe(1)
+        expect(data.graphNodes.get(dep)?.live).toBe(1)
         expect(mounts).toBe(1)
         unsub()
         await Promise.resolve()

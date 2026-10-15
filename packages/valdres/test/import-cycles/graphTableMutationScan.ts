@@ -32,14 +32,9 @@ export const GRAPH_TABLES = new Set([
     "selectorGraphActive",
     "inheritedDependencyBranches",
     "inheritedDependencyKeys",
-    "liveDependentCount",
+    "graphNodes",
     "mounts",
-    "mountInClosure",
     "livenessSeeds",
-    "dependencyOrder",
-    "cycleRiskInClosure",
-    "acyclicDependencyVersion",
-    "orphanCleanupVersion",
     "pendingOrphanCleanup",
 ])
 
@@ -374,19 +369,14 @@ export type StoreData = {
     selectorGraphActive: WeakSet<object>
     inheritedDependencyBranches: WeakMap<object, Set<StoreData>>
     inheritedDependencyKeys?: Set<object>
-    liveDependentCount: WeakMap<object, number>
+    graphNodes: WeakMap<object, { live: number }>
     mounts: WeakMap<object, { cleanup?: () => void }>
-    mountInClosure: WeakMap<object, true>
     livenessSeeds?: Set<State>
     livenessPassActive?: boolean
     livenessRemovalArmed?: boolean
     livenessLazyArmed?: boolean
-    dependencyOrder: WeakMap<object, number>
     nextDependencyOrder: number
     dependencyGraphVersion: number
-    cycleRiskInClosure: WeakMap<object, true>
-    acyclicDependencyVersion: WeakMap<object, number>
-    orphanCleanupVersion: WeakMap<object, number>
     pendingOrphanCleanup?: Set<State>
     orphanCleanupScheduled: boolean
     values: WeakMap<object, unknown>
