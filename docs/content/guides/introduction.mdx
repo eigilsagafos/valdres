@@ -93,7 +93,7 @@ function Counter() {
 Already using Recoil or Jotai? Migration is a one-line import change:
 
 ```tsx
-// From Recoil
+// From Recoil (synchronous subset; see the Recoil support matrix)
 import { atom, selector } from "@valdres-react/recoil"
 
 // From Jotai
@@ -102,5 +102,5 @@ import { atom, createStore } from "@valdres-react/jotai"
 
 <div className="callout callout-note">
   <div className="callout-title">Note</div>
-  The compatibility packages mirror the original APIs, so most of your existing code works unchanged. See the <a href="/guides/vs-jotai">Jotai</a> and <a href="/guides/vs-recoil">Recoil</a> comparison guides for details.
+  The compatibility packages mirror the original APIs. The Recoil adapter covers Recoil's synchronous API and throws on what it cannot reproduce, such as async selectors and atom effects. See the <a href="/guides/vs-jotai">Jotai</a> and <a href="/guides/vs-recoil">Recoil</a> comparison guides for details.
 </div>
