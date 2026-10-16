@@ -14,7 +14,7 @@ import { basename, join, relative } from "node:path"
 
 const rootDirectory = join(import.meta.dir, "..")
 const keepWorkspace = process.env.VALDRES_KEEP_PACKED_SMOKE === "1"
-const requiredBunVersion = "1.4.0"
+const requiredBunVersion = "1.4.3"
 const pinnedBunVersion = (
     await readFile(join(rootDirectory, ".bun-version"), "utf8")
 ).trim()
