@@ -19,7 +19,8 @@
  * migrated browser media packages: suites, both tsconfigs, packed consumers),
  * `browser-keyboard` (the same three gates for the keyboard package),
  * `browser-status` (the same three gates for the online, focus, visibility
- * and presence packages),
+ * and presence packages), `browser-geometry` (the same three gates for the
+ * window and screen packages),
  * `hotkeys` (suites, both tsconfigs and packed consumers for the two
  * hotkeys packages), `jotai` (the release-ignored Jotai compatibility package:
  * both tsconfigs, its suites, the upstream suite against it and against the
@@ -86,6 +87,7 @@ const JOBS = [
     "browser-media",
     "browser-keyboard",
     "browser-status",
+    "browser-geometry",
     "hotkeys",
     "jotai",
     "valdres-package",
@@ -209,6 +211,18 @@ const SKIPPED_ACTIONS: Record<
         reason: SETUP_BUN,
     },
     "browser-status / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
+    "browser-geometry / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "browser-geometry / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "browser-geometry / actions/setup-node": {
         action: "actions/setup-node",
         reason: SETUP_NODE,
     },

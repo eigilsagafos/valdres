@@ -38,6 +38,8 @@ import {
     prefersReducedTransparencySelector,
 } from "@valdres/browser-reduced-transparency"
 import { shortcutSelector } from "@valdres/hotkeys"
+import { windowSizeAtom, type WindowSize } from "@valdres/browser-window"
+import { screenAtom, type ScreenInfo } from "@valdres/browser-screen"
 
 const unavailable = (key: V1UnavailableKey) => (el: HTMLElement) =>
     mountV1Unavailable(el, key)
@@ -48,7 +50,13 @@ export const pluginDemos: Record<string, (el: HTMLElement) => () => void> = {
         rows: [{ label: "onlineAtom", state: onlineAtom }],
     }),
 
-    "browser-window": unavailable("@valdres/browser-window"),
+    "browser-window": inspector({
+        hint: "Resize the window or zoom the page",
+        rows: [
+            { label: "inner", state: windowSizeAtom, format: (size: WindowSize) => `${size.innerWidth} × ${size.innerHeight}` },
+            { label: "outer", state: windowSizeAtom, format: (size: WindowSize) => `${size.outerWidth} × ${size.outerHeight}` },
+        ],
+    }),
 
     "browser-color-scheme": inspector({
         hint: "Change your OS light/dark preference",
@@ -124,7 +132,20 @@ export const pluginDemos: Record<string, (el: HTMLElement) => () => void> = {
         ],
     }),
 
-    "browser-screen": unavailable("@valdres/browser-screen"),
+    "browser-screen": inspector({
+        hint: "Zoom the page, rotate the device, or move the window to another display",
+        rows: [
+            { label: "size", state: screenAtom, format: (info: ScreenInfo) => `${info.width} × ${info.height}` },
+            { label: "available", state: screenAtom, format: (info: ScreenInfo) => `${info.availWidth} × ${info.availHeight}` },
+            { label: "devicePixelRatio", state: screenAtom, format: (info: ScreenInfo) => String(info.devicePixelRatio) },
+            { label: "orientation", state: screenAtom, format: (info: ScreenInfo) => `${info.orientationType} @ ${info.orientationAngle}°` },
+        ],
+        log: {
+            state: screenAtom,
+            label: "screen changes",
+            format: (info: ScreenInfo) => `${info.width}×${info.height} @${info.devicePixelRatio}x ${info.orientationType}`,
+        },
+    }),
 
     "browser-screen-details": unavailable("@valdres/browser-screen-details"),
 

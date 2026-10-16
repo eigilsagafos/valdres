@@ -1,11 +1,11 @@
 ---
 title: browser-window
-description: Reactive window inner size, tracked through resize events
+description: Reactive window inner and outer size, tracked through resize events
 ---
 
 # browser-window
 
-Tracks the browser window's inner size, updating on every `resize`. Exposed as a single global atom.
+Tracks the browser window's inner and outer size. It provides one read-only external atom, updated by `resize`, whose value is a single frozen snapshot of all four sizes.
 
 ## Install
 
@@ -18,6 +18,24 @@ bun add @valdres/browser-window
 <PluginDemo plugin="browser-window" />
 
 ## Usage
+
+Every read works through a store, with no adapter at all:
+
+```ts
+import { selector, store } from "valdres"
+import { windowSizeAtom } from "@valdres/browser-window"
+
+const app = store()
+app.get(windowSizeAtom) // { innerWidth, innerHeight, outerWidth, outerHeight }
+
+// Derive the narrow value you need. Its subscribers are only notified when
+// it changes, not on every resize.
+const isWide = selector(get => get(windowSizeAtom).innerWidth >= 768)
+const stop = app.sub(isWide, () => {
+    console.log(app.get(isWide) ? "wide layout" : "narrow layout")
+})
+stop()
+```
 
 <FrameworkBlock fw="react">
 
@@ -33,56 +51,117 @@ function Size() {
 
 </FrameworkBlock>
 
-<FrameworkBlock fw="vue">
+<div className="callout callout-note">
+  <div className="callout-title">Adapter support in this beta</div>
 
-```ts
-import { useValue } from "valdres-vue"
-import { windowSizeAtom } from "@valdres/browser-window"
+  `valdres-react` is the only adapter migrated to the v1 core. The Vue, Svelte,
+  Solid and Angular adapters cannot read an external atom yet: `valdres-vue`'s
+  `useValue` and `valdres-angular`'s `injectValue` are typed for `Atom | Selector`
+  only, `valdres-solid`'s `createValue` still expects the pre-v1 two-parameter
+  `State`, and `valdres-svelte` exports `fromState`, not the `watch` these pages
+  used to show. Until those adapters ship, read this package with `store.get` /
+  `store.sub` as above.
 
-const size = useValue(windowSizeAtom) // Ref<{ width, height }>
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="svelte">
-
-```ts
-import { watch } from "valdres-svelte"
-import { windowSizeAtom } from "@valdres/browser-window"
-
-const size = watch(windowSizeAtom) // size.value.width / size.value.height
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="solid">
-
-```ts
-import { createValue } from "valdres-solid"
-import { windowSizeAtom } from "@valdres/browser-window"
-
-const size = createValue(windowSizeAtom) // size().width / size().height
-```
-
-</FrameworkBlock>
-
-<FrameworkBlock fw="angular">
-
-```ts
-import { injectValue } from "valdres-angular"
-import { windowSizeAtom } from "@valdres/browser-window"
-
-size = injectValue(windowSizeAtom) // ValueState<WindowSize> — read size.value()
-```
-
-</FrameworkBlock>
+</div>
 
 ## Exports
 
 | Export | Kind | Type |
 |--------|------|------|
-| `windowSizeAtom` | atom (read-only) | `{ innerWidth, innerHeight, outerWidth, outerHeight }` |
+| `windowSizeAtom` | external atom (read-only) | `WindowSize` |
+| `WindowSize` | type | `{ readonly innerWidth, innerHeight, outerWidth, outerHeight: number }` |
 
-## Cross-framework
+`innerWidth` / `innerHeight` are the layout viewport, including any scrollbar.
+`outerWidth` / `outerHeight` are the whole browser window. All four are CSS
+pixels, so browser zoom changes them.
 
-A global atom — works in every framework, with the resize listener attached only while something is subscribed.
+## Ownership
+
+The window's size belongs to the browser, so `windowSizeAtom` is an **external
+atom**: stores cannot write it, and `set`, `reset` and `update` reject it at
+compile time and at runtime. Its value is always what `window` reports. A
+`resize` event only tells a store to measure again.
+
+Configuration is the application's, and belongs in its own atoms. Those are
+ordinary store state, so each store tree has its own, and one store's override
+never leaks into another:
+
+```ts
+import { atom, selector } from "valdres"
+import { windowSizeAtom } from "@valdres/browser-window"
+
+// e.g. a fixed width for a device preview pane or a test
+const forcedWidthAtom = atom<number | null>(null)
+const layoutWidthSelector = selector(
+    get => get(forcedWidthAtom) ?? get(windowSizeAtom).innerWidth,
+)
+```
+
+## Snapshots
+
+Each value is one frozen object holding all four sizes, measured together.
+Related values therefore change together: a subscriber or selector never sees a
+new width paired with an old height. A `resize` that leaves all four sizes
+unchanged returns the very same object, so nothing is notified.
+
+Every store reads the same window, so they share snapshots: two stores reading
+an unchanged size get the identical object. The objects are frozen because they
+are shared, and `WindowSize`'s fields are `readonly`.
+
+## Server rendering
+
+`windowSizeAtom` reports all four sizes as `0` when there is no window to
+measure, which covers server rendering and runtimes without a `window`, such as
+a server or a worker. Treat `0` as "unknown": no window has a zero-sized layout
+viewport while a page renders in it. The seed is fixed and deterministic, never
+a per-process guess. `useValue` renders it first and switches to the live value
+after hydration, which is a normal two-pass render, not a hydration mismatch.
+For layout that must be right in the server's HTML, use CSS media queries.
+
+## Lifetime
+
+The `resize` listener attaches to `window` when a store tree first retains the
+source, either through a direct subscription or through a selector built on it.
+It detaches when that tree's last retaining subscriber leaves or the store is
+disposed. Each store tree owns one listener, and child scopes share their
+root's. Importing the package attaches nothing and measures nothing. Reads
+without a subscription measure the window directly and attach nothing either.
+
+If attaching the listener throws, the subscription fails with an
+`ExternalSourceOperationError` whose `cause` is the original error, and nothing
+stays attached. If removing it throws, the unsubscribe (or `dispose`) that
+caused the removal throws the same error class, with `phase: "cleanup"`.
+
+## What is observed
+
+`resize` is the only event the platform fires for these sizes: for window
+resizes, zoom, rotation and mobile browser toolbars. Moving a window without
+resizing it fires nothing, so the window's position (`screenX`, `screenY`) is
+not part of the snapshot.
+
+Native behavior was checked in Chromium only, by driving Chrome for Testing 151
+(headless and headed) and Chrome 154 on macOS over the DevTools protocol:
+viewport changes, real browser zoom (Chrome for Testing only) and resizing the
+browser window itself. In every case one `resize` produced one publication per
+store, shared by both stores, and synthetic events that changed nothing
+notified nobody.
+
+**Outer size can lag by one resize.** In the same runs, when the browser window
+itself was resized, `outerWidth` and `outerHeight` still reported the previous
+window bounds while `resize` was dispatched, and caught up by the second
+animation frame without any further event. A subscribed store therefore keeps
+the stale outer size until the next `resize`. Inner sizes were always current.
+A read without a subscription measures again and sees the current outer size.
+
+**Not verified:** Safari/WebKit, Firefox/Gecko, mobile browsers, and user-driven
+window drags (as opposed to `Browser.setWindowBounds`).
+
+## Migrating from 1.0.0-beta.8
+
+| Before | Now |
+|---|---|
+| `windowSizeAtom` was a writable `globalAtom` shared by every store | A read-only `ExternalAtom<WindowSize>`. `set`, `reset`, `update`, `setSelf` and `resetSelf` are gone. Put overrides in your own atom, as above. |
+| One `resize` listener for the whole process, whose cached value every store saw | One listener per store tree that subscribes. Reads without a subscription measure live. |
+| A new object on every `resize` | One frozen, shared object per distinct size; a `resize` that changes nothing notifies nobody. |
+| `WindowSize` fields were mutable | `readonly`. |
+| Peer `valdres` `^1.0.0-beta.19` (a range that admits cores without `globalAtom`) | `^1.0.0-beta.39`, the first core with `externalAtom`. |
