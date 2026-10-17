@@ -29,6 +29,7 @@ const COVERED_JOBS = [
     "browser-keyboard",
     "browser-status",
     "hotkeys",
+    "jotai",
     "valdres-package",
 ]
 
@@ -281,6 +282,14 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "            - uses: actions/setup-node@v6",
             "            - name: Hotkeys gate",
             "              run: bun run test:hotkeys",
+            "    jotai:",
+            "        runs-on: ubuntu-22.04",
+            "        steps:",
+            "            - uses: actions/checkout@v6",
+            "            - uses: oven-sh/setup-bun@v2",
+            "            - uses: actions/setup-node@v6",
+            "            - name: Jotai gate",
+            "              run: bun run test:jotai",
             "    valdres-package:",
             "        runs-on: ubuntu-22.04",
             "        steps:",
@@ -317,6 +326,7 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "Browser keyboard gate",
             "Browser status gate",
             "Hotkeys gate",
+            "Jotai gate",
             "Package gate",
         ])
     })

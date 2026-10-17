@@ -148,7 +148,6 @@ describe("v1 build output", () => {
 
         expect(files).toContain("index.js")
         expect(files).toContain("inspect.js")
-        expect(files).toContain("equality.js")
         expect(files).toContain("adapter-internals/v1.js")
         expect(
             defaultJavaScript.filter(code =>
@@ -161,11 +160,10 @@ describe("v1 build output", () => {
         expect(JavaScript.join("\n")).not.toContain("process.env")
     })
 
-    test("loads root, inspect, equality, and adapter from the built split graph with no ambient writes", async () => {
+    test("loads root, inspect, and adapter from the built split graph with no ambient writes", async () => {
         const dist = await builtDist()
         const rootUrl = pathToFileURL(join(dist, "index.js")).href
         const inspectUrl = pathToFileURL(join(dist, "inspect.js")).href
-        const equalityUrl = pathToFileURL(join(dist, "equality.js")).href
         const adapterUrl = pathToFileURL(
             join(dist, "adapter-internals", "v1.js"),
         ).href
@@ -173,7 +171,6 @@ describe("v1 build output", () => {
             const before = new Set(Reflect.ownKeys(globalThis))
             const root = await import(${JSON.stringify(rootUrl)})
             const inspect = await import(${JSON.stringify(inspectUrl)})
-            const equality = await import(${JSON.stringify(equalityUrl)})
             const adapter = await import(${JSON.stringify(adapterUrl)})
             const count = root.atom(1)
             const target = root.store()
@@ -187,7 +184,7 @@ describe("v1 build output", () => {
                 .map(String)
             console.log(JSON.stringify({
                 addedGlobals,
-                equal: equality.deepEqual(
+                equal: root.deepEqual(
                     { id: 1, nested: [2, 3] },
                     { id: 1, nested: [2, 3] },
                 ),
@@ -195,7 +192,6 @@ describe("v1 build output", () => {
                 inspectedValue: adapter.read(inspected.store, count),
                 root: Object.keys(root).sort(),
                 inspect: Object.keys(inspect).sort(),
-                equality: Object.keys(equality).sort(),
                 adapter: Object.keys(adapter).sort(),
             }))
         `
@@ -238,6 +234,7 @@ describe("v1 build output", () => {
                 "UndefinedCollectionValueError",
                 "atom",
                 "collection",
+                "deepEqual",
                 "externalAtom",
                 "family",
                 "presence",
@@ -245,7 +242,6 @@ describe("v1 build output", () => {
                 "store",
             ],
             inspect: ["createInspectableStore"],
-            equality: ["deepEqual"],
             adapter: [
                 "assertStore",
                 "read",
@@ -293,7 +289,6 @@ describe("v1 build output", () => {
                 exports: {
                     ".": "./dist/index.js",
                     "./inspect": "./dist/inspect.js",
-                    "./equality": "./dist/equality.js",
                     "./adapter-internals/v1": "./dist/adapter-internals/v1.js",
                 },
             }),
@@ -337,9 +332,8 @@ describe("v1 build output", () => {
                 "--input-type=module",
                 "--eval",
                 `
-                    import { atom, family, selector, store } from "valdres-packed-probe"
+                    import { atom, deepEqual, family, selector, store } from "valdres-packed-probe"
                     import { createInspectableStore } from "valdres-packed-probe/inspect"
-                    import { deepEqual } from "valdres-packed-probe/equality"
                     import {
                         assertStore,
                         read,
@@ -378,6 +372,78 @@ describe("v1 build output", () => {
             hydration: 4,
             inspected: 6,
         })
+    })
+
+    test("splits deepEqual out of the root chunk so unused comparators tree-shake in both graphs", async () => {
+        const { build } = await import("esbuild")
+        const dist = await builtDist()
+        const consumer = await temporaryDirectory("valdres-v1-deep-equal-")
+        const packageDirectory = join(consumer, "node_modules", "valdres")
+        await mkdir(packageDirectory, { recursive: true })
+        await cp(dist, join(packageDirectory, "dist"), { recursive: true })
+        await writeFile(
+            join(packageDirectory, "package.json"),
+            JSON.stringify({
+                name: "valdres",
+                type: "module",
+                sideEffects: false,
+                exports: {
+                    ".": {
+                        development: "./dist/development/index.js",
+                        default: "./dist/index.js",
+                    },
+                },
+            }),
+        )
+        // Strings only the comparator's implementation contains.
+        const implementationSentinels = ["unicodeSets", "native code"]
+        const retained = (code: string) =>
+            implementationSentinels.filter(sentinel => code.includes(sentinel))
+
+        for (const development of [false, true]) {
+            const graph = development ? join(dist, "development") : dist
+            expect(
+                retained(await readFile(join(graph, "index.js"), "utf8")),
+            ).toEqual([])
+
+            const bundle = async (contents: string) => {
+                const result = await build({
+                    stdin: { contents, resolveDir: consumer, loader: "js" },
+                    bundle: true,
+                    minify: true,
+                    write: false,
+                    format: "esm",
+                    conditions: development ? ["development"] : [],
+                    logLevel: "silent",
+                })
+                return result.outputFiles[0]!.text
+            }
+            for (const contents of [
+                `export { atom } from "valdres"`,
+                `export { atom, selector, store } from "valdres"`,
+                `export { family, collection, externalAtom } from "valdres"`,
+            ]) {
+                expect(retained(await bundle(contents))).toEqual([])
+            }
+
+            const used = await bundle(
+                `import { atom, deepEqual, store } from "valdres"
+                const value = atom({ id: 1 }, { equal: deepEqual })
+                const target = store()
+                const before = target.get(value)
+                target.set(value, { id: 1 })
+                console.log(JSON.stringify({ kept: target.get(value) === before }))`,
+            )
+            expect(retained(used)).toEqual(implementationSentinels)
+            const bundled = join(
+                consumer,
+                `used-${development ? "development" : "production"}.mjs`,
+            )
+            await writeFile(bundled, used)
+            const result = run(["node", bundled], consumer)
+            expect(result.exitCode, result.stderr).toBe(0)
+            expect(JSON.parse(result.stdout)).toEqual({ kept: true })
+        }
     })
 
     test("removes stale split chunks without deleting type output", async () => {
@@ -439,8 +505,7 @@ test("collection-only bundles exclude the separately exported query engine", asy
 // Four roots throw an Error, a string, a plain object and a forged wrapper;
 // each fails a selector chain, and a fallback reader catches the first chain's
 // dependency error.
-const STACK_PROBE = String.raw`
-const valdres = await import(process.env.VALDRES_ROOT_URL)
+const STACK_SETUP = String.raw`
 const testCase = process.env.VALDRES_STACK_CASE
 const describeLimit = () => {
     const descriptor = Object.getOwnPropertyDescriptor(Error, "stackTraceLimit")
@@ -460,7 +525,7 @@ if (testCase === "limit-readonly") {
         configurable: true,
     })
 }
-if (testCase === "limit-accessor") {
+if (testCase.startsWith("limit-accessor")) {
     Object.defineProperty(Error, "stackTraceLimit", {
         get: function limitGet() {
             access.gets++
@@ -470,16 +535,48 @@ if (testCase === "limit-accessor") {
             access.sets++
         },
         enumerable: true,
-        configurable: true,
+        configurable: !testCase.includes("locked"),
     })
 }
-if (testCase === "prepare-stack-trace") {
+if (testCase === "prepare-stack-trace" || testCase.endsWith("formatted")) {
     Error.prepareStackTrace = (error, frames) => {
         prepared.push(error.name)
         return "custom " + error.name + " " + frames.length
     }
 }
 const limitBefore = describeLimit()
+const exactLimitBefore = Object.getOwnPropertyDescriptor(Error, "stackTraceLimit")
+const limitIsUnchanged = () => {
+    const after = Object.getOwnPropertyDescriptor(Error, "stackTraceLimit")
+    if (exactLimitBefore === undefined || after === undefined) return exactLimitBefore === after
+    return Reflect.ownKeys(exactLimitBefore).length === Reflect.ownKeys(after).length &&
+        Reflect.ownKeys(exactLimitBefore).every(key => Object.is(exactLimitBefore[key], after[key]))
+}
+`
+
+// No Valdres import: this fresh-process control independently observes native
+// construction under the same descriptor, including custom formatter timing.
+const NATIVE_ACCESSOR_PROBE = String.raw`
+${STACK_SETUP}
+const error = new Error("native control")
+const preparedBeforeRead = [...prepared]
+const stack = error.stack
+console.log(JSON.stringify({
+    stack,
+    stackType: typeof stack,
+    frames: typeof stack === "string" ? stack.split("\n").filter(line => /^\s+at /.test(line)).length : null,
+    preparedBeforeRead,
+    preparedAfterRead: prepared,
+    access,
+    limitBefore,
+    limitAfter: describeLimit(),
+    limitUnchanged: limitIsUnchanged(),
+}))
+`
+
+const STACK_PROBE = String.raw`
+${STACK_SETUP}
+const valdres = await import(process.env.VALDRES_ROOT_URL)
 // A value that looks like a wrapper (its prototype and code) without being
 // constructed by Valdres.
 const sample = valdres.selector(() => {
@@ -554,6 +651,7 @@ chains.fallback = chainOf(caught[0])
 const result = {
     limitBefore,
     limitAfter: describeLimit(),
+    limitUnchanged: limitIsUnchanged(),
     access,
     preparedBeforeWrite,
     preparedDuringWrite,
@@ -564,11 +662,12 @@ const result = {
                 const stack = wrapper.stack
                 return {
                     code: wrapper.code,
+                    stackType: typeof stack,
                     frames:
                         typeof stack === "string"
                             ? stack.split("\n").filter(line => /^\s+at /.test(line)).length
                             : null,
-                    stack: testCase === "prepare-stack-trace" ? stack : undefined,
+                    stack: testCase === "prepare-stack-trace" || testCase.startsWith("limit-accessor") ? stack : undefined,
                 }
             }),
         ]),
@@ -583,6 +682,7 @@ const result = {
         Object.isExtensible(thrown.error) &&
         thrown.error.message === "root failure",
 }
+result.preparedAfterRead = [...prepared]
 store.set(fail, false)
 result.recovered = [...leaves, fallback].map(state => store.get(state))
 store.dispose()
@@ -592,12 +692,19 @@ console.log(JSON.stringify(result))
 type StackProbeResult = {
     limitBefore: Record<string, unknown> | null
     limitAfter: Record<string, unknown> | null
+    limitUnchanged: boolean
     access: { gets: number; sets: number }
     preparedBeforeWrite: string[]
     preparedDuringWrite: string[]
+    preparedAfterRead: string[]
     chains: Record<
         "error" | "primitive" | "object" | "forged" | "fallback",
-        { code: string; frames: number | null; stack?: string }[]
+        {
+            code: string
+            frames: number | null
+            stack?: string
+            stackType: string
+        }[]
     >
     exactCauses: boolean
     fallbackCause: boolean
@@ -655,6 +762,7 @@ describe("propagated selector error stacks in the built output", () => {
         // Error.stackTraceLimit is left exactly as it was, whatever its shape,
         // and never read or written through an accessor.
         expect(parsed.limitAfter).toEqual(parsed.limitBefore)
+        expect(parsed.limitUnchanged).toBe(true)
         expect(parsed.access).toEqual({ gets: 0, sets: 0 })
         return parsed
     }
@@ -714,12 +822,93 @@ describe("propagated selector error stacks in the built output", () => {
         ])
     })
 
+    // C1's accessor-only exception is based on independent native behavior,
+    // never a runtime version. Ordinary framed cases below cannot take it.
+    for (const runtime of ["bun", "node"] as const) {
+        for (const locked of [false, true]) {
+            for (const formatted of [false, true]) {
+                const testCase = `limit-accessor${locked ? "-locked" : ""}${formatted ? "-formatted" : ""}`
+                test(`${runtime} preserves native stack availability and hook timing with ${testCase}`, async () => {
+                    const control = run(
+                        [
+                            runtime,
+                            "--input-type=module",
+                            "--eval",
+                            NATIVE_ACCESSOR_PROBE,
+                        ],
+                        import.meta.dir,
+                        { VALDRES_STACK_CASE: testCase },
+                    )
+                    expect(control.exitCode, control.stderr).toBe(0)
+                    const native = JSON.parse(control.stdout)
+                    expect(native.access).toEqual({ gets: 0, sets: 0 })
+                    expect(native.limitAfter).toEqual(native.limitBefore)
+                    expect(native.limitUnchanged).toBe(true)
+                    expect(native.limitAfter.configurable).toBe(!locked)
+                    expect(native.preparedBeforeRead).toEqual([])
+                    const framed = native.stackType === "string"
+                    if (framed) {
+                        if (formatted) {
+                            expect(native.stack).toMatch(
+                                /^custom Error [1-9]\d*$/,
+                            )
+                        } else {
+                            expect(native.frames).toBeGreaterThan(0)
+                        }
+                    } else {
+                        expect(native.stackType).toBe("undefined")
+                        expect(native.stack).toBeUndefined()
+                        expect(native.frames).toBeNull()
+                    }
+                    expect(native.preparedAfterRead).toEqual(
+                        formatted && framed ? ["Error"] : [],
+                    )
+                    const result = await probe(runtime, testCase)
+                    expect(result.limitAfter).toEqual(native.limitAfter)
+                    expect(result.preparedBeforeWrite).toEqual([])
+                    expect(result.preparedDuringWrite).toEqual([])
+                    const wrappers = Object.values(result.chains).flat()
+                    for (const wrapper of wrappers) {
+                        if (framed) {
+                            expect(wrapper.stackType).toBe("string")
+                            if (formatted) {
+                                expect(wrapper.stack).toMatch(
+                                    /^custom Selector(Getter|Dependency)Error [1-9]\d*$/,
+                                )
+                            } else {
+                                expect(wrapper.frames).toBeGreaterThan(0)
+                            }
+                        } else {
+                            expect(wrapper.stackType).toBe("undefined")
+                            expect(wrapper.stack).toBeUndefined()
+                            expect(wrapper.frames).toBeNull()
+                        }
+                    }
+                    expect(result.preparedAfterRead).toEqual(
+                        formatted && framed
+                            ? // The fallback shares the innermost three
+                              // wrappers with the first chain. Their stacks were
+                              // already read and the engine caches formatting.
+                              [
+                                  ...result.chains.error,
+                                  ...result.chains.primitive,
+                                  ...result.chains.object,
+                                  ...result.chains.forged,
+                                  result.chains.fallback[0]!,
+                              ].map(wrapper =>
+                                  wrapper.code === GETTER
+                                      ? "SelectorGetterError"
+                                      : "SelectorDependencyError",
+                              )
+                            : [],
+                    )
+                })
+            }
+        }
+    }
+
     test("Bun keeps every wrapper's frames and computes them only when read", async () => {
-        for (const testCase of [
-            "default",
-            "limit-readonly",
-            "limit-accessor",
-        ]) {
+        for (const testCase of ["default", "limit-readonly"]) {
             for (const chain of Object.values(
                 frames(await probe("bun", testCase)),
             )) {

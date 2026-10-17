@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { LeakDetector } from "../../../test/src/LeakDetector"
+import { LeakDetector, retentionPhase } from "../../../test/src/LeakDetector"
 import {
     StoreDisposedError,
     TransactionClosedError,
@@ -15,20 +15,26 @@ import { runCollectionTransaction } from "./collection-test-transaction"
 const read = (store: CommittedStoreTree, state: State<any>): any =>
     store.get(state)
 
-const expectRetained = async (detector: LeakDetector): Promise<void> => {
-    expect(await detector.isLeaking(10)).toBe(true)
+const expectRetained = async (detector: LeakDetector, label?: string): Promise<void> => {
+    retentionPhase(label, "retention-await-enter")
+    const leaking = await detector.isLeaking(10, label)
+    retentionPhase(label, leaking ? "retention-await-return-live" : "retention-await-return-collected")
+    expect(leaking).toBe(true)
 }
 
-const expectCollected = async (detector: LeakDetector): Promise<void> => {
+const expectCollected = async (detector: LeakDetector, label?: string): Promise<void> => {
     let leaking = true
     for (let attempt = 0; attempt < 3 && leaking; attempt++) {
-        leaking = await detector.isLeaking()
+        retentionPhase(label, "collection-await-enter", attempt)
+        leaking = await detector.isLeaking(undefined, label)
+        retentionPhase(label, leaking ? "collection-await-return-live" : "collection-await-return-collected", attempt)
     }
     expect(leaking).toBe(false)
 }
 
 describe("v1 committed collection row lifecycle", () => {
     test("pins Present and Absent owners until reset", async () => {
+        retentionPhase("collection-test", `start platform=${process.platform} arch=${process.arch} bun=${Bun.version}`)
         const domain = createCommittedStoreTreeDomain()
         const sessions = createCollectionDefinition<string, number>(domain)
         const root = domain.createStoreTree()
@@ -45,7 +51,9 @@ describe("v1 committed collection row lifecycle", () => {
             row = undefined
             return { detector, reference }
         })()
-        await expectRetained(present.detector)
+        retentionPhase("present-owned", "ownership-created")
+        await expectRetained(present.detector, "present-owned")
+        retentionPhase("present-released", "reset-enter")
         ;(() => {
             const row = sessions("present")
             expect(present.reference.deref()).toBe(row)
@@ -53,7 +61,8 @@ describe("v1 committed collection row lifecycle", () => {
                 rows.reset(row),
             )
         })()
-        await expectCollected(present.detector)
+        retentionPhase("present-released", "reset-return")
+        await expectCollected(present.detector, "present-released")
 
         const absent = (() => {
             let row: ReturnType<typeof sessions> | undefined =
@@ -66,7 +75,9 @@ describe("v1 committed collection row lifecycle", () => {
             row = undefined
             return { detector, reference }
         })()
-        await expectRetained(absent.detector)
+        retentionPhase("absent-owned", "ownership-created")
+        await expectRetained(absent.detector, "absent-owned")
+        retentionPhase("absent-released", "reset-enter")
         ;(() => {
             const row = sessions("absent")
             expect(absent.reference.deref()).toBe(row)
@@ -74,7 +85,9 @@ describe("v1 committed collection row lifecycle", () => {
                 rows.scope(child).reset(row),
             )
         })()
-        await expectCollected(absent.detector)
+        retentionPhase("absent-released", "reset-return")
+        await expectCollected(absent.detector, "absent-released")
+        retentionPhase("collection-test", "complete")
     }, 15_000)
 
     test("scope disposal releases pins and detaches MembershipRecord routes exactly once", async () => {

@@ -368,8 +368,10 @@ export const defineRich = <
         expect(consumerDeclaration).toContain(
             "richSessions: Collection<string, Session, SessionLookup, never>",
         )
+        // Root Selector is v1's own declaration, and this relative library
+        // exposes v1.js too; installed consumers name it via "valdres".
         expect(consumerDeclaration).toContain(
-            'sessionPresence: import("./library/index.js").Selector<boolean>',
+            'sessionPresence: import("./library/v1.js").Selector<boolean>',
         )
         expect(consumerDeclaration).toContain(
             "directOptions: CollectionOptions<string, Session>",

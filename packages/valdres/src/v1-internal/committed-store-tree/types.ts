@@ -341,3 +341,8 @@ export interface CommittedStoreTreeDomain {
     createStoreTree(): CommittedStoreTree
     readonly adapter: CommittedStoreTreeAdapter
 }
+
+// Public names, re-exported as these same symbols by the root entry so that
+// consumer declaration emit can name inferred Stores and Transactions. Aliasing
+// here rather than in index.ts keeps Bun's minified identifiers unchanged.
+export type { CommittedStoreTree as Store, RootTransaction as Transaction }

@@ -216,6 +216,7 @@ describe("pinned Bun toolchain", () => {
             "inspect",
             "query",
             "query-development",
+            "root-deep-equal",
         ])
         expect(
             baseline.policy.coreRetainingFixtures.every((name: string) =>
@@ -252,8 +253,10 @@ describe("pinned Bun toolchain", () => {
         const allowance = baseline.policy.coreRetainingGzipAllowance
         expect(allowance).toBe(2322)
         // The raw allowance is the same reviewed revision-3 measurement:
-        // atom-selector-store 72063 - ordinary ceiling 66284.
-        expect(baseline.policy.coreRetainingRawAllowance).toBe(5779)
+        // atom-selector-store 72063 - ordinary ceiling 66284. The Bun 1.4.3
+        // producer adds 4 raw bytes: 72067 - 66284 = 5783. Gzip stays within
+        // the existing 2322 allowance; immutable ordinary baselines stay fixed.
+        expect(baseline.policy.coreRetainingRawAllowance).toBe(5783)
         for (const budget of [
             baseline.featureBudgets.dist,
             baseline.featureBudgets.packed,

@@ -46,12 +46,10 @@ writing.
 `Object.is` is the default equality for atoms and selectors, including family
 members. Writing a new but structurally equal object is an update and notifies
 dependents and subscribers. Where structurally equal replacements should keep
-the current reference and not notify, pass `deepEqual` from the separate
-`valdres/equality` entry as the `equal` option:
+the current reference and not notify, pass `deepEqual` as the `equal` option:
 
 ```ts
-import { atom, selector } from "valdres"
-import { deepEqual } from "valdres/equality"
+import { atom, deepEqual, selector } from "valdres"
 
 const documentAtom = atom({ blocks: [] }, { equal: deepEqual })
 const viewSelector = selector(get => render(get(documentAtom)), {

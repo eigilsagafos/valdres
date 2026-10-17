@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import {
     atom,
+    deepEqual,
     selector,
     SelectorCircularDependencyError,
     type Selector,
 } from "../../src/index"
 import { readHydrationSnapshot } from "../../src/adapter-internals/v1"
-import { deepEqual } from "../../src/equality"
 import { createInspectionRecorder } from "../../src/v1-internal/inspection"
 import {
     createInspectableStore,
