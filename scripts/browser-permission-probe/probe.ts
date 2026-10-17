@@ -136,7 +136,38 @@ button("request-screens", "requestScreenDetails()", () =>
     screens.requestScreenDetails().then(list => list?.length ?? null),
 )
 
+// A separate store for permission caching checks: subscribe, unsubscribe,
+// read, with every Permissions API query still logged in `calls`.
+const permissionStore = store()
+const permissionStates = {
+    geolocation: geo.permissionAtom,
+    screens: screens.screenPermissionAtom,
+    motion: motion.permissionAtom,
+} as const
+let permissionStops: (() => void)[] = []
+const permissionNotifications: string[] = []
+
 ;(window as any).permissionProbe = {
+    permissionCycle: {
+        subscribe: () => {
+            for (const [name, state] of Object.entries(permissionStates))
+                permissionStops.push(
+                    permissionStore.sub(state, () =>
+                        permissionNotifications.push(`${name}:${permissionStore.get(state)}`),
+                    ),
+                )
+        },
+        unsubscribe: () => {
+            for (const stop of permissionStops.splice(0)) stop()
+        },
+        read: () => ({
+            values: Object.fromEntries(
+                Object.entries(permissionStates).map(([name, state]) => [name, permissionStore.get(state)]),
+            ),
+            notifications: [...permissionNotifications],
+            queries: calls.filter(call => call.api === "permissions.query").length,
+        }),
+    },
     importCalls: () => importCalls,
     snapshot,
     subscribeAll: () => {
