@@ -1,0 +1,18 @@
+{
+    // Type-checks everything the package ships or runs, not just the public
+    // entry: `tsconfig.json` deliberately narrows to `src/index.ts` for
+    // declaration emit, which would skip the `@ts-expect-error` assertions that
+    // enforce the read-only contract.
+    //
+    // `dev/` is excluded: the manual three.js demo's JSX intrinsics come from
+    // @react-three/fiber's React 19 type augmentation, which does not resolve
+    // under the repo's root type setup, and `dev/server.ts` needs a newer
+    // `@types/bun` than the pinned 1.2.2.
+    "extends": "../../../tsconfig.json",
+    "include": ["src", "test"],
+    "exclude": ["dist", "dev"],
+    "compilerOptions": {
+        "noEmit": true,
+        "types": ["bun"]
+    }
+}

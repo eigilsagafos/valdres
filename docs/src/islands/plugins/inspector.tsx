@@ -7,11 +7,10 @@ import {
     useEffect,
     useRef,
     useState,
-    useSyncExternalStore,
     type ReactNode,
 } from "react"
 import { createRoot } from "react-dom/client"
-import { Provider, useStore } from "valdres-react"
+import { Provider, useStore, useValue } from "valdres-react"
 import { docsStore } from "../shared-store"
 
 export type InspectorRow = {
@@ -76,12 +75,9 @@ function defaultFormat(value: any): ReactNode {
 }
 
 function RowValue({ state, format }: Omit<InspectorRow, "label">) {
-    const store = useStore()
-    const value = useSyncExternalStore(
-        cb => store.sub(state as any, cb),
-        () => store.get(state as any),
-        () => store.get(state as any),
-    )
+    // useValue keeps one subscription per row; an inline subscribe function
+    // would re-subscribe on every update and churn the source's lifecycle.
+    const value = useValue(state as any)
     return <>{(format ?? defaultFormat)(value)}</>
 }
 

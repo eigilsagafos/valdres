@@ -1,72 +1,20 @@
+import { requestScreenDetailsOnce } from "../lib/screenDetailsRecord"
 import type { ScreenDetail } from "../types/ScreenDetail"
-import { currentScreenAtom } from "../atoms/currentScreenAtom"
-import { screenPermissionAtom } from "../atoms/screenPermissionAtom"
-import { screensAtom } from "../atoms/screensAtom"
-import { detailsState } from "../lib/detailsState"
-import { toScreenDetail } from "../lib/toScreenDetail"
 
-type ScreenLike = Parameters<typeof toScreenDetail>[0] & EventTarget
-
-interface ScreenDetailsLike extends EventTarget {
-    screens: ScreenLike[]
-    currentScreen: ScreenLike
-}
-
-interface WindowWithScreenDetails {
-    getScreenDetails?: () => Promise<ScreenDetailsLike>
-}
-
-export const requestScreenDetails = (): Promise<ScreenDetail[] | null> => {
-    if (typeof window === "undefined") return Promise.resolve(null)
-    const api = window as unknown as WindowWithScreenDetails
-    if (typeof api.getScreenDetails !== "function")
-        return Promise.resolve(null)
-    if (detailsState.request) return detailsState.request
-
-    detailsState.request = (async (): Promise<ScreenDetail[] | null> => {
-        try {
-            const details = await api.getScreenDetails!()
-            screenPermissionAtom.setSelf("granted")
-
-            const syncAll = () => {
-                screensAtom.setSelf(details.screens.map(toScreenDetail))
-                currentScreenAtom.setSelf(toScreenDetail(details.currentScreen))
-            }
-            const syncCurrent = () => {
-                currentScreenAtom.setSelf(toScreenDetail(details.currentScreen))
-            }
-
-            const screenListeners = new Map<EventTarget, () => void>()
-            const bindScreenListeners = () => {
-                for (const [target, fn] of screenListeners) {
-                    target.removeEventListener("change", fn)
-                }
-                screenListeners.clear()
-                for (const screen of details.screens) {
-                    const fn = () => syncAll()
-                    screen.addEventListener("change", fn)
-                    screenListeners.set(screen, fn)
-                }
-            }
-            const onScreensChange = () => {
-                bindScreenListeners()
-                syncAll()
-            }
-
-            syncAll()
-            bindScreenListeners()
-            details.addEventListener("screenschange", onScreensChange)
-            details.addEventListener("currentscreenchange", syncCurrent)
-
-            return details.screens.map(toScreenDetail)
-        } catch (err) {
-            if (err instanceof DOMException && err.name === "NotAllowedError") {
-                screenPermissionAtom.setSelf("denied")
-            }
-            detailsState.request = null
-            throw err
-        }
-    })()
-
-    return detailsState.request
-}
+/**
+ * The explicit trigger: calls `window.getScreenDetails()`, which may show the
+ * browser's `window-management` prompt. The native call is made
+ * synchronously, inside the caller's task, so a call from a click handler
+ * reaches the browser during that click; how the prompt is presented is the
+ * browser's decision.
+ *
+ * - Resolves the screens when access is granted; `screenDetailsAtom` turns
+ *   `"ready"` for every store.
+ * - Rejects with the browser's error otherwise; the state turns `"denied"` for
+ *   a `NotAllowedError` and `"error"` for anything else.
+ * - Resolves `null` without the API or in an insecure context.
+ *
+ * Concurrent calls share one request; a browser prompt cannot be cancelled.
+ */
+export const requestScreenDetails = (): Promise<ScreenDetail[] | null> =>
+    requestScreenDetailsOnce()

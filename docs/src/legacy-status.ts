@@ -27,11 +27,7 @@ const dependsOnRemoved = (name: string, missing: string): V1Unavailable => ({
 
 export const v1Unavailable = {
     "@valdres/bandwidth": globalAtomPackage("@valdres/bandwidth", "`globalAtom` and `globalStore`"),
-    "@valdres/browser-device-motion": globalAtomPackage("@valdres/browser-device-motion"),
-    "@valdres/browser-device-orientation": globalAtomPackage("@valdres/browser-device-orientation"),
-    "@valdres/browser-geolocation": globalAtomPackage("@valdres/browser-geolocation", "`globalAtom` and `globalStore`"),
     "@valdres/browser-screen": globalAtomPackage("@valdres/browser-screen"),
-    "@valdres/browser-screen-details": globalAtomPackage("@valdres/browser-screen-details"),
     "@valdres/browser-window": globalAtomPackage("@valdres/browser-window"),
     "@valdres/color-mode": globalAtomPackage("@valdres/color-mode"),
     "@valdres/public-ip": globalAtomPackage("@valdres/public-ip"),
