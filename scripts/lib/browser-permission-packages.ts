@@ -12,9 +12,9 @@
  * window; geolocation runs one native watch per Store that asks; screen
  * details shares the browser's one `ScreenDetails` object per window.
  *
- * Tested by the standalone `.github/workflows/browser-permission.yaml`, kept
- * out of ci.yaml, `scripts/verify.ts` and `publish.needs` until a later
- * integration change. Every package here is release-ignored: `releaseEligible`
+ * Tested by ci.yaml's `browser-permission` job, which `scripts/verify.ts`
+ * runs; deliberately absent from `publish.needs` until release enablement.
+ * Every package here is release-ignored: `releaseEligible`
  * is the single per-package claim `scripts/browser-permission-packages.test.ts`
  * checks against `.changeset/config.json` and
  * `scripts/publishable-packages.json`.

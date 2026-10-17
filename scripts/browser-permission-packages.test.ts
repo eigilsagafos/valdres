@@ -3,8 +3,8 @@
  * by CI's existing `bun test scripts/` step.
  *
  * All four packages are migrated but release-ignored: on the Changesets ignore
- * list, off the publishable list, tested by the standalone
- * `browser-permission` workflow and absent from `publish.needs`. Each
+ * list, off the publishable list, tested by ci.yaml's `browser-permission`
+ * job (which `bun run verify` runs) and absent from `publish.needs`. Each
  * package's `releaseEligible` flag is the single claim checked here, so a
  * package cannot drift into a half-enabled state.
  */
@@ -36,8 +36,16 @@ const sourceFiles = (dir: string): string[] =>
 const names = BROWSER_PERMISSION_PACKAGES.map(pkg => pkg.name) as string[]
 const ignored = (): string[] =>
     JSON.parse(read(ROOT, ".changeset", "config.json")).ignore
-const workflow = () =>
-    read(ROOT, ".github", "workflows", "browser-permission.yaml")
+const ciYaml = () => read(ROOT, ".github", "workflows", "ci.yaml")
+/** The text of one top-level job in ci.yaml, up to the next job. */
+const ciJob = (name: string): string | undefined => {
+    const lines = ciYaml().split("\n")
+    const start = lines.indexOf(`    ${name}:`)
+    if (start === -1) return undefined
+    const rest = lines.slice(start + 1)
+    const end = rest.findIndex(line => /^    [a-z][a-z-]*:$/.test(line))
+    return rest.slice(0, end === -1 ? undefined : end).join("\n") + "\n"
+}
 
 describe("browser-permission lane", () => {
     test("is unique and covers only real packages", () => {
@@ -61,16 +69,37 @@ describe("browser-permission lane", () => {
         expect(Bun.semver.satisfies("1.0.0-beta.38", BROWSER_PERMISSION_CORE_PEER_RANGE)).toBe(false)
     })
 
-    test("its workflow runs the lane's gates and is not a release gate", () => {
-        const text = workflow()
-        expect(text).toContain("bun run scripts/check-browser-permission.ts")
-        expect(text).toContain("bun run scripts/test-browser-permission-packed-consumer.ts")
-        // Isolated until integration: ci.yaml's publish job must not wait on
-        // this lane, and the lane must not publish.
-        expect(text).not.toContain("npm-publish")
-        expect(read(ROOT, ".github", "workflows", "ci.yaml")).not.toContain(
-            "browser-permission",
+    test("its ci.yaml job runs both gates through the root scripts", () => {
+        const job = ciJob("browser-permission")
+        expect(job).toBeString()
+        expect(job).toContain("run: bun run test:browser-permission\n")
+        expect(job).toContain("run: bun run test:browser-permission:packed\n")
+        const scripts = JSON.parse(read(ROOT, "package.json")).scripts
+        expect(scripts["test:browser-permission"]).toBe(
+            "bun run scripts/check-browser-permission.ts",
         )
+        expect(scripts["test:browser-permission:packed"]).toBe(
+            "bun run scripts/test-browser-permission-packed-consumer.ts",
+        )
+        // One execution path: the lane's former standalone workflow is gone.
+        expect(
+            existsSync(join(ROOT, ".github", "workflows", "browser-permission.yaml")),
+        ).toBe(false)
+    })
+
+    test("verify runs the job, but publish does not wait on it", () => {
+        expect(read(ROOT, "scripts", "verify.ts")).toMatch(
+            /const JOBS = \[[^\]]*"browser-permission"/,
+        )
+        const needs = ciYaml().match(
+            /^    publish:[\s\S]*?\n        needs: \[([^\]]*)\]/m,
+        )
+        expect(needs).not.toBeNull()
+        const gating = needs![1]!.split(",").map(job => job.trim())
+        // Release-ignored packages must not gate a release; add the job here
+        // only together with release enablement.
+        expect(gating).not.toContain("browser-permission")
+        expect(BROWSER_PERMISSION_PACKAGES.some(pkg => pkg.releaseEligible)).toBe(false)
     })
 
     for (const pkg of BROWSER_PERMISSION_PACKAGES) {
