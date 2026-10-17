@@ -122,6 +122,37 @@ describe("requestMotionPermission", () => {
         app.dispose()
     })
 
+    test("an answer that lands after every store was disposed is still recorded page truth", async () => {
+        const [page, script] = installScripted()
+        const app = store()
+        app.sub(permissionAtom, () => {})
+        const answer = page.withActivation(() => requestMotionPermission())
+        app.dispose()
+        script.pending[0]!.resolve("granted")
+        await expect(answer).resolves.toBe("granted")
+        const next = store()
+        expect(next.get(permissionAtom)).toBe("granted")
+        next.dispose()
+    })
+
+    test("a request answer that started before a newer change event cannot undo it", async () => {
+        const [page, script] = installScripted()
+        const permissions = page.installPermissions()
+        const app = store()
+        const stop = app.sub(permissionAtom, () => {})
+        await flush()
+        const answer = page.withActivation(() => requestMotionPermission())
+        // The user changes the setting while the prompt is still open.
+        permissions.statuses.get("gyroscope")!.change("denied")
+        expect(app.get(permissionAtom)).toBe("denied")
+        script.pending[0]!.resolve("granted")
+        await expect(answer).resolves.toBe("granted")
+        // The request began earlier than the change event, so the event stands.
+        expect(app.get(permissionAtom)).toBe("denied")
+        stop()
+        app.dispose()
+    })
+
     test("a synchronous throw from requestPermission resolves the unchanged value", async () => {
         harness = installMotion(() => {
             throw new Error("host failure")

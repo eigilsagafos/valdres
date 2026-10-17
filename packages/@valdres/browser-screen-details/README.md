@@ -94,9 +94,10 @@ function Screens() {
 ## Requesting access
 
 `requestScreenDetails()` calls `window.getScreenDetails()` synchronously, so a
-call from a click handler keeps that gesture's activation. The specification
-does not require activation for it, but browsers decide how to present the
-prompt. Concurrent calls share one request; a browser prompt cannot be
+call from a click handler reaches the browser with that click's activation.
+The specification does not require activation for it; how a browser presents
+the prompt is its own decision (verified only in headless Chromium 151 and
+154, with emulated permission states). Concurrent calls share one request; a browser prompt cannot be
 cancelled.
 
 | Outcome                                            | Promise              | `screenDetailsAtom.status`                     | `screenPermissionAtom` |

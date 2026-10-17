@@ -3,8 +3,10 @@ import type { ScreenDetail } from "../types/ScreenDetail"
 
 /**
  * The explicit trigger: calls `window.getScreenDetails()`, which may show the
- * browser's `window-management` prompt. Call it from a user gesture; the call
- * is made synchronously so that gesture's activation is kept.
+ * browser's `window-management` prompt. The native call is made
+ * synchronously, inside the caller's task, so a call from a click handler
+ * reaches the browser during that click; how the prompt is presented is the
+ * browser's decision.
  *
  * - Resolves the screens when access is granted; `screenDetailsAtom` turns
  *   `"ready"` for every store.

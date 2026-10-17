@@ -4,8 +4,8 @@ import type { GeolocationStatus } from "./GeolocationStatus"
 
 /**
  * One coherent publication. `"active"` always carries a position and no
- * error; `"error"` always carries an error and keeps the last position, if
- * any; every other status has neither.
+ * error; `"denied"` (code 1) and `"error"` (codes 2 and 3) always carry the
+ * error and keep the last position, if any; every other status has neither.
  */
 export interface GeolocationState {
     readonly status: GeolocationStatus

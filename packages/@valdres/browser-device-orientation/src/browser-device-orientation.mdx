@@ -11,8 +11,10 @@ Wraps the [`deviceorientation`](https://developer.mozilla.org/docs/Web/API/Windo
   <div className="callout-title">Permission</div>
   Subscribing never prompts. Where the browser gates orientation behind a
   prompt (iOS Safari), call <code>requestOrientationPermission()</code> directly
-  from a click handler: the browser only shows the prompt for a request made
-  with the gesture's transient activation.
+  from a click handler, with no
+  <code>await</code> before it. The specification checks the gesture's
+  transient activation when the request starts; how a given browser presents
+  or remembers the prompt has not been verified on iOS Safari.
 </div>
 
 ## Install
@@ -143,12 +145,19 @@ published with are never observed apart.
   the last subscriber leaves, and the next subscription queries again;
 - otherwise `"prompt"` where `DeviceOrientationEvent.requestPermission` exists, and
   `"granted"` where it does not (those browsers fire events without asking);
-- `"unsupported"` without the API or in an insecure context.
+- `"unsupported"` without the API or in an insecure context — nothing can be
+  asked there. The status keeps the two apart (`"unsupported"` vs
+  `"insecure"`), and a denial is `"denied"`, never `"unsupported"`.
 
 `requestOrientationPermission()` is the only call that can show a prompt. It calls
-`DeviceOrientationEvent.requestPermission()` synchronously, so the transient
-activation of the click that called it is the one the browser checks — do not
-`await` anything before calling it. It never rejects:
+`DeviceOrientationEvent.requestPermission()` synchronously, inside the caller's
+task, so a call made directly from a click handler — with no `await` before it
+— reaches the browser while that click's transient activation is still
+current, which is when the specification checks it. That is all the package
+guarantees: whether a browser then prompts, and how long it remembers the
+answer, is the browser's behaviour. Verified in Chromium 151 and 154 (headless,
+with emulated permission states); the iOS Safari prompt flow is not yet
+verified. It never rejects:
 
 | Outcome | Resolves | Recorded |
 |---------|----------|----------|

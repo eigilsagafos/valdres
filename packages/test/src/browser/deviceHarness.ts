@@ -92,10 +92,22 @@ export interface FakePermissions {
     hold: boolean
     /** Answers every held query, in order. */
     release(): void
+    /** Answers every held query, newest first: a restart's query lands
+     *  before the one it replaced. */
+    releaseNewestFirst(): void
+    /**
+     * When set, each query answers with a FRESH status object carrying the
+     * state at the moment `query()` was called, as Chromium does — so an old
+     * query that lands late carries an old answer. `statuses` then holds the
+     * newest object per name.
+     */
+    freshStatuses: boolean
     /** Sets the state the next query reports (and the status's, silently). */
     set(name: string, state: PermissionState): FakePermissionStatus
     /** Total `change` listeners across every handed-out status. */
     changeListeners(): number
+    /** Every status object handed out, oldest first. */
+    readonly issued: FakePermissionStatus[]
 }
 
 export interface DeviceHarness {
@@ -202,13 +214,19 @@ export const installDeviceHarness = (): DeviceHarness => {
             const unknown = new Set<string>()
             const queries: string[] = []
             const held: (() => void)[] = []
+            const issued: FakePermissionStatus[] = []
             const permissions: FakePermissions = {
                 statuses,
                 unknown,
                 queries,
+                issued,
                 hold: false,
+                freshStatuses: false,
                 release: () => {
                     for (const answer of held.splice(0)) answer()
+                },
+                releaseNewestFirst: () => {
+                    for (const answer of held.splice(0).reverse()) answer()
                 },
                 set: (name, state) => {
                     let status = statuses.get(name)
@@ -219,14 +237,25 @@ export const installDeviceHarness = (): DeviceHarness => {
                     return status
                 },
                 changeListeners: () =>
-                    [...statuses.values()].reduce((sum, status) => sum + status.listeners, 0),
+                    [...new Set([...issued, ...statuses.values()])].reduce(
+                        (sum, status) => sum + status.listeners,
+                        0,
+                    ),
             }
             const query = (descriptor: { name: string }) => {
                 queries.push(descriptor.name)
+                const asked = statuses.get(descriptor.name)?.state ?? "prompt"
                 return new Promise<PermissionStatus>((resolve, reject) => {
                     const answer = () => {
                         if (unknown.has(descriptor.name)) {
                             reject(new TypeError(`'${descriptor.name}' is not a valid PermissionName`))
+                            return
+                        }
+                        if (permissions.freshStatuses) {
+                            const fresh = new FakePermissionStatus(descriptor.name, asked)
+                            issued.push(fresh)
+                            statuses.set(descriptor.name, fresh)
+                            resolve(fresh as unknown as PermissionStatus)
                             return
                         }
                         let status = statuses.get(descriptor.name)
@@ -234,6 +263,7 @@ export const installDeviceHarness = (): DeviceHarness => {
                             status = new FakePermissionStatus(descriptor.name, "prompt")
                             statuses.set(descriptor.name, status)
                         }
+                        if (!issued.includes(status)) issued.push(status)
                         resolve(status as unknown as PermissionStatus)
                     }
                     if (permissions.hold) held.push(answer)

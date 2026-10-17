@@ -112,12 +112,13 @@ describe("watchGeolocation", () => {
         app.dispose()
     })
 
-    test("a denial reports error code 1; a new watch after the user allows it recovers", () => {
+    test("a denial reports denied with code 1; a new watch after the user allows it recovers", () => {
         const { geolocation } = install()
         const app = store()
         const first = watchGeolocation(app)
         geolocation.watches[0]!.error!(positionError(1, "User denied Geolocation"))
-        expect(app.get(geolocationStatusAtom)).toBe("error")
+        // Distinct from an ordinary error: the browser ended the watch.
+        expect(app.get(geolocationStatusAtom)).toBe("denied")
         expect(app.get(geolocationErrorAtom)).toEqual({
             code: 1,
             message: "User denied Geolocation",
@@ -129,6 +130,46 @@ describe("watchGeolocation", () => {
         geolocation.watches[1]!.success(position(1))
         expect(app.get(geolocationStatusAtom)).toBe("active")
         second()
+        app.dispose()
+    })
+
+    test("unsupported, insecure, denied and ordinary errors are distinct statuses", () => {
+        const harness = install()
+        const outcome = (setup: () => void, report?: (watch: (typeof harness.geolocation.watches)[number]) => void) => {
+            setup()
+            const app = store()
+            const stop = watchGeolocation(app)
+            const watch = harness.geolocation.watches.at(-1)
+            if (report !== undefined && watch !== undefined && !watch.cleared) report(watch)
+            const state = app.get(geolocationAtom)
+            stop()
+            app.dispose()
+            return [state.status, state.error?.code ?? null]
+        }
+        expect(outcome(() => {}, watch => watch.error!(positionError(1)))).toEqual(["denied", 1])
+        expect(outcome(() => {}, watch => watch.error!(positionError(2)))).toEqual(["error", 2])
+        expect(outcome(() => {}, watch => watch.error!(positionError(3)))).toEqual(["error", 3])
+        expect(outcome(() => harness.setSecure(false))).toEqual(["insecure", null])
+        expect(
+            outcome(() => {
+                harness.setSecure(undefined)
+                Object.defineProperty(navigator, "geolocation", { configurable: true, value: undefined })
+            }),
+        ).toEqual(["unsupported", null])
+    })
+
+    test("a denial after a position keeps the last position with the denial", () => {
+        const { geolocation } = install()
+        const app = store()
+        const stop = watchGeolocation(app)
+        geolocation.watches[0]!.success(position(40))
+        geolocation.watches[0]!.error!(positionError(1))
+        expect(app.get(geolocationAtom)).toMatchObject({
+            status: "denied",
+            position: { latitude: 40 },
+            error: { code: 1 },
+        })
+        stop()
         app.dispose()
     })
 
@@ -220,6 +261,88 @@ describe("watchGeolocation", () => {
         expect(right.get(positionAtom)).toBeNull()
         expect(app.get(positionAtom)).toBeNull()
         stop()
+        app.dispose()
+    })
+
+    test("sharing is by effective options, and a conflict lasts while any holder remains", () => {
+        const { geolocation } = install()
+        const app = store()
+        const implicit = watchGeolocation(app)
+        const explicit = watchGeolocation(app, {
+            enableHighAccuracy: false,
+            timeout: 30_000,
+            maximumAge: 0,
+        })
+        expect(geolocation.watches).toHaveLength(1)
+        expect(inspectWatch(app)?.holders).toBe(2)
+        implicit()
+        // One holder left: different options still conflict.
+        expect(() => watchGeolocation(app, { maximumAge: 5 })).toThrow(
+            GeolocationWatchConflictError,
+        )
+        expect(geolocation.live()).toHaveLength(1)
+        explicit()
+        expect(geolocation.live()).toHaveLength(0)
+        // Every holder gone: the store is free to watch with other options.
+        const other = watchGeolocation(app, { maximumAge: 5 })
+        expect(geolocation.watches).toHaveLength(2)
+        expect(geolocation.watches[1]!.options?.maximumAge).toBe(5)
+        other()
+        app.dispose()
+    })
+
+    test("siblings share their parent's one watch; a child's own watch affects neither", () => {
+        const { geolocation } = install()
+        const app = store()
+        const left = app.scope()
+        const right = app.scope()
+        const stopParent = watchGeolocation(app)
+        geolocation.watches[0]!.success(position(10))
+        // Both siblings inherit the same parent watch: one native watch.
+        expect([left.get(positionAtom)?.latitude, right.get(positionAtom)?.latitude]).toEqual([10, 10])
+        expect(geolocation.live()).toHaveLength(1)
+
+        const stopLeft = watchGeolocation(left, { enableHighAccuracy: true })
+        geolocation.watches[1]!.success(position(20))
+        geolocation.watches[1]!.error!(positionError(3))
+        expect(left.get(geolocationAtom)).toMatchObject({ status: "error", position: { latitude: 20 } })
+        expect(app.get(geolocationAtom)).toMatchObject({ status: "active", position: { latitude: 10 } })
+        expect(right.get(geolocationAtom)).toMatchObject({ status: "active", position: { latitude: 10 } })
+        // The parent's options do not constrain the child, nor the child's the parent.
+        expect(inspectWatch(app)?.options.enableHighAccuracy).toBe(false)
+        expect(() => watchGeolocation(app)()).not.toThrow()
+
+        geolocation.watches[0]!.success(position(11))
+        expect(right.get(positionAtom)?.latitude).toBe(11)
+        expect(left.get(positionAtom)?.latitude).toBe(20)
+
+        stopLeft()
+        expect(left.get(positionAtom)?.latitude).toBe(11)
+        expect(geolocation.watches[0]!.cleared).toBe(false)
+        stopParent()
+        app.dispose()
+    })
+
+    test("stopping or disposing one owner never stops another owner's watch", () => {
+        const { geolocation } = install()
+        const app = store()
+        const child = app.scope()
+        const stopParent = watchGeolocation(app)
+        watchGeolocation(child, { maximumAge: 1 })
+        // The parent stops; the child keeps its own watch and its own reading.
+        stopParent()
+        expect(geolocation.watches[0]!.cleared).toBe(true)
+        expect(geolocation.watches[1]!.cleared).toBe(false)
+        geolocation.watches[1]!.success(position(30))
+        expect(child.get(positionAtom)?.latitude).toBe(30)
+        expect(app.get(geolocationStatusAtom)).toBe("idle")
+
+        // Disposing a child releases only the child's watch.
+        const restarted = watchGeolocation(app)
+        child.dispose()
+        expect(geolocation.watches[1]!.cleared).toBe(true)
+        expect(geolocation.watches[2]!.cleared).toBe(false)
+        restarted()
         app.dispose()
     })
 

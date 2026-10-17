@@ -58,14 +58,16 @@ export const createWatchSource = (
                             error: null,
                         }),
                     ),
-                error =>
+                error => {
+                    const copied = Object.freeze(toError(error))
                     publish(
                         Object.freeze({
-                            status: "error",
+                            status: copied.code === 1 ? "denied" : "error",
                             position: state.position,
-                            error: Object.freeze(toError(error)),
+                            error: copied,
                         }),
-                    ),
+                    )
+                },
                 { ...options },
             )
             return () => {

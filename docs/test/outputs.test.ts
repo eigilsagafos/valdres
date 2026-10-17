@@ -128,9 +128,18 @@ describe("framework-specific examples", () => {
 
     test("every example for an unmigrated adapter is labelled, on the website and in Markdown", async () => {
         const labelled = docs.filter(doc => doc.framework && unmigratedAdapter(doc.framework) && blocks(doc) > 0)
-        // A vacuity floor, not a target: it shrinks as plugin pages migrate
-        // and drop their non-React examples (24 after the permission lane).
-        expect(labelled.length).toBeGreaterThan(20)
+        // Keeps the loop below from passing vacuously. Deliberately not a page
+        // count: pages leave this set as their plugins migrate and drop their
+        // non-React examples (the four permission plugins removed 16), so a
+        // number only breaks on progress. What must hold is that the filter
+        // still finds labelled pages for every adapter that is not migrated.
+        const adapters = new Set(labelled.map(doc => unmigratedAdapter(doc.framework!)))
+        expect([...adapters].sort()).toEqual([
+            "valdres-angular",
+            "valdres-solid",
+            "valdres-svelte",
+            "valdres-vue",
+        ])
         for (const doc of labelled) {
             const adapter = unmigratedAdapter(doc.framework!)!
             const label = legacyExampleLabel(adapter)

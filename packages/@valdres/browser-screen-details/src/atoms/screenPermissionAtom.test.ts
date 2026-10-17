@@ -104,6 +104,62 @@ describe("screenPermissionAtom", () => {
         app.dispose()
     })
 
+    test("a query answered after its store was disposed is ignored and attaches nothing", async () => {
+        const harness = install()
+        const permissions = harness.installPermissions()
+        permissions.hold = true
+        permissions.set("window-management", "denied")
+        const app = store()
+        app.sub(screenPermissionAtom, () => {})
+        app.dispose()
+        permissions.release()
+        await flush()
+        expect(permissions.changeListeners()).toBe(0)
+        const next = store()
+        expect(next.get(screenPermissionAtom)).toBe("prompt")
+        next.dispose()
+    })
+
+    test("after a restart, the replaced query's late answer cannot overwrite the new one", async () => {
+        const harness = install()
+        const permissions = harness.installPermissions()
+        permissions.freshStatuses = true
+        permissions.hold = true
+        permissions.set("window-management", "denied")
+        const app = store()
+        app.sub(screenPermissionAtom, () => {})()
+        permissions.set("window-management", "granted")
+        const stop = app.sub(screenPermissionAtom, () => {})
+        permissions.releaseNewestFirst()
+        await flush()
+        expect(app.get(screenPermissionAtom)).toBe("granted")
+        expect(permissions.issued.map(status => [status.state, status.listeners])).toEqual([
+            ["granted", 1],
+            ["denied", 0],
+        ])
+        stop()
+        app.dispose()
+    })
+
+    test("a change made while nothing listened is corrected by the next subscription", async () => {
+        const harness = install()
+        const permissions = harness.installPermissions()
+        permissions.freshStatuses = true
+        permissions.set("window-management", "granted")
+        const app = store()
+        const first = app.sub(screenPermissionAtom, () => {})
+        await flush()
+        first()
+        permissions.set("window-management", "denied")
+        expect(app.get(screenPermissionAtom)).toBe("granted")
+        const seen: string[] = []
+        const stop = app.sub(screenPermissionAtom, () => seen.push(app.get(screenPermissionAtom)))
+        await flush()
+        expect(seen).toEqual(["denied"])
+        stop()
+        app.dispose()
+    })
+
     test("the server snapshot is a fixed prompt seed", () => {
         expect(screenPermissionSource.getServerSnapshot?.()).toBe("prompt")
     })

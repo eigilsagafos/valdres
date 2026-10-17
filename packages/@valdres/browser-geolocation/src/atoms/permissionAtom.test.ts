@@ -99,6 +99,69 @@ describe("permissionAtom", () => {
         app.dispose()
     })
 
+    test("a query answered after its store was disposed is ignored and attaches nothing", async () => {
+        const harness = install()
+        const permissions = harness.installPermissions()
+        permissions.hold = true
+        permissions.set("geolocation", "denied")
+        const app = store()
+        app.sub(permissionAtom, () => {})
+        app.dispose()
+        permissions.release()
+        await flush()
+        expect(permissions.changeListeners()).toBe(0)
+        const next = store()
+        expect(next.get(permissionAtom)).toBe("prompt")
+        next.dispose()
+    })
+
+    test("after a restart, the replaced query's late answer cannot overwrite the new one", async () => {
+        const harness = install()
+        const permissions = harness.installPermissions()
+        permissions.freshStatuses = true
+        permissions.hold = true
+        permissions.set("geolocation", "denied")
+        const app = store()
+        app.sub(permissionAtom, () => {})()
+        // The user allowed location before the store subscribed again.
+        permissions.set("geolocation", "granted")
+        const stop = app.sub(permissionAtom, () => {})
+        // The new query lands first, then the stale one it replaced.
+        permissions.releaseNewestFirst()
+        await flush()
+        expect(app.get(permissionAtom)).toBe("granted")
+        expect(permissions.issued.map(status => [status.state, status.listeners])).toEqual([
+            ["granted", 1],
+            ["denied", 0],
+        ])
+        stop()
+        app.dispose()
+    })
+
+    test("a change made while nothing listened is corrected by the next subscription", async () => {
+        const harness = install()
+        const permissions = harness.installPermissions()
+        permissions.freshStatuses = true
+        permissions.set("geolocation", "granted")
+        const app = store()
+        const first = app.sub(permissionAtom, () => {})
+        await flush()
+        first()
+        // Revoked in the browser's settings while unobserved: the kept answer
+        // is stale until the next subscription re-queries.
+        permissions.set("geolocation", "denied")
+        expect(app.get(permissionAtom)).toBe("granted")
+        const seen: string[] = []
+        const stop = app.sub(permissionAtom, () => seen.push(app.get(permissionAtom)))
+        await flush()
+        expect(seen).toEqual(["denied"])
+        // And a live change while subscribed arrives through `change`.
+        permissions.statuses.get("geolocation")!.change("granted")
+        expect(seen).toEqual(["denied", "granted"])
+        stop()
+        app.dispose()
+    })
+
     test("a rejected query reports unsupported while subscribed", async () => {
         const harness = install()
         const permissions = harness.installPermissions()

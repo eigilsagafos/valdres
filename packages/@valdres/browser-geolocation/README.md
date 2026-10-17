@@ -71,9 +71,11 @@ function Location() {
 }
 ```
 
-Starting the watch from an effect that a click enabled is fine: geolocation
-does not require transient activation. Calling `watchGeolocation` inside the
-click handler itself also works, and keeps the gesture's activation.
+Starting the watch from an effect that a click enabled is fine: the
+specification does not require transient activation for geolocation.
+`watchGeolocation` calls `watchPosition` synchronously, so calling it inside a
+click handler hands the browser that click's activation too; whether a browser
+uses it is up to the browser.
 
 > **Adapter support in this beta**
 >
@@ -101,7 +103,7 @@ click handler itself also works, and keeps the gesture's activation.
 | `GeolocationWatchConflictError` | error class               | thrown for conflicting options in one store                                                |
 | `GeolocationState`              | type                      | `{ status, position, error }`                                                              |
 | `GeolocationSnapshot`           | type                      | `{ latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed, timestamp }` |
-| `GeolocationStatus`             | type                      | `"unsupported" \| "insecure" \| "idle" \| "pending" \| "active" \| "error"`                |
+| `GeolocationStatus`             | type                      | `"unsupported" \| "insecure" \| "idle" \| "pending" \| "active" \| "denied" \| "error"`    |
 | `GeolocationError`              | type                      | `{ code: 1 \| 2 \| 3; message: string }`                                                   |
 | `GeolocationWatchOptions`       | type                      | `{ enableHighAccuracy?, timeout?, maximumAge? }`                                           |
 | `PermissionValue`               | type                      | `"granted" \| "denied" \| "prompt" \| "unsupported"`                                       |
@@ -122,8 +124,11 @@ disposer. Options default to `enableHighAccuracy: false`, `timeout: 30_000` and
   (`active` and `requested` carry both option sets). Give a second consumer its
   own scope — `store.scope()` — for a second watch.
 - **Scopes.** A child scope reads its parent's watch until it starts its own,
-  and reads the parent's again when its own is released. Sibling scopes are
-  independent.
+  and reads the parent's again when its own is released. Sibling scopes can
+  all read the same parent watch — still one native watch. A child's own watch
+  is visible only to that child and the scopes below it: it never changes what
+  its parent or its siblings read, its options never conflict with theirs,
+  and stopping or disposing it leaves the parent's watch running.
 - **Cancellation.** The disposer clears the native watch. Disposing the store
   clears every watch it owns. To change options, dispose and start again; a
   report from the old watch can never land in the new one, or in a store that
@@ -139,20 +144,23 @@ disposer. Options default to `enableHighAccuracy: false`, `timeout: 30_000` and
 apart; `positionAtom`, `geolocationStatusAtom` and `geolocationErrorAtom` project
 it.
 
-| Status          | Meaning                                                                           | Position                  | Error     |
-| --------------- | --------------------------------------------------------------------------------- | ------------------------- | --------- |
-| `"unsupported"` | no `navigator.geolocation`                                                        | `null`                    | `null`    |
-| `"insecure"`    | `isSecureContext` is `false`; browsers refuse positions there, so no watch starts | `null`                    | `null`    |
-| `"idle"`        | no watch in this store or the scopes above it                                     | `null`                    | `null`    |
-| `"pending"`     | a watch started and has not reported — the prompt may be showing                  | `null`                    | `null`    |
-| `"active"`      | the latest report was a position                                                  | the position              | `null`    |
-| `"error"`       | the latest report was an error                                                    | the last position, if any | the error |
+| Status          | Meaning                                                                           | Position                  | Error           |
+| --------------- | --------------------------------------------------------------------------------- | ------------------------- | --------------- |
+| `"unsupported"` | no `navigator.geolocation`                                                        | `null`                    | `null`          |
+| `"insecure"`    | `isSecureContext` is `false`; browsers refuse positions there, so no watch starts | `null`                    | `null`          |
+| `"idle"`        | no watch in this store or the scopes above it                                     | `null`                    | `null`          |
+| `"pending"`     | a watch started and has not reported — the prompt may be showing                  | `null`                    | `null`          |
+| `"active"`      | the latest report was a position                                                  | the position              | `null`          |
+| `"denied"`      | the browser refused the position and ended the watch                              | the last position, if any | code `1`        |
+| `"error"`       | the latest report was an ordinary error; the watch keeps running                  | the last position, if any | code `2` or `3` |
 
 Error codes follow `GeolocationPositionError`. `1` (PERMISSION\_DENIED: the
 user, a `geolocation` permissions policy in a cross-origin iframe, or the
-browser) ends the watch; recover by disposing and starting again once the user
-allows location. `2` (POSITION\_UNAVAILABLE) and `3` (TIMEOUT) keep the watch
-running: the next position turns the status back to `"active"`. Browsers only
+browser) is `"denied"` and ends the watch; recover by disposing and starting
+again once the user allows location. `2` (POSITION\_UNAVAILABLE) and `3`
+(TIMEOUT) are `"error"` and keep the watch running: the next position turns
+the status back to `"active"`. `"unsupported"`, `"insecure"`, `"denied"` and
+`"error"` are always distinct. Browsers only
 deliver positions to visible documents, so a hidden page stays `"pending"` or
 keeps its last report.
 

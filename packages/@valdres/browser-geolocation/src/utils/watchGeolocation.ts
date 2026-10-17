@@ -8,7 +8,9 @@ import type { GeolocationWatchOptions } from "../types/GeolocationWatchOptions"
  * idempotent disposer that stops the watch.
  *
  * - The watch publishes into `store` and the scopes below it that do not run
- *   their own; reading or subscribing alone never starts one.
+ *   their own (siblings can all read the same parent watch); a child's own
+ *   watch never changes what its parent or siblings read. Reading or
+ *   subscribing alone never starts one.
  * - Callers asking the same store for the same options share one watch, which
  *   stops when the last disposer runs. Different options throw
  *   `GeolocationWatchConflictError`; use a scope for a second watch.
@@ -18,8 +20,8 @@ import type { GeolocationWatchOptions } from "../types/GeolocationWatchOptions"
  *   capability errors inside a transaction or subscriber callback, before
  *   anything starts.
  *
- * The native call happens synchronously, so a call from a click handler keeps
- * that gesture's user activation.
+ * The native call happens synchronously, inside the caller's task; the
+ * specification does not require user activation for geolocation.
  */
 export const watchGeolocation = (
     store: Store,

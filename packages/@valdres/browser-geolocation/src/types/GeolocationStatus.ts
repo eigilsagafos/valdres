@@ -6,7 +6,10 @@
  * - `"pending"`: a watch started and has not reported yet — the browser may be
  *   showing its permission prompt.
  * - `"active"`: the latest report was a position.
- * - `"error"`: the latest report was an error; `error` says which.
+ * - `"denied"`: the browser refused the position (PERMISSION_DENIED — the
+ *   user, a permissions policy, or the browser itself) and ended the watch.
+ * - `"error"`: the latest report was POSITION_UNAVAILABLE or TIMEOUT; the
+ *   watch keeps running and the next position recovers it.
  */
 export type GeolocationStatus =
     | "unsupported"
@@ -14,4 +17,5 @@ export type GeolocationStatus =
     | "idle"
     | "pending"
     | "active"
+    | "denied"
     | "error"
