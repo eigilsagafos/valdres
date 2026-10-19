@@ -235,8 +235,21 @@ Object.defineProperty(globalThis.navigator, "geolocation", { configurable: true,
     clearWatch: id => { watches[id - 1].cleared = true },
     getCurrentPosition: () => { throw new Error("must not be called") },
 } })
+// window-management answers with a live status (Chromium); other names are
+// unknown to this host, like Safari/Firefox.
+const windowManagement = new EventTarget()
+windowManagement.state = "granted"
+let windowManagementListeners = 0
+{
+    const a = windowManagement.addEventListener.bind(windowManagement), r = windowManagement.removeEventListener.bind(windowManagement)
+    windowManagement.addEventListener = (t, l) => { windowManagementListeners++; a(t, l) }
+    windowManagement.removeEventListener = (t, l) => { windowManagementListeners--; r(t, l) }
+}
 Object.defineProperty(globalThis.navigator, "permissions", { configurable: true, value: {
-    query: ({ name }) => { log.push("query:" + name); return Promise.reject(new TypeError("unknown name")) },
+    query: ({ name }) => {
+        log.push("query:" + name)
+        return name === "window-management" ? Promise.resolve(windowManagement) : Promise.reject(new TypeError("unknown name"))
+    },
 } })
 globalThis.window = win
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
@@ -301,8 +314,18 @@ assert.equal(second.get(screens.screenDetailsStatusAtom), "ready")
 assert.equal(detailsListeners, 3)
 
 await flush()
-assert.deepEqual(log.filter(entry => entry.startsWith("query:")).sort(), [])
+// Reading screens observes the permission (a query, never a prompt), once.
+assert.deepEqual(log.filter(entry => entry.startsWith("query:")), ["query:window-management"])
+assert.equal(windowManagementListeners, 1)
+// A revocation the browser reports reaches stores that only read screens.
+windowManagement.state = "denied"
+windowManagement.dispatchEvent(new Event("change"))
+assert.deepEqual(
+    [second.get(screens.screenDetailsStatusAtom), second.get(screens.screensAtom).length, detailsListeners],
+    ["denied", 0, 0],
+)
 first.dispose()
+assert.equal(windowManagementListeners, 0, "dispose left the permission listener")
 assert.equal(watches[0].cleared, true, "dispose left a watch running")
 assert.equal(detailsListeners, 0, "dispose left screen listeners")
 assert.equal(listeners("deviceorientation"), 0)
