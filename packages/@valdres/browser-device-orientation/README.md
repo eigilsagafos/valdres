@@ -126,13 +126,12 @@ published with are never observed apart.
 
 `permissionAtom` never prompts. Its value is:
 
-- the answer of the last `requestOrientationPermission()` that completed, kept for the
-  page's lifetime and shared by every store;
+- the newest answer this page has seen, shared by every store: a completed
+  `requestOrientationPermission()`, a Permissions API answer or a later `change` event — an
+  answer whose operation started earlier never overwrites a newer one;
 - while a store subscribes, the Permissions API's combined answer for
   `accelerometer` and `gyroscope` where the engine knows those names
-  (Chromium), followed through its `change` events. An answer whose operation
-  started earlier never overwrites a newer one. The last answer is kept after
-  the last subscriber leaves, and the next subscription queries again;
+  (Chromium), followed through its `change` events while a store subscribes;
 - otherwise `"prompt"` where `DeviceOrientationEvent.requestPermission` exists, and
   `"granted"` where it does not (those browsers fire events without asking);
 - `"unsupported"` without the API or in an insecure context — nothing can be
@@ -147,7 +146,7 @@ current, which is when the specification checks it. That is all the package
 guarantees: whether a browser then prompts, and how long it remembers the
 answer, is the browser's behaviour. Verified in Chromium 151 and 154 (headless,
 with emulated permission states); the iOS Safari prompt flow is not yet
-verified. It never rejects:
+verified:
 
 | Outcome                                                       | Resolves                 | Recorded                       |
 | ------------------------------------------------------------- | ------------------------ | ------------------------------ |
@@ -158,7 +157,22 @@ verified. It never rejects:
 
 Concurrent calls share one request. A browser prompt cannot be cancelled; a
 request that completes after every store was disposed still records its answer,
-which is page truth.
+which later permission updates replace.
+
+**Errors.** The promise never rejects and the call never throws: it settles
+with the browser's answer (or the current value, as above). If a store
+subscriber throws while that answer is published, every store is still
+notified, the answer is still recorded and returned, and the subscriber failure
+is reported separately through `globalThis.reportError` — or thrown in a later
+task where there is none — the way core reports `onCommit` failures. The
+request is never retried. A subscriber that throws on a Permissions API answer
+is reported the same way; one that throws on a `change` event is rethrown from
+that event's listener, which the browser reports.
+
+**Unsubscribed reads may be stale.** While no store subscribes, nothing
+observes the permission: a read returns the last answer this page saw, which
+can be out of date if the user changed the setting meanwhile. Observation
+resumes with the next subscription, which queries again and corrects it.
 
 ## Server rendering
 

@@ -1,5 +1,6 @@
 import type { PermissionValue } from "../types/PermissionValue"
-import { invalidateAll } from "./invalidateAll"
+import { invalidateAll, invalidateEach } from "./invalidateAll"
+import { reportFailures } from "./reportFailure"
 import { resolveOrientationHost } from "./resolveOrientationHost"
 
 /** The Permissions API names `DeviceOrientationEvent.requestPermission()` asks for. */
@@ -43,12 +44,25 @@ const recordFor = (view: Window): PermissionRecord => {
  * operation started earlier never overwrites one that started later, so a slow
  * Permissions API query cannot undo a request's result.
  */
-const apply = (record: PermissionRecord, next: Known) => {
+const LABEL = "Orientation permission invalidation failed"
+
+/**
+ * `delivery` says where subscriber failures go: a native `change` listener
+ * rethrows them for the platform to report; an asynchronous answer (a query
+ * or a request) reports them, so they never become that operation's outcome
+ * or an unhandled rejection.
+ */
+const apply = (
+    record: PermissionRecord,
+    next: Known,
+    delivery: "rethrow" | "report",
+) => {
     if (record.known !== undefined && next.order < record.known.order) return
     const changed = record.known?.value !== next.value
     record.known = next
-    if (changed)
-        invalidateAll(record.registrations, "Orientation permission invalidation failed")
+    if (!changed) return
+    if (delivery === "rethrow") invalidateAll(record.registrations, LABEL)
+    else reportFailures(invalidateEach(record.registrations), LABEL)
 }
 
 const combine = (states: readonly PermissionState[]): PermissionValue =>
@@ -101,10 +115,14 @@ const attachQuery = (record: PermissionRecord) => {
     const statuses: PermissionStatus[] = []
     const onChange = () => {
         if (released) return
-        apply(record, {
-            value: combine(statuses.map(status => status.state)),
-            order: ++record.clock,
-        })
+        apply(
+            record,
+            {
+                value: combine(statuses.map(status => status.state)),
+                order: ++record.clock,
+            },
+            "rethrow",
+        )
     }
     record.release = () => {
         released = true
@@ -128,10 +146,11 @@ const attachQuery = (record: PermissionRecord) => {
                 statuses.push(status)
                 status.addEventListener("change", onChange)
             }
-            apply(record, {
-                value: combine(results.map(status => status.state)),
-                order,
-            })
+            apply(
+                record,
+                { value: combine(results.map(status => status.state)), order },
+                "report",
+            )
         },
         // Engines that do not know these names (Safari, Firefox) reject: the
         // requestPermission-based answer stands.
@@ -145,7 +164,10 @@ const toValue = (state: unknown): PermissionValue =>
 /**
  * Calls `DeviceOrientationEvent.requestPermission()` synchronously, inside the
  * caller's task, so the transient activation of the user gesture that called
- * this is the one the browser checks. Concurrent calls share one request.
+ * this is the one the browser checks. Concurrent calls share one request. The
+ * returned promise never rejects: it settles with the browser's answer, and a
+ * subscriber that throws while that answer is published is reported (see
+ * `reportFailures`), never turned into this promise's outcome.
  */
 export const requestOrientationPermissionOnce = (): Promise<PermissionValue> => {
     const host = resolveOrientationHost()
@@ -167,7 +189,7 @@ export const requestOrientationPermissionOnce = (): Promise<PermissionValue> => 
             const value = toValue(state)
             if (record.pending === pending) record.pending = undefined
             // "prompt" is not an answer: it changes nothing.
-            if (value !== "prompt") apply(record, { value, order })
+            if (value !== "prompt") apply(record, { value, order }, "report")
             return value
         },
         () => {

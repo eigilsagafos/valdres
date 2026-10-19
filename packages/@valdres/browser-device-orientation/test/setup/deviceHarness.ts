@@ -6,10 +6,12 @@
  */
 export {
     deferred,
+    captureReports,
     flush,
     installDeviceHarness,
     scriptedRequest,
     type Deferred,
+    type ReportCapture,
     type DeviceHarness,
     type FakePermissions,
     type ScriptedRequest,

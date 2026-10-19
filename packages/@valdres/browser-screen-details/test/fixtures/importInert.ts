@@ -36,9 +36,10 @@ assert.equal(app.get(screenPermissionAtom), "prompt")
 assert.deepEqual(calls, [], "a dormant read did work")
 
 const stop = app.sub(screensAtom, () => {})
-assert.deepEqual(calls, [], "subscribing to screens must never prompt")
+// Screens observe the permission (to see revocation) but never prompt.
+assert.deepEqual(calls, ["query:window-management"], "subscribing to screens must never prompt")
 const stopPermission = app.sub(screenPermissionAtom, () => {})
-assert.deepEqual(calls, ["query:window-management"])
+assert.deepEqual(calls, ["query:window-management"], "the permission observation is shared")
 void requestScreenDetails()
 assert.deepEqual(calls, ["query:window-management", "getScreenDetails"])
 stop()

@@ -179,11 +179,22 @@ keeps its last report.
 `permissionAtom` reports the `"geolocation"` permission and never prompts.
 Subscribing queries the Permissions API once per page and follows its `change`
 events, so it moves to `"granted"` or `"denied"` when a watch's prompt is
-answered. The last answer is kept after the last subscriber leaves (a remount
-does not flicker back), and the next subscription queries again; before any
-answer, reads report `"prompt"`. It is `"unsupported"` without the
-Permissions API, when the engine rejects the query, without
+answered. Before any answer, reads report `"prompt"`. It is `"unsupported"`
+without the Permissions API, when the engine rejects the query, without
 `navigator.geolocation`, or in an insecure context.
+
+**Unsubscribed reads may be stale.** While no store subscribes, nothing
+observes the permission: a read returns the last answer this page saw, which
+can be out of date if the user changed the setting meanwhile. Observation
+resumes with the next subscription, which queries again and corrects it. A remount
+therefore does not flicker back to `"prompt"`.
+
+**Errors.** A subscriber that throws while a Permissions API answer is
+published is reported through `globalThis.reportError` (or thrown in a later
+task), never left as an unhandled rejection; one that throws on a `change`
+event, or on a position or error the browser delivers to a watch, is rethrown
+from that browser callback, which the browser reports. Every store is notified
+first either way.
 
 ## Server rendering
 

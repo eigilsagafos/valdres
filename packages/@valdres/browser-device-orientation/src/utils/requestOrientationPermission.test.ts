@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { store } from "valdres"
 import {
+    captureReports,
     flush,
     installDeviceHarness,
     scriptedRequest,
@@ -151,6 +152,64 @@ describe("requestOrientationPermission", () => {
         expect(app.get(permissionAtom)).toBe("denied")
         stop()
         app.dispose()
+    })
+
+    test("a throwing subscriber is reported; the request still resolves and records the browser's answer", async () => {
+        const [page, script] = installScripted()
+        const capture = captureReports()
+        try {
+            const failing = store()
+            const healthy = store()
+            failing.sub(permissionAtom, () => {
+                throw new Error("subscriber boom")
+            })
+            const seen: string[] = []
+            healthy.sub(permissionAtom, () => seen.push(healthy.get(permissionAtom)))
+            const answer = page.withActivation(() => requestOrientationPermission())
+            script.pending[0]!.resolve("granted")
+            await expect(answer).resolves.toBe("granted")
+            await flush()
+            // The native outcome is the promise's; the subscriber failure is
+            // reported once, after every store was notified, and retried never.
+            expect(seen).toEqual(["granted"])
+            expect(failing.get(permissionAtom)).toBe("granted")
+            expect(script.calls).toHaveLength(1)
+            expect(capture.unhandled).toEqual([])
+            expect(capture.reported).toHaveLength(1)
+            expect((capture.reported[0] as Error).name).toBe("SubscriberNotificationError")
+            expect(((capture.reported[0] as { cause: Error }).cause).message).toBe("subscriber boom")
+            failing.dispose()
+            healthy.dispose()
+        } finally {
+            capture.restore()
+        }
+    })
+
+    test("without globalThis.reportError the failure is thrown in a later task, not swallowed", async () => {
+        const [page, script] = installScripted()
+        const own = Object.getOwnPropertyDescriptor(globalThis, "reportError")
+        delete (globalThis as { reportError?: unknown }).reportError
+        const timers: (() => void)[] = []
+        const realSetTimeout = globalThis.setTimeout
+        globalThis.setTimeout = ((callback: () => void) => {
+            timers.push(callback)
+            return 0
+        }) as unknown as typeof setTimeout
+        try {
+            const app = store()
+            app.sub(permissionAtom, () => {
+                throw new Error("subscriber boom")
+            })
+            const answer = page.withActivation(() => requestOrientationPermission())
+            script.pending[0]!.resolve("denied")
+            await expect(answer).resolves.toBe("denied")
+            expect(timers).toHaveLength(1)
+            expect(() => timers[0]!()).toThrow("One or more Store subscribers threw")
+            app.dispose()
+        } finally {
+            globalThis.setTimeout = realSetTimeout
+            if (own !== undefined) Object.defineProperty(globalThis, "reportError", own)
+        }
     })
 
     test("a synchronous throw from requestPermission resolves the unchanged value", async () => {

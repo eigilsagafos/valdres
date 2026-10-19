@@ -1,14 +1,9 @@
 /**
  * Runs every invalidator, in registration order, even when an earlier one
- * throws, then rethrows: the exact error when there is one, an
- * `AggregateError` otherwise. Thrown from a native listener, the platform
- * reports it like any throwing listener, and one store tree's failing
- * subscriber never starves another.
+ * throws, and returns what threw. One store tree's failing subscriber never
+ * starves another.
  */
-export const invalidateAll = (
-    registrations: Set<() => void>,
-    label: string,
-): void => {
+export const invalidateEach = (registrations: Set<() => void>): unknown[] => {
     const failures: unknown[] = []
     for (const invalidate of [...registrations]) {
         // Skip one removed by an earlier invalidation's subscriber; one added
@@ -20,6 +15,23 @@ export const invalidateAll = (
             failures.push(error)
         }
     }
-    if (failures.length === 1) throw failures[0]
-    if (failures.length > 1) throw new AggregateError(failures, label)
+    return failures
+}
+
+/** The exact failure when there is one, an `AggregateError` otherwise. */
+export const combineFailures = (
+    failures: readonly unknown[],
+    label: string,
+): unknown => (failures.length === 1 ? failures[0] : new AggregateError(failures, label))
+
+/**
+ * For native event listeners: invalidates everything, then rethrows, so the
+ * platform reports the failure as it does for any throwing listener.
+ */
+export const invalidateAll = (
+    registrations: Set<() => void>,
+    label: string,
+): void => {
+    const failures = invalidateEach(registrations)
+    if (failures.length > 0) throw combineFailures(failures, label)
 }

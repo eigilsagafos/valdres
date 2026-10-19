@@ -1,5 +1,6 @@
 import type { PermissionValue } from "../types/PermissionValue"
-import { invalidateAll } from "./invalidateAll"
+import { invalidateAll, invalidateEach } from "./invalidateAll"
+import { reportFailures } from "./reportFailure"
 import { resolveGeolocationHost } from "./resolveGeolocationHost"
 
 interface PermissionRecord {
@@ -26,10 +27,22 @@ export const readGeolocationPermission = (): PermissionValue => {
     return records.get(navigator)?.value ?? "prompt"
 }
 
-const setValue = (record: PermissionRecord, next: PermissionValue) => {
+const LABEL = "Geolocation permission invalidation failed"
+
+/**
+ * A native `change` listener rethrows subscriber failures for the platform to
+ * report; a query answer reports them, so they never become an unhandled
+ * rejection.
+ */
+const setValue = (
+    record: PermissionRecord,
+    next: PermissionValue,
+    delivery: "rethrow" | "report",
+) => {
     if (record.value === next) return
     record.value = next
-    invalidateAll(record.registrations, "Geolocation permission invalidation failed")
+    if (delivery === "rethrow") invalidateAll(record.registrations, LABEL)
+    else reportFailures(invalidateEach(record.registrations), LABEL)
 }
 
 /**
@@ -59,7 +72,7 @@ export const retainGeolocationPermission = (
         let released = false
         let status: PermissionStatus | undefined
         const onChange = () => {
-            if (!released && status !== undefined) setValue(owner, status.state)
+            if (!released && status !== undefined) setValue(owner, status.state, "rethrow")
         }
         owner.release = () => {
             released = true
@@ -76,10 +89,10 @@ export const retainGeolocationPermission = (
                 if (released) return
                 status = result
                 result.addEventListener("change", onChange)
-                setValue(owner, result.state)
+                setValue(owner, result.state, "report")
             },
             () => {
-                if (!released) setValue(owner, "unsupported")
+                if (!released) setValue(owner, "unsupported", "report")
             },
         )
     }

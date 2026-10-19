@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { store } from "valdres"
-import { flush } from "../../test/setup/deviceHarness"
+import { captureReports, flush } from "../../test/setup/deviceHarness"
 import {
     FakeScreen,
     installScreenDetails,
@@ -293,6 +293,222 @@ describe("screenDetailsAtom after access is granted", () => {
         expect(app.get(screenDetailsAtom)).toMatchObject({ status: "denied", screens: [] })
         expect(app.get(screenPermissionAtom)).toBe("denied")
         expect(harness.details.physical()).toBe(0)
+        app.dispose()
+    })
+})
+
+describe("requestScreenDetails error contract", () => {
+    const throwingSubscriber = () => {
+        const failing = store()
+        failing.sub(screenDetailsAtom, () => {
+            throw new Error("subscriber boom")
+        })
+        return failing
+    }
+
+    test("a throwing subscriber never costs the caller its promise; the grant resolves", async () => {
+        const harness = install()
+        const capture = captureReports()
+        try {
+            const failing = throwingSubscriber()
+            const healthy = store()
+            const seen: string[] = []
+            healthy.sub(screenDetailsStatusAtom, () => seen.push(healthy.get(screenDetailsStatusAtom)))
+            let answer: Promise<unknown> | undefined
+            // The "pending" publication happens after the native call started.
+            expect(() => {
+                answer = requestScreenDetails()
+            }).not.toThrow()
+            expect(harness.calls).toHaveLength(1)
+            harness.grant()
+            await expect(answer!).resolves.toHaveLength(1)
+            await flush()
+            expect(seen).toEqual(["pending", "ready"])
+            expect(failing.get(screenDetailsStatusAtom)).toBe("ready")
+            expect(capture.unhandled).toEqual([])
+            // One report per failed publication ("pending", then "ready").
+            expect(capture.reported.map(error => (error as Error).name)).toEqual([
+                "SubscriberNotificationError",
+                "SubscriberNotificationError",
+            ])
+            // Answered once, never retried: no further native call queued.
+            expect(harness.calls).toHaveLength(0)
+            failing.dispose()
+            healthy.dispose()
+        } finally {
+            capture.restore()
+        }
+    })
+
+    test("a browser rejection stays the promise's outcome even when a subscriber throws", async () => {
+        const harness = install()
+        const capture = captureReports()
+        try {
+            const failing = throwingSubscriber()
+            const answer = requestScreenDetails()
+            harness.deny()
+            await expect(answer).rejects.toMatchObject({ name: "NotAllowedError" })
+            expect(failing.get(screenDetailsStatusAtom)).toBe("denied")
+            expect(capture.unhandled).toEqual([])
+            expect(capture.reported).toHaveLength(2)
+            failing.dispose()
+        } finally {
+            capture.restore()
+        }
+    })
+
+    test("a subscriber that throws on a permission query answer is reported", async () => {
+        const harness = install()
+        const permissions = harness.installPermissions()
+        permissions.set("window-management", "granted")
+        const capture = captureReports()
+        try {
+            const failing = store()
+            failing.sub(screenPermissionAtom, () => {
+                throw new Error("subscriber boom")
+            })
+            await flush()
+            expect(failing.get(screenPermissionAtom)).toBe("granted")
+            expect(capture.unhandled).toEqual([])
+            expect(capture.reported).toHaveLength(1)
+            failing.dispose()
+        } finally {
+            capture.restore()
+        }
+    })
+})
+
+describe("screen-details revocation and ordering", () => {
+    const grantedPage = async () => {
+        const harness = install()
+        const permissions = harness.installPermissions()
+        permissions.set("window-management", "prompt")
+        return { harness, permissions }
+    }
+
+    test("a store that only reads screens observes a revocation the browser reports", async () => {
+        const { harness, permissions } = await grantedPage()
+        const app = store()
+        const seen: string[] = []
+        const stop = app.sub(screensAtom, () => seen.push(`${app.get(screenDetailsStatusAtom)}:${app.get(screensAtom).length}`))
+        // Observing screens observes the permission too: one query, one listener.
+        expect(permissions.queries).toEqual(["window-management"])
+        await flush()
+        expect(permissions.changeListeners()).toBe(1)
+        const answer = requestScreenDetails()
+        harness.grant()
+        await answer
+        permissions.statuses.get("window-management")!.change("denied")
+        // Screens are dropped, not kept as stale data; the status says why.
+        expect(app.get(screenDetailsAtom)).toEqual({
+            status: "denied",
+            screens: [],
+            currentScreen: null,
+            error: { name: "NotAllowedError", message: "The window-management permission was revoked" },
+        })
+        expect(seen).toEqual(["ready:1", "denied:0"])
+        expect(harness.details.physical()).toBe(0)
+        stop()
+        expect(permissions.changeListeners()).toBe(0)
+        app.dispose()
+    })
+
+    test("the permission observation is shared and released with its last observer", async () => {
+        const { permissions } = await grantedPage()
+        const app = store()
+        const other = store()
+        const stopScreens = app.sub(screensAtom, () => {})
+        const stopPermission = other.sub(screenPermissionAtom, () => {})
+        await flush()
+        expect(permissions.queries).toEqual(["window-management"])
+        expect(permissions.changeListeners()).toBe(1)
+        stopScreens()
+        expect(permissions.changeListeners()).toBe(1)
+        stopPermission()
+        expect(permissions.changeListeners()).toBe(0)
+        // Disposal releases it too.
+        app.sub(screenDetailsAtom, () => {})
+        await flush()
+        expect(permissions.changeListeners()).toBe(1)
+        app.dispose()
+        expect(permissions.changeListeners()).toBe(0)
+        other.dispose()
+    })
+
+    test("releasing the permission's own subscriber keeps observing for the screens", async () => {
+        const { harness, permissions } = await grantedPage()
+        const app = store()
+        app.sub(screensAtom, () => {})
+        const stopPermission = app.sub(screenPermissionAtom, () => {})
+        await flush()
+        const answer = requestScreenDetails()
+        harness.grant()
+        await answer
+        stopPermission()
+        // The screens still need to see a revocation.
+        expect(permissions.changeListeners()).toBe(1)
+        permissions.statuses.get("window-management")!.change("denied")
+        expect(app.get(screenDetailsStatusAtom)).toBe("denied")
+        app.dispose()
+        expect(permissions.changeListeners()).toBe(0)
+    })
+
+    test("a denial reported while a request is pending wins over that request's later grant", async () => {
+        const { harness, permissions } = await grantedPage()
+        const app = store()
+        const statuses: string[] = []
+        app.sub(screenDetailsStatusAtom, () => statuses.push(app.get(screenDetailsStatusAtom)))
+        await flush()
+        const answer = requestScreenDetails()
+        permissions.statuses.get("window-management")!.change("denied")
+        // Still waiting for the browser; the request has not settled.
+        expect(app.get(screenDetailsStatusAtom)).toBe("pending")
+        harness.grant()
+        // The promise carries the browser's outcome ...
+        await expect(answer).resolves.toHaveLength(1)
+        // ... but the older grant never restores "ready".
+        expect(statuses).toEqual(["pending", "denied"])
+        expect(app.get(screenDetailsAtom)).toMatchObject({ status: "denied", screens: [], error: { name: "NotAllowedError" } })
+        expect(app.get(screenPermissionAtom)).toBe("denied")
+        expect(harness.details.physical()).toBe(0)
+        app.dispose()
+    })
+
+    test("a request started after a revocation recovers access", async () => {
+        const { harness, permissions } = await grantedPage()
+        const app = store()
+        app.sub(screensAtom, () => {})
+        await flush()
+        const first = requestScreenDetails()
+        harness.grant()
+        await first
+        permissions.statuses.get("window-management")!.change("denied")
+        expect(app.get(screenDetailsStatusAtom)).toBe("denied")
+        // The user allows it again, then asks again.
+        permissions.statuses.get("window-management")!.change("granted")
+        expect(app.get(screenDetailsStatusAtom)).toBe("denied")
+        const second = requestScreenDetails()
+        harness.grant()
+        await second
+        expect(app.get(screenDetailsAtom)).toMatchObject({ status: "ready", error: null })
+        expect(app.get(screensAtom)).toHaveLength(1)
+        expect(harness.details.physical()).toBe(3)
+        app.dispose()
+        expect(harness.details.physical()).toBe(0)
+        expect(permissions.changeListeners()).toBe(0)
+    })
+
+    test("only a reported denial ends access: a reset to prompt keeps the screens", async () => {
+        const { harness, permissions } = await grantedPage()
+        const app = store()
+        app.sub(screensAtom, () => {})
+        await flush()
+        const answer = requestScreenDetails()
+        harness.grant()
+        await answer
+        permissions.statuses.get("window-management")!.change("prompt")
+        expect(app.get(screenDetailsStatusAtom)).toBe("ready")
+        expect(app.get(screenPermissionAtom)).toBe("prompt")
         app.dispose()
     })
 })

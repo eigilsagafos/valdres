@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { StoreDisposedError, store } from "valdres"
+import { flush } from "../../test/setup/deviceHarness"
 import {
     installGeolocation,
     position,
@@ -436,6 +437,44 @@ describe("watchGeolocation", () => {
         expect(geolocation.live()).toHaveLength(0)
         expect(app.get(geolocationStatusAtom)).toBe("idle")
         app.dispose()
+    })
+
+    test("a deferred stop clears only its own watch when the store restarts before it runs", async () => {
+        const { geolocation } = install()
+        const app = store()
+        const stopOld = watchGeolocation(app)
+        app.txn(() => {
+            stopOld()
+        })
+        // Restart before the deferred stop's microtask: a new session.
+        const stopNew = watchGeolocation(app)
+        expect(geolocation.watches).toHaveLength(2)
+        await flush()
+        // The old stop cleared the old native watch, and only that one.
+        expect(geolocation.watches[0]!.cleared).toBe(true)
+        expect(geolocation.watches[1]!.cleared).toBe(false)
+        // The new session is still the store's: its reports land.
+        expect(app.get(geolocationStatusAtom)).toBe("pending")
+        geolocation.watches[1]!.success(position(42))
+        expect(app.get(geolocationAtom)).toMatchObject({ status: "active", position: { latitude: 42 } })
+        // Calling the old stop again is a no-op.
+        stopOld()
+        expect(geolocation.watches[1]!.cleared).toBe(false)
+        stopNew()
+        expect(geolocation.live()).toHaveLength(0)
+        app.dispose()
+    })
+
+    test("a deferred stop after the store was disposed is harmless", async () => {
+        const { geolocation } = install()
+        const app = store()
+        const stop = watchGeolocation(app)
+        app.txn(() => {
+            stop()
+        })
+        app.dispose()
+        await flush()
+        expect(geolocation.live()).toHaveLength(0)
     })
 
     test("one store's throwing subscriber does not stop another store's watch", () => {

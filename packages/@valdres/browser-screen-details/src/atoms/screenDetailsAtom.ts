@@ -5,7 +5,8 @@ import type { ScreenDetailsState } from "../types/ScreenDetailsState"
 /**
  * The page's coherent screen-details state. Reading or subscribing never
  * prompts; only `requestScreenDetails()` does. Subscribing keeps the screens
- * current once access was granted.
+ * current once access was granted, and observes the permission (a query, never
+ * a prompt) so a revocation the browser reports drops them.
  */
 export const screenDetailsAtom: ExternalAtom<ScreenDetailsState> = externalAtom(
     screenDetailsSource,

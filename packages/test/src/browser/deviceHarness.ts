@@ -33,6 +33,45 @@ export const deferred = <Value>(): Deferred<Value> => {
     return { promise, resolve, reject }
 }
 
+export interface ReportCapture {
+    /** What reached `globalThis.reportError`, in order. */
+    readonly reported: unknown[]
+    /** Rejections nobody handled while capturing. */
+    readonly unhandled: unknown[]
+    restore(): void
+}
+
+/**
+ * Replaces `globalThis.reportError` with a recorder and records unhandled
+ * rejections, so a test can assert that a failure was reported — not thrown
+ * into an operation's outcome, not swallowed, not left unhandled.
+ */
+export const captureReports = (): ReportCapture => {
+    const reported: unknown[] = []
+    const unhandled: unknown[] = []
+    const own = Object.getOwnPropertyDescriptor(globalThis, "reportError")
+    Object.defineProperty(globalThis, "reportError", {
+        configurable: true,
+        writable: true,
+        value: (error: unknown) => {
+            reported.push(error)
+        },
+    })
+    const onUnhandled = (reason: unknown) => {
+        unhandled.push(reason)
+    }
+    process.on("unhandledRejection", onUnhandled)
+    return {
+        reported,
+        unhandled,
+        restore: () => {
+            process.off("unhandledRejection", onUnhandled)
+            if (own === undefined) delete (globalThis as { reportError?: unknown }).reportError
+            else Object.defineProperty(globalThis, "reportError", own)
+        },
+    }
+}
+
 /** Lets queued promise reactions run. */
 export const flush = async (rounds = 3): Promise<void> => {
     for (let round = 0; round < rounds; round++)

@@ -13,6 +13,11 @@ import type { PermissionValue } from "../types/PermissionValue"
  * - `"unsupported"` without the API or in an insecure context.
  *
  * Concurrent calls share one request. A browser prompt cannot be cancelled.
+ *
+ * Errors: the promise never rejects and the call never throws. A store
+ * subscriber that throws while the answer is published is reported through
+ * `globalThis.reportError` (or thrown in a later task where there is none),
+ * like core's `onCommit` failures; the answer is still recorded and returned.
  */
 export const requestOrientationPermission = (): Promise<PermissionValue> =>
     requestOrientationPermissionOnce()

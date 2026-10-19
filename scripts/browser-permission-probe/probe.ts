@@ -147,7 +147,27 @@ const permissionStates = {
 let permissionStops: (() => void)[] = []
 const permissionNotifications: string[] = []
 
+// A store that reads only screens: it must still see a revocation.
+const screensOnly = store()
+const screensOnlySeen: string[] = []
+let screensOnlyStop: (() => void) | undefined
+
 ;(window as any).permissionProbe = {
+    screensOnly: {
+        subscribe: () => {
+            screensOnlyStop = screensOnly.sub(screens.screensAtom, () =>
+                screensOnlySeen.push(
+                    `${screensOnly.get(screens.screenDetailsStatusAtom)}:${screensOnly.get(screens.screensAtom).length}`,
+                ),
+            )
+        },
+        unsubscribe: () => screensOnlyStop?.(),
+        read: () => ({
+            state: screensOnly.get(screens.screenDetailsAtom),
+            seen: [...screensOnlySeen],
+            queries: calls.filter(call => call.api === "permissions.query").length,
+        }),
+    },
     permissionCycle: {
         subscribe: () => {
             for (const [name, state] of Object.entries(permissionStates))

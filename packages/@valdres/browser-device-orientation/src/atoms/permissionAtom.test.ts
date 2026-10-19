@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { store } from "valdres"
-import { flush, type DeviceHarness } from "../../test/setup/deviceHarness"
+import { captureReports, flush, type DeviceHarness } from "../../test/setup/deviceHarness"
 import { installOrientation } from "../../test/setup/orientationFixtures"
 import { permissionSource } from "../lib/permissionSource"
 import { permissionAtom } from "./permissionAtom"
@@ -175,6 +175,32 @@ describe("permissionAtom", () => {
         expect(seen).toEqual(["denied", "granted"])
         stop()
         app.dispose()
+    })
+
+    test("a subscriber that throws on a query answer is reported, not an unhandled rejection", async () => {
+        harness = installOrientation(iosRequest)
+        const permissions = harness.installPermissions()
+        permissions.set("accelerometer", "granted")
+        permissions.set("gyroscope", "granted")
+        const capture = captureReports()
+        try {
+            const failing = store()
+            const healthy = store()
+            failing.sub(permissionAtom, () => {
+                throw new Error("subscriber boom")
+            })
+            const seen: string[] = []
+            healthy.sub(permissionAtom, () => seen.push(healthy.get(permissionAtom)))
+            await flush()
+            expect(seen).toEqual(["granted"])
+            expect(capture.unhandled).toEqual([])
+            expect(capture.reported).toHaveLength(1)
+            expect((capture.reported[0] as Error).name).toBe("SubscriberNotificationError")
+            failing.dispose()
+            healthy.dispose()
+        } finally {
+            capture.restore()
+        }
     })
 
     test("engines that do not know the names keep the requestPermission answer", async () => {

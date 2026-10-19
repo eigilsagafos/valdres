@@ -2,7 +2,8 @@ import type { ScreenDetail } from "../types/ScreenDetail"
 import type { ScreenDetailsState } from "../types/ScreenDetailsState"
 import type { ScreenDetailsStatus } from "../types/ScreenDetailsStatus"
 import type { ScreenPermissionState } from "../types/ScreenPermissionState"
-import { invalidateAll } from "./invalidateAll"
+import { combineFailures, invalidateEach } from "./invalidateAll"
+import { reportFailures } from "./reportFailure"
 import { resolveScreenDetailsHost } from "./resolveScreenDetailsHost"
 import { sameScreen, sameScreens } from "./sameScreens"
 import { toScreenDetail } from "./toScreenDetail"
@@ -14,8 +15,12 @@ export interface ScreenDetailsLike extends EventTarget {
     readonly currentScreen: ScreenLike
 }
 
+/** Every state without screens shares one array, so status changes alone
+ *  never change `screensAtom`'s identity. */
+const NO_SCREENS: readonly ScreenDetail[] = Object.freeze([])
+
 const fixed = (status: ScreenDetailsStatus): ScreenDetailsState =>
-    Object.freeze({ status, screens: Object.freeze([]), currentScreen: null, error: null })
+    Object.freeze({ status, screens: NO_SCREENS, currentScreen: null, error: null })
 
 export const UNSUPPORTED_STATE = fixed("unsupported")
 export const INSECURE_STATE = fixed("insecure")
@@ -72,11 +77,41 @@ const recordFor = (view: Window): ScreenDetailsRecord => {
     return record
 }
 
-const publish = (record: ScreenDetailsRecord, next: ScreenDetailsState) => {
+const DETAILS_LABEL = "Screen details invalidation failed"
+const PERMISSION_LABEL = "Screen permission invalidation failed"
+
+type Delivery = "rethrow" | "report"
+
+/**
+ * Where subscriber failures go: a native event listener rethrows them for the
+ * platform to report; an asynchronous browser answer, and the publication a
+ * request makes once its native call started, report them (see
+ * `reportFailures`) so they never replace the operation's own outcome or
+ * become an unhandled rejection. Either way every registration runs first.
+ */
+const deliver = (failures: unknown[], label: string, delivery: Delivery) => {
+    if (failures.length === 0) return
+    if (delivery === "report") reportFailures(failures, label)
+    else throw combineFailures(failures, label)
+}
+
+const publish = (
+    record: ScreenDetailsRecord,
+    next: ScreenDetailsState,
+    delivery: Delivery,
+) => {
     if (record.state === next) return
     record.state = next
-    invalidateAll(record.registrations, "Screen details invalidation failed")
+    deliver(invalidateEach(record.registrations), DETAILS_LABEL, delivery)
 }
+
+const deniedState = (message: string): ScreenDetailsState =>
+    Object.freeze({
+        status: "denied",
+        screens: NO_SCREENS,
+        currentScreen: null,
+        error: Object.freeze({ name: "NotAllowedError", message }),
+    })
 
 /**
  * Samples the details object into the cached state, keeping the previous
@@ -115,8 +150,9 @@ export const readScreenDetails = (): ScreenDetailsState => {
     return record === undefined ? IDLE_STATE : sample(record)
 }
 
+// Native `change` / `screenschange` listeners: rethrow for the platform.
 const invalidateDetails = (record: ScreenDetailsRecord) => () =>
-    invalidateAll(record.registrations, "Screen details invalidation failed")
+    deliver(invalidateEach(record.registrations), DETAILS_LABEL, "rethrow")
 
 /** Listens to the details object and each screen while any tree retains it. */
 const attach = (record: ScreenDetailsRecord) => {
@@ -153,7 +189,9 @@ const detach = (record: ScreenDetailsRecord) => {
 /**
  * Registers one store tree. Listeners on the browser's `ScreenDetails` object
  * exist only while some tree retains the source AND access was granted; the
- * last release removes them.
+ * last release removes them. Retaining the details also observes the
+ * permission (see `observePermission`), so a revocation the browser reports
+ * reaches a store that only reads screens.
  */
 export const retainScreenDetails = (invalidate: () => void): (() => void) => {
     const host = resolveScreenDetailsHost()
@@ -162,35 +200,40 @@ export const retainScreenDetails = (invalidate: () => void): (() => void) => {
     const registration = () => invalidate()
     record.registrations.add(registration)
     attach(record)
+    observePermission(record)
     return () => {
         if (!record.registrations.delete(registration)) return
         if (record.registrations.size === 0) detach(record)
+        unobservePermissionIfUnused(record)
     }
 }
 
-const learnPermission = (record: ScreenDetailsRecord, next: Known) => {
+/**
+ * Records a permission answer unless a newer one already landed, then
+ * notifies the permission's subscribers and, when the answer ends access, the
+ * details' subscribers too — every registration runs before any failure is
+ * delivered.
+ */
+const learnPermission = (
+    record: ScreenDetailsRecord,
+    next: Known,
+    delivery: Delivery,
+) => {
     if (record.permission !== undefined && next.order < record.permission.order) return
     const changed = record.permission?.value !== next.value
     record.permission = next
     if (!changed) return
-    // A revocation the browser announces ends access: drop the screens.
+    const failures: unknown[] = []
+    // A denial the browser reports ends access: the screens are dropped, not
+    // kept as stale data, and the status says why.
     if (next.value === "denied" && record.state.status === "ready") {
         detach(record)
         record.details = undefined
-        publish(
-            record,
-            Object.freeze({
-                status: "denied",
-                screens: Object.freeze([]),
-                currentScreen: null,
-                error: Object.freeze({
-                    name: "NotAllowedError",
-                    message: "The window-management permission was revoked",
-                }),
-            }),
-        )
+        record.state = deniedState("The window-management permission was revoked")
+        failures.push(...invalidateEach(record.registrations))
     }
-    invalidateAll(record.permissionRegistrations, "Screen permission invalidation failed")
+    failures.push(...invalidateEach(record.permissionRegistrations))
+    deliver(failures, PERMISSION_LABEL, delivery)
 }
 
 const toError = (error: unknown) =>
@@ -203,6 +246,14 @@ const toError = (error: unknown) =>
  * Calls `window.getScreenDetails()` synchronously, inside the caller's task, so
  * a call from a user gesture keeps that gesture's activation. Concurrent calls
  * share one request.
+ *
+ * Error contract: once the native call has started, the caller always gets
+ * the promise, and it settles only with the browser's outcome — the screens,
+ * or the browser's rejection. Subscriber failures while publishing "pending",
+ * "ready", "denied" or "error" are reported, never thrown or turned into a
+ * rejection. A denial the browser reported after this request started wins
+ * over the request's own grant: the state stays "denied", while the promise
+ * still resolves with what the browser returned.
  */
 export const requestScreenDetailsOnce = (): Promise<ScreenDetail[] | null> => {
     const host = resolveScreenDetailsHost()
@@ -220,7 +271,21 @@ export const requestScreenDetailsOnce = (): Promise<ScreenDetail[] | null> => {
     const pending = answer.then(
         details => {
             if (record.pending === pending) record.pending = undefined
-            if (record.request !== request) return details.screens.map(toScreenDetail)
+            const screens = details.screens.map(toScreenDetail)
+            if (record.request !== request) return screens
+            const newer = record.permission
+            if (newer !== undefined && newer.order > order && newer.value === "denied") {
+                // Revoked while this request was in flight: never restore
+                // "ready" from the older grant.
+                detach(record)
+                record.details = undefined
+                publish(
+                    record,
+                    deniedState("The window-management permission was denied after this request started"),
+                    "report",
+                )
+                return screens
+            }
             if (record.details !== details) {
                 detach(record)
                 record.details = details
@@ -229,9 +294,10 @@ export const requestScreenDetailsOnce = (): Promise<ScreenDetail[] | null> => {
             // unchanged layout publishes nothing.
             if (record.state.status !== "ready") record.state = READY_EMPTY
             const state = sample(record)
-            learnPermission(record, { value: "granted", order })
             attach(record)
-            invalidateAll(record.registrations, "Screen details invalidation failed")
+            const failures = invalidateEach(record.registrations)
+            reportFailures(failures, DETAILS_LABEL)
+            learnPermission(record, { value: "granted", order }, "report")
             return [...state.screens]
         },
         error => {
@@ -245,20 +311,22 @@ export const requestScreenDetailsOnce = (): Promise<ScreenDetail[] | null> => {
                     record,
                     Object.freeze({
                         status: denied ? "denied" : "error",
-                        screens: Object.freeze([]),
+                        screens: NO_SCREENS,
                         currentScreen: null,
                         error: toError(error),
                     }),
+                    "report",
                 )
-                if (denied)
-                    learnPermission(record, { value: "denied", order })
+                if (denied) learnPermission(record, { value: "denied", order }, "report")
             }
             throw error
         },
     )
     record.pending = pending
-    // While ready, a repeated request keeps serving the current screens.
-    if (record.state.status !== "ready") publish(record, PENDING_STATE)
+    // While ready, a repeated request keeps serving the current screens. The
+    // native call already started, so this publication reports its failures
+    // instead of throwing the caller's promise away.
+    if (record.state.status !== "ready") publish(record, PENDING_STATE, "report")
     return pending
 }
 
@@ -281,60 +349,69 @@ export const readScreenPermission = (): ScreenPermissionState => {
 const PERMISSION_NAMES = ["window-management", "window-placement"] as const
 
 /**
- * Registers one store tree. The first registration queries the Permissions API
- * and follows its `change` events; the last one removes the listener. Answers
- * are kept, so a store that re-subscribes keeps reading the last one until the
- * new query corrects it.
+ * Starts observing the permission — one Permissions API query, then its
+ * `change` events — when the first observer arrives: a `screenPermissionAtom`
+ * registration or a details registration. `unobservePermissionIfUnused`
+ * removes the listener when both sets are empty. Answers are kept, so a store
+ * that re-subscribes keeps reading the last one until the new query corrects
+ * it; a query answered after its release is ignored.
  */
+const observePermission = (record: ScreenDetailsRecord): void => {
+    if (record.releaseQuery !== undefined) return
+    let released = false
+    let status: PermissionStatus | undefined
+    const onChange = () => {
+        if (released || status === undefined) return
+        learnPermission(record, { value: status.state, order: ++record.clock }, "rethrow")
+    }
+    record.releaseQuery = () => {
+        released = true
+        status?.removeEventListener("change", onChange)
+    }
+    const permissions = permissionsOf()
+    if (permissions === undefined) return
+    const order = ++record.clock
+    const query = (index: number): void => {
+        let answer: Promise<PermissionStatus>
+        try {
+            answer = permissions.query({
+                name: PERMISSION_NAMES[index] as PermissionName,
+            })
+        } catch (error) {
+            answer = Promise.reject(error)
+        }
+        answer.then(
+            result => {
+                if (released) return
+                status = result
+                result.addEventListener("change", onChange)
+                learnPermission(record, { value: result.state, order }, "report")
+            },
+            () => {
+                if (!released && index + 1 < PERMISSION_NAMES.length) query(index + 1)
+            },
+        )
+    }
+    query(0)
+}
+
+const unobservePermissionIfUnused = (record: ScreenDetailsRecord): void => {
+    if (record.permissionRegistrations.size > 0 || record.registrations.size > 0) return
+    record.releaseQuery?.()
+    record.releaseQuery = undefined
+}
+
+/** Registers one store tree on the permission; see `observePermission`. */
 export const retainScreenPermission = (invalidate: () => void): (() => void) => {
     const host = resolveScreenDetailsHost()
     if (host.kind !== "supported") return () => {}
     const record = recordFor(host.view)
     const registration = () => invalidate()
     record.permissionRegistrations.add(registration)
-    if (record.releaseQuery === undefined) {
-        let released = false
-        let status: PermissionStatus | undefined
-        const onChange = () => {
-            if (released || status === undefined) return
-            learnPermission(record, { value: status.state, order: ++record.clock })
-        }
-        record.releaseQuery = () => {
-            released = true
-            status?.removeEventListener("change", onChange)
-        }
-        const permissions = permissionsOf()
-        if (permissions !== undefined) {
-            const order = ++record.clock
-            const query = (index: number): void => {
-                let answer: Promise<PermissionStatus>
-                try {
-                    answer = permissions.query({
-                        name: PERMISSION_NAMES[index] as PermissionName,
-                    })
-                } catch (error) {
-                    answer = Promise.reject(error)
-                }
-                answer.then(
-                    result => {
-                        if (released) return
-                        status = result
-                        result.addEventListener("change", onChange)
-                        learnPermission(record, { value: result.state, order })
-                    },
-                    () => {
-                        if (!released && index + 1 < PERMISSION_NAMES.length) query(index + 1)
-                    },
-                )
-            }
-            query(0)
-        }
-    }
+    observePermission(record)
     return () => {
         if (!record.permissionRegistrations.delete(registration)) return
-        if (record.permissionRegistrations.size > 0) return
-        record.releaseQuery?.()
-        record.releaseQuery = undefined
+        unobservePermissionIfUnused(record)
     }
 }
 

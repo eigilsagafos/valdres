@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { store } from "valdres"
-import { flush } from "../../test/setup/deviceHarness"
+import { captureReports, flush } from "../../test/setup/deviceHarness"
 import { installGeolocation } from "../../test/setup/geolocationFixtures"
 import { permissionSource } from "../lib/permissionSource"
 import { watchGeolocation } from "../utils/watchGeolocation"
@@ -160,6 +160,33 @@ describe("permissionAtom", () => {
         expect(seen).toEqual(["denied", "granted"])
         stop()
         app.dispose()
+    })
+
+    test("a subscriber that throws on a query answer is reported, not an unhandled rejection", async () => {
+        const harness = install()
+        const permissions = harness.installPermissions()
+        permissions.set("geolocation", "granted")
+        const capture = captureReports()
+        try {
+            const failing = store()
+            const healthy = store()
+            failing.sub(permissionAtom, () => {
+                throw new Error("subscriber boom")
+            })
+            const seen: string[] = []
+            healthy.sub(permissionAtom, () => seen.push(healthy.get(permissionAtom)))
+            await flush()
+            expect(seen).toEqual(["granted"])
+            expect(failing.get(permissionAtom)).toBe("granted")
+            expect(capture.unhandled).toEqual([])
+            expect(capture.reported).toHaveLength(1)
+            expect((capture.reported[0] as Error).name).toBe("SubscriberNotificationError")
+            expect(((capture.reported[0] as { cause: Error }).cause).message).toBe("subscriber boom")
+            failing.dispose()
+            healthy.dispose()
+        } finally {
+            capture.restore()
+        }
     })
 
     test("a rejected query reports unsupported while subscribed", async () => {
