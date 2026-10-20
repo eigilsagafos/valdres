@@ -29,13 +29,15 @@ const HTML = `<!doctype html>
 <style>
   body { font: 16px/1.4 -apple-system, system-ui, sans-serif; margin: 1rem; }
   button { display: block; width: 100%; margin: 0.5rem 0; padding: 0.9rem; font-size: 1rem; }
+  #state { font-weight: 600; padding: 0.5rem; border-radius: 6px; background: #fd03; }
   pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; background: #8881; padding: 0.5rem; }
 </style></head>
 <body>
 <h1>iOS Safari permission check</h1>
-<button id="motion">1. requestMotionPermission()</button>
-<button id="orientation">2. requestOrientationPermission()</button>
-<button id="no-gesture">3. requestMotionPermission() in 6 s, outside the tap</button>
+<p id="state"></p>
+<button id="no-gesture">C · Motion request 6 s after the tap (no gesture)</button>
+<button id="motion">A · Motion request inside the tap</button>
+<button id="orientation">B · Orientation request inside the tap</button>
 <button id="copy">Copy results</button>
 <pre id="out"></pre>
 <script type="module">${source}</script>

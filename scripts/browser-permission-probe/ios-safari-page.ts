@@ -92,6 +92,14 @@ const snapshot = () => ({
 function render() {
     const out = document.getElementById("out")
     if (out) out.textContent = JSON.stringify(snapshot(), null, 2)
+    const state = document.getElementById("state")
+    if (state === null) return
+    const motion = app.get(motionPermissionAtom)
+    const orientation = app.get(orientationPermissionAtom)
+    state.textContent =
+        motion === "prompt" && orientation === "prompt"
+            ? "Unanswered on this page: the no-gesture (C) and prompt (A/B) checks are meaningful now."
+            : `Answered on this page (motion ${motion}, orientation ${orientation}). iOS answers motion and orientation together, so A, B and C now return that answer without a prompt. Use a fresh origin or clear website data to re-test prompting.`
 }
 
 const on = (id: string, handler: () => void) =>
