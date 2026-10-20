@@ -1,5 +1,7 @@
 import type { MotionState } from "../types/MotionState"
-import { invalidateAll } from "./invalidateAll"
+import { combineFailures, invalidateEach } from "./invalidateAll"
+import { hasReading } from "./hasReading"
+import { noteGrantedByReading } from "./motionPermission"
 import { toSnapshot } from "./toSnapshot"
 
 export const IDLE: MotionState = Object.freeze({ status: "idle", motion: null })
@@ -34,11 +36,14 @@ export const retainMotionHub = (
         const onMotion = (event: Event) => {
             const current = hubs.get(view)
             if (current !== created) return
-            created.state = Object.freeze({
-                status: "active",
-                motion: toSnapshot(event as DeviceMotionEvent),
-            })
-            invalidateAll(registrations, "Device motion invalidation failed")
+            const reading = toSnapshot(event as DeviceMotionEvent)
+            created.state = Object.freeze({ status: "active", motion: reading })
+            // Every reading subscriber, then — once — the permission's, before
+            // any failure is rethrown for the platform to report.
+            const failures = invalidateEach(registrations)
+            if (hasReading(reading)) failures.push(...noteGrantedByReading(view))
+            if (failures.length > 0)
+                throw combineFailures(failures, "Device motion invalidation failed")
         }
         const created: MotionHub = {
             state: LISTENING,

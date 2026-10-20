@@ -127,8 +127,12 @@ published with are never observed apart.
 `permissionAtom` never prompts. Its value is:
 
 - the newest answer this page has seen, shared by every store: a completed
-  `requestOrientationPermission()`, a Permissions API answer or a later `change` event — an
-  answer whose operation started earlier never overwrites a newer one;
+  `requestOrientationPermission()`, a Permissions API answer, a later `change` event, or a
+  `deviceorientation` reading with values — browsers only deliver readings once
+  access is granted, which is how this package learns a grant given through
+  `@valdres/browser-device-motion` (iOS asks once for both). All-null
+  readings, which Chromium sends without access, prove nothing. An answer whose
+  operation started earlier never overwrites a newer one;
 - while a store subscribes, the Permissions API's combined answer for
   `accelerometer` and `gyroscope` where the engine knows those names
   (Chromium), followed through its `change` events while a store subscribes;

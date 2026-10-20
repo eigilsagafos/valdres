@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { store } from "valdres"
 import { captureReports, flush, type DeviceHarness } from "../../test/setup/deviceHarness"
-import { installMotion } from "../../test/setup/motionFixtures"
+import { FakeDeviceMotionEvent, installMotion, motionEvent } from "../../test/setup/motionFixtures"
+import { motionAtom } from "../selectors/motionAtom"
 import { permissionSource } from "../lib/permissionSource"
 import { permissionAtom } from "./permissionAtom"
 
@@ -241,5 +242,84 @@ describe("permissionAtom", () => {
 
     test("the server snapshot is a fixed prompt seed", () => {
         expect(permissionSource.getServerSnapshot?.()).toBe("prompt")
+    })
+})
+
+describe("a reading as evidence of access", () => {
+    // Disposed even when an assertion fails, so one failure cannot leave a
+    // hub attached for the tests after it.
+    const stores: ReturnType<typeof store>[] = []
+    const track = () => {
+        const app = store()
+        stores.push(app)
+        return app
+    }
+    afterEach(() => {
+        for (const app of stores.splice(0)) app.dispose()
+    })
+
+    // iOS answers motion and orientation with one permission, and Safari's
+    // Permissions API does not know the sensor names: a grant obtained through
+    // the other package reaches this one only as readings.
+    test("a reading with values records granted for every store, once", () => {
+        harness = installMotion(iosRequest)
+        const reader = track()
+        const observer = track()
+        reader.sub(motionAtom, () => {})
+        const seen: string[] = []
+        observer.sub(permissionAtom, () => seen.push(observer.get(permissionAtom)))
+        expect(observer.get(permissionAtom)).toBe("prompt")
+        harness.fire(motionEvent(1))
+        harness.fire(motionEvent(2))
+        harness.fire(motionEvent(3))
+        expect(observer.get(permissionAtom)).toBe("granted")
+        expect(seen).toEqual(["granted"])
+        reader.dispose()
+        // Kept like any other answer once nothing listens.
+        expect(observer.get(permissionAtom)).toBe("granted")
+        observer.dispose()
+    })
+
+    test("an all-null reading proves nothing", () => {
+        harness = installMotion(iosRequest)
+        const app = track()
+        app.sub(motionAtom, () => {})
+        harness.fire(new FakeDeviceMotionEvent({ acceleration: { x: null, y: null, z: null } }))
+        expect(app.get(permissionAtom)).toBe("prompt")
+        app.dispose()
+    })
+
+    test("a later denial reported by the browser still wins", async () => {
+        harness = installMotion(iosRequest)
+        const permissions = harness.installPermissions()
+        permissions.set("accelerometer", "granted")
+        permissions.set("gyroscope", "granted")
+        const app = track()
+        app.sub(motionAtom, () => {})
+        app.sub(permissionAtom, () => {})
+        await flush()
+        harness.fire(motionEvent(1))
+        expect(app.get(permissionAtom)).toBe("granted")
+        permissions.statuses.get("gyroscope")!.change("denied")
+        expect(app.get(permissionAtom)).toBe("denied")
+        app.dispose()
+    })
+
+    test("a throwing permission subscriber is rethrown after every reading subscriber ran", () => {
+        harness = installMotion(iosRequest)
+        const healthy = track()
+        const failing = track()
+        let readings = 0
+        healthy.sub(motionAtom, () => readings++)
+        failing.sub(permissionAtom, () => {
+            throw new Error("subscriber boom")
+        })
+        const reported = harness.fireReportingErrors(motionEvent(1))
+        expect(readings).toBe(1)
+        expect(failing.get(permissionAtom)).toBe("granted")
+        expect(reported).toHaveLength(1)
+        expect((reported[0] as Error).name).toBe("SubscriberNotificationError")
+        healthy.dispose()
+        failing.dispose()
     })
 })

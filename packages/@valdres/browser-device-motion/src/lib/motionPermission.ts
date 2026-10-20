@@ -65,6 +65,22 @@ const apply = (
     else reportFailures(invalidateEach(record.registrations), LABEL)
 }
 
+/**
+ * Records `"granted"` because a reading with values arrived: the
+ * specification only dispatches `devicemotion` once access is granted. This
+ * is how a page learns an answer given to the other sensor package — iOS asks
+ * once for motion and orientation together — where no Permissions API answer
+ * exists. A no-op once granted, so it costs nothing per reading. Returns the
+ * subscriber failures for the caller, a native event listener, to rethrow
+ * together with its own.
+ */
+export const noteGrantedByReading = (view: Window): unknown[] => {
+    const record = recordFor(view)
+    if (record.known?.value === "granted") return []
+    record.known = { value: "granted", order: ++record.clock }
+    return invalidateEach(record.registrations)
+}
+
 const combine = (states: readonly PermissionState[]): PermissionValue =>
     states.includes("denied")
         ? "denied"

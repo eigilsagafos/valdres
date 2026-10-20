@@ -1,5 +1,6 @@
 /**
- * - `"granted"` / `"denied"`: answered by a permission request or reported by
+ * - `"granted"` / `"denied"`: answered by a permission request, implied by a
+ *   reading with values (`"granted"` only), or reported by
  *   the Permissions API (`accelerometer` and `gyroscope`, Chromium).
  * - `"prompt"`: `DeviceOrientationEvent.requestPermission` exists and no answer is
  *   known yet — call `requestOrientationPermission()` from a user gesture.
