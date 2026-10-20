@@ -22,7 +22,10 @@ iOS version and the copied results ("Copy results") in the release PR.
 
 ## Setup
 
-1. `bun run scripts/browser-permission-probe/ios-safari.ts` (port 3033).
+1. `bun run scripts/browser-permission-probe/ios-safari.ts` (port 3033). It
+   bundles the packages once at startup: restart it after pulling or changing
+   them, and check that `environment.build.commit` in the copied results is
+   the commit under test.
 2. Open it on the device over **HTTPS**: an HTTPS tunnel to port 3033, or run
    with `TLS_CERT`/`TLS_KEY` for a certificate the device trusts.
 

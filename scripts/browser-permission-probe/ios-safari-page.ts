@@ -63,7 +63,10 @@ app.sub(orientationAtom, () => {
 for (const state of [motionStatusAtom, motionPermissionAtom, orientationStatusAtom, orientationPermissionAtom])
     app.sub(state, render)
 
+declare const __IOS_CHECK_BUILD__: { commit: string; dirty: boolean; bundledAt: string }
+
 const environment = {
+    build: __IOS_CHECK_BUILD__,
     userAgent: navigator.userAgent,
     isSecureContext: window.isSecureContext,
     motionRequestPermission: typeof (window as any).DeviceMotionEvent?.requestPermission,

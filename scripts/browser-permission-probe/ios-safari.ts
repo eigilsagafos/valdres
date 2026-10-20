@@ -11,10 +11,22 @@
  */
 import { join } from "node:path"
 
+// The packages are bundled once, here: restart this server after changing
+// them. The build stamp makes a stale bundle visible in the copied results.
+const git = (...args: string[]) =>
+    Bun.spawnSync(["git", ...args], { cwd: import.meta.dir }).stdout.toString().trim()
+const build = {
+    commit: git("rev-parse", "--short", "HEAD"),
+    dirty: git("status", "--porcelain", "--", "packages") !== "",
+    bundledAt: new Date().toISOString(),
+}
 const bundle = await Bun.build({
     entrypoints: [join(import.meta.dir, "ios-safari-page.ts")],
     target: "browser",
-    define: { "process.env.NODE_ENV": JSON.stringify("development") },
+    define: {
+        "process.env.NODE_ENV": JSON.stringify("development"),
+        __IOS_CHECK_BUILD__: JSON.stringify(build),
+    },
 })
 if (!bundle.success) {
     for (const log of bundle.logs) console.error(log)
@@ -53,4 +65,5 @@ const server = Bun.serve({
     tls,
     fetch: () => new Response(HTML, { headers: { "content-type": "text/html; charset=utf-8" } }),
 })
+console.log(`build ${build.commit}${build.dirty ? " (+uncommitted package changes)" : ""} at ${build.bundledAt}`)
 console.log(`iOS Safari check page: ${server.url} (${tls ? "HTTPS" : "HTTP — tunnel it over HTTPS"})`)
