@@ -1,5 +1,7 @@
 import type { OrientationState } from "../types/OrientationState"
-import { invalidateAll } from "./invalidateAll"
+import { combineFailures, invalidateEach } from "./invalidateAll"
+import { hasReading } from "./hasReading"
+import { noteGrantedByReading } from "./orientationPermission"
 import { toSnapshot } from "./toSnapshot"
 
 export const IDLE: OrientationState = Object.freeze({ status: "idle", orientation: null })
@@ -34,11 +36,14 @@ export const retainOrientationHub = (
         const onOrientation = (event: Event) => {
             const current = hubs.get(view)
             if (current !== created) return
-            created.state = Object.freeze({
-                status: "active",
-                orientation: toSnapshot(event as DeviceOrientationEvent),
-            })
-            invalidateAll(registrations, "Device orientation invalidation failed")
+            const reading = toSnapshot(event as DeviceOrientationEvent)
+            created.state = Object.freeze({ status: "active", orientation: reading })
+            // Every reading subscriber, then — once — the permission's, before
+            // any failure is rethrown for the platform to report.
+            const failures = invalidateEach(registrations)
+            if (hasReading(reading)) failures.push(...noteGrantedByReading(view))
+            if (failures.length > 0)
+                throw combineFailures(failures, "Device orientation invalidation failed")
         }
         const created: OrientationHub = {
             state: LISTENING,

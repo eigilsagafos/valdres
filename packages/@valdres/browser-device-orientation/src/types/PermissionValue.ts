@@ -5,7 +5,9 @@
  *   known yet — call `requestOrientationPermission()` from a user gesture.
  * - `"unsupported"`: no `DeviceOrientationEvent`, or an insecure context.
  *
- * Browsers without `requestPermission` and without a Permissions API answer
- * deliver events without asking, and report `"granted"`.
+ * A reading with values is evidence of observed access: it may turn an
+ * unknown or `"prompt"` value into `"granted"`, but never overrides a recorded
+ * `"denied"`. Browsers without `requestPermission` and without a Permissions
+ * API answer deliver events without asking, and report `"granted"`.
  */
 export type PermissionValue = "granted" | "denied" | "prompt" | "unsupported"

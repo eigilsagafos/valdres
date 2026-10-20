@@ -58,15 +58,15 @@ test/
 
 ## Browser-API package pattern
 
-Each `@valdres/browser-*` package wraps one browser API as global atoms.
-Canonical reference: `packages/@valdres/browser-geolocation`.
-
-- Atoms use
-  `globalAtom(defaultValue, { name: "@valdres/<pkg>/<atom>", onMount: () => bootstrap(thisAtom) })`.
-- `onMount` starts the browser subscription on first subscriber; the cleanup it
-  returns stops it when the last subscriber leaves.
-- Subscription wiring lives in `lib/bootstrap.ts` (and friends like
-  `lib/subscribePermission.ts`).
+Each migrated `@valdres/browser-*` package wraps one browser API as read-only
+v1 state: an `externalAtom` whose source samples the browser in `getSnapshot`,
+attaches listeners in `subscribe` (first retention per store tree) and returns
+their cleanup (last release or `dispose`), with a fixed `getServerSnapshot`.
+`globalAtom`, `onMount` and `setSelf` no longer exist. References:
+`packages/@valdres/browser-online` (simplest), `browser-focus` (shared
+per-document hub), and the permission-gated `browser-geolocation` (explicit
+Store-owned triggers) and `browser-screen-details`. Permission prompts never
+start from a read or a subscription — only from an explicit, documented call.
 
 ## Tests
 
@@ -121,6 +121,7 @@ asserts the complement holds. Move a package between them in one change.
 Today that is `valdres`, `valdres-react`, the five migrated
 `@valdres/browser-{color-scheme,contrast,reduced-motion,reduced-data,reduced-transparency}`
 packages, `@valdres/browser-keyboard`, `@valdres/browser-{online,focus,visibility,presence}`,
+`@valdres/browser-{device-motion,device-orientation,geolocation,screen-details}`,
 and `@valdres/hotkeys` with `@valdres-react/hotkeys`. The remaining browser
 packages and both color-mode packages are still ignored.
 

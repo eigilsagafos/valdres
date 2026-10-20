@@ -2,11 +2,12 @@
  * Guards the browser-permission lane's metadata and release state. Picked up
  * by CI's existing `bun test scripts/` step.
  *
- * All four packages are migrated but release-ignored: on the Changesets ignore
- * list, off the publishable list, tested by ci.yaml's `browser-permission`
- * job (which `bun run verify` runs) and absent from `publish.needs`. Each
- * package's `releaseEligible` flag is the single claim checked here, so a
- * package cannot drift into a half-enabled state.
+ * All four packages are release-eligible: off the Changesets ignore list, on
+ * the publishable list, tested by ci.yaml's `browser-permission` job (which
+ * `bun run verify` runs) and in `publish.needs`. Each package's
+ * `releaseEligible` flag is the single claim checked here, so a package cannot
+ * drift into a half-enabled state. The breaking release note is followed by id
+ * through its pending and consumed states (see "the release note").
  */
 import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
@@ -20,6 +21,7 @@ import {
 import { BROWSER_MEDIA_PACKAGES } from "./lib/browser-media-packages"
 import { BROWSER_STATUS_PACKAGES } from "./lib/browser-status-packages"
 import { PUBLISHABLE_PACKAGE_DIRS } from "./lib/publishable-packages"
+import { loadChangesetParser } from "./lib/browser-status-release-note"
 
 const ROOT = join(import.meta.dir, "..")
 const read = (...parts: string[]) => readFileSync(join(...parts), "utf8")
@@ -87,7 +89,7 @@ describe("browser-permission lane", () => {
         ).toBe(false)
     })
 
-    test("verify runs the job, but publish does not wait on it", () => {
+    test("verify runs the job, and publish waits on it exactly when the packages release", () => {
         expect(read(ROOT, "scripts", "verify.ts")).toMatch(
             /const JOBS = \[[^\]]*"browser-permission"/,
         )
@@ -96,10 +98,10 @@ describe("browser-permission lane", () => {
         )
         expect(needs).not.toBeNull()
         const gating = needs![1]!.split(",").map(job => job.trim())
-        // Release-ignored packages must not gate a release; add the job here
-        // only together with release enablement.
-        expect(gating).not.toContain("browser-permission")
-        expect(BROWSER_PERMISSION_PACKAGES.some(pkg => pkg.releaseEligible)).toBe(false)
+        // The revision that publishes these packages must have passed their
+        // gates; release-ignored packages must not gate a release.
+        const eligible = BROWSER_PERMISSION_PACKAGES.some(pkg => pkg.releaseEligible)
+        expect(gating.includes("browser-permission")).toBe(eligible)
     })
 
     for (const pkg of BROWSER_PERMISSION_PACKAGES) {
@@ -117,8 +119,9 @@ describe("browser-permission lane", () => {
                     valdres: BROWSER_PERMISSION_CORE_PEER_RANGE,
                 })
                 expect(manifest.dependencies).toBeUndefined()
-                // Version Packages owns versions; this lane never bumps them.
-                expect(manifest.version).toBe(BROWSER_PERMISSION_LEGACY_VERSION)
+                // Version Packages owns versions; it only ever moves them past
+                // the legacy build.
+                expect(Bun.semver.order(manifest.version, BROWSER_PERMISSION_LEGACY_VERSION)).toBeGreaterThanOrEqual(0)
             })
 
             test("is migrated off the removed globals", () => {
@@ -140,4 +143,99 @@ describe("browser-permission lane", () => {
             })
         })
     }
+})
+
+// ── the release note ───────────────────────────────────────────────────────
+// The breaking notes ship in one changeset, followed by id: pending as
+// `.changeset/<id>.md`, consumed (moved by Version Packages) as
+// `.changeset/pre/<id>.md`. After the prerelease exits, the stable
+// `changeset version` deletes consumed notes; the CHANGELOG entries are the
+// durable record from then on, so the note is only required while the
+// packages are on the 1.0.0 prerelease line.
+const NOTE_ID = "browser-permission-release"
+const NOTE_MARKER =
+    "**Breaking: motion, orientation, geolocation and screen details are now read-only browser state with explicit permission triggers.**"
+const NOTE_REQUIRED_TEXT = [
+    NOTE_MARKER,
+    "watchGeolocation(store, options?)",
+    "geolocationOptionsAtom",
+    "GeolocationWatchConflictError",
+    "globalThis.reportError",
+    "never retried",
+    "may be stale",
+    "Known limitation",
+    BROWSER_PERMISSION_CORE_PEER_RANGE,
+    // The three deferred-changeset fixes these packages now receive.
+    "`.js` import specifiers",
+    "`require(esm)`",
+    "`workspace:` protocol",
+]
+const squash = (text: string) => text.replace(/\s+/g, " ")
+const changesetFiles = (dir = join(ROOT, ".changeset")): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+        const path = join(dir, entry.name)
+        if (entry.isDirectory()) return changesetFiles(path)
+        return entry.name.endsWith(".md") && entry.name !== "README.md" ? [path] : []
+    })
+const parseChangeset = await loadChangesetParser(ROOT)
+
+describe("the release note", () => {
+    const manifests = BROWSER_PERMISSION_PACKAGES.map(pkg => ({
+        ...pkg,
+        manifest: JSON.parse(read(ROOT, pkg.dir, "package.json")),
+    }))
+    const onPrereleaseLine = manifests.some(({ manifest }) =>
+        String(manifest.version).startsWith("1.0.0-"),
+    )
+    const copies = [
+        join(ROOT, ".changeset", `${NOTE_ID}.md`),
+        join(ROOT, ".changeset", "pre", `${NOTE_ID}.md`),
+    ].filter(existsSync)
+
+    test("exists exactly once while the packages are on the prerelease line", () => {
+        if (!onPrereleaseLine) return
+        expect(copies).toHaveLength(1)
+    })
+
+    test("names exactly these packages and makes every required claim", () => {
+        for (const file of copies) {
+            const parsed = parseChangeset(readFileSync(file, "utf8"))
+            expect(parsed.releases.map(release => release.name).sort()).toEqual([...names].sort())
+            for (const text of NOTE_REQUIRED_TEXT)
+                expect({ text, present: squash(parsed.summary).includes(squash(text)) }).toEqual({
+                    text,
+                    present: true,
+                })
+        }
+    })
+
+    test("no other changeset carries the note or keeps a deferred entry for these packages", () => {
+        for (const file of changesetFiles()) {
+            if (copies.includes(file)) continue
+            const contents = readFileSync(file, "utf8")
+            expect({ file, duplicate: squash(contents).includes(squash(NOTE_MARKER)) }).toEqual({
+                file,
+                duplicate: false,
+            })
+            if (file.endsWith("-deferred.md")) {
+                const named = parseChangeset(contents).releases.map(release => release.name)
+                expect({ file, named: named.filter(name => names.includes(name)) }).toEqual({
+                    file,
+                    named: [],
+                })
+            }
+        }
+    })
+
+    test("once consumed, each package's CHANGELOG carries the note exactly once", () => {
+        const consumed = copies.some(file => file.includes(`${join("pre", NOTE_ID)}.md`))
+        for (const { dir, manifest } of manifests) {
+            const changelog = squash(read(ROOT, dir, "CHANGELOG.md"))
+            const count = changelog.split(squash(NOTE_MARKER)).length - 1
+            expect({ name: manifest.name, count }).toEqual({
+                name: manifest.name,
+                count: consumed || !onPrereleaseLine ? 1 : 0,
+            })
+        }
+    })
 })

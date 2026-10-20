@@ -435,13 +435,15 @@ jobs:
     browser-permission:
         name: Browser permission packages
         # @valdres/browser-device-motion, -device-orientation, -geolocation
-        # and -screen-details, migrated to externalAtom and tested, but NOT
-        # release-eligible yet, so this job is deliberately absent from
-        # publish's needs (scripts/browser-permission-packages.test.ts holds
-        # that). Its own job: each package sits behind a browser permission
-        # with an explicit trigger, and geolocation runs one native watch per
-        # Store, so its suites and packed fixtures script permission and
-        # hardware outcomes the other lanes never see.
+        # and -screen-details, migrated to externalAtom. All four are
+        # release-eligible, so this job gates `publish`: the revision that
+        # publishes them must have passed their suites, both tsconfig
+        # type-checks and the packed gate (held by
+        # scripts/browser-permission-packages.test.ts). Its own job: each
+        # package sits behind a browser permission with an explicit trigger,
+        # and geolocation runs one native watch per Store, so its suites and
+        # packed fixtures script permission and hardware outcomes the other
+        # lanes never see.
         runs-on: ubuntu-22.04
         permissions:
             contents: read
@@ -538,11 +540,12 @@ jobs:
               run: bun run test:v1-beta:packed
 
     publish:
-        # browser-media, browser-keyboard, hotkeys and browser-status joined
-        # this list when their packages stopped being release-ignored: the
-        # revision that publishes them must have passed their suites, both
-        # tsconfig type-checks and the packed-consumer gate.
-        needs: [test, valdres-package, browser-media, browser-keyboard, hotkeys, browser-status]
+        # browser-media, browser-keyboard, hotkeys, browser-status and
+        # browser-permission joined this list when their packages stopped
+        # being release-ignored: the revision that publishes them must have
+        # passed their suites, both tsconfig type-checks and the
+        # packed-consumer gate.
+        needs: [test, valdres-package, browser-media, browser-keyboard, hotkeys, browser-status, browser-permission]
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         runs-on: ubuntu-22.04
         environment: npm-publish

@@ -12,5 +12,9 @@
   "packages/@valdres/browser-visibility",
   "packages/@valdres/browser-presence",
   "packages/@valdres/hotkeys",
-  "packages/@valdres-react/hotkeys"
+  "packages/@valdres-react/hotkeys",
+  "packages/@valdres/browser-device-motion",
+  "packages/@valdres/browser-device-orientation",
+  "packages/@valdres/browser-geolocation",
+  "packages/@valdres/browser-screen-details"
 ]

@@ -65,6 +65,26 @@ const apply = (
     else reportFailures(invalidateEach(record.registrations), LABEL)
 }
 
+/**
+ * A reading with values is evidence of observed access, not an authoritative
+ * permission answer: browsers only dispatch `deviceorientation` once access is
+ * granted, so it may fill an unknown or `"prompt"` state with `"granted"` —
+ * how a page learns an answer given to the other sensor package, since iOS
+ * asks once for motion and orientation together and Safari's Permissions API
+ * does not know these names. It never overrides a recorded denial: only a
+ * newer explicit answer (a request, a query or a `change` event) can recover
+ * from one. A no-op once known, so it costs nothing per reading. Returns the
+ * subscriber failures for the caller, a native event listener, to rethrow
+ * together with its own.
+ */
+export const noteGrantedByReading = (view: Window): unknown[] => {
+    const record = recordFor(view)
+    const known = record.known?.value
+    if (known !== undefined && known !== "prompt") return []
+    record.known = { value: "granted", order: ++record.clock }
+    return invalidateEach(record.registrations)
+}
+
 const combine = (states: readonly PermissionState[]): PermissionValue =>
     states.includes("denied")
         ? "denied"

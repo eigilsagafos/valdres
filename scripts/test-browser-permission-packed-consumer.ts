@@ -273,14 +273,21 @@ const stops = [
     child.sub(orientation.alphaSelector, () => {}),
 ]
 assert.deepEqual([listeners("devicemotion"), listeners("deviceorientation")], [1, 1])
+assert.equal(log.filter(entry => entry.includes("request")).length, 0, "subscribing prompted")
+// Permission requests: synchronous inside the activation, page-wide answers.
+assert.equal(await motion.requestMotionPermission(), "prompt", "an activation-less request records nothing")
+// An all-null reading proves nothing; one with values proves access, since
+// browsers only dispatch readings once it is granted (iOS answers both
+// sensors at once, so this is how the other package learns the answer).
+win.dispatchEvent(Object.assign(new Event("devicemotion"), { acceleration: null, accelerationIncludingGravity: null, rotationRate: null, interval: 16 }))
+assert.equal(second.get(motion.permissionAtom), "prompt")
+seen.length = 0
 const reading = Object.assign(new Event("devicemotion"), { acceleration: { x: 1, y: 2, z: 3 }, accelerationIncludingGravity: null, rotationRate: null, interval: 16 })
 win.dispatchEvent(reading)
 assert.deepEqual(seen, ["first", "second"])
 assert.deepEqual(second.get(motion.accelerationSelector), { x: 1, y: 2, z: 3 })
-assert.equal(log.filter(entry => entry.includes("request")).length, 0, "subscribing prompted")
-
-// Permission requests: synchronous inside the activation, page-wide answers.
-assert.equal(await motion.requestMotionPermission(), "prompt", "an activation-less request records nothing")
+assert.equal(second.get(motion.permissionAtom), "granted")
+assert.equal(first.get(orientation.permissionAtom), "prompt")
 const granted = withActivation(() => motion.requestMotionPermission())
 requests.shift().resolve("granted")
 assert.equal(await granted, "granted")

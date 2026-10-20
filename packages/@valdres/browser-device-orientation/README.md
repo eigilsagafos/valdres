@@ -129,6 +129,14 @@ published with are never observed apart.
 - the newest answer this page has seen, shared by every store: a completed
   `requestOrientationPermission()`, a Permissions API answer or a later `change` event — an
   answer whose operation started earlier never overwrites a newer one;
+- `"granted"` observed from a `deviceorientation` reading with values, as
+  evidence of access rather than an authoritative answer. Browsers only
+  deliver readings once access is granted, so a reading may fill an unknown or
+  `"prompt"` state — this is how the package learns a grant given through
+  `@valdres/browser-device-motion`, since iOS asks once for both. It never
+  overrides a recorded denial; only a newer request, query answer or `change`
+  event can recover from one. All-null readings, which Chromium sends without
+  access, prove nothing;
 - while a store subscribes, the Permissions API's combined answer for
   `accelerometer` and `gyroscope` where the engine knows those names
   (Chromium), followed through its `change` events while a store subscribes;
