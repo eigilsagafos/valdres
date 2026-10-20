@@ -117,12 +117,28 @@ on("orientation", () => {
     )
 })
 // Outside any gesture: the activation has expired after 6 s.
+// Outside any gesture: the activation has expired after 6 s. A, B and C stay
+// disabled until it settles, so it cannot join a tapped request that is
+// still pending (concurrent calls share one request).
+const requestButtons = ["no-gesture", "motion", "orientation"].map(
+    id => document.getElementById(id) as HTMLButtonElement,
+)
 on("no-gesture", () => {
     record("tap: scheduled requestMotionPermission() in 6 s (no gesture)")
+    for (const button of requestButtons) button.disabled = true
+    const banner = document.getElementById("state")!
+    let left = 6
+    banner.textContent = `No-gesture request in ${left} s — do not tap anything.`
+    const tick = setInterval(() => {
+        left--
+        if (left > 0) banner.textContent = `No-gesture request in ${left} s — do not tap anything.`
+    }, 1000)
     setTimeout(() => {
-        requestMotionPermission().then(value =>
-            record("no-gesture requestMotionPermission resolved", value),
-        )
+        clearInterval(tick)
+        requestMotionPermission().then(value => {
+            record("no-gesture requestMotionPermission resolved", value)
+            for (const button of requestButtons) button.disabled = false
+        })
     }, 6000)
 })
 on("copy", () => {

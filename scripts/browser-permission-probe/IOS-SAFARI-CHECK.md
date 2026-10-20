@@ -31,10 +31,10 @@ iOS version and the copied results ("Copy results") in the release PR.
 | # | Action | Expected | Result |
 |---|--------|----------|--------|
 | 1.0 | Load the page | `isSecureContext: true`, both `requestPermission: "function"`; statuses `"active"`; permissions `"prompt"`; banner says unanswered; no prompt; `events: 0` | |
-| 1.1 | Tap **C**, wait 6 s | log: native call with `activation: false` (or `n/a`), then rejected `NotAllowedError`; resolves `"prompt"`; **no** system prompt; permissions still `"prompt"` | |
+| 1.1 | Tap **C** and wait until the log shows `no-gesture requestMotionPermission resolved` (the buttons re-enable) | log: native call with `activation: false` (or `n/a`), then rejected `NotAllowedError`; resolves `"prompt"`; **no** system prompt; permissions still `"prompt"` | |
 | 1.2 | Tap **A**, then **Allow** | native call with `activation: true` (or `n/a`); the system prompt appears; resolves `"granted"`; motion permission `"granted"`; motion `events` increase while moving the device | |
 | 1.3 | Tap **B** | resolves `"granted"`, normally **without** a second prompt (shared permission — record whether one appeared); orientation `events` increase while tilting | |
-| 1.4 | Tap **C**, wait 6 s | resolves `"granted"` without a prompt (already answered) | |
+| 1.4 | Tap **C** and wait until it resolves | resolves `"granted"` without a prompt (already answered) | |
 | 1.5 | Reload, then tap **A** | record whether iOS prompts again; the result must be the browser's answer | |
 
 ## Scenario 2 — deny (fresh origin)
