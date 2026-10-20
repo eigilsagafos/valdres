@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/recoil",
-    "description": "Recoil API compatibility layer for Valdres",
+    "description": "Recoil 0.7 migration adapter for Valdres: the synchronous API, with explicit refusals",
     "version": "1.0.0-beta.3",
     "license": "MIT",
     "author": {
@@ -21,22 +21,30 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../../scripts/rewrite-declaration-imports.ts dist/types",
-        "test": "bun test --parallel"
-    },
-    "dependencies": {
-        "valdres-react": "^1.0.0-beta.4"
+        "typecheck:tests": "bunx tsgo --noEmit -p tsconfig.tests.json",
+        "test": "bun test",
+        "test:oracle": "bun test/differential/oracle.ts",
+        "test:packed": "bun test/packed-consumer.ts"
     },
     "devDependencies": {
-        "@happy-dom/global-registrator": "18.0.1",
+        "@happy-dom/global-registrator": "20.0.5",
         "@testing-library/react": "16.3.0",
-        "happy-dom": "18.0.1",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "happy-dom": "20.0.5",
         "react": "19.1.1",
         "react-dom": "19.1.1",
-        "typescript": "5.9.2"
+        "typescript": "5.9.2",
+        "valdres": "workspace:^",
+        "valdres-react": "workspace:^"
+    },
+    "peerDependencies": {
+        "react": "^18.0.0 || ^19.0.0",
+        "valdres": "^1.0.0-beta.44",
+        "valdres-react": "^1.0.0-beta.8"
     },
     "publishConfig": {
         "access": "public",
         "registry": "https://registry.npmjs.org/"
-    },
-    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+    }
 }

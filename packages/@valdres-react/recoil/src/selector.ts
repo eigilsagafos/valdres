@@ -1,34 +1,16 @@
-import { selector as valdresSelector } from "valdres"
-import {
-    type GetRecoilValue,
-    type RecoilState,
-    type ReadWriteSelectorOptions,
-    type ReadOnlySelectorOptions,
-} from "recoil"
+import { createSelector } from "./lib/createSelector"
+import type { RecoilState, RecoilValueReadOnly } from "./lib/recoilValue"
+import type { ReadOnlySelectorOptions } from "./types/ReadOnlySelectorOptions"
+import type { ReadWriteSelectorOptions } from "./types/ReadWriteSelectorOptions"
 
-// recoilSelector({ key: `sadfasdf`, get: ({ get }) => {}})
-
-export const selector = <T>(
-    options: ReadOnlySelectorOptions<T> | ReadWriteSelectorOptions<T>,
-): RecoilState<T> => {
-    const newSelector = valdresSelector(
-        get =>
-            options.get({
-                get: get as unknown as GetRecoilValue,
-                getCallback: () => {
-                    throw new Error("Not implemnted")
-                },
-            }),
-        {
-            name: options.key,
-        },
-    )
-    // @ts-ignore
-    if (options.set)
-        // @ts-ignore
-        newSelector.set = (set, get, reset, value) => {
-            // @ts-ignore
-            return options.set({ set, get, reset }, value)
-        }
-    return newSelector as unknown as RecoilState<T>
+interface SelectorFactory {
+    <T>(options: ReadWriteSelectorOptions<T>): RecoilState<T>
+    <T>(options: ReadOnlySelectorOptions<T>): RecoilValueReadOnly<T>
 }
+
+/**
+ * Recoil's `selector`: synchronous derived state, writable when `set` is
+ * given. Async results and `getCallback` throw
+ * `UnsupportedRecoilFeatureError`.
+ */
+export const selector: SelectorFactory = createSelector
