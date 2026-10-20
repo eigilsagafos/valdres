@@ -5,6 +5,7 @@ import { FakeDeviceOrientationEvent, installOrientation, orientationEvent } from
 import { orientationAtom } from "../selectors/orientationAtom"
 import { permissionSource } from "../lib/permissionSource"
 import { permissionAtom } from "./permissionAtom"
+import { requestOrientationPermission } from "../utils/requestOrientationPermission"
 
 let harness: DeviceHarness | undefined
 afterEach(() => {
@@ -289,20 +290,62 @@ describe("a reading as evidence of access", () => {
         app.dispose()
     })
 
-    test("a later denial reported by the browser still wins", async () => {
+    // Starts from an unanswered permission the Permissions API reports, so
+    // readings, change events and requests all compete for it.
+    const unanswered = async () => {
         harness = installOrientation(iosRequest)
         const permissions = harness.installPermissions()
-        permissions.set("accelerometer", "granted")
-        permissions.set("gyroscope", "granted")
+        permissions.set("accelerometer", "prompt")
+        permissions.set("gyroscope", "prompt")
         const app = track()
         app.sub(orientationAtom, () => {})
         app.sub(permissionAtom, () => {})
         await flush()
-        harness.fire(orientationEvent(1))
+        expect(app.get(permissionAtom)).toBe("prompt")
+        return { app, permissions }
+    }
+
+    test("a reading never overrides a recorded denial: reading, denial, reading", async () => {
+        const { app, permissions } = await unanswered()
+        harness!.fire(orientationEvent(1))
         expect(app.get(permissionAtom)).toBe("granted")
         permissions.statuses.get("gyroscope")!.change("denied")
         expect(app.get(permissionAtom)).toBe("denied")
-        app.dispose()
+        // Evidence of access, not an answer: the recorded denial stands.
+        harness!.fire(orientationEvent(2))
+        harness!.fire(orientationEvent(3))
+        expect(app.get(permissionAtom)).toBe("denied")
+    })
+
+    test("a denial recorded by a request is not overridden by readings either", async () => {
+        harness = installOrientation(() => Promise.resolve("denied" as PermissionState))
+        const app = track()
+        app.sub(orientationAtom, () => {})
+        await expect(requestOrientationPermission()).resolves.toBe("denied")
+        harness.fire(orientationEvent(1))
+        expect(app.get(permissionAtom)).toBe("denied")
+    })
+
+    test("recovery from a denial comes from a newer explicit request", async () => {
+        const { app, permissions } = await unanswered()
+        permissions.statuses.get("gyroscope")!.change("denied")
+        harness!.fire(orientationEvent(1))
+        expect(app.get(permissionAtom)).toBe("denied")
+        // iosRequest answers "granted": the explicit request is newer.
+        await expect(requestOrientationPermission()).resolves.toBe("granted")
+        expect(app.get(permissionAtom)).toBe("granted")
+        harness!.fire(orientationEvent(2))
+        expect(app.get(permissionAtom)).toBe("granted")
+    })
+
+    test("recovery from a denial comes from newer change events", async () => {
+        const { app, permissions } = await unanswered()
+        permissions.statuses.get("gyroscope")!.change("denied")
+        harness!.fire(orientationEvent(1))
+        expect(app.get(permissionAtom)).toBe("denied")
+        permissions.statuses.get("accelerometer")!.change("granted")
+        permissions.statuses.get("gyroscope")!.change("granted")
+        expect(app.get(permissionAtom)).toBe("granted")
     })
 
     test("a throwing permission subscriber is rethrown after every reading subscriber ran", () => {

@@ -43,11 +43,13 @@ import against a current core. Each package is rebuilt on the public
   `permissionAtom` follows the Permissions API (`accelerometer` and
   `gyroscope`, where the engine knows them) and request answers.
   `request*Permission()` now resolves the current value, without asking, where
-  the browser has no `requestPermission`. A reading with values also records
-  `"granted"`, since browsers only deliver readings once access is granted: on
-  iOS, which asks once for motion and orientation together, a grant obtained
-  through one package reaches the other this way (the shared answer was
-  observed on iOS 18.7 Safari).
+  the browser has no `requestPermission`. A reading with values is evidence
+  of observed access: since browsers only deliver readings once access is
+  granted, it may fill an unknown or `"prompt"` permission with `"granted"`
+  (on iOS, which asks once for motion and orientation together, a grant
+  obtained through one package reaches the other this way; the shared answer
+  was observed on iOS 18.7 Safari), but it never overrides a recorded denial.
+  Only a newer request, query answer or `change` event recovers from one.
 - **Screen details.** New `screenDetailsAtom` (`{ status, screens,
   currentScreen, error }`) and `screenDetailsStatusAtom`; `screensAtom` is
   `readonly ScreenDetail[]`, and `ScreenDetail.orientationType` is a local

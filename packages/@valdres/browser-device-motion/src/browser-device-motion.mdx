@@ -132,12 +132,16 @@ published with are never observed apart.
 `permissionAtom` never prompts. Its value is:
 
 - the newest answer this page has seen, shared by every store: a completed
-  `requestMotionPermission()`, a Permissions API answer, a later `change` event, or a
-  `devicemotion` reading with values — browsers only deliver readings once
-  access is granted, which is how this package learns a grant given through
-  `@valdres/browser-device-orientation` (iOS asks once for both). All-null
-  readings, which Chromium sends without access, prove nothing. An answer whose
-  operation started earlier never overwrites a newer one;
+  `requestMotionPermission()`, a Permissions API answer or a later `change` event — an
+  answer whose operation started earlier never overwrites a newer one;
+- `"granted"` observed from a `devicemotion` reading with values, as
+  evidence of access rather than an authoritative answer. Browsers only
+  deliver readings once access is granted, so a reading may fill an unknown or
+  `"prompt"` state — this is how the package learns a grant given through
+  `@valdres/browser-device-orientation`, since iOS asks once for both. It never
+  overrides a recorded denial; only a newer request, query answer or `change`
+  event can recover from one. All-null readings, which Chromium sends without
+  access, prove nothing;
 - while a store subscribes, the Permissions API's combined answer for
   `accelerometer` and `gyroscope` where the engine knows those names
   (Chromium), followed through its `change` events while a store subscribes;
