@@ -151,6 +151,13 @@ query and `change` listener, removed when the last of them leaves or its store
 is disposed. So a store that only reads screens sees a revocation without
 subscribing to the permission.
 
+**Known limitation.** A Permissions API query that starts after a request —
+for example, a store that first subscribes to `screenPermissionAtom` while
+`requestScreenDetails()` is pending — may answer `"prompt"` and, being newer,
+outrank the request's grant in `screenPermissionAtom` until the browser fires
+its `change` event. The screen details stay `"ready"`; only the permission
+atom lags.
+
 **Revocation.** When the browser reports the permission as `"denied"` (a
 `change` event or a query answer) while `"ready"`, the screens are dropped,
 not kept as stale data: the state becomes `"denied"` with a `NotAllowedError`

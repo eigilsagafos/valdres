@@ -4,6 +4,7 @@ import { flush } from "../../test/setup/deviceHarness"
 import { installScreenDetails, type ScreenHarness } from "../../test/setup/screenFixtures"
 import { screenPermissionSource } from "../lib/screenPermissionSource"
 import { requestScreenDetails } from "../utils/requestScreenDetails"
+import { screenDetailsAtom } from "./screenDetailsAtom"
 import { screenPermissionAtom } from "./screenPermissionAtom"
 
 let page: ScreenHarness | undefined
@@ -156,6 +157,31 @@ describe("screenPermissionAtom", () => {
         const stop = app.sub(screenPermissionAtom, () => seen.push(app.get(screenPermissionAtom)))
         await flush()
         expect(seen).toEqual(["denied"])
+        stop()
+        app.dispose()
+    })
+
+    test("known limitation: a query that starts after a request can lag its grant until change fires", async () => {
+        const harness = install()
+        const permissions = harness.installPermissions()
+        permissions.set("window-management", "prompt")
+        const app = store()
+        const answer = requestScreenDetails()
+        // First observed only now, while the request is pending: the query is
+        // newer than the request and the browser still answers "prompt".
+        permissions.hold = true
+        const stop = app.sub(screenPermissionAtom, () => {})
+        app.sub(screenDetailsAtom, () => {})
+        harness.grant()
+        await answer
+        permissions.release()
+        await flush()
+        expect(app.get(screenDetailsAtom).status).toBe("ready")
+        expect(app.get(screenPermissionAtom)).toBe("prompt")
+        // The browser's own change event settles it.
+        permissions.statuses.get("window-management")!.change("granted")
+        expect(app.get(screenPermissionAtom)).toBe("granted")
+        expect(app.get(screenDetailsAtom).status).toBe("ready")
         stop()
         app.dispose()
     })

@@ -13,8 +13,8 @@
  * details shares the browser's one `ScreenDetails` object per window.
  *
  * Tested by ci.yaml's `browser-permission` job, which `scripts/verify.ts`
- * runs; deliberately absent from `publish.needs` until release enablement.
- * Every package here is release-ignored: `releaseEligible`
+ * runs and `publish.needs` waits on. Every package here is release-eligible:
+ * `releaseEligible`
  * is the single per-package claim `scripts/browser-permission-packages.test.ts`
  * checks against `.changeset/config.json` and
  * `scripts/publishable-packages.json`.
@@ -23,22 +23,22 @@ export const BROWSER_PERMISSION_PACKAGES = [
     {
         name: "@valdres/browser-device-motion",
         dir: "packages/@valdres/browser-device-motion",
-        releaseEligible: false,
+        releaseEligible: true,
     },
     {
         name: "@valdres/browser-device-orientation",
         dir: "packages/@valdres/browser-device-orientation",
-        releaseEligible: false,
+        releaseEligible: true,
     },
     {
         name: "@valdres/browser-geolocation",
         dir: "packages/@valdres/browser-geolocation",
-        releaseEligible: false,
+        releaseEligible: true,
     },
     {
         name: "@valdres/browser-screen-details",
         dir: "packages/@valdres/browser-screen-details",
-        releaseEligible: false,
+        releaseEligible: true,
     },
 ] as const
 
