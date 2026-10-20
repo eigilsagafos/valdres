@@ -6,6 +6,18 @@ import { check, loadBundle, report, startBrowser, waitFor } from "./browser"
 
 const outdir = process.argv[2]
 
+// Scripted geolocation: the card must start nothing until its button is used.
+const watches: unknown[] = []
+const installGeolocation = () =>
+    Object.defineProperty(navigator, "geolocation", {
+        configurable: true,
+        value: {
+            watchPosition: (...args: unknown[]) => watches.push(args) && watches.length,
+            clearWatch: () => {},
+            getCurrentPosition: () => {},
+        },
+    })
+
 startBrowser(
     "http://localhost/",
     `<button id="demo-reset">Reset</button>
@@ -19,6 +31,7 @@ startBrowser(
     <div id="landing-location-island">Loading...</div>`,
 )
 
+installGeolocation()
 await loadBundle(join(outdir, "landing.js"))
 
 const island = (id: string) => document.getElementById(id)!
@@ -36,7 +49,6 @@ for (const [id, key] of [
     ["svelte-island", "valdres-svelte"],
     ["solid-island", "valdres-solid"],
     ["angular-island", "valdres-angular"],
-    ["landing-location-island", "@valdres/browser-geolocation"],
 ]) {
     const notice = island(id).querySelector("[data-v1-unavailable]")
     check(
@@ -54,7 +66,17 @@ check(
     await waitFor(() => !island("landing-online-island").textContent!.includes("Loading")),
     "online island renders",
 )
-for (const id of ["react-island", "landing-keyboard-island", "landing-online-island"]) {
+const locationButton = await waitFor(() =>
+    [...island("landing-location-island").querySelectorAll("button")].some(b => b.textContent!.includes("Show location")),
+)
+check(locationButton, "location card renders its explicit trigger")
+check(watches.length === 0, "location card starts no watch on load")
+;([...island("landing-location-island").querySelectorAll("button")].find(b =>
+    b.textContent!.includes("Show location"),
+) as HTMLElement).click()
+check(await waitFor(() => watches.length === 1), `the button starts one watch (${watches.length})`)
+
+for (const id of ["react-island", "landing-keyboard-island", "landing-online-island", "landing-location-island"]) {
     check(!island(id).querySelector("[data-v1-unavailable]"), `${id}: runs live, no notice`)
 }
 

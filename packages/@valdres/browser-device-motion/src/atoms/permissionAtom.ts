@@ -1,20 +1,9 @@
-import { globalAtom } from "valdres"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { permissionSource } from "../lib/permissionSource"
 import type { PermissionValue } from "../types/PermissionValue"
 
-const getInitial = (): PermissionValue => {
-    if (
-        typeof window === "undefined" ||
-        typeof window.DeviceMotionEvent === "undefined"
-    ) {
-        return "unsupported"
-    }
-    const E = window.DeviceMotionEvent as unknown as {
-        requestPermission?: () => Promise<PermissionState>
-    }
-    if (typeof E.requestPermission === "function") return "prompt"
-    return "granted"
-}
-
-export const permissionAtom = globalAtom<PermissionValue>(getInitial, {
-    name: "@valdres/browser-device-motion/permission",
-})
+/** Never prompts. Subscribing only queries the Permissions API. */
+export const permissionAtom: ExternalAtom<PermissionValue> = externalAtom(
+    permissionSource,
+    { name: "@valdres/browser-device-motion/permission" },
+)
