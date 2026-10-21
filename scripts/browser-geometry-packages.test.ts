@@ -1,12 +1,13 @@
 /**
- * Guards the browser-geometry lane's metadata and its testing-only status.
- * Picked up by CI's existing `bun test scripts/` step.
+ * Guards the browser-geometry lane's metadata and release state. Picked up by
+ * CI's existing `bun test scripts/` step.
  *
- * The packages are migrated and gated by `scripts/check-browser-geometry.ts`
- * and the packed consumer gate, but not release-eligible: they are still
- * Changesets-ignored and off the publishable list. Release enablement has to
- * flip `releaseEligible` and the assertions below deliberately, in one change,
- * rather than drifting into a half-enabled state.
+ * Both packages are release-eligible: off the Changesets ignore list, on the
+ * publishable list, tested by ci.yaml's `browser-geometry` job (which
+ * `bun run verify` runs) and in `publish.needs`. Each package's
+ * `releaseEligible` flag is the single claim checked here, so a package cannot
+ * drift into a half-enabled state. The breaking release note is followed by id
+ * through its pending and consumed states (see "the release note").
  */
 import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
@@ -140,11 +141,11 @@ describe("browser-geometry lane", () => {
                 )
             })
 
-            test("is tested but not release-eligible, in both halves of the pipeline", () => {
+            test("release eligibility is the same in both halves of the pipeline", () => {
                 const release = BROWSER_GEOMETRY_PACKAGES.find(
                     pkg => pkg.name === name,
                 )!.releaseEligible
-                expect(release).toBe(false)
+                expect(release).toBe(true)
                 // These must move together: `changeset publish` publishes every
                 // non-ignored package, but only listed packages are prepacked.
                 expect(ignored().includes(name)).toBe(!release)
@@ -164,23 +165,33 @@ describe("browser-geometry lane", () => {
                 }
             })
 
-            test("is still at the legacy version, so release enablement must publish past it", () => {
+            test("Version Packages only ever moves the version past the legacy build", () => {
                 const manifest = JSON.parse(read(directory, "package.json"))
-                expect(manifest.version).toBe(BROWSER_GEOMETRY_LEGACY_VERSION)
+                expect(
+                    Bun.semver.order(
+                        manifest.version,
+                        BROWSER_GEOMETRY_LEGACY_VERSION,
+                    ),
+                ).toBeGreaterThanOrEqual(0)
             })
         })
     }
 
-    test("has a CI job that does not gate publish while release-ignored", () => {
+    test("its CI job gates publish exactly when the packages release", () => {
         const workflow = read(ROOT, ".github", "workflows", "ci.yaml")
         expect(workflow).toMatch(/^    browser-geometry:\n/m)
+        expect(read(ROOT, "scripts", "verify.ts")).toMatch(
+            /const JOBS = \[[^\]]*"browser-geometry"/,
+        )
         const needs = workflow.match(
             /^    publish:[\s\S]*?\n        needs: \[([^\]]*)\]/m,
         )
         expect(needs).not.toBeNull()
-        expect(needs![1]!.split(",").map(job => job.trim())).not.toContain(
-            "browser-geometry",
+        const gating = needs![1]!.split(",").map(job => job.trim())
+        const eligible = BROWSER_GEOMETRY_PACKAGES.some(
+            pkg => pkg.releaseEligible,
         )
+        expect(gating.includes("browser-geometry")).toBe(eligible)
     })
 
     test("its CI job runs on the repository's pinned toolchain", () => {
@@ -216,5 +227,96 @@ describe("browser-geometry lane", () => {
         expect(`^${BROWSER_GEOMETRY_FLOOR.valdres}`).toBe(
             BROWSER_GEOMETRY_CORE_PEER_RANGE,
         )
+    })
+})
+
+// ── the release note ───────────────────────────────────────────────────────
+// The breaking notes ship in one changeset, followed by id: pending as
+// `.changeset/<id>.md`, consumed (moved by Version Packages) as
+// `.changeset/pre/<id>.md`. After the prerelease exits, the stable
+// `changeset version` deletes consumed notes; the CHANGELOG entries are the
+// durable record from then on, so the note is only required while the
+// packages are on the 1.0.0 prerelease line.
+const NOTE_ID = "browser-geometry-release"
+const NOTE_MARKER =
+    "**Breaking: the window size and screen are now read-only browser state, published as one frozen snapshot each.**"
+const NOTE_REQUIRED_TEXT = [
+    NOTE_MARKER,
+    "`setSelf` / `resetSelf` are gone",
+    "equal-valued new object",
+    "animation frames 2 to 4",
+    "No timer polls",
+    "`ScreenOrientationType`",
+    "`MediaQueryList.addListener`",
+    BROWSER_GEOMETRY_CORE_PEER_RANGE,
+    // The three deferred-changeset fixes these packages now receive.
+    "`.js` import specifiers",
+    "`require(esm)`",
+    "`workspace:` protocol",
+]
+const squash = (text: string) => text.replace(/\s+/g, " ")
+
+describe("the release note", () => {
+    const manifests = BROWSER_GEOMETRY_PACKAGES.map(pkg => ({
+        ...pkg,
+        manifest: JSON.parse(read(ROOT, pkg.dir, "package.json")),
+    }))
+    const onPrereleaseLine = manifests.some(({ manifest }) =>
+        String(manifest.version).startsWith("1.0.0-"),
+    )
+    const copies = [
+        join(ROOT, ".changeset", `${NOTE_ID}.md`),
+        join(ROOT, ".changeset", "pre", `${NOTE_ID}.md`),
+    ].filter(existsSync)
+
+    test("exists exactly once while the packages are on the prerelease line", () => {
+        if (!onPrereleaseLine) return
+        expect(copies).toHaveLength(1)
+    })
+
+    test("names exactly these packages and makes every required claim", () => {
+        for (const file of copies) {
+            const parsed = parseChangeset(readFileSync(file, "utf8"))
+            expect(parsed.releases.map(release => release.name).sort()).toEqual(
+                [...names].sort(),
+            )
+            for (const text of NOTE_REQUIRED_TEXT)
+                expect({
+                    text,
+                    present: squash(parsed.summary).includes(squash(text)),
+                }).toEqual({ text, present: true })
+        }
+    })
+
+    test("no other changeset carries the note or keeps a deferred entry for these packages", () => {
+        for (const file of changesetFiles()) {
+            if (copies.includes(file)) continue
+            const contents = readFileSync(file, "utf8")
+            expect({
+                file,
+                duplicate: squash(contents).includes(squash(NOTE_MARKER)),
+            }).toEqual({ file, duplicate: false })
+            if (file.endsWith("-deferred.md"))
+                expect({
+                    file,
+                    named: frontMatterNames(file).filter(name =>
+                        names.includes(name),
+                    ),
+                }).toEqual({ file, named: [] })
+        }
+    })
+
+    test("once consumed, each package's CHANGELOG carries the note exactly once", () => {
+        const consumed = copies.some(file =>
+            file.endsWith(join("pre", `${NOTE_ID}.md`)),
+        )
+        for (const { dir, manifest } of manifests) {
+            const changelog = squash(read(ROOT, dir, "CHANGELOG.md"))
+            const count = changelog.split(squash(NOTE_MARKER)).length - 1
+            expect({ name: manifest.name, count }).toEqual({
+                name: manifest.name,
+                count: consumed || !onPrereleaseLine ? 1 : 0,
+            })
+        }
     })
 })

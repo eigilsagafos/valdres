@@ -367,12 +367,15 @@ jobs:
     browser-geometry:
         name: Browser geometry packages
         # @valdres/browser-window and @valdres/browser-screen, migrated to
-        # externalAtom and tested, but NOT release-eligible yet, so this job is
-        # deliberately absent from publish's needs. Its own job rather than
+        # externalAtom. Both are release-eligible, so this job gates
+        # `publish`: the revision that publishes them must have passed their
+        # suites, both tsconfig type-checks and the packed gate (held by
+        # scripts/browser-geometry-packages.test.ts). Its own job rather than
         # entries in browser-status: each publishes one identity-cached
-        # snapshot of several metrics, and screen re-creates a resolution
-        # media query as the pixel ratio moves, so the suites and packed
-        # fixtures differ in kind.
+        # snapshot of several metrics, the window re-measures on animation
+        # frames after resize, and screen re-creates a resolution media query
+        # as the pixel ratio moves, so the suites and packed fixtures differ in
+        # kind.
         runs-on: ubuntu-22.04
         permissions:
             contents: read
@@ -575,12 +578,12 @@ jobs:
               run: bun run test:v1-beta:packed
 
     publish:
-        # browser-media, browser-keyboard, hotkeys, browser-status and
-        # browser-permission joined this list when their packages stopped
-        # being release-ignored: the revision that publishes them must have
-        # passed their suites, both tsconfig type-checks and the
+        # browser-media, browser-keyboard, hotkeys, browser-status,
+        # browser-permission and browser-geometry joined this list when their
+        # packages stopped being release-ignored: the revision that publishes
+        # them must have passed their suites, both tsconfig type-checks and the
         # packed-consumer gate.
-        needs: [test, valdres-package, browser-media, browser-keyboard, hotkeys, browser-status, browser-permission]
+        needs: [test, valdres-package, browser-media, browser-keyboard, hotkeys, browser-status, browser-permission, browser-geometry]
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         runs-on: ubuntu-22.04
         environment: npm-publish

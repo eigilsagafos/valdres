@@ -277,7 +277,7 @@ describe("benchmark-safe release pull request step", () => {
         ["a workflow", ".github/workflows/ci.yaml"],
         [
             "an unlisted package manifest",
-            "packages/@valdres/browser-window/package.json",
+            "packages/@valdres/public-ip/package.json",
         ],
         ["the release policy", "scripts/publishable-packages.json"],
     ])("refuses %s", async (_, path) => {
@@ -305,18 +305,18 @@ describe("benchmark-safe release pull request step", () => {
 
     test("ignores a policy and classifier tampered on the release checkout", async () => {
         const { error, checks } = await runStep({
-            release: metadata("packages/@valdres/browser-window"),
+            release: metadata("packages/@valdres/public-ip"),
             workingTree: {
                 "scripts/publishable-packages.json": JSON.stringify([
                     ...packageDirs,
-                    "packages/@valdres/browser-window",
+                    "packages/@valdres/public-ip",
                 ]),
                 "scripts/lib/release-metadata-scope.mjs":
                     "export function assertGeneratedReleaseFiles() {}\n",
             },
         })
         expect(error?.message).toContain(
-            "Refusing benchmark check for non-release files: packages/@valdres/browser-window/",
+            "Refusing benchmark check for non-release files: packages/@valdres/public-ip/",
         )
         expect(checks).toHaveLength(0)
     })

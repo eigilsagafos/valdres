@@ -20,8 +20,6 @@
         "valdres-svelte",
         "valdres-vue",
         "@valdres/bandwidth",
-        "@valdres/browser-screen",
-        "@valdres/browser-window",
         "@valdres/color-mode",
         "@valdres/public-ip",
         "@valdres/redux-devtools",
