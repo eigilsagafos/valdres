@@ -380,7 +380,7 @@ jobs:
             - uses: actions/checkout@v6
             - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: 1.4.0
+                  bun-version: 1.4.3
             - uses: actions/setup-node@v6
               with:
                   # The packed consumer gate runs this executable.

@@ -183,6 +183,23 @@ describe("browser-geometry lane", () => {
         )
     })
 
+    test("its CI job runs on the repository's pinned toolchain", () => {
+        const workflow = read(ROOT, ".github", "workflows", "ci.yaml")
+        const job = workflow.match(
+            /^    browser-geometry:\n([\s\S]*?)(?=^    [a-z-]+:\n)/m,
+        )
+        expect(job).not.toBeNull()
+        const bun = job![1]!.match(/bun-version: (\S+)/)?.[1]
+        const node = job![1]!.match(/node-version: "([^"]+)"/)?.[1]
+        expect(bun).toBe(read(ROOT, ".bun-version").trim())
+        const pinnedNode = workflow.match(
+            /^    test:\n[\s\S]*?node-version: "([^"]+)"/m,
+        )?.[1]
+        expect(node).toBe(pinnedNode)
+        expect(job![1]).toContain("run: bun run test:browser-geometry\n")
+        expect(job![1]).toContain("run: bun run test:browser-geometry:packed")
+    })
+
     test("the peer floor excludes cores without externalAtom", () => {
         const range = BROWSER_GEOMETRY_CORE_PEER_RANGE
         expect(Bun.semver.satisfies("1.0.0-beta.39", range)).toBe(true)
