@@ -114,9 +114,14 @@ export interface GeometryHarness {
     /**
      * Run one animation frame: every callback queued before this call, in
      * order. Callbacks they queue run in the next frame, as in a browser.
+     * A callback that throws does not stop the others, as in a browser; once
+     * all have run, the error is rethrown (an `AggregateError` for several).
      * Returns how many ran.
      */
     frame(): number
+    /** {@link frame}, returning the errors callbacks threw instead of
+     *  rethrowing them. */
+    frameReportingErrors(): readonly unknown[]
     /** Animation-frame callbacks queued and not yet run or cancelled. */
     pendingFrames(): number
     /** `requestAnimationFrame` / `cancelAnimationFrame` calls so far. */
@@ -354,6 +359,21 @@ export const installGeometryHarness = (
         },
     })
 
+    const runFrame = () => {
+        const due = [...frames]
+        frames.clear()
+        const now = performance.now()
+        const errors: unknown[] = []
+        for (const [, callback] of due) {
+            try {
+                callback(now)
+            } catch (error) {
+                errors.push(error)
+            }
+        }
+        return { ran: due.length, errors }
+    }
+
     const recordsOf = (name: GeometryTarget) =>
         targets.filter(record => record.name === name)
 
@@ -462,12 +482,16 @@ export const installGeometryHarness = (
             matchMediaFailure = error === undefined ? undefined : { error }
         },
         frame: () => {
-            const due = [...frames]
-            frames.clear()
-            const now = performance.now()
-            for (const [, callback] of due) callback(now)
-            return due.length
+            const { ran, errors } = runFrame()
+            if (errors.length === 1) throw errors[0]
+            if (errors.length > 1)
+                throw new AggregateError(
+                    errors,
+                    "Animation frame callbacks threw",
+                )
+            return ran
         },
+        frameReportingErrors: () => runFrame().errors,
         pendingFrames: () => frames.size,
         frameCalls: () => ({ requested, cancelled }),
         restore: () => {

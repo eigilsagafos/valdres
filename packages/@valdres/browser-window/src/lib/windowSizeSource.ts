@@ -103,7 +103,11 @@ export const windowSizeSource: ExternalSource<WindowSize> = {
             }
             pending = frames.requestAnimationFrame(tick)
         }
+        // Cleared by release. A host that failed to remove the listener may
+        // still invoke it; it must then schedule nothing.
+        let active = true
         const onResize = () => {
+            if (!active) return
             const failures: unknown[] = []
             try {
                 scheduleFollowUp()
@@ -124,6 +128,7 @@ export const windowSizeSource: ExternalSource<WindowSize> = {
         // position is not part of the snapshot.
         win.addEventListener("resize", onResize)
         return () => {
+            active = false
             try {
                 cancelFollowUp()
             } finally {

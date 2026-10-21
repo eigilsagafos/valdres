@@ -98,6 +98,14 @@ Every store reads the same window, so they share snapshots: two stores reading
 an unchanged size get the identical object. The objects are frozen because they
 are shared, and `WindowSize`'s fields are `readonly`.
 
+The package keeps only the last snapshot it handed out, for every store. If
+another store reads a passing size while one store is subscribed, for example
+with a read that is not subscribed, the shared snapshot moves to that size. When
+the window then returns to the size the subscribed store last published, that
+store gets a new object with equal values and notifies once. Derive narrow
+selectors, such as a breakpoint, when that matters: they compare their own
+values.
+
 ## Server rendering
 
 `windowSizeAtom` reports all four sizes as `0` when there is no window to
@@ -118,8 +126,9 @@ root's. Importing the package attaches nothing and measures nothing. Reads
 without a subscription measure the window directly and attach nothing either.
 
 Each `resize` is measured at once, and again on the second, third and fourth
-animation frame after it (see [What is observed](#what-is-observed)). These
-re-measurements notify subscribers only when a size actually changed. A new
+animation frame after it (see [What is observed](#what-is-observed)). A
+re-measurement notifies nobody when it reads the snapshot already shared (see
+[Snapshots](#snapshots) for the one exception). A new
 `resize` restarts them, so a burst of resizes leaves one sequence, counted from
 the last event. Unsubscribing or disposing cancels any that are pending. Nothing
 runs between frames, and no timer polls. Without `requestAnimationFrame`, only
@@ -173,7 +182,7 @@ window drags (as opposed to `Browser.setWindowBounds`).
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `windowSizeAtom` was a writable `globalAtom` shared by every store               | A read-only `ExternalAtom<WindowSize>`. `set`, `reset`, `update`, `setSelf` and `resetSelf` are gone. Put overrides in your own atom, as above. |
 | One `resize` listener for the whole process, whose cached value every store saw  | One listener per store tree that subscribes. Reads without a subscription measure live.                                                         |
-| A new object on every `resize`                                                   | One frozen, shared object per distinct size; a `resize` that changes nothing notifies nobody.                                                   |
+| A new object on every `resize`                                                   | One frozen, shared object per distinct size; a `resize` that changes nothing usually notifies nobody (see [Snapshots](#snapshots)).             |
 | `WindowSize` fields were mutable                                                 | `readonly`.                                                                                                                                     |
 | Peer `valdres` `^1.0.0-beta.19` (a range that admits cores without `globalAtom`) | `^1.0.0-beta.39`, the first core with `externalAtom`.                                                                                           |
 

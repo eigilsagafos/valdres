@@ -130,6 +130,30 @@ describe("windowSizeAtom", () => {
         app.dispose()
     })
 
+    test("documented limit: another store's read of a passing size can cause one equal-valued notification (review R6)", () => {
+        // The source keeps one shared last snapshot. Pinned so a change to
+        // this behavior is deliberate and the Snapshots docs move with it.
+        const page = install()
+        const subscribed = store()
+        const reader = store()
+        let notifications = 0
+        const stop = subscribed.sub(windowSizeAtom, () => notifications++)
+        const published = subscribed.get(windowSizeAtom)
+
+        page.setWindow({ outerWidth: 2000 })
+        reader.get(windowSizeAtom) // an unsubscribed read sees the passing size
+        page.setWindow({ outerWidth: 1040 }) // back to what was published
+        page.fire("window", "resize")
+
+        expect(notifications).toBe(1)
+        expect(subscribed.get(windowSizeAtom)).not.toBe(published)
+        expect(subscribed.get(windowSizeAtom)).toEqual(published)
+
+        stop()
+        subscribed.dispose()
+        reader.dispose()
+    })
+
     test("a resize that changes nothing notifies nobody and keeps the snapshot", () => {
         const page = install()
         const app = store()
@@ -706,6 +730,153 @@ describe("the follow-up measurements after resize", () => {
         expect(app.get(windowSizeAtom).outerWidth).toBe(1040)
         frames(page, 2)
         expect(app.get(windowSizeAtom).outerWidth).toBe(900)
+
+        unsub()
+        app.dispose()
+    })
+
+    test("a listener invoked after its release schedules nothing (review R5)", () => {
+        const page = install()
+        let invalidations = 0
+        const release = windowSizeSource.subscribe(() => invalidations++)
+        const [listener] = page.snapshotListeners("window", "resize")
+        release()
+        const requested = page.frameCalls().requested
+
+        ;(listener as () => void)()
+        frames(page, 5)
+        expect(invalidations).toBe(0)
+        expect(page.frameCalls().requested).toBe(requested)
+        expect(page.pendingFrames()).toBe(0)
+    })
+
+    test("after a refused listener removal, later resizes schedule no work", () => {
+        const page = install()
+        const app = store()
+        let notifications = 0
+        const stop = app.sub(windowSizeAtom, () => notifications++)
+        page.failOnDetach("window", "resize", new Error("removal refused"))
+        expect(stop).toThrow(ExternalSourceOperationError)
+        // The host kept the listener attached.
+        expect(page.listeners("window", "resize")).toBe(1)
+        const requested = page.frameCalls().requested
+
+        page.setWindow({ innerWidth: 640 })
+        page.fire("window", "resize")
+        frames(page, 5)
+        expect(page.frameCalls().requested).toBe(requested)
+        expect(page.pendingFrames()).toBe(0)
+        expect(notifications).toBe(0)
+
+        page.failOnDetach("window", "resize", undefined)
+        app.dispose()
+    })
+
+    test("a throwing cancelAnimationFrame still removes the listener and voids the sequence", () => {
+        const page = install()
+        const app = store()
+        let notifications = 0
+        const stop = app.sub(windowSizeAtom, () => notifications++)
+        resizeWithStaleOuter(page)
+        page.frame()
+        const boom = new Error("cancelAnimationFrame rejected")
+        const cancel = window.cancelAnimationFrame
+        window.cancelAnimationFrame = () => {
+            throw boom
+        }
+        let thrown: unknown
+        try {
+            stop()
+        } catch (error) {
+            thrown = error
+        } finally {
+            window.cancelAnimationFrame = cancel
+        }
+        expect(thrown).toBeInstanceOf(ExternalSourceOperationError)
+        expect(thrown).toMatchObject({ cause: boom, phase: "cleanup" })
+        expect(page.physical()).toBe(0)
+
+        // The frame the host failed to cancel still runs, and does nothing.
+        const before = notifications
+        outerCatchesUp(page)
+        frames(page, 4)
+        expect(notifications).toBe(before)
+        expect(page.pendingFrames()).toBe(0)
+        app.dispose()
+    })
+
+    test("a store whose subscriber throws in a re-measurement does not starve another store's correction", () => {
+        // Review R3': frames keep delivering after a throwing callback, as in
+        // a browser, and the error is reported.
+        const page = install()
+        const failing = store()
+        const healthy = store()
+        let sibling = 0
+        let other = 0
+        const stops = [
+            failing.sub(windowSizeAtom, () => {
+                throw new Error("subscriber exploded")
+            }),
+            failing.sub(windowSizeAtom, () => sibling++),
+            healthy.sub(windowSizeAtom, () => other++),
+        ]
+        page.fireReportingErrors("window", "resize")
+        page.frame()
+        page.setWindow({ outerWidth: 1 })
+        const reported = page.frameReportingErrors()
+        expect([sibling, other, reported.length]).toEqual([1, 1, 1])
+        expect((reported[0] as Error).name).toBe("SubscriberNotificationError")
+
+        page.setWindow({ outerWidth: 2 })
+        expect(page.frameReportingErrors()).toHaveLength(1)
+        page.frame()
+        expect([sibling, other, page.pendingFrames()]).toEqual([2, 2, 0])
+        expect(healthy.get(windowSizeAtom).outerWidth).toBe(2)
+
+        for (const stop of stops) stop()
+        failing.dispose()
+        healthy.dispose()
+    })
+
+    test("without requestAnimationFrame, nothing falls back to timers", async () => {
+        const page = install({ animationFrames: "absent" })
+        const app = store()
+        const seen: number[] = []
+        const unsub = app.sub(windowSizeAtom, () =>
+            seen.push(app.get(windowSizeAtom).outerWidth),
+        )
+        const scheduled: string[] = []
+        const restore: (() => void)[] = []
+        for (const name of [
+            "setTimeout",
+            "setInterval",
+            "queueMicrotask",
+            "requestIdleCallback",
+        ] as const) {
+            const original = (globalThis as Record<string, unknown>)[name]
+            ;(globalThis as Record<string, unknown>)[name] = (
+                ...args: unknown[]
+            ) => {
+                scheduled.push(name)
+                return typeof original === "function"
+                    ? original(...args)
+                    : undefined
+            }
+            restore.push(
+                () =>
+                    ((globalThis as Record<string, unknown>)[name] = original),
+            )
+        }
+        try {
+            resizeWithStaleOuter(page)
+            outerCatchesUp(page)
+        } finally {
+            for (const undo of restore) undo()
+        }
+        expect(scheduled).toEqual([])
+        await Bun.sleep(30)
+        // Only the immediate measurement: the late outer size waits for the next resize.
+        expect(seen).toEqual([1040])
 
         unsub()
         app.dispose()

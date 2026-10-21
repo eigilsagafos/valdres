@@ -113,6 +113,14 @@ Every store reads the same screen, so they share snapshots: two stores reading
 an unchanged screen get the identical object. The objects are frozen because
 they are shared, and `ScreenInfo`'s fields are `readonly`.
 
+The package keeps only the last snapshot it handed out, for every store. If
+another store reads a passing state while one store is subscribed, for example
+with a read that is not subscribed, the shared snapshot moves to that state.
+When the screen then returns to what the subscribed store last published, that
+store gets a new object with equal values and notifies once. Derive narrow
+selectors, such as the pixel ratio, when that matters: they compare their own
+values.
+
 `screenAtom` and `@valdres/browser-window`'s `windowSizeAtom` are separate
 sources. One `resize` updates them one after the other, as two updates, so a
 selector that reads both can briefly see one updated and the other not.
@@ -194,7 +202,7 @@ displays, use [`@valdres/browser-screen-details`](/plugins/browser-screen-detail
 |---|---|
 | `screenAtom` was a writable `globalAtom` shared by every store | A read-only `ExternalAtom<ScreenInfo>`. `set`, `reset`, `update`, `setSelf` and `resetSelf` are gone. Put overrides in your own atom, as above. |
 | One set of listeners for the whole process, whose cached value every store saw | One set per store tree that subscribes. Reads without a subscription read live. |
-| A new object on every event | One frozen, shared object per distinct reading; events that change nothing notify nobody. |
+| A new object on every event | One frozen, shared object per distinct reading; events that change nothing usually notify nobody (see [Snapshots](#snapshots)). |
 | `orientationType: OrientationType` (DOM library type) | `ScreenOrientationType`, the same four strings, usable without the DOM library. Fields are `readonly`. |
 | `resize`, orientation and resolution listeners | The same, plus Chromium's `screen` `change`. The legacy `MediaQueryList.addListener` fallback for Safari 13 and older is gone, as in the other migrated packages. |
 | Peer `valdres` `^1.0.0-beta.19` (a range that admits cores without `globalAtom`) | `^1.0.0-beta.39`, the first core with `externalAtom`. |
