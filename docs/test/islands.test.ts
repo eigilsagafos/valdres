@@ -84,8 +84,6 @@ describe("v1 module boundary", () => {
     test("the legacy islands those integrations need stay out", () => {
         const legacy = [
             "angular-counter.ts",
-            "landing-location.tsx",
-            "plugins/ScreenPlacement.tsx",
             "solid-counter.ts",
             "SvelteCounter.svelte",
             "svelte-counter.ts",

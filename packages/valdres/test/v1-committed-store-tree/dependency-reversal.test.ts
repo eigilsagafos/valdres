@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test"
 import {
     atom,
     collection,
+    deepEqual,
     family,
     selector,
     store,
     type Selector,
 } from "../../src/index"
-import { deepEqual } from "../../src/equality"
 
 describe("settlement after dependency reversal", () => {
     for (const directlyDirty of ["path", "output"] as const) {

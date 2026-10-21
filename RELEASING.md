@@ -33,8 +33,15 @@ media packages: `@valdres/browser-color-scheme`, `@valdres/browser-contrast`,
 `@valdres/browser-reduced-motion`, `@valdres/browser-reduced-data` and
 `@valdres/browser-reduced-transparency` — plus `@valdres/browser-keyboard`,
 `@valdres/browser-online`, `@valdres/browser-focus`,
-`@valdres/browser-visibility`, `@valdres/browser-presence`, `@valdres/hotkeys`
-and `@valdres-react/hotkeys`. Presence joined last: its focus/visibility ranges
+`@valdres/browser-visibility`, `@valdres/browser-presence`,
+`@valdres/browser-device-motion`, `@valdres/browser-device-orientation`,
+`@valdres/browser-geolocation`, `@valdres/browser-screen-details`,
+`@valdres/hotkeys` and `@valdres-react/hotkeys`. The four permission packages
+have no published version outside the `beta` line, so their first migrated
+release goes to `latest` (only-pre), and publishing them additionally requires
+the manual iOS Safari check in
+`scripts/browser-permission-probe/IOS-SAFARI-CHECK.md`. Presence joined last
+among the status packages: its focus/visibility ranges
 had to exclude the legacy `1.0.0-beta.8` first. Its legacy `1.0.0-beta.7` and
 `1.0.0-beta.8` depend on `^1.0.0-beta.7` and `^1.0.0-beta.8` of focus and
 visibility, so they resolve and compose the migrated releases at runtime, but
@@ -87,7 +94,11 @@ pinned by equality in `scripts/browser-status-packages.test.ts`; the packed gate
 against the published `1.0.0-beta.39`. Presence additionally requires focus and
 visibility `^1.0.0-beta.9`, the first migrated releases, pinned by equality in
 the same test; the packed gate fails if that range admits the legacy
-`1.0.0-beta.8`. Do not
+`1.0.0-beta.8`. Motion, orientation, geolocation and screen details also
+declare `^1.0.0-beta.39`, pinned by equality in
+`scripts/browser-permission-packages.test.ts` and executed against the
+published `1.0.0-beta.39` / `valdres-react` `1.0.0-beta.7` by
+`scripts/test-browser-permission-packed-consumer.ts`. Do not
 combine beta.24 or later with a
 deferred adapter, plugin, or compatibility package until that package is
 migrated.

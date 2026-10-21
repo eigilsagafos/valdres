@@ -14,7 +14,7 @@ import { basename, join, relative } from "node:path"
 
 const rootDirectory = join(import.meta.dir, "..")
 const keepWorkspace = process.env.VALDRES_KEEP_PACKED_SMOKE === "1"
-const requiredBunVersion = "1.4.0"
+const requiredBunVersion = "1.4.3"
 const pinnedBunVersion = (
     await readFile(join(rootDirectory, ".bun-version"), "utf8")
 ).trim()
@@ -1088,6 +1088,72 @@ export const externalSmoke = () => {
 console.log(JSON.stringify(externalSmoke()))
 `
 
+// Runs under both runtimes with and without the development condition.
+const deepEqualProbe = String.raw`
+import { strict as assert } from "node:assert"
+import { atom, deepEqual, selector, store } from "valdres"
+
+const expectedGraph = process.env.EXPECTED_VALDRES_GRAPH
+const resolved = import.meta.resolve("valdres")
+assert.equal(
+    resolved.endsWith(
+        expectedGraph === "development"
+            ? "/valdres/dist/development/index.js"
+            : "/valdres/dist/index.js",
+    ),
+    true,
+    resolved,
+)
+assert.equal(typeof deepEqual, "function")
+assert.equal(deepEqual.length, 2)
+assert.equal(deepEqual({ blocks: [1, { id: 2 }] }, { blocks: [1, { id: 2 }] }), true)
+assert.equal(deepEqual({ blocks: [1] }, { blocks: [2] }), false)
+
+const documentAtom = atom({ blocks: [1] }, { equal: deepEqual })
+const visible = selector(get => get(documentAtom).blocks.filter(Boolean), { equal: deepEqual })
+const plain = atom({ blocks: [1] })
+const target = store()
+const before = target.get(documentAtom)
+const visibleBefore = target.get(visible)
+let notifications = 0
+const stop = target.sub(documentAtom, () => notifications++)
+target.set(documentAtom, { blocks: [1] })
+assert.equal(target.get(documentAtom), before)
+assert.equal(target.get(visible), visibleBefore)
+assert.equal(notifications, 0)
+// Object.is remains the default.
+const plainBefore = target.get(plain)
+target.set(plain, { blocks: [1] })
+assert.notEqual(target.get(plain), plainBefore)
+stop()
+target.dispose()
+
+await assert.rejects(import("valdres/equality"))
+console.log(JSON.stringify({ graph: expectedGraph, resolved: resolved.slice(resolved.indexOf("/valdres/")) }))
+`
+
+const deepEqualUnusedEntry = String.raw`
+import { atom, family, selector, store } from "valdres"
+const count = atom(1)
+const doubled = selector(get => get(count) * 2)
+const members = family(id => atom(id.length))
+const target = store()
+console.log(JSON.stringify([target.get(doubled), target.get(members("four"))]))
+`
+
+const deepEqualUsedEntry = String.raw`
+import { atom, deepEqual, store } from "valdres"
+const documentAtom = atom({ blocks: [1] }, { equal: deepEqual })
+const target = store()
+const before = target.get(documentAtom)
+target.set(documentAtom, { blocks: [1] })
+if (target.get(documentAtom) !== before) throw new Error("bundled deepEqual did not keep the previous reference")
+console.log(JSON.stringify({ kept: true }))
+`
+
+// Strings only deepEqual's implementation contains.
+const deepEqualImplementationSentinels = ["unicodeSets", "native code"]
+
 const reactInspectProductionProbe = String.raw`
 import { strict as assert } from "node:assert"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
@@ -1165,6 +1231,7 @@ const typeProbe = String.raw`
 import {
     atom,
     collection,
+    deepEqual,
     externalAtom,
     ExternalSourceOperationError,
     family,
@@ -1244,7 +1311,23 @@ import {
 } from "valdres/inspect"
 
 import { query } from "valdres/query"
-import { deepEqual } from "valdres/equality"
+// @ts-expect-error The valdres/equality subpath was removed; import deepEqual from the root.
+import { deepEqual as removedDeepEqual } from "valdres/equality"
+void removedDeepEqual
+// Root deepEqual declarations stay portable: consumers can re-export it, emit
+// its inferred type, and annotate deepEqual-compared states with public types.
+// (Unannotated exported atoms and selectors are issue #429, independent of
+// the comparator.)
+export { deepEqual as packedReexportedDeepEqual } from "valdres"
+export const packedDeepEqual = deepEqual
+export const packedDeepEqualAtom: Atom<{ blocks: number[] }> = atom(
+    { blocks: [] as number[] },
+    { equal: deepEqual },
+)
+export const packedDeepEqualSelector: Selector<number[]> = selector(
+    get => get(packedDeepEqualAtom).blocks.filter(Boolean),
+    { equal: deepEqual },
+)
 interface PackedEntityIndexes { kind: "task" | "person" }
 const indexedEntities = collection<string, { kind: "task" | "person" }, string, PackedEntityIndexes>({
     indexes: { kind: entity => entity.kind },
@@ -1493,6 +1576,122 @@ target.delete(count)
 // @ts-expect-error FamilyKey excludes structured objects.
 const structuredKey: FamilyKey = { id: "packed" }
 void structuredKey
+`
+
+// Unannotated exports: declaration emit must name every inferred value through
+// public specifiers, never valdres/dist/types/v1.js or v1-internal (#429).
+const portableProbe = String.raw`
+import { atom, collection, deepEqual, family, presence, selector, store } from "valdres"
+import { createInspectableStore } from "valdres/inspect"
+import { query } from "valdres/query"
+import { useAtom, useStore, useValue } from "valdres-react"
+
+export const count = atom(0)
+export const label = atom("ready", { name: "portable label" })
+export const lazyCount = atom.lazy(() => 1)
+export const lazyItems = atom.lazy(() => [1, 2, 3], { equal: deepEqual })
+export const doubled = selector(get => get(count) * 2)
+export const summary = selector(
+    get => ({ count: get(count), label: get(label) }),
+    { name: "portable summary", equal: deepEqual },
+)
+export const atomFamily = family((id: string) => atom(id))
+export const atomMember = atomFamily("member")
+export const selectorFamily = family((factor: number) =>
+    selector(get => get(count) * factor),
+)
+export const selectorMember = selectorFamily(3)
+export const sessions = collection<
+    string,
+    { readonly kind: "a" | "b" },
+    string,
+    { kind: "a" | "b" }
+>({ indexes: { kind: session => session.kind } })
+export const session = sessions("one")
+export const sessionPresent = presence(session)
+export const kindA = query(sessions, { where: { kind: { eq: "a" } } })
+export const root = store()
+export const child = root.scope("child")
+export const childTransaction = root.txn(transaction => transaction.scope(child))
+export const inspectable = createInspectableStore()
+export const useCount = () => useValue(count)
+export const useCountPair = () => useAtom(count)
+export const useCurrentStore = () => useStore()
+`
+
+// Consumes portableProbe's emitted declarations as an installed package.
+const downstreamProbe = String.raw`
+import {
+    selector,
+    store,
+    type Atom,
+    type CollectionRow,
+    type Selector,
+    type State,
+    type Store,
+    type Transaction,
+} from "valdres"
+import { useValue } from "valdres-react"
+import {
+    atomFamily,
+    child,
+    childTransaction,
+    count,
+    doubled,
+    kindA,
+    lazyCount,
+    lazyItems,
+    root,
+    selectorFamily,
+    session,
+    sessionPresent,
+    summary,
+    useCurrentStore,
+} from "valdres-portable-probe"
+
+type Same<Left, Right> =
+    (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+        ? true
+        : false
+type Session = { readonly kind: "a" | "b" }
+export const downstreamTypes: [
+    Same<typeof count, Atom<number>>,
+    Same<typeof lazyCount, Atom<number>>,
+    Same<typeof lazyItems, Atom<number[]>>,
+    Same<typeof doubled, Selector<number>>,
+    Same<typeof summary, Selector<{ count: number; label: string }>>,
+    Same<ReturnType<typeof atomFamily>, Atom<string>>,
+    Same<ReturnType<typeof selectorFamily>, Selector<number>>,
+    Same<typeof session, CollectionRow<string, Session>>,
+    Same<typeof sessionPresent, Selector<boolean>>,
+    Same<typeof kindA, State<readonly CollectionRow<string, Session>[]>>,
+    Same<typeof root, Store>,
+    Same<typeof child, Store>,
+    Same<typeof childTransaction, Transaction>,
+    Same<ReturnType<typeof useCurrentStore>, Store>,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true, true]
+
+const target: Store = store()
+target.set(count, 1)
+target.update(lazyCount, current => current + 1)
+const nextSession: Session = { kind: "a" }
+target.set(session, nextSession)
+const read: number = target.get(doubled)
+void read
+// @ts-expect-error Selectors stay read-only downstream.
+target.set(doubled, 1)
+// @ts-expect-error Inferred Atoms keep their Value downstream.
+target.set(count, "one")
+
+export const tripled = selector(get => get(doubled) + get(count))
+export const downstreamChild = child.scope("downstream")
+export const downstreamMembers = {
+    count,
+    lazyCount,
+    member: atomFamily("downstream"),
+    rows: kindA,
+}
+export const useTripled = () => useValue(tripled)
 `
 
 const bundleEntry = String.raw`
@@ -1956,6 +2155,87 @@ try {
         )
     }
 
+    await Promise.all([
+        writeFile(
+            join(standaloneDirectory, "deep-equal-probe.mjs"),
+            deepEqualProbe,
+        ),
+        writeFile(
+            join(standaloneDirectory, "deep-equal-unused.mjs"),
+            deepEqualUnusedEntry,
+        ),
+        writeFile(
+            join(standaloneDirectory, "deep-equal-used.mjs"),
+            deepEqualUsedEntry,
+        ),
+    ])
+    for (const graph of ["production", "development"] as const) {
+        const conditions =
+            graph === "development" ? ["--conditions=development"] : []
+        for (const runtime of ["node", "bun"]) {
+            run(
+                `${runtime} ${graph} root deepEqual and removed valdres/equality`,
+                [runtime, ...conditions, "deep-equal-probe.mjs"],
+                standaloneDirectory,
+                { EXPECTED_VALDRES_GRAPH: graph },
+            )
+        }
+        for (const bundler of ["esbuild", "bun"] as const) {
+            for (const usage of ["unused", "used"] as const) {
+                const outfile = `deep-equal-${usage}-${graph}-${bundler}.mjs`
+                run(
+                    `${bundler} ${graph} bundle with ${usage} root deepEqual`,
+                    bundler === "esbuild"
+                        ? [
+                              "node",
+                              join(
+                                  rootDirectory,
+                                  "node_modules",
+                                  "esbuild",
+                                  "bin",
+                                  "esbuild",
+                              ),
+                              `deep-equal-${usage}.mjs`,
+                              "--bundle",
+                              "--minify",
+                              "--platform=browser",
+                              "--format=esm",
+                              ...conditions,
+                              `--outfile=${outfile}`,
+                              "--log-level=warning",
+                          ]
+                        : [
+                              "bun",
+                              "build",
+                              `deep-equal-${usage}.mjs`,
+                              "--minify",
+                              "--target=browser",
+                              "--format=esm",
+                              ...conditions,
+                              `--outfile=${outfile}`,
+                          ],
+                    standaloneDirectory,
+                )
+                const bundled = await readFile(
+                    join(standaloneDirectory, outfile),
+                    "utf8",
+                )
+                assert.deepEqual(
+                    deepEqualImplementationSentinels.filter(sentinel =>
+                        bundled.includes(sentinel),
+                    ),
+                    usage === "used" ? deepEqualImplementationSentinels : [],
+                    `${bundler} ${graph} bundle with ${usage} deepEqual`,
+                )
+                run(
+                    `execute ${bundler} ${graph} bundle with ${usage} deepEqual`,
+                    ["node", outfile],
+                    standaloneDirectory,
+                )
+            }
+        }
+    }
+
     for (const react of reactMatrix) {
         const consumerDirectory = join(workspace, `react-${react.major}`)
         await mkdir(consumerDirectory, { recursive: true })
@@ -2188,6 +2468,128 @@ try {
             false,
             "installed collection and ExternalAtom declarations must remain publicly nameable",
         )
+        for (const deepEqualDeclaration of [
+            /export \{ deepEqual as packedReexportedDeepEqual \} from "valdres";/,
+            /export declare const packedDeepEqual: \(left: unknown, right: unknown\) => boolean;/,
+            /export declare const packedDeepEqualAtom: Atom<\{/,
+            /export declare const packedDeepEqualSelector: Selector<number\[\]>;/,
+        ]) {
+            assert.match(emittedConsumerDeclaration, deepEqualDeclaration)
+        }
+        assert.equal(
+            emittedConsumerDeclaration.includes("equality"),
+            false,
+            "installed deepEqual declarations must name only the root entry",
+        )
+        await Promise.all([
+            writeFile(
+                join(consumerDirectory, "portable-probe.ts"),
+                portableProbe,
+            ),
+            writeJson(join(consumerDirectory, "tsconfig.portable.json"), {
+                extends: "./tsconfig.json",
+                compilerOptions: { outDir: "portable-output" },
+                include: ["portable-probe.ts"],
+            }),
+        ])
+        run(
+            `portable unannotated declaration emit with React ${react.major}`,
+            [
+                "node",
+                join(rootDirectory, "node_modules", "typescript", "bin", "tsc"),
+                "-p",
+                "tsconfig.portable.json",
+            ],
+            consumerDirectory,
+        )
+        const portableDeclaration = await readFile(
+            join(consumerDirectory, "portable-output", "portable-probe.d.ts"),
+            "utf8",
+        )
+        for (const expected of [
+            'count: import("valdres").Atom<number>;',
+            'lazyCount: import("valdres").Atom<number>;',
+            'lazyItems: import("valdres").Atom<number[]>;',
+            'doubled: import("valdres").Selector<number>;',
+            'atomFamily: (id: string) => import("valdres").Atom<string>;',
+            'selectorMember: import("valdres").Selector<number>;',
+            'session: import("valdres").CollectionRow<string, {',
+            'sessionPresent: import("valdres").Selector<boolean>;',
+            'kindA: import("valdres").State<readonly import("valdres").CollectionRow<string, {',
+            'root: import("valdres").Store;',
+            'child: import("valdres").Store;',
+            'childTransaction: import("valdres").Transaction;',
+            'inspectable: import("valdres/inspect").InspectableStoreResult;',
+            'useCurrentStore: () => import("valdres").Store;',
+        ]) {
+            assert.ok(
+                portableDeclaration.includes(expected),
+                `portable declaration is missing ${expected}`,
+            )
+        }
+
+        const portablePackage = join(
+            consumerDirectory,
+            "node_modules",
+            "valdres-portable-probe",
+        )
+        await mkdir(portablePackage, { recursive: true })
+        await Promise.all([
+            writeFile(join(portablePackage, "index.d.ts"), portableDeclaration),
+            writeJson(join(portablePackage, "package.json"), {
+                name: "valdres-portable-probe",
+                private: true,
+                type: "module",
+                exports: { ".": { types: "./index.d.ts" } },
+            }),
+            writeFile(
+                join(consumerDirectory, "downstream-probe.ts"),
+                downstreamProbe,
+            ),
+            writeJson(join(consumerDirectory, "tsconfig.downstream.json"), {
+                extends: "./tsconfig.json",
+                compilerOptions: { outDir: "downstream-output" },
+                include: ["downstream-probe.ts"],
+            }),
+        ])
+        run(
+            `downstream declaration consumer with React ${react.major}`,
+            [
+                "node",
+                join(rootDirectory, "node_modules", "typescript", "bin", "tsc"),
+                "-p",
+                "tsconfig.downstream.json",
+            ],
+            consumerDirectory,
+        )
+        const downstreamDeclaration = await readFile(
+            join(
+                consumerDirectory,
+                "downstream-output",
+                "downstream-probe.d.ts",
+            ),
+            "utf8",
+        )
+        assert.match(
+            downstreamDeclaration,
+            /tripled: (?:import\("valdres"\)\.)?Selector<number>;/,
+        )
+        assert.match(
+            downstreamDeclaration,
+            /downstreamChild: (?:import\("valdres"\)\.)?Store;/,
+        )
+        for (const [label, declaration] of [
+            ["portable", portableDeclaration],
+            ["downstream", downstreamDeclaration],
+        ] as const) {
+            for (const internal of ["v1-internal", "dist/types", "v1.js"]) {
+                assert.equal(
+                    declaration.includes(internal),
+                    false,
+                    `${label} declarations must not reference ${internal}`,
+                )
+            }
+        }
         run(
             `esbuild browser bundle with React ${react.major}`,
             [
