@@ -54,6 +54,14 @@ export interface GeometryHarnessOptions {
     readonly orientation?: boolean
     /** Make `screen` an `EventTarget`, as Chromium's is. Default true. */
     readonly screenEvents?: boolean
+    /**
+     * `"manual"` (default): `requestAnimationFrame` queues callbacks that run
+     * only when the test calls {@link GeometryHarness.frame}, like a real
+     * frame loop that a test can also suspend. `"ignore-cancel"`: the same,
+     * but `cancelAnimationFrame` does nothing, to model a host that still runs
+     * a cancelled callback. `"absent"`: no `requestAnimationFrame` at all.
+     */
+    readonly animationFrames?: "manual" | "ignore-cancel" | "absent"
 }
 
 export interface GeometryHarness {
@@ -103,6 +111,16 @@ export interface GeometryHarness {
     failOnDetach(target: GeometryTarget, type: string, error: unknown): void
     /** Make `matchMedia` throw for resolution queries. */
     failMatchMedia(error: unknown): void
+    /**
+     * Run one animation frame: every callback queued before this call, in
+     * order. Callbacks they queue run in the next frame, as in a browser.
+     * Returns how many ran.
+     */
+    frame(): number
+    /** Animation-frame callbacks queued and not yet run or cancelled. */
+    pendingFrames(): number
+    /** `requestAnimationFrame` / `cancelAnimationFrame` calls so far. */
+    frameCalls(): { readonly requested: number; readonly cancelled: number }
     restore(): void
 }
 
@@ -138,6 +156,7 @@ export const installGeometryHarness = (
     const attachCalls = new Map<string, number>()
     const attachFailures = new Map<string, unknown>()
     const detachFailures = new Map<string, unknown>()
+    const refused: (() => void)[] = []
     let matchMediaFailure: { error: unknown } | undefined
 
     const replace = (
@@ -166,6 +185,39 @@ export const installGeometryHarness = (
     for (const key of Object.keys(win) as (keyof WindowMetrics)[])
         replace(window, key, { get: () => win[key] })
     replace(window, "devicePixelRatio", { get: () => ratio })
+
+    // A frame loop the test drives. Happy-DOM's own runs on timers.
+    const frames = new Map<number, FrameRequestCallback>()
+    let nextFrame = 0
+    let requested = 0
+    let cancelled = 0
+    const animationFrames = options.animationFrames ?? "manual"
+    if (animationFrames === "absent") {
+        replace(window, "requestAnimationFrame", {
+            value: undefined,
+            writable: true,
+        })
+        replace(window, "cancelAnimationFrame", {
+            value: undefined,
+            writable: true,
+        })
+    } else {
+        replace(window, "requestAnimationFrame", {
+            writable: true,
+            value: (callback: FrameRequestCallback) => {
+                requested++
+                frames.set(++nextFrame, callback)
+                return nextFrame
+            },
+        })
+        replace(window, "cancelAnimationFrame", {
+            writable: true,
+            value: (handle: number) => {
+                cancelled++
+                if (animationFrames === "manual") frames.delete(handle)
+            },
+        })
+    }
     const screen = window.screen
     for (const key of Object.keys(scr) as (keyof ScreenMetrics)[])
         replace(screen, key, { get: () => scr[key] })
@@ -215,7 +267,19 @@ export const installGeometryHarness = (
                 ...rest: unknown[]
             ) {
                 const key = `${name}:${type}`
-                if (detachFailures.has(key)) throw detachFailures.get(key)
+                if (detachFailures.has(key)) {
+                    // The listener really stays attached, as on a host that
+                    // refused; `restore()` removes it so later tests start clean.
+                    refused.push(() =>
+                        (remove as (...args: unknown[]) => unknown).call(
+                            target,
+                            type,
+                            listener,
+                            ...rest,
+                        ),
+                    )
+                    throw detachFailures.get(key)
+                }
                 const result = (remove as (...args: unknown[]) => unknown).call(
                     this,
                     type,
@@ -397,7 +461,17 @@ export const installGeometryHarness = (
         failMatchMedia: error => {
             matchMediaFailure = error === undefined ? undefined : { error }
         },
+        frame: () => {
+            const due = [...frames]
+            frames.clear()
+            const now = performance.now()
+            for (const [, callback] of due) callback(now)
+            return due.length
+        },
+        pendingFrames: () => frames.size,
+        frameCalls: () => ({ requested, cancelled }),
         restore: () => {
+            for (const undo of refused.splice(0)) undo()
             for (const restore of restorers.splice(0).reverse()) restore()
         },
     }

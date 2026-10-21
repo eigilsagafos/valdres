@@ -127,6 +127,14 @@ disposed. Each store tree owns one listener, and child scopes share their
 root's. Importing the package attaches nothing and measures nothing. Reads
 without a subscription measure the window directly and attach nothing either.
 
+Each `resize` is measured at once, and again on the second, third and fourth
+animation frame after it (see [What is observed](#what-is-observed)). These
+re-measurements notify subscribers only when a size actually changed. A new
+`resize` restarts them, so a burst of resizes leaves one sequence, counted from
+the last event. Unsubscribing or disposing cancels any that are pending. Nothing
+runs between frames, and no timer polls. Without `requestAnimationFrame`, only
+the immediate measurement happens.
+
 If attaching the listener throws, the subscription fails with an
 `ExternalSourceOperationError` whose `cause` is the original error, and nothing
 stays attached. If removing it throws, the unsubscribe (or `dispose`) that
@@ -140,18 +148,31 @@ resizing it fires nothing, so the window's position (`screenX`, `screenY`) is
 not part of the snapshot.
 
 Native behavior was checked in Chromium only, by driving Chrome for Testing 151
-(headless and headed) and Chrome 154 on macOS over the DevTools protocol:
-viewport changes, real browser zoom (Chrome for Testing only) and resizing the
-browser window itself. In every case one `resize` produced one publication per
-store, shared by both stores, and synthetic events that changed nothing
-notified nobody.
+(headless and headed) and Chrome 154 and 155 on macOS over the DevTools
+protocol: viewport changes, real browser zoom (Chrome for Testing only) and
+resizing the browser window itself. One `resize` produced one immediate
+publication per store, shared by both stores, and synthetic events that changed
+nothing notified nobody.
 
-**Outer size can lag by one resize.** In the same runs, when the browser window
-itself was resized, `outerWidth` and `outerHeight` still reported the previous
-window bounds while `resize` was dispatched, and caught up by the second
-animation frame without any further event. A subscribed store therefore keeps
-the stale outer size until the next `resize`. Inner sizes were always current.
-A read without a subscription measures again and sees the current outer size.
+**Outer size arrives after the event.** When the browser window itself was
+resized, Chromium dispatched `resize` while `outerWidth` and `outerHeight` still
+reported the previous bounds. They caught up without any further event: never by
+the first animation frame after the event, usually by the second, and sometimes
+only by the third. That held for all 45 measured resizes, across Chrome for
+Testing 151 and Chrome 155, headless and headed, and each caught up within 14 ms
+of the event. That is why the source measures again on frames 2 to 4. In
+12 repeated probe runs, a single window resize published the stale outer size
+immediately and the current one 6–31 ms later, and a burst of three resizes
+ended on the current size. The same probe fails against the previous,
+resize-only source. Inner sizes were always current at the event.
+
+**Limits.** The frame schedule is what was measured in these Chromium builds. It
+is not a guarantee for any other browser or build: if an outer size catches up
+later than the fourth frame, a subscribed store keeps it until the next
+`resize`. While animation frames are suspended, for example in a hidden tab or
+a minimized window, the re-measurements wait and run when frames resume. Until
+then, a subscribed store may keep a stale outer size. A read without a
+subscription always measures the current size.
 
 **Not verified:** Safari/WebKit, Firefox/Gecko, mobile browsers, and user-driven
 window drags (as opposed to `Browser.setWindowBounds`).

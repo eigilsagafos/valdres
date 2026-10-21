@@ -18,8 +18,8 @@ import type { WindowSize } from "../types/WindowSize"
 import { windowSizeAtom } from "./windowSizeAtom"
 
 let harness: GeometryHarness | undefined
-const install = () => {
-    harness = installGeometryHarness()
+const install = (options?: Parameters<typeof installGeometryHarness>[0]) => {
+    harness = installGeometryHarness(options)
     harness.setWindow({
         innerWidth: 1024,
         innerHeight: 768,
@@ -446,5 +446,285 @@ describe("windowSizeAtom", () => {
             outerHeight: 0,
         })
         expect(Object.isFrozen(WINDOW_SIZE_UNAVAILABLE)).toBe(true)
+    })
+})
+
+describe("the follow-up measurements after resize", () => {
+    // Chromium dispatches `resize` while outerWidth/outerHeight still report
+    // the previous bounds, then updates them by the second or third animation
+    // frame without another event (scripts/browser-geometry-probe). The
+    // harness reproduces that order; it cannot establish the timing itself.
+    const resizeWithStaleOuter = (page: GeometryHarness) => {
+        page.setWindow({ innerWidth: 884, innerHeight: 557 })
+        page.fire("window", "resize")
+    }
+    const outerCatchesUp = (page: GeometryHarness) =>
+        page.setWindow({ outerWidth: 900, outerHeight: 700 })
+    const frames = (page: GeometryHarness, count: number) => {
+        for (let i = 0; i < count; i++) page.frame()
+    }
+
+    for (const catchUp of [1, 2, 3] as const) {
+        test(`an outer size that catches up during frame ${catchUp} is published by the next re-measurement`, () => {
+            const page = install()
+            const app = store()
+            const seen: string[] = []
+            const unsub = app.sub(windowSizeAtom, () => {
+                const size = app.get(windowSizeAtom)
+                seen.push(
+                    `${size.innerWidth}x${size.innerHeight}/${size.outerWidth}x${size.outerHeight}`,
+                )
+            })
+
+            resizeWithStaleOuter(page)
+            expect(seen).toEqual(["884x557/1040x860"])
+            frames(page, catchUp)
+            outerCatchesUp(page)
+            // Re-measurements run on frames 2, 3 and 4 after the event.
+            const correctedOn = Math.max(catchUp + 1, 2)
+            frames(page, correctedOn - catchUp - 1)
+            expect(seen).toHaveLength(1)
+            page.frame()
+            expect(seen).toEqual(["884x557/1040x860", "884x557/900x700"])
+
+            frames(page, 4)
+            expect(seen).toHaveLength(2)
+            expect(page.pendingFrames()).toBe(0)
+
+            unsub()
+            app.dispose()
+        })
+    }
+
+    test("the sequence is bounded: re-measures on frames 2-4, then stops", () => {
+        const page = install()
+        let invalidations = 0
+        const release = windowSizeSource.subscribe(() => invalidations++)
+
+        page.fire("window", "resize")
+        expect(invalidations).toBe(1)
+        const perFrame = [0, 1, 2, 3, 4, 5].map(() => {
+            page.frame()
+            return invalidations
+        })
+        expect(perFrame).toEqual([1, 2, 3, 4, 4, 4])
+        expect(page.pendingFrames()).toBe(0)
+        expect(page.frameCalls().requested).toBe(4)
+
+        release()
+    })
+
+    test("notifies nobody when a re-measurement reads what was already published", () => {
+        const page = install()
+        const app = store()
+        let notifications = 0
+        const unsub = app.sub(windowSizeAtom, () => notifications++)
+
+        page.setWindow({ innerWidth: 700, outerWidth: 716 })
+        page.fire("window", "resize")
+        expect(notifications).toBe(1)
+        const published = app.get(windowSizeAtom)
+        frames(page, 4)
+        expect(notifications).toBe(1)
+        expect(app.get(windowSizeAtom)).toBe(published)
+
+        // A resize that changed nothing, and its re-measurements: nothing at all.
+        page.fire("window", "resize")
+        frames(page, 4)
+        expect(notifications).toBe(1)
+
+        unsub()
+        app.dispose()
+    })
+
+    test("a burst of resizes leaves one sequence, counted from the last", () => {
+        const page = install()
+        let invalidations = 0
+        const release = windowSizeSource.subscribe(() => invalidations++)
+
+        page.fire("window", "resize")
+        page.frame() // the first resize's sequence is one frame in
+        page.fire("window", "resize")
+        page.fire("window", "resize")
+        expect(invalidations).toBe(3)
+        expect(page.pendingFrames()).toBe(1)
+
+        page.frame() // the first resize's frame 2: superseded, nothing runs
+        expect(invalidations).toBe(3)
+        page.frame() // the last resize's frame 2
+        expect(invalidations).toBe(4)
+        frames(page, 2)
+        expect(invalidations).toBe(6)
+        frames(page, 2)
+        expect(invalidations).toBe(6)
+        expect(page.pendingFrames()).toBe(0)
+
+        release()
+    })
+
+    test("an older sequence that still runs cannot measure or request frames", () => {
+        // A host whose cancelAnimationFrame does nothing still runs callbacks
+        // a newer resize replaced; the generation guard drops them.
+        const page = install({ animationFrames: "ignore-cancel" })
+        let invalidations = 0
+        const release = windowSizeSource.subscribe(() => invalidations++)
+
+        page.fire("window", "resize")
+        page.frame()
+        page.fire("window", "resize")
+        expect(invalidations).toBe(2)
+        const requested = page.frameCalls().requested
+        page.frame() // both sequences' callbacks run; only the newer continues
+        expect(page.frameCalls().requested).toBe(requested + 1)
+        expect(invalidations).toBe(2)
+        frames(page, 3)
+        expect(invalidations).toBe(5)
+
+        page.fire("window", "resize")
+        release()
+        frames(page, 4)
+        expect(invalidations).toBe(6)
+    })
+
+    test("a rapid resize sequence publishes the final sizes, inner and outer", () => {
+        const page = install()
+        const app = store()
+        const seen: WindowSize[] = []
+        const unsub = app.sub(windowSizeAtom, () =>
+            seen.push(app.get(windowSizeAtom)),
+        )
+
+        for (const width of [1000, 960, 920, 880]) {
+            page.setWindow({ innerWidth: width - 16 })
+            page.fire("window", "resize")
+            page.setWindow({ outerWidth: width })
+        }
+        // Each immediate reading carries the previous outer size.
+        expect(seen.at(-1)).toMatchObject({ innerWidth: 864, outerWidth: 920 })
+        frames(page, 4)
+        expect(seen.at(-1)).toMatchObject({ innerWidth: 864, outerWidth: 880 })
+        expect(seen).toHaveLength(5)
+
+        unsub()
+        app.dispose()
+    })
+
+    test("unsubscribing cancels the pending re-measurements", () => {
+        const page = install()
+        const app = store()
+        const unsub = app.sub(windowSizeAtom, () => {})
+        resizeWithStaleOuter(page)
+        page.frame()
+        expect(page.pendingFrames()).toBe(1)
+
+        unsub()
+        expect(page.pendingFrames()).toBe(0)
+        expect(page.physical()).toBe(0)
+        app.dispose()
+    })
+
+    test("disposing the store cancels the pending re-measurements", () => {
+        const page = install()
+        const app = store()
+        app.scope("panel").sub(windowSizeAtom, () => {})
+        resizeWithStaleOuter(page)
+        frames(page, 2)
+        expect(page.pendingFrames()).toBe(1)
+
+        app.dispose()
+        expect(page.pendingFrames()).toBe(0)
+        expect(page.physical()).toBe(0)
+    })
+
+    test("each store tree runs its own sequence; a child scope shares its root's", () => {
+        const page = install()
+        const first = store()
+        const second = store()
+        const child = first.scope()
+        const seen: string[] = []
+        const stops = [
+            first.sub(windowSizeAtom, () => seen.push("first")),
+            child.sub(windowSizeAtom, () => seen.push("child")),
+            second.sub(windowSizeAtom, () => seen.push("second")),
+        ]
+
+        resizeWithStaleOuter(page)
+        expect(page.pendingFrames()).toBe(2)
+        outerCatchesUp(page)
+        seen.length = 0
+        frames(page, 4)
+        expect(seen.sort()).toEqual(["child", "first", "second"])
+        expect(first.get(windowSizeAtom)).toBe(second.get(windowSizeAtom))
+
+        for (const stop of stops) stop()
+        expect(page.pendingFrames()).toBe(0)
+        first.dispose()
+        second.dispose()
+    })
+
+    test("a throwing subscriber cannot end the sequence early", () => {
+        const page = install()
+        const app = store()
+        let calls = 0
+        const unsub = app.sub(windowSizeAtom, () => {
+            calls++
+            throw new Error("subscriber exploded")
+        })
+
+        page.setWindow({ innerWidth: 884 })
+        const reported = page.fireReportingErrors("window", "resize")
+        expect((reported[0] as Error).name).toBe("SubscriberNotificationError")
+        expect(page.pendingFrames()).toBe(1)
+        page.frame()
+        page.setWindow({ outerWidth: 900 })
+        expect(() => page.frame()).toThrow() // frame 2 publishes the outer size
+        page.setWindow({ outerHeight: 700 })
+        expect(() => page.frame()).toThrow() // frame 3 still runs
+        expect(calls).toBe(3)
+        expect(app.get(windowSizeAtom)).toMatchObject({
+            outerWidth: 900,
+            outerHeight: 700,
+        })
+
+        unsub()
+        app.dispose()
+    })
+
+    test("while frames are suspended the correction waits, then lands when they resume", async () => {
+        // A hidden tab runs no animation frames. Nothing polls in between:
+        // time passing schedules no further work.
+        const page = install()
+        const app = store()
+        const unsub = app.sub(windowSizeAtom, () => {})
+        resizeWithStaleOuter(page)
+        outerCatchesUp(page)
+        expect(app.get(windowSizeAtom).outerWidth).toBe(1040)
+        expect(page.frameCalls().requested).toBe(1)
+
+        await Bun.sleep(50)
+        expect(page.frameCalls().requested).toBe(1)
+        expect(app.get(windowSizeAtom).outerWidth).toBe(1040)
+        frames(page, 2)
+        expect(app.get(windowSizeAtom).outerWidth).toBe(900)
+
+        unsub()
+        app.dispose()
+    })
+
+    test("without requestAnimationFrame, resize alone still works", () => {
+        const page = install({ animationFrames: "absent" })
+        const app = store()
+        const seen: number[] = []
+        const unsub = app.sub(windowSizeAtom, () =>
+            seen.push(app.get(windowSizeAtom).innerWidth),
+        )
+
+        page.setWindow({ innerWidth: 640 })
+        page.fire("window", "resize")
+        expect(seen).toEqual([640])
+
+        unsub()
+        expect(page.physical()).toBe(0)
+        app.dispose()
     })
 })
