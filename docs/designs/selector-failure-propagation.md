@@ -30,9 +30,9 @@ and Node 24.16 with `packages/valdres/test/performance/failure-propagation`:
   at the default limit of ten. A frozen V8 error's `stack` can still be
   reassigned through the accessor's setter.
 
-Only Node 24.16 and Bun 1.4.0 were tested. Chrome, Safari and SpiderMonkey were
-not. Chrome is expected to behave like Node and Safari to take the fallback
-below, but neither is verified.
+The original certification tested Node 24.16 and Bun 1.4.0. Chrome, Safari and
+SpiderMonkey were not. Chrome is expected to behave like Node and Safari to take
+the fallback below, but neither is verified.
 
 ## Changes
 
@@ -65,10 +65,34 @@ Detection invokes no application accessor or formatting hook:
   read-only limit takes the fallback. With a writable limit, any polyfill takes
   the V8 policy.
 
+### Accessor-valued stack limit exception
+
+Approved by the owner on 2026-10-16 during Bun 1.4.3 toolchain validation. When
+`Error.stackTraceLimit` is an accessor, wrappers may have no `stack` if native
+`Error` construction on that host supplies none. This applies to both origin and
+propagation wrappers, including primitive failures with no frames anywhere in
+the cause chain. Bun 1.4.3 exhibits this behavior; Bun 1.4.0 keeps frames under
+the same descriptor. The runtime selects its existing Bun policy in both cases;
+this is not selection of the V8 frameless-wrapper policy.
+
+The accessor is never invoked and its descriptor, including getter/setter
+identity and configurability, is preserved. The exception does not apply to
+default limits or read-only numeric limits, and does not change causes, error
+identity, codes, outcomes or recovery. Custom formatters still run only when a
+stack is read, if the host captured a stack. No `Error.captureStackTrace`
+dependency is introduced. Maintained tests use an independent native Error
+control in a separate process, explicitly assert stack presence or absence, and
+cover both configurable and locked accessors and formatter timing. The ordinary
+framed-stack checks are separate from this exception.
+
+This is an approved diagnostic-policy exception, not evidence that the
+historical retention timeouts have an established cause or are fixed.
+
 1. **Lazy stacks in Bun.** Wrappers make `message`, `code`, `name`, `selector`
    or `dependency`, and `cause` non-writable and non-configurable, and make the
    error non-extensible, instead of freezing it. JavaScriptCore then computes a
-   stack only when it is read.
+   stack only when it is read. The accessor-valued limit exception above permits
+   absence where native construction captures no stack.
 2. **No frames on wrappers around wrappers (V8).** A wrapper whose `cause` is
    already a selector error from this module is constructed with
    `Error.stackTraceLimit` set to 0 and restored in `finally`. The limit is

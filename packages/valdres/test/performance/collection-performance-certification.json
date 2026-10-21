@@ -4,7 +4,7 @@
     "cwd": "packages/valdres",
     "toolchain": {
         "runtime": "bun",
-        "version": "1.4.0"
+        "version": "1.4.3"
     },
     "policy": {
         "primaryGate": "deterministic-structural",

@@ -390,8 +390,11 @@ Reproduce the audit from the checked-out Git objects and published tarball (the
 isolated test run takes roughly half a minute):
 
 ```sh
-bun contracts/v1/generate-frozen-test-inventory.ts --check
+npm exec --yes --package=bun@1.4.0 -- bun contracts/v1/generate-frozen-test-inventory.ts --check
 ```
+
+Only this frozen historical audit uses Bun 1.4.0; current runtime, retention and
+other contract checks use the repository's Bun 1.4.3 pin.
 
 The generator archives the pinned source revision into a temporary directory,
 verifies its `bun.lock` Git blob and SHA-256, installs that lockfile with Bun

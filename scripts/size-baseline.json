@@ -2,17 +2,17 @@
     "schema": "valdres-package-size-budget",
     "schemaVersion": 2,
     "toolchain": {
-        "bun": "1.4.0",
+        "bun": "1.4.3",
         "gzipLevel": 6
     },
     "provenance": {
         "ordinaryBaselineCommit": "7c55be567457218fb597f9cd9658b1c71997fb83",
         "certificationBuildCount": 3,
-        "certifiedRuntimeBuildSha256": "c26a118a42dfba11cbf4d2b71b549530d808cb35bbd623b9a4711bfd81eda877"
+        "certifiedRuntimeBuildSha256": "b861c7702a2933527bc0d265c7a65a22777892a23ab0db19872cda8951dc4c50"
     },
     "policy": {
         "ordinaryTolerancePercent": 2,
-        "coreRetainingRawAllowance": 5779,
+        "coreRetainingRawAllowance": 5783,
         "coreRetainingGzipAllowance": 2322,
         "coreRetainingFixtures": [
             "atom",
@@ -45,36 +45,40 @@
     },
     "featureBudgets": {
         "dist": {
-            "raw": 388394,
-            "gzip": 115018
+            "raw": 388606,
+            "gzip": 115226
         },
         "packed": {
-            "raw": 546411,
-            "gzip": 146773
+            "raw": 546237,
+            "gzip": 146862
         },
         "fixtures": {
             "collection": {
-                "raw": 112029,
-                "gzip": 31854
+                "raw": 112033,
+                "gzip": 31856
             },
             "all-exports": {
-                "raw": 137241,
-                "gzip": 39170
+                "raw": 144607,
+                "gzip": 41234
+            },
+            "root-deep-equal": {
+                "raw": 13876,
+                "gzip": 4409
             },
             "inspect": {
                 "raw": 109928,
                 "gzip": 29785
             },
             "query": {
-                "raw": 118443,
+                "raw": 118447,
                 "gzip": 33907
             },
             "query-development": {
-                "raw": 118443,
+                "raw": 118447,
                 "gzip": 33907
             },
             "external-atom": {
-                "raw": 92940,
+                "raw": 92944,
                 "gzip": 25380
             }
         }

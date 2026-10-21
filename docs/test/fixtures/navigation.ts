@@ -195,6 +195,10 @@ const migrated = [
     "browser-reduced-transparency",
     "browser-keyboard",
     "hotkeys",
+    "browser-device-motion",
+    "browser-device-orientation",
+    "browser-geolocation",
+    "browser-screen-details",
     "browser-window",
     "browser-screen",
 ]
@@ -233,10 +237,6 @@ check(
 // ── unavailable integrations ───────────────────────────────────────────────
 const unmigrated = [
     "bandwidth",
-    "browser-device-motion",
-    "browser-device-orientation",
-    "browser-geolocation",
-    "browser-screen-details",
     "color-mode",
     "public-ip",
 ]

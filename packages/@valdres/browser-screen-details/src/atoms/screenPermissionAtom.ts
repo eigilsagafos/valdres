@@ -1,18 +1,9 @@
-import { globalAtom } from "valdres"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { screenPermissionSource } from "../lib/screenPermissionSource"
 import type { ScreenPermissionState } from "../types/ScreenPermissionState"
-import { subscribe } from "../lib/subscribe"
 
-const getInitial = (): ScreenPermissionState => {
-    if (typeof window === "undefined") return "unsupported"
-    if (typeof (window as { getScreenDetails?: unknown }).getScreenDetails !== "function")
-        return "unsupported"
-    return "prompt"
-}
-
-export const screenPermissionAtom = globalAtom<ScreenPermissionState>(
-    getInitial,
-    {
+/** Never prompts: subscribing only queries the Permissions API. */
+export const screenPermissionAtom: ExternalAtom<ScreenPermissionState> =
+    externalAtom(screenPermissionSource, {
         name: "@valdres/browser-screen-details/permission",
-        onMount: () => subscribe(),
-    },
-)
+    })

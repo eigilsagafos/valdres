@@ -43,17 +43,92 @@ const measure = (): WindowSize => {
     return last
 }
 
+/** Animation frames after the last `resize` on which the size is measured
+ *  again: the second and third, where Chromium was measured to catch up, and
+ *  one more as margin. See `subscribe`. */
+const FIRST_FOLLOW_UP_FRAME = 2
+const LAST_FOLLOW_UP_FRAME = 4
+
+const report = (failures: unknown[]): void => {
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1)
+        throw new AggregateError(failures, "Window size delivery failed")
+}
+
 export const windowSizeSource: ExternalSource<WindowSize> = {
     getSnapshot: measure,
     getServerSnapshot: () => WINDOW_SIZE_UNAVAILABLE,
     subscribe: invalidate => {
         const win = observedWindow()
         if (win === undefined) return () => {}
+
+        // Chromium (151, 154 and 155 on macOS, measured) dispatches `resize`
+        // while `outerWidth` / `outerHeight` still report the previous window
+        // bounds, and updates them without another event: never by the first
+        // animation frame after the event, usually by the second, sometimes
+        // only by the third. So every `resize` is measured at once and again
+        // on frames FIRST..LAST after it. A re-measurement only invalidates:
+        // an unchanged reading is the same snapshot and notifies nobody.
+        // Each `resize` restarts the sequence, so a burst leaves one, counted
+        // from the last event; `generation` turns any older callback that
+        // still runs into a no-op. Nothing runs while frames are suspended
+        // (a hidden tab); the sequence resumes with them.
+        const frames =
+            typeof win.requestAnimationFrame === "function" &&
+            typeof win.cancelAnimationFrame === "function"
+                ? win
+                : undefined
+        let generation = 0
+        let pending: number | undefined
+        const cancelFollowUp = () => {
+            generation++
+            if (pending !== undefined) frames?.cancelAnimationFrame(pending)
+            pending = undefined
+        }
+        const scheduleFollowUp = () => {
+            cancelFollowUp()
+            if (frames === undefined) return
+            const scheduled = generation
+            let frame = 0
+            const tick = () => {
+                if (scheduled !== generation) return
+                frame++
+                // Queue the next frame first, so a subscriber that throws
+                // cannot end the sequence early.
+                pending =
+                    frame < LAST_FOLLOW_UP_FRAME
+                        ? frames.requestAnimationFrame(tick)
+                        : undefined
+                if (frame >= FIRST_FOLLOW_UP_FRAME) invalidate()
+            }
+            pending = frames.requestAnimationFrame(tick)
+        }
+        const onResize = () => {
+            const failures: unknown[] = []
+            try {
+                scheduleFollowUp()
+            } catch (error) {
+                failures.push(error)
+            }
+            try {
+                invalidate()
+            } catch (error) {
+                failures.push(error)
+            }
+            report(failures)
+        }
+
         // `resize` is the only event for either size: browsers fire it for
         // window resizes, zoom, rotation and mobile toolbar changes. Moving a
         // window without resizing it fires nothing, which is why the window's
         // position is not part of the snapshot.
-        win.addEventListener("resize", invalidate)
-        return () => win.removeEventListener("resize", invalidate)
+        win.addEventListener("resize", onResize)
+        return () => {
+            try {
+                cancelFollowUp()
+            } finally {
+                win.removeEventListener("resize", onResize)
+            }
+        }
     },
 }

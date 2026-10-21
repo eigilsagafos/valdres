@@ -15,7 +15,10 @@
  *   one `resize`; screen: `resize`, `screen.orientation` `change`, `screen`
  *   `change` and one resolution query), shared by child scopes; snapshots
  *   shared across stores; coherent rotation; equality suppression; the
- *   resolution watch following the ratio; dispose releasing everything;
+ *   resolution watch following the ratio; the window's bounded
+ *   re-measurements on animation frames 2-4 after the last resize,
+ *   correcting an outer size that caught up late and notifying nobody
+ *   otherwise; dispose releasing every listener and pending frame;
  * - packed declarations, with and without the DOM library;
  * - all of the above against BOTH the packed workspace core + React and the
  *   published pair at the declared peer floor (`BROWSER_GEOMETRY_FLOOR`), plus
@@ -288,6 +291,13 @@ Object.defineProperty(orientation, "type", { get: () => host.type })
 Object.defineProperty(orientation, "angle", { get: () => host.angle })
 Object.defineProperty(scr, "orientation", { get: () => orientation })
 win.screen = scr
+// A frame loop the script drives: callbacks run only on frame().
+const frames = new Map()
+let frameId = 0
+win.requestAnimationFrame = callback => (frames.set(++frameId, callback), frameId)
+win.cancelAnimationFrame = id => frames.delete(id)
+const frame = () => { const due = [...frames.values()]; frames.clear(); for (const callback of due) callback(0) }
+const runFrames = count => { for (let i = 0; i < count; i++) frame() }
 const queries = []
 win.matchMedia = query => {
     const at = Number(/resolution: ([0-9.]+)dppx/.exec(query)[1])
@@ -335,8 +345,30 @@ assert.deepEqual(seen.splice(0).sort(), ["first:window", "second:window"])
 assert.equal(first.get(windowSizeAtom), second.get(windowSizeAtom))
 assert.equal(first.get(windowSizeAtom).outerWidth, 816)
 
+// The re-measurements on frames 2-4: nothing moved, so nobody is notified.
+runFrames(4)
+assert.deepEqual(seen, [])
+assert.equal(frames.size, 0, "the re-measurement sequence is bounded")
+
+// Outer size that only catches up after the event (as measured in Chromium):
+// the re-measurements after the last resize publish it, once per tree.
+host.innerWidth = 784; fire(win, "resize"); host.outerWidth = 800
+host.innerWidth = 768; fire(win, "resize"); host.outerWidth = 784
+assert.deepEqual(seen.splice(0).sort(), ["first:window", "first:window", "second:window", "second:window"])
+assert.equal(first.get(windowSizeAtom).outerWidth, 800)
+assert.equal(frames.size, 2, "one pending sequence per store tree after a burst")
+frame()
+assert.deepEqual(seen, [])
+frame()
+assert.deepEqual(seen.splice(0).sort(), ["first:window", "second:window"])
+assert.equal(first.get(windowSizeAtom).outerWidth, 784)
+runFrames(2)
+assert.deepEqual(seen, [])
+assert.equal(frames.size, 0)
+
 // Nothing changed: nobody is notified.
 fire(win, "resize"); fire(orientation, "change"); fire(scr, "change")
+runFrames(4)
 assert.deepEqual(seen, [])
 
 // Zoom: the resolution watch fires, moves to the new ratio, and keeps one listener per tree.
@@ -359,8 +391,12 @@ assert.ok(Object.isFrozen(first.get(screenAtom)))
 for (const stop of stops.splice(0, 4)) stop()
 assert.deepEqual(attached(), { "orientation:change": 1, "resolution:change": 1, "screen:change": 1, "window:resize": 1 }, "the child scope keeps its root's attachment")
 stops.push(second.sub(windowSizeAtom, () => {}))
+host.innerWidth = 760; fire(win, "resize")
+assert.equal(frames.size, 1, "only the second tree still retains the window size")
+frame()
 first.dispose(); second.dispose()
 assert.deepEqual(attached(), {}, "dispose left listeners behind")
+assert.equal(frames.size, 0, "dispose left a follow-up frame pending")
 console.log("DOM_OK")
 `
 const typesSource = (

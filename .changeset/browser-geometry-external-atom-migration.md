@@ -14,6 +14,9 @@ is a separate change, and its changeset must carry the breaking changes:
   subscription sample the platform live.
 - Snapshots are frozen and shared between stores, reused while unchanged, and
   typed `readonly`.
+- `windowSizeAtom` measures again on animation frames 2-4 after the last
+  `resize`, so an outer size that Chromium updates after the event is
+  published; unchanged re-measurements notify nobody.
 - `ScreenInfo.orientationType` is the package's own `ScreenOrientationType`
   instead of the DOM library's `OrientationType` (the same four strings).
 - `@valdres/browser-screen` also listens for Chromium's `screen` `change`, and

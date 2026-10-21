@@ -1,7 +1,7 @@
-import { selector } from "valdres"
-import { positionAtom } from "../atoms/positionAtom"
+import { selector, type Selector } from "valdres"
+import { positionAtom } from "./positionAtom"
 
-export const timestampSelector = selector(
+export const timestampSelector: Selector<number | null> = selector(
     get => get(positionAtom)?.timestamp ?? null,
     { name: "@valdres/browser-geolocation/timestamp" },
 )

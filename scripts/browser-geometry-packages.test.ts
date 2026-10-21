@@ -18,6 +18,7 @@ import {
     BROWSER_GEOMETRY_PACKAGES,
 } from "./lib/browser-geometry-packages"
 import { BROWSER_MEDIA_PACKAGES } from "./lib/browser-media-packages"
+import { BROWSER_PERMISSION_PACKAGES } from "./lib/browser-permission-packages"
 import { BROWSER_STATUS_PACKAGES } from "./lib/browser-status-packages"
 import { loadChangesetParser } from "./lib/browser-status-release-note"
 import { PUBLISHABLE_PACKAGE_DIRS } from "./lib/publishable-packages"
@@ -63,10 +64,11 @@ describe("browser-geometry lane", () => {
         }
     })
 
-    test("stays out of the media and status registries", () => {
+    test("stays out of the other browser lanes", () => {
         const other = [
             ...BROWSER_MEDIA_PACKAGES.map(pkg => `@valdres/${pkg.dir}`),
             ...BROWSER_STATUS_PACKAGES.map(pkg => pkg.name),
+            ...BROWSER_PERMISSION_PACKAGES.map(pkg => pkg.name),
         ]
         for (const name of names) expect(other).not.toContain(name)
     })
