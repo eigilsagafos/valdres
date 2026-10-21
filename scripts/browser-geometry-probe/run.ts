@@ -23,10 +23,18 @@
  *   `Emulation.setDeviceMetricsOverride` with `screenOrientation` rotates an
  *   emulated mobile screen; the engine dispatches the events itself.
  *
+ * OUTER SIZE AFTER A WINDOW RESIZE
+ *   Chromium 151, 154 and 155 on macOS dispatch `resize` while
+ *   `outerWidth` / `outerHeight` still report the previous bounds, and catch
+ *   up by the second or third animation frame with no further event. The
+ *   probe records what they were at the event and asserts that the window
+ *   size's re-measurements on frames 2-4 publish the current outer size, at
+ *   most once more per store, also after a burst of resizes. The timing is
+ *   this engine's; it is not a guarantee for others.
+ *
  * OBSERVATIONS IT RECORDS, NOT ASSERTS
- *   Platform behavior the packages cannot change: whether `outerWidth` /
- *   `outerHeight` are already current when `resize` fires (in Chromium 151
- *   and 154 on macOS they were not), and native event order.
+ *   Native event order, and how long after the last `resize` the corrected
+ *   outer size arrived.
  *
  * WHAT IT DOES NOT PROVE
  *   Orientation is emulated, not a physical rotation. Changing only the
@@ -170,7 +178,8 @@ const evaluate = async (expression: string) => {
 // are all delivered by the rendering update that follows the change.
 const settle = () =>
     evaluate(
-        "new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 50))))",
+        // Six frames: past the window size's re-measurements on frames 2-4.
+        "new Promise(r => { let n = 0; const tick = () => (++n < 6 ? requestAnimationFrame(tick) : setTimeout(r, 50)); requestAnimationFrame(tick) })",
     )
 const call = (name: string) => evaluate(`window.geometryProbe.${name}()`)
 
@@ -446,34 +455,101 @@ await step(
 )
 
 const { windowId } = await send("Browser.getWindowForTarget", { targetId })
-await step(
-    "resize the browser window itself (Browser.setWindowBounds 900x700)",
+const windowNotifications = (r: any) =>
+    r.notifications.filter(
+        (n: any) => n.store === "first" && n.state === "window",
+    )
+const outerCorrection = (r: any) => {
+    const resizes = r.natives.filter((n: any) => n.event === "window:resize")
+    const published = windowNotifications(r)
+    const last = published.at(-1)
+    return {
+        outerAtEvent: resizes.map((n: any) => n.outer),
+        published: published.map((n: any) => [
+            n.value.outerWidth,
+            n.value.outerHeight,
+        ]),
+        live: [r.live.outerWidth, r.live.outerHeight],
+        correctedAfterMs:
+            last === undefined || resizes.length === 0
+                ? null
+                : last.at - resizes.at(-1).at,
+    }
+}
+const expectOuterCorrected = (r: any) => {
+    assert.equal(r.first.size.innerWidth, r.live.innerWidth)
+    assert.equal(r.first.size.innerHeight, r.live.innerHeight)
+    assert.equal(
+        r.first.size.outerWidth,
+        r.live.outerWidth,
+        "outer width not corrected",
+    )
+    assert.equal(
+        r.first.size.outerHeight,
+        r.live.outerHeight,
+        "outer height not corrected",
+    )
+    assert.equal(
+        count(r, "first", "screen"),
+        0,
+        "a window resize notified the screen",
+    )
+    // At most the immediate reading and one correction per resize event.
+    const resizes = r.natives.filter(
+        (n: any) => n.event === "window:resize",
+    ).length
+    assert.ok(
+        count(r, "first", "window") <= resizes + 1,
+        "more publications than readings",
+    )
+    assert.equal(count(r, "first", "window"), count(r, "second", "window"))
+}
+const single = await step(
+    "resize the browser window itself (Browser.setWindowBounds 900x700): outer size corrected",
     () =>
         send("Browser.setWindowBounds", {
             windowId,
             bounds: { width: 900, height: 700, windowState: "normal" },
         }),
     r => {
-        assert.equal(r.first.size.innerWidth, r.live.innerWidth)
-        assert.equal(r.first.size.innerHeight, r.live.innerHeight)
-        assert.ok(
-            count(r, "first", "window") >= 1,
-            "the window resize did not publish",
+        expectOuterCorrected(r)
+        const correction = outerCorrection(r)
+        // When the event carried a stale outer size, the follow-up is the
+        // second publication and the only one with the current outer size.
+        if (
+            JSON.stringify(correction.outerAtEvent.at(-1)) !==
+            JSON.stringify(correction.live)
         )
-        assert.equal(
-            count(r, "first", "screen"),
-            0,
-            "a window resize notified the screen",
-        )
+            assert.equal(
+                windowNotifications(r).length,
+                2,
+                "expected immediate + corrected",
+            )
     },
 )
-const bounds = steps.at(-1) as any
-evidence.outerSizeStaleAtResize = {
-    published: [bounds.first.size.outerWidth, bounds.first.size.outerHeight],
-    live: [bounds.live.outerWidth, bounds.live.outerHeight],
-    atEvent: bounds.natives
-        .filter((n: any) => n.event === "window:resize")
-        .map((n: any) => n.outer),
+const burst = await step(
+    "three window resizes in quick succession: one corrected final reading",
+    () =>
+        Promise.all(
+            [
+                [1000, 800],
+                [950, 750],
+                [880, 640],
+            ].map(([width, height]) =>
+                send("Browser.setWindowBounds", {
+                    windowId,
+                    bounds: { width, height },
+                }),
+            ),
+        ),
+    r => {
+        expectOuterCorrected(r)
+        assert.deepEqual(outerCorrection(r).live, [880, 640])
+    },
+)
+evidence.outerSizeAfterWindowResize = {
+    single: outerCorrection(single),
+    burst: outerCorrection(burst),
 }
 evidence.steps = steps
 
@@ -503,7 +579,7 @@ if (problems.length > 0) {
     process.exit(1)
 }
 console.log(
-    `observed: outer size at resize ${JSON.stringify(evidence.outerSizeStaleAtResize)}`,
+    `outer size after window resize: ${JSON.stringify(evidence.outerSizeAfterWindowResize)}`,
 )
 console.log(
     `PASS (${version.product}, ${evidence.headless ? "headless" : "headed"}, real zoom ${evidence.realZoom ? "exercised" : "skipped"})`,

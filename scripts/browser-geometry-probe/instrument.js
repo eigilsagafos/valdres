@@ -9,7 +9,8 @@
     const targets = new Map() // target -> Map<type, Set<listener>>
     const queries = []
     const natives = []
-    const t0 = performance.now()
+    // Raw page time, comparable with the notification timestamps page.ts records.
+    const t0 = 0
     const note = (kind, type, detail) =>
         natives.push({
             at: Math.round(performance.now() - t0),

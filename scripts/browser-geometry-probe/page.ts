@@ -47,7 +47,12 @@ const dormant = store()
 const isWide = selector(get => get(windowSizeAtom).innerWidth >= 700)
 const ratio = selector(get => get(screenAtom).devicePixelRatio)
 
-type Notification = { store: string; state: string; value: unknown }
+type Notification = {
+    store: string
+    state: string
+    value: unknown
+    at: number
+}
 const notifications: Notification[] = []
 const stops: (() => void)[] = []
 const errors: string[] = []
@@ -71,6 +76,7 @@ const watch = <Value>(
                 store: name,
                 state: label,
                 value: app.get(state),
+                at: Math.round(performance.now()),
             }),
         ),
     )
