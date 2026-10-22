@@ -16,5 +16,7 @@
   "packages/@valdres/browser-device-motion",
   "packages/@valdres/browser-device-orientation",
   "packages/@valdres/browser-geolocation",
-  "packages/@valdres/browser-screen-details"
+  "packages/@valdres/browser-screen-details",
+  "packages/@valdres/browser-window",
+  "packages/@valdres/browser-screen"
 ]

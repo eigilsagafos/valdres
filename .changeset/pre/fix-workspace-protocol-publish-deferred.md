@@ -4,8 +4,6 @@
 "valdres-svelte": patch
 "valdres-vue": patch
 "@valdres/bandwidth": patch
-"@valdres/browser-screen": patch
-"@valdres/browser-window": patch
 "@valdres/color-mode": minor
 "@valdres/public-ip": patch
 "@valdres-react/color-mode": minor

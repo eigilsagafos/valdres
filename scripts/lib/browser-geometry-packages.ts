@@ -11,24 +11,25 @@
  * of listener per store tree, one of them a resolution media query it
  * re-creates as the pixel ratio moves.
  *
- * Both are tested by `scripts/check-browser-geometry.ts` and the packed gate
- * `scripts/test-browser-geometry-packed-consumer.ts`, but NOT release-eligible:
- * still Changesets-ignored and off the publishable list.
- * `scripts/browser-geometry-packages.test.ts` holds that, so release
- * enablement has to flip `releaseEligible` deliberately, in one change.
+ * Tested by ci.yaml's `browser-geometry` job (`scripts/check-browser-geometry.ts`
+ * and the packed gate `scripts/test-browser-geometry-packed-consumer.ts`), which
+ * `scripts/verify.ts` runs and `publish.needs` waits on. Both packages are
+ * release-eligible: `releaseEligible` is the single per-package claim
+ * `scripts/browser-geometry-packages.test.ts` checks against
+ * `.changeset/config.json` and `scripts/publishable-packages.json`.
  */
 export const BROWSER_GEOMETRY_PACKAGES = [
     {
         name: "@valdres/browser-window",
         dir: "packages/@valdres/browser-window",
         atom: "windowSizeAtom",
-        releaseEligible: false,
+        releaseEligible: true,
     },
     {
         name: "@valdres/browser-screen",
         dir: "packages/@valdres/browser-screen",
         atom: "screenAtom",
-        releaseEligible: false,
+        releaseEligible: true,
     },
 ] as const
 
