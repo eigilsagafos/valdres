@@ -393,7 +393,7 @@
     },
     "packages/@valdres/browser-screen": {
       "name": "@valdres/browser-screen",
-      "version": "1.0.0-beta.8",
+      "version": "1.0.0-beta.9",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -447,7 +447,7 @@
     },
     "packages/@valdres/browser-window": {
       "name": "@valdres/browser-window",
-      "version": "1.0.0-beta.8",
+      "version": "1.0.0-beta.9",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
