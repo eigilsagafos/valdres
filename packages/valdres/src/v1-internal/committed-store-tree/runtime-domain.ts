@@ -217,6 +217,9 @@ export interface OptionalCollectionVTable {
         session?: ControlFaultSession,
     ): ServedSelectorOutcome<object> | undefined
     plan(draft: object): CollectionCommitPlan | undefined
+    /** For a collection, registers `scope` as an event observer and returns
+     * the collection's event subscription key. */
+    events?(scope: object, node: AnyState): AnyState | undefined
     /** Stages reset for every row the scope owns in its draft view. */
     resetAll?(draft: object, scope: object): void
 }

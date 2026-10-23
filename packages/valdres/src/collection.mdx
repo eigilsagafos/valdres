@@ -147,7 +147,9 @@ array and never mutates an older snapshot retained by application code.
 ## Reading and writing rows
 
 Rows and collections are ordinary readonly `State` inputs for `get`, `sub`, and
-selectors. Mutate a row through Store or Transaction methods:
+selectors; a direct `sub` callback on a collection receives
+[change events](#observing-changes). Mutate a row through Store or Transaction
+methods:
 
 | Operation              | Result                                                               |
 | ---------------------- | -------------------------------------------------------------------- |
@@ -164,6 +166,109 @@ and transaction reads include staged row values and membership.
 
 See the [store API](/valdres/store) for direct, scoped, and transaction
 examples.
+
+## Observing changes
+
+`store.sub(collection, callback)` calls `callback` with one event for each row a
+committed transaction changed, as that Store sees the collection. Capture the
+events and do the work later; the callback cannot write to a Store:
+
+```ts
+import { collection, selector, store } from "valdres"
+
+interface Mutation {
+    readonly debounceCount: number
+    readonly persistedAt: number | null
+}
+
+const mutations = collection<string, Mutation>({ name: "mutations" })
+const app = store()
+const queue: Mutation[] = []
+
+const unsubscribe = app.sub(mutations, event => {
+    switch (event.type) {
+        case "added":
+            if (event.value.persistedAt === null) queue.push(event.value)
+            break
+        case "updated":
+            if (event.value.debounceCount > event.previous.debounceCount)
+                queue.push(event.value)
+            break
+        case "deleted":
+        case "reordered":
+            break
+    }
+    scheduleDrain() // application code: drains `queue` in a later operation
+})
+```
+
+| Event                                       | When                                                 |
+| ------------------------------------------- | ---------------------------------------------------- |
+| `{ type: "added", key, value }`             | The row was absent before the transaction and is now |
+| `{ type: "updated", key, previous, value }` | The row stayed present with a different value        |
+| `{ type: "deleted", key, previous }`        | The row was present before and is now absent         |
+| `{ type: "reordered" }`                     | Rows present before and after changed relative order |
+
+**Net changes, not writes.** Each key is compared between its value before the
+transaction and its final value, with `Object.is`, the same equality row
+subscribers use. A key gets at most one event per transaction: a row added and
+then updated is one `added` with the final value, one updated twice is one
+`updated` from the original value, and a row added then deleted, or set back to
+its original value, produces nothing. A transaction that throws produces
+nothing.
+
+**Order.** Row events follow the order in which the transaction first changed
+each row, in the subscribed Store or one of its ancestors. A later write to the
+same row does not move it, and a write that leaves a row as it already was is
+not a change. Additions, updates, and deletions share that one order. A
+`reordered` event comes last, at most once per transaction. Rows deleted or
+added do not count as reordering; a row that is deleted and set again in one
+transaction moves to the end, which does. `reordered` carries no order: read
+`get(collection)` when you need it. This is the order of the writes, not a
+dependency order: Valdres does not look inside row values.
+
+**One transaction at a time.** Separate transactions are delivered separately,
+in commit order, even within the same tick. A
+[`settle`](/valdres/store#writing-during-a-change-settle) commit is its own
+transaction: its events follow those of the commit that triggered it.
+
+**Scopes.** A scoped Store sees its effective collection. Writes to a parent
+reach a child's subscribers unless the child overrides that row; writes to a
+child never reach the parent's subscribers. `reset` and `resetAll` produce
+events only for the values and order they actually change. `resetAll` changes
+the rows the scope owned in the order it stages them: in the parent's current
+order when the scope has child scopes, otherwise in the order the scope first
+wrote them; rows the transaction already changed keep their earlier position.
+Across scopes, an ancestor's subscribers are notified before its descendants'.
+
+**Delivery.** Events are delivered synchronously, with the other subscribers,
+before `set` or `txn` returns. Each event is a frozen object shared by every
+subscriber; values are the row values themselves, not copies, so treat them as
+immutable. An event describes its own transaction: by the time the callback
+runs, `get` may already return a newer value written by a later `settle` commit,
+so use the event's values. The callback follows the ordinary
+[subscriber rules](/valdres/store#subscribing-to-changes): it may read with
+`get` and unsubscribe, and it cannot write, subscribe, or open a transaction.
+Each event is a separate call, so a throwing callback still receives the
+remaining events, and the other subscribers still run; failures surface as one
+`SubscriberNotificationError` after the commit and are not retried.
+
+**Lifetime.** A new subscription receives only later transactions, never earlier
+ones; read `get(collection)` once to start from the current rows. After
+unsubscribing, or disposing the scope, no further event is delivered, including
+the rest of a transaction's events.
+
+To observe membership and order only, subscribe to a selector that reads the
+collection, or use the `notify` handler form. Neither is called for updates that
+keep the same rows in the same order. Framework bindings such as
+`useValue(collection)` observe membership the same way:
+
+```ts
+const mutationMembership = selector(get => get(mutations))
+app.sub(mutationMembership, () => {
+    // membership or order changed
+})
+```
 
 ## Errors
 
@@ -190,6 +295,7 @@ commits none of its Atom or collection-row writes.
 | `CollectionValue`                                             | Any non-`undefined` value; thenables are rejected when written         |
 | `CollectionRow<Key, Value>`                                   | Readonly `State<Value \| undefined>` with `kind` and canonical `key`   |
 | `Collection<Key, Value, Input = Key, Indexes = never>`        | Callable readonly membership State                                     |
+| `CollectionEvent<Key, Value>`                                 | One committed change delivered to a direct `sub` callback              |
 | `CollectionOptions<Key, Value, Input = Key, Indexes = never>` | Definition options; optional `name`; rich `Input` requires `encodeKey` |
 
 ## See also

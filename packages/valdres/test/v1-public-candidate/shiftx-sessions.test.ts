@@ -325,9 +325,10 @@ class ShiftXSessionsAdapter {
                               .order,
             })
         })
-        this.#unsubscribeMembership = target.sub(states.sessions, () =>
-            this.#onMembershipChange(),
-        )
+        // Membership only: a direct collection callback would receive row events.
+        this.#unsubscribeMembership = target.sub(states.sessions, {
+            notify: () => this.#onMembershipChange(),
+        })
 
         // Bootstrap already-present rows outside notification quarantine.
         for (const row of existing) {
@@ -888,10 +889,9 @@ describe("ShiftX sessions collection acceptance", () => {
         adapter.ensureSubscribed("B")
         let membershipCalls = 0
         let derivedCalls = 0
-        const unsubscribeMembership = adapter.target.sub(
-            states.sessions,
-            () => membershipCalls++,
-        )
+        const unsubscribeMembership = adapter.target.sub(states.sessions, {
+            notify: () => membershipCalls++,
+        })
         const unsubscribeDerived = adapter.target.sub(
             states.sessionsByUser,
             () => derivedCalls++,

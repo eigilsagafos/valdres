@@ -138,6 +138,22 @@ interface CollectionScopeSidecar {
     liveRowViews: WeakHandleSet<RowViewRecord> | undefined
     memberships: WeakMap<CollectionHandle, MembershipRecord> | undefined
     liveMemberships: WeakHandleSet<MembershipRecord> | undefined
+    /** Event channels this scope is registered in, for disposal. */
+    eventChannels?: Set<EventChannel> | undefined
+}
+
+/** One collection's subscription key for direct callback subscribers in one
+ * StoreTree. `scopes` may hold scopes whose subscriptions ended; the tree's
+ * next plan for the collection prunes them. */
+interface EventChannel {
+    readonly scopes: Set<StoreScopeNode>
+}
+
+/** A subscribed scope's events; as a commit source, it makes an event-only
+ * commit settle and notify. */
+interface EventDelivery extends CollectionCommitSource {
+    readonly scope: StoreScopeNode
+    readonly events: readonly object[]
 }
 
 interface RowApplyPlan {
@@ -195,6 +211,7 @@ interface ScopedCollectionCommitPlan extends CollectionCommitPlan {
         | { publish(): readonly CollectionCommitSource[] }
         | undefined
     readonly orderedNodes: readonly MembershipPlanNode[] | undefined
+    readonly events: readonly EventDelivery[] | undefined
 }
 
 interface PresenceEvent {
@@ -204,6 +221,24 @@ interface PresenceEvent {
     readonly collection: CollectionHandle
     readonly kind: PresenceEventKind
     readonly sequence: number
+}
+
+const REORDERED = Object.freeze({ type: "reordered" })
+
+/** Whether rows present in both arrays appear in a different relative order. */
+const survivorsReordered = (
+    before: readonly CollectionRowHandle[],
+    after: readonly CollectionRowHandle[],
+): boolean => {
+    const kept = new Set(after)
+    const had = new Set(before)
+    let index = 0
+    for (const row of before) {
+        if (!kept.has(row)) continue
+        while (!had.has(after[index]!)) index++
+        if (after[index++] !== row) return true
+    }
+    return false
 }
 
 const BASELINE_BIRTH = Symbol("collection baseline birth")
@@ -521,6 +556,12 @@ export const createCollectionKernel = (
     let indexes: CollectionIndexRuntime | undefined
     const lanes = new WeakMap<TreeDraft, DraftLane>()
     const scopeSidecars = new WeakMap<StoreScopeNode, CollectionScopeSidecar>()
+    const eventChannels = new WeakMap<
+        object,
+        WeakMap<CollectionHandle, EventChannel>
+    >()
+    /** Registered event scopes across every channel; zero skips event work. */
+    let eventScopes = 0
     let membershipRebuildTraceForTest: object[] | undefined
     let membershipPlacementTraceForTest:
         | { coordinates: number; states: number }
@@ -616,6 +657,50 @@ export const createCollectionKernel = (
         })
     }
     const readBaseline = readBaselineOverride ?? readCommittedBaseline
+
+    /** Committed effective value; undefined is absent. */
+    const committedValue = (
+        scope: StoreScopeNode,
+        row: CollectionRowHandle,
+    ): unknown => {
+        for (
+            let current: StoreScopeNode | undefined = scope;
+            current !== undefined;
+            current = current.parent
+        ) {
+            const local = committedLocal(current, row)
+            if (local.kind === "present") return local.value
+            if (local.kind === "absent") return undefined
+        }
+        return undefined
+    }
+
+    /** Final effective value of a draft; undefined is absent. */
+    const finalValue = (
+        lane: DraftLane,
+        scope: StoreScopeNode,
+        row: CollectionRowHandle,
+    ): unknown => {
+        for (
+            let current: StoreScopeNode | undefined = scope;
+            current !== undefined;
+            current = current.parent
+        ) {
+            const local =
+                lane.byScope.get(current)?.get(row)?.final ??
+                committedLocal(current, row)
+            if (local.kind === "present") return local.value
+            if (local.kind === "absent") return undefined
+        }
+        return undefined
+    }
+
+    const releaseEventScope = (
+        channel: EventChannel,
+        scope: StoreScopeNode,
+    ): void => {
+        if (channel.scopes.delete(scope)) eventScopes--
+    }
 
     const draftLocal = (
         lane: DraftLane,
@@ -2776,6 +2861,132 @@ export const createCollectionKernel = (
             node.finalRows = node.beforeRows
             node.membershipChangedFromBefore = false
         }
+
+        /** Whether rows present before and after this draft change relative
+         * order in `node`'s membership. */
+        const reorders = (node: MembershipPlanNode | undefined): boolean => {
+            if (!node?.membershipChangedFromBefore) return false
+            // An ordered patch leaves finalRows unset; it is rebuilt below.
+            let after = node.finalRows
+            const patch = node.orderedPatch
+            if (node.rebase === undefined && node.follower !== true) {
+                // Without a restored order, only a row that left and returned
+                // within this draft moves among the surviving rows.
+                if (patch === undefined) {
+                    let returned = false
+                    for (const placement of placementsFor(node).values())
+                        if (
+                            placement.baselinePresent &&
+                            typeof placement.birth === "number"
+                        ) {
+                            returned = true
+                            break
+                        }
+                    if (!returned) return false
+                } else {
+                    const removed = new Set(patch.removals)
+                    if (!patch.births.some(row => removed.has(row)))
+                        return false
+                    after = [
+                        ...node.beforeRows.filter(row => !removed.has(row)),
+                        ...patch.births,
+                    ]
+                }
+            }
+            return (
+                after !== undefined &&
+                survivorsReordered(node.beforeRows, after)
+            )
+        }
+
+        // Net row events for each subscribed scope: a row's committed and
+        // final effective values in that scope, in the order of its first
+        // staged change in the scope or an ancestor; then any reorder.
+        let events: EventDelivery[] | undefined
+        const channels =
+            eventScopes === 0
+                ? undefined
+                : eventChannels.get(
+                      (
+                          lane.planOrder[0]?.scope ??
+                          lane.rebased?.keys().next().value
+                      )?.coordinator as object,
+                  )
+        if (channels !== undefined)
+            for (const { collection } of collectionSlots) {
+                const channel = channels.get(collection)
+                if (channel === undefined) continue
+                for (const scope of channel.scopes)
+                    if (
+                        scope.status !== "live" ||
+                        !scope.coordinator.hasSubscription(
+                            scope,
+                            channel as unknown as AnyState,
+                        )
+                    ) {
+                        releaseEventScope(channel, scope)
+                        scopeSidecars.get(scope)?.eventChannels?.delete(channel)
+                    }
+                // Ancestors notify before descendants; otherwise scopes keep
+                // the order in which they first subscribed.
+                let scopes: Iterable<StoreScopeNode> = channel.scopes
+                if (channel.scopes.size > 1) {
+                    const depth = (scope: StoreScopeNode): number => {
+                        let count = 0
+                        while ((scope = scope.parent!) !== undefined) count++
+                        return count
+                    }
+                    scopes = [...channel.scopes]
+                        .map(scope => ({ scope, depth: depth(scope) }))
+                        .sort((first, second) => first.depth - second.depth)
+                        .map(entry => entry.scope)
+                }
+                for (const scope of scopes) {
+                    let scopeEvents: object[] | undefined
+                    let seen: Set<CollectionRowHandle> | undefined
+                    for (const coordinate of lane.planOrder) {
+                        if (
+                            coordinate.collection !== collection ||
+                            coordinate.final === undefined ||
+                            (coordinate.scope !== scope &&
+                                !isDescendantOf(scope, coordinate.scope))
+                        )
+                            continue
+                        const row = coordinate.row
+                        // A non-root scope can meet one row at several scopes.
+                        if (scope.parent !== undefined) {
+                            if ((seen ??= new Set()).has(row)) continue
+                            seen.add(row)
+                        }
+                        const previous = committedValue(scope, row)
+                        const value = finalValue(lane, scope, row)
+                        if (Object.is(previous, value)) continue
+                        const key = (row as { readonly key: unknown }).key
+                        ;(scopeEvents ??= []).push(
+                            Object.freeze(
+                                previous === undefined
+                                    ? { type: "added", key, value }
+                                    : value === undefined
+                                      ? { type: "deleted", key, previous }
+                                      : {
+                                            type: "updated",
+                                            key,
+                                            previous,
+                                            value,
+                                        },
+                            ),
+                        )
+                    }
+                    if (reorders(nodesByScope.get(scope)?.get(collection)))
+                        (scopeEvents ??= []).push(REORDERED)
+                    if (scopeEvents !== undefined)
+                        (events ??= []).push({
+                            scope,
+                            atom: channel as unknown as AnyState,
+                            events: scopeEvents,
+                        })
+                }
+            }
         let indexPlan: ScopedCollectionCommitPlan["indexPlan"]
         const rebuilt =
             lane.rebased === undefined
@@ -2904,15 +3115,17 @@ export const createCollectionKernel = (
             commit: commitPlan,
             indexPlan,
             orderedNodes,
+            events,
             historyMarks,
             rows: Object.freeze(rows),
             rowSettlements: Object.freeze(rowSettlements),
             membershipInstalls: Object.freeze(membershipInstalls),
             membershipSettlements: Object.freeze(membershipSettlements),
-            sources: Object.freeze([
-                ...rowSettlements,
-                ...membershipSettlements,
-            ]),
+            sources: Object.freeze(
+                events === undefined
+                    ? [...rowSettlements, ...membershipSettlements]
+                    : [...rowSettlements, ...membershipSettlements, ...events],
+            ),
         }
         return plan
     }
@@ -3127,6 +3340,9 @@ export const createCollectionKernel = (
                 record.atom as AnyState,
             )
         }
+        if (plan.events !== undefined)
+            for (const { scope, atom, events } of plan.events)
+                scope.coordinator.reachSubscriptionTarget(scope, atom, events)
         const indexSources = plan.indexPlan?.publish()
         if (indexSources?.length) return [...plan.sources, ...indexSources]
         return plan.sources.length ? plan.sources : undefined
@@ -3146,6 +3362,10 @@ export const createCollectionKernel = (
         indexes?.dispose(scope)
         const sidecar = scopeSidecars.get(scope)
         if (sidecar === undefined) return
+        sidecar.eventChannels?.forEach(channel =>
+            releaseEventScope(channel, scope),
+        )
+        sidecar.eventChannels = undefined
         sidecar.liveRowViews?.forEach(record => {
             detachRowView(record)
             record.inheritingChildren.clear()
@@ -3296,6 +3516,26 @@ export const createCollectionKernel = (
             return record.served
         },
         plan: planCommit,
+        events: (scopeValue: object, node: AnyState): AnyState | undefined => {
+            if (!bindings.lookupCollection(node)) return undefined
+            const scope = scopeValue as StoreScopeNode
+            let channels = eventChannels.get(scope.coordinator)
+            if (channels === undefined) {
+                channels = new WeakMap()
+                eventChannels.set(scope.coordinator, channels)
+            }
+            let channel = channels.get(node)
+            if (channel === undefined) {
+                channel = { scopes: new Set() }
+                channels.set(node, channel)
+            }
+            if (!channel.scopes.has(scope)) {
+                channel.scopes.add(scope)
+                eventScopes++
+                ;(sidecarFor(scope).eventChannels ??= new Set()).add(channel)
+            }
+            return channel as unknown as AnyState
+        },
         resetAll: (draftValue: object, scopeValue: object): void =>
             resetAllRows(
                 draftValue as TreeDraft,

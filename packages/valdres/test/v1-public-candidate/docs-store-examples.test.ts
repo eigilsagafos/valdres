@@ -346,16 +346,26 @@ describe("docs: store", () => {
         ])
         draft.delete(movies("a"))
         let notified = 0
-        const stop = draft.sub(movies, () => notified++)
+        const membership = selector(get => get(movies))
+        const stop = draft.sub(membership, () => notified++)
+        const events: unknown[] = []
+        const stopEvents = draft.sub(movies, event => events.push(event))
         root.txn(tx => {
             const cursor = tx.scope(draft)
             cursor.resetAll()
             for (const [key, value] of snapshot) cursor.set(movies(key), value)
         })
         stop()
+        stopEvents()
         expect(keys(draft)).toEqual(["a", "b", "c", "d", "e"])
         expect(draft.get(movies("c"))).toBe("C")
         expect(notified).toBe(1)
+        // One commit: its net changes against the old contents.
+        expect(events).toEqual([
+            { type: "added", key: "a", value: "a" },
+            { type: "updated", key: "c", previous: "c", value: "C" },
+            { type: "added", key: "e", value: "E" },
+        ])
         expect(root.scope("draft")).toBe(draft)
     })
 

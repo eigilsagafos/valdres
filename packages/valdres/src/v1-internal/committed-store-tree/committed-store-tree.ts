@@ -149,6 +149,9 @@ interface SubscriptionTarget {
     reachedEpoch: number
     /** Live reaction registrations in this target's list. */
     reactions: number
+    /** A collection event key's events reached in the running boundary, in
+     * commit order. */
+    events: readonly unknown[] | undefined
 }
 
 /** One `sub` registration. A `settle` handler is its `reaction`; without a
@@ -166,6 +169,19 @@ export interface SubscriptionRegistration {
     previous: SubscriptionRegistration | undefined
     next: SubscriptionRegistration | undefined
 }
+
+/** One subscriber attempt per collection event. Created outside the capture
+ * loop so ordinary registrations allocate no closure context; unsubscribe or
+ * disposal skips the registration's remaining events. */
+const eventAttempt =
+    (
+        registration: SubscriptionRegistration,
+        callback: SubscriberCallback,
+        event: unknown,
+    ): SubscriberCallback =>
+    () =>
+        registration.target !== undefined &&
+        (callback as (event: unknown) => unknown)(event)
 
 const createUnsubscribe = (
     registration: SubscriptionRegistration,
@@ -943,6 +959,7 @@ class CommittedStoreTreeHost
         scope: StoreScopeNode,
         state: State<Value>,
         handlers: SubscriberCallback | SubscriptionHandlers<unknown>,
+        events = typeof handlers === "function",
     ): () => void {
         const node = state as unknown as AnyState
         let session: SelectorEvaluationSession<AnyState> | undefined
@@ -1016,6 +1033,15 @@ class CommittedStoreTreeHost
                     )
                 }
             }
+            // A direct callback on a collection observes its committed events
+            // through the collection's event key instead of its value.
+            const key =
+                (events &&
+                    collectionSource(this.#domain, node)?.events?.(
+                        scope,
+                        node,
+                    )) ||
+                node
             let byState = targets.get(scope)
             if (byState === undefined) {
                 byState = new Map()
@@ -1029,18 +1055,19 @@ class CommittedStoreTreeHost
                     )
                 }
             }
-            let target = byState.get(node)
+            let target = byState.get(key)
             if (target === undefined) {
                 target = {
                     host: this,
                     scope,
-                    state: node,
+                    state: key,
                     head: undefined,
                     tail: undefined,
                     reachedEpoch: 0,
                     reactions: 0,
+                    events: undefined,
                 }
-                byState.set(node, target)
+                byState.set(key, target)
                 if (this.instrumented) {
                     this.recordCounter(
                         StoreTreeCounterId.subscriptionTargetsCreated,
@@ -2736,6 +2763,12 @@ class CommittedStoreTreeHost
 
     clearNotificationSettlement(): void {
         this.#notificationEpoch = 0
+        // Undelivered collection events end with their boundary.
+        if (this.#notificationTarget?.events)
+            this.#notificationTarget.events = undefined
+        if (this.#remainingNotificationTargets !== undefined)
+            for (const target of this.#remainingNotificationTargets)
+                if (target.events) target.events = undefined
         this.#notificationTarget = undefined
         this.#remainingNotificationTargets = undefined
         // Every boundary exit comes through here, so no queue outlives it.
@@ -2745,10 +2778,16 @@ class CommittedStoreTreeHost
         for (const registration of queue) registration.pending = false
     }
 
-    reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void {
+    reachSubscriptionTarget(
+        scope: StoreScopeNode,
+        state: AnyState,
+        events?: readonly unknown[],
+    ): void {
         const epoch = this.#notificationEpoch
         const target = this.#subscriptionTargets?.get(scope)?.get(state)
         if (epoch === 0 || target === undefined) return
+        if (events !== undefined)
+            target.events = target.events?.concat(events) ?? events
         if (target.reactions !== 0) this.#queueReactions(target)
         if (target.reachedEpoch === epoch) return
         target.reachedEpoch = epoch
@@ -2793,6 +2832,15 @@ class CommittedStoreTreeHost
         }
         let firstCallback: SubscriberCallback | undefined
         let snapshot: SubscriberCallback[] | undefined
+        const push = (callback: SubscriberCallback): void => {
+            if (firstCallback === undefined) {
+                firstCallback = callback
+            } else if (snapshot === undefined) {
+                snapshot = [firstCallback, callback]
+            } else {
+                snapshot.push(callback)
+            }
+        }
         const capture = (target: SubscriptionTarget): void => {
             let registration = target.head
             while (registration !== undefined) {
@@ -2800,13 +2848,10 @@ class CommittedStoreTreeHost
                     ? registration.callback
                     : this.#external.notificationCallback(registration)
                 if (callback !== undefined) {
-                    if (firstCallback === undefined) {
-                        firstCallback = callback
-                    } else if (snapshot === undefined) {
-                        snapshot = [firstCallback, callback]
-                    } else {
-                        snapshot.push(callback)
-                    }
+                    if (target.events === undefined) push(callback)
+                    else
+                        for (const event of target.events)
+                            push(eventAttempt(registration, callback, event))
                 }
                 registration = registration.next
             }
@@ -3177,10 +3222,10 @@ class CommittedStoreTreeFacade implements CommittedStoreTree {
         trace?: InternalStoreTreeTrace,
     ) {
         this.get = state => host.get(scope, state)
-        this.sub = (
+        this.sub = ((
             state: State<unknown>,
             handlers: (() => void) | SubscriptionHandlers<unknown>,
-        ) => host.sub(scope, state, handlers)
+        ) => host.sub(scope, state, handlers)) as CommittedStoreTree["sub"]
         this.set = ((
             target: Atom<unknown> | CollectionRow<any, any>,
             value: unknown,
@@ -3395,7 +3440,13 @@ export const createDomainAdapter = (
                 assertStoreOperationAllowed(records, "adapter subscribe")
                 throw new TypeError("subscribe requires a valid Store")
             }
-            return value.sub(state, callback)
+            // Adapters observe a collection's value (its rows), not its events.
+            return (scope.coordinator as CommittedStoreTreeHost).sub(
+                scope,
+                state,
+                callback,
+                false,
+            )
         },
         readHydrationSnapshot: <Value>(
             value: CommittedStoreTree,

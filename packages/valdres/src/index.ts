@@ -88,6 +88,7 @@ export const UndefinedCollectionValueError: typeof v1.UndefinedCollectionValueEr
 // them in new aliases, so consumer declaration emit can name them via "valdres".
 export type { Atom, CollectionRow, Selector }
 export type {
+    CollectionEvent,
     State,
     Store,
     Transaction,

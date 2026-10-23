@@ -212,9 +212,12 @@ export const buildWorkload = (
     const subscribe = (scope, id, state, coherent) => {
         counts.set(id, 0)
         stops.push(
-            scope.sub(state, () => {
-                counts.set(id, counts.get(id) + 1)
-                if (coherent) coherent(scope)
+            // notify observes each State's value: membership for collections.
+            scope.sub(state, {
+                notify: () => {
+                    counts.set(id, counts.get(id) + 1)
+                    if (coherent) coherent(scope)
+                },
             }),
         )
     }

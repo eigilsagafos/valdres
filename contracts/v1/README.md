@@ -183,7 +183,13 @@ SubscriberNotificationError           VALDRES_SUBSCRIBER_NOTIFICATION
 ```
 
 `Store.sub(state, callback)` creates an independent zero-argument invalidation
-registration and returns an idempotent unsubscribe. Registration performs the
+registration and returns an idempotent unsubscribe. The one exception is a
+direct function callback on a collection: it receives one frozen
+`CollectionEvent` per call, the committed net row changes (`added`, `updated`,
+`deleted`) of each transaction in the subscribed Store's effective view,
+ordered by first staged change, then at most one `reordered`. The handler form,
+selectors, and the adapter `subscribe` seam keep value (membership) semantics
+on collections. Registration performs the
 same outcome materialization as `get`, but catches the public read throw of a
 successfully materialized ordinary current error outcome so it remains
 subscribable; only admission, disposal, or internal-publication failure
