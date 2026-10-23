@@ -291,6 +291,9 @@ interface DraftCoordinate {
     final: FinalRowIntent | undefined
     finalOperation: CollectionMutationKind | undefined
     enablingBirth: EnablingBirth | undefined
+    /** In `DraftLane.eventOrder`: a staged write changed the row's value or
+     * presence in this coordinate's scope. */
+    eventOrdered: boolean
 }
 
 interface MembershipMemo {
@@ -344,6 +347,10 @@ interface DraftLane {
     >
     nextDiscoveryIndex: number
     hasAcceptedIntent: boolean
+    /** Coordinates in the order of their first value or presence change, for
+     * collection events. Ownership-only writes (an override or reset that keeps
+     * the inherited value, a deletion of an absent row) do not enter it. */
+    eventOrder?: DraftCoordinate[]
     rebased?: Map<StoreScopeNode, RebaseMarker>
     /** Every scope explicitly reset in this draft, including resets that
      * restore no collection yet; `rebased` holds those that restore one. */
@@ -1104,6 +1111,7 @@ export const createCollectionKernel = (
         }
         lane.byScope.clear()
         lane.planOrder.length = 0
+        if (lane.eventOrder !== undefined) lane.eventOrder.length = 0
         lane.history.length = 0
         for (const byScope of lane.historyByCollectionScope.values()) {
             for (const history of byScope.values()) history.length = 0
@@ -1227,6 +1235,7 @@ export const createCollectionKernel = (
             final: undefined,
             finalOperation: undefined,
             enablingBirth: undefined,
+            eventOrdered: false,
         }
         coordinates.set(row, coordinate)
         let rowLane = lane.byRow.get(row)
@@ -1316,6 +1325,14 @@ export const createCollectionKernel = (
         if (coordinate.planIndex === undefined) {
             coordinate.planIndex = lane.planOrder.length
             lane.planOrder.push(coordinate)
+        }
+        if (
+            eventScopes !== 0 &&
+            !coordinate.eventOrdered &&
+            !sameOutcome(beforeEffective, effective)
+        ) {
+            coordinate.eventOrdered = true
+            ;(lane.eventOrder ??= []).push(coordinate)
         }
         coordinate.final = final
         coordinate.finalOperation = operation
@@ -2924,7 +2941,8 @@ export const createCollectionKernel = (
 
         // Net row events for each subscribed scope: a row's committed and
         // final effective values in that scope, in the order of its first
-        // staged change in the scope or an ancestor; then any reorder.
+        // staged value or presence change in the scope or an ancestor; then any
+        // reorder.
         let events: EventDelivery[] | undefined
         const channels =
             eventScopes === 0
@@ -2965,7 +2983,7 @@ export const createCollectionKernel = (
                 for (const scope of scopes) {
                     let scopeEvents: object[] | undefined
                     let seen: Set<CollectionRowHandle> | undefined
-                    for (const coordinate of lane.planOrder) {
+                    for (const coordinate of lane.eventOrder ?? []) {
                         if (
                             coordinate.collection !== collection ||
                             coordinate.final === undefined ||

@@ -218,14 +218,17 @@ its original value, produces nothing. A transaction that throws produces
 nothing.
 
 **Order.** Row events follow the order in which the transaction first changed
-each row, in the subscribed Store or one of its ancestors. A later write to the
-same row does not move it, and a write that leaves a row as it already was is
-not a change. Additions, updates, and deletions share that one order. A
-`reordered` event comes last, at most once per transaction. Rows deleted or
-added do not count as reordering; a row that is deleted and set again in one
-transaction moves to the end, which does. `reordered` carries no order: read
-`get(collection)` when you need it. This is the order of the writes, not a
-dependency order: Valdres does not look inside row values.
+each row's value or presence, in the subscribed Store or one of its ancestors. A
+later write to the same row does not move it. A write that leaves the row's
+value and presence as they were does not count, even if it changes the scope's
+own override: setting the value a row already has, deleting a row that is
+already absent, or a scoped `set` or `reset` that keeps the inherited value.
+Additions, updates, and deletions share that one order. A `reordered` event
+comes last, at most once per transaction. Rows deleted or added do not count as
+reordering; a row that is deleted and set again in one transaction moves to the
+end, which does. `reordered` carries no order: read `get(collection)` when you
+need it. This is the order of the writes, not a dependency order: Valdres does
+not look inside row values.
 
 **One transaction at a time.** Separate transactions are delivered separately,
 in commit order, even within the same tick. A
@@ -235,13 +238,13 @@ transaction: its events follow those of the commit that triggered it.
 **Scopes.** A scoped Store sees its effective collection. Writes to a parent
 reach a child's subscribers unless the child overrides that row; writes to a
 child never reach the parent's subscribers. `reset` and `resetAll` produce
-events only for the values and order they actually change. The rows
-`resetAll` changes follow the parent's current order, then rows the parent does
-not have, in the order the scope acquired them; rows the transaction already
-changed keep their earlier position. Subscribers are notified in the order the
-update reached them; within one transaction and collection, an ancestor's
-subscribers come before its descendants', and scopes at the same depth follow
-the order in which their current subscription began.
+events only for the values and order they actually change. The rows `resetAll`
+changes follow the parent's current order, then rows the parent does not have,
+in the order the scope acquired them; rows the transaction already changed keep
+their earlier position. Subscribers are notified in the order the update reached
+them; within one transaction and collection, an ancestor's subscribers come
+before its descendants', and scopes at the same depth follow the order in which
+their current subscription began.
 
 **Delivery.** Events are delivered synchronously, with the other subscribers,
 before `set` or `txn` returns. Each event is a frozen object shared by every
@@ -260,10 +263,17 @@ ones; read `get(collection)` once to start from the current rows. After
 unsubscribing, or disposing the scope, no further event is delivered, including
 the rest of a transaction's events.
 
-To observe membership and order only, subscribe to a selector that reads the
-collection, or use the `notify` handler form. Neither is called for updates that
-keep the same rows in the same order. Framework bindings such as
-`useValue(collection)` observe membership the same way:
+Only a function passed directly to `sub` receives events. Every other way of
+observing a collection sees its membership and order only, and is not called for
+updates that keep the same rows in the same order:
+
+| Subscription                                     | Receives                                                 |
+| ------------------------------------------------ | -------------------------------------------------------- |
+| `store.sub(collection, event => …)`              | One `CollectionEvent` per call                           |
+| `store.sub(collection, { notify })`              | No argument; membership or order changed                 |
+| `store.sub(collection, { settle, notify })`      | `settle` and `notify` run on membership or order changes |
+| `store.sub(selector(get => get(collection)), …)` | No argument; membership or order changed                 |
+| `useValue(collection)` and other bindings        | The current rows, on membership or order changes         |
 
 ```ts
 const mutationMembership = selector(get => get(mutations))

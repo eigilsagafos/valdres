@@ -47,13 +47,17 @@ id or replay.
   subscriptions use: absent to present is `added`, present to a different value
   is `updated` with both values, present to absent is `deleted`, and anything
   else produces no row event. At most one row event per key per transaction.
-- **Order.** Row events follow the order of each row's first staged change in
-  the subscribed scope or one of its ancestors (the collection draft's
-  `planOrder`). A staged write that leaves the written scope's draft local and
-  effective value unchanged is not a change; later writes never move a row. All
-  three row types share one order; there is no deletion phase. A delete of an
-  absent root row stages a deletion marker and counts as a change for ordering,
-  though it produces no event by itself.
+- **Order.** Row events follow the order of each row's first staged value or
+  presence change in the subscribed scope or one of its ancestors: the first
+  staged write after which the written scope's effective value differs (by
+  `Object.is`) from before it. Ownership-only writes do not reserve a position:
+  deleting an absent row (a root no-op or a child tombstone), an override equal
+  to the inherited value, or a reset of an override equal to the inherited
+  value. Later writes never move a row. All three row types share one order;
+  there is no deletion phase. The kernel's staging `planOrder` (which also
+  admits ownership-only writes and shapes `resetAll` staging) is unchanged; the
+  draft keeps a separate `eventOrder`, filled only while an event subscriber
+  exists.
 - **Reorder.** At most one `reordered`, after the row events, when rows present
   before and after the transaction change relative order: a row deleted and set
   again in the transaction, or order restored by `resetAll`. Additions and
@@ -184,8 +188,12 @@ write are all collected (the pre-review candidate retained all 200).
 Sizes (final candidate, pinned Bun 1.4.3): core-retaining `atom-selector-store`
 72,439 raw / 19,733 gzip (+372 / +142 over the current allowance; the host
 routing, accumulation, per-event attempts, event-only boundary trigger and
-boundary cleanup), `collection` 115,119 / 32,738 (+3,086 / +882), packed
-tarball 553,419 / 149,255 (+7,182 / +2,393).
+boundary cleanup), `collection` 115,269 / 32,791 (+3,236 / +935), packed
+tarball 553,721 / 149,465 (+7,484 / +2,603). The first-value-change ordering
+fix left the core fixture unchanged; an A/B of the previous candidate against
+the fix on the affected lanes (single updates, 1,000-row and add/delete
+transactions, child reads, `resetAll`, with and without an event subscriber)
+stayed within the noise floor on both engines.
 
 ## Proposed approvals (not applied)
 
@@ -195,11 +203,11 @@ in the handoff applies it:
 - `scripts/size-baseline.json`: `coreRetainingRawAllowance` 5783 → 6155 and
   `coreRetainingGzipAllowance` 2322 → 2464 (exact overage of
   `atom-selector-store` against its immutable 2% ceilings 66,284 / 17,269);
-  feature budgets to measured values: dist 393,876 / 116,980, packed
-  553,419 / 149,255, collection 115,119 / 32,738, query and query-development
-  121,534 / 34,810, all-exports 147,694 / 42,182, inspect 110,298 / 29,959,
+  feature budgets to measured values: dist 394,178 / 117,072, packed
+  553,721 / 149,465, collection 115,269 / 32,791, query and query-development
+  121,684 / 34,866, all-exports 147,844 / 42,211, inspect 110,298 / 29,959,
   external-atom 93,316 / 25,535; `certifiedRuntimeBuildSha256`
-  `baaadfafdb12ed3e01660ecbd6a8c7362d107129430f392fe719e31752c0e4df`.
+  `92653ac8afbe88a189218cb308a26de3d83ae6db174b1abfdd6624a0b82ae6df`.
   `scripts/toolchain-version.test.ts` pins the two allowances. Immutable
   ordinary baselines are unchanged.
 - Contracts: catalogue `core.type.collection-event` (public API entry and

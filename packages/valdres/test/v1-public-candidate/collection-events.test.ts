@@ -251,6 +251,156 @@ describe("net row events", () => {
     })
 })
 
+describe("ordering ignores writes that change nothing", () => {
+    const writeABA = (
+        target: Store,
+        rows: AnyCollection,
+        first: (tx: Parameters<Parameters<Store["txn"]>[0]>[0]) => void,
+        a: unknown = "a",
+    ) =>
+        target.txn(tx => {
+            first(tx)
+            tx.set(rows("B"), "b")
+            tx.set(rows("A"), a)
+        })
+
+    test("a deletion of an already-absent row reserves no position", () => {
+        const rows = collection<string, string>()
+        const s = store()
+        const seen = record(s, rows)
+
+        writeABA(s, rows, tx => tx.delete(rows("A")))
+
+        expect(seen.take()).toEqual([
+            { type: "added", key: "B", value: "b" },
+            { type: "added", key: "A", value: "a" },
+        ])
+    })
+
+    test("control: deleting a present row is a change and keeps its position", () => {
+        const rows = collection<string, string>()
+        const s = store()
+        s.set(rows("A"), "a0")
+        const seen = record(s, rows)
+
+        writeABA(s, rows, tx => tx.delete(rows("A")), "a2")
+
+        expect(seen.take()).toEqual([
+            { type: "updated", key: "A", previous: "a0", value: "a2" },
+            { type: "added", key: "B", value: "b" },
+        ])
+    })
+
+    test("control: repeated writes keep the first position", () => {
+        const rows = collection<string, string>()
+        const s = store()
+        const seen = record(s, rows)
+
+        writeABA(s, rows, tx => tx.set(rows("A"), "a1"), "a2")
+
+        expect(seen.take()).toEqual([
+            { type: "added", key: "A", value: "a2" },
+            { type: "added", key: "B", value: "b" },
+        ])
+    })
+
+    test("same-value writes, identity updates and resets of absent rows reserve nothing", () => {
+        const rows = collection<string, string>()
+        const s = store()
+        s.set(rows("A"), "a0")
+        const seen = record(s, rows)
+        const cases = [
+            (tx: Parameters<Parameters<Store["txn"]>[0]>[0]) =>
+                tx.set(rows("A"), "a0"),
+            (tx: Parameters<Parameters<Store["txn"]>[0]>[0]) =>
+                tx.update(rows("A"), value => value),
+        ]
+        for (const [index, first] of cases.entries()) {
+            writeABA(s, rows, first, `a${index + 1}`)
+            s.delete(rows("B"))
+            expect(seen.take().slice(0, 2)).toEqual([
+                { type: "added", key: "B", value: "b" },
+                {
+                    type: "updated",
+                    key: "A",
+                    previous: `a${index}`,
+                    value: `a${index + 1}`,
+                },
+            ])
+        }
+        s.delete(rows("A"))
+        seen.take()
+        writeABA(s, rows, tx => tx.reset(rows("A")))
+        expect(seen.take()).toEqual([
+            { type: "added", key: "B", value: "b" },
+            { type: "added", key: "A", value: "a" },
+        ])
+    })
+
+    test("ownership-only child writes reserve no position", () => {
+        const rows = collection<string, string>()
+        const root = store()
+        root.set(rows("Shared"), "inherited")
+        const tombstone = root.scope("tombstone")
+        const override = root.scope("override")
+        const reset = root.scope("reset")
+        reset.set(rows("Shared"), "inherited") // an override equal to the parent
+        const seen = {
+            tombstone: record(tombstone, rows),
+            override: record(override, rows),
+            reset: record(reset, rows),
+            root: record(root, rows),
+        }
+
+        root.txn(tx => {
+            const deleted = tx.scope(tombstone)
+            deleted.delete(rows("A")) // absent everywhere: a tombstone only
+            deleted.set(rows("B"), "b")
+            deleted.set(rows("A"), "a")
+
+            const pinned = tx.scope(override)
+            pinned.set(rows("Shared"), "inherited") // keeps the inherited value
+            pinned.set(rows("B"), "b")
+            pinned.set(rows("Shared"), "own")
+
+            const released = tx.scope(reset)
+            released.reset(rows("Shared")) // inherits the equal value
+            released.set(rows("B"), "b")
+            released.set(rows("Shared"), "own")
+        })
+
+        expect(seen.tombstone.take()).toEqual([
+            { type: "added", key: "B", value: "b" },
+            { type: "added", key: "A", value: "a" },
+        ])
+        for (const scopeSeen of [seen.override, seen.reset])
+            expect(scopeSeen.take()).toEqual([
+                { type: "added", key: "B", value: "b" },
+                {
+                    type: "updated",
+                    key: "Shared",
+                    previous: "inherited",
+                    value: "own",
+                },
+            ])
+        expect(seen.root.take()).toEqual([])
+    })
+
+    test("a root deletion of an absent row reserves no position below it", () => {
+        const rows = collection<string, string>()
+        const root = store()
+        const child = root.scope("child")
+        const seen = record(child, rows)
+
+        writeABA(root, rows, tx => tx.delete(rows("A")))
+
+        expect(seen.take()).toEqual([
+            { type: "added", key: "B", value: "b" },
+            { type: "added", key: "A", value: "a" },
+        ])
+    })
+})
+
 describe("relative order", () => {
     test("reports a pure reorder once, after row events", () => {
         const rows = collection<string, number>()
@@ -874,11 +1024,18 @@ describe("membership-only observers keep their semantics", () => {
 })
 
 describe("retention", () => {
+    // Bun's collector scans the stack conservatively; overwrite stale slots so
+    // a dead local cannot keep a payload alive.
+    const clobberStack = (depth = 200): number => {
+        const slots = [depth, depth + 1, depth + 2, depth + 3]
+        return depth === 0 ? 0 : clobberStack(depth - 1) + slots.length
+    }
     const collected = async (
         references: readonly WeakRef<object>[],
     ): Promise<number> => {
         let retained = references.length
         for (let round = 0; round < 20 && retained !== 0; round++) {
+            clobberStack()
             await Bun.sleep(0)
             Bun.gc(true)
             retained = references.filter(
@@ -893,12 +1050,13 @@ describe("retention", () => {
         const s = store()
         let delivered = 0
         s.sub(rows, () => delivered++)
-        const reference = (() => {
+        const commitAndDelete = (): WeakRef<object> => {
             const value = { payload: "large" }
             s.set(rows("a"), value)
             s.delete(rows("a"))
             return new WeakRef(value)
-        })()
+        }
+        const reference = commitAndDelete()
 
         expect(delivered).toBe(2)
         expect(await collected([reference])).toBe(0)

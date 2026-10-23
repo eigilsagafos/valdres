@@ -11,8 +11,9 @@ import {
  * Seeded differential: random transactions over a scope tree, compared with an
  * independent model of staged locals. For every subscribed scope the delivered
  * events must equal the model's net changes, ordered by each row's first
- * staged change in that scope or an ancestor (a write that leaves the written
- * scope's draft local and effective value unchanged is not a change), then at
+ * staged change in that scope or an ancestor (a write that leaves the row's
+ * value and presence in the written scope as they were is not a change, even
+ * when it changes the scope's override), then at
  * most one `reordered` when rows present before and after changed relative
  * order. Rows first changed by `resetAll` are compared as a set; their order is
  * pinned by focused tests.
@@ -69,11 +70,6 @@ const effective = (
     }
     return undefined
 }
-
-const sameLocal = (left: Local | undefined, right: Local | undefined) =>
-    left?.kind === right?.kind &&
-    (left?.kind !== "present" ||
-        Object.is(left.value, (right as { value: unknown }).value))
 
 const copy = (locals: Locals): Locals =>
     new Map([...locals].map(([scope, rows]) => [scope, new Map(rows)]))
@@ -138,13 +134,10 @@ const runProgram = (seed: number) => {
             next: Local | undefined,
             bulk: boolean,
         ) => {
-            const local = draft.get(scope)!.get(key)
             const was = effective(draft, scope, key)
             if (next === undefined) draft.get(scope)!.delete(key)
             else draft.get(scope)!.set(key, next)
-            const changed =
-                !sameLocal(local, next) ||
-                !Object.is(was, effective(draft, scope, key))
+            const changed = !Object.is(was, effective(draft, scope, key))
             if (!changed || planned.has(`${scope}:${key}`)) return
             planned.add(`${scope}:${key}`)
             planOrder.push({ scope, key, bulk })
