@@ -45,6 +45,7 @@ framework [Provider](/react/Provider).
 | `reset(atom)`                    | Remove this Store's own value                                          |
 | `delete(row)`                    | Remove a [collection](/valdres/collection) row                         |
 | `sub(state, callback)`           | Subscribe; returns an unsubscribe function                             |
+| `sub(collection, callback)`      | Receive [collection events](/valdres/collection#observing-changes)     |
 | `sub(state, { settle, notify })` | Subscribe with [phase-keyed handlers](#writing-during-a-change-settle) |
 | `txn(callback)`                  | Run an atomic [transaction](#transactions)                             |
 | `scope(name?)`                   | Get a named child Store, or create an anonymous one                    |
@@ -148,12 +149,15 @@ draft.get(milk) // { title: "Buy milk", done: false }
 ```
 
 The collection, each row, and [presence(row)](/valdres/presence) all work with
-`get`, `sub`, and selectors. Looking up or reading a row does not insert it.
+`get`, `sub`, and selectors. A `sub` callback on the collection itself receives
+its [change events](/valdres/collection#observing-changes). Looking up or
+reading a row does not insert it.
 
 ## Subscribing to changes
 
 Subscription callbacks are notifications. Read the current value from the store
-when the callback runs:
+when the callback runs (a callback on a collection is the exception: it
+receives [change events](/valdres/collection#observing-changes)):
 
 ```ts
 const unsub = myStore.sub(countAtom, () => {
@@ -526,7 +530,8 @@ root.txn(tx => {
 
 `sub` also takes phase-keyed handlers. `settle` runs inside the update, while
 state is still settling, and may write. `notify` runs after it settles, exactly
-like the callback form:
+like the callback form, except on a collection, where both handlers observe
+membership and order rather than row events:
 
 ```ts
 const saving = atom(false)

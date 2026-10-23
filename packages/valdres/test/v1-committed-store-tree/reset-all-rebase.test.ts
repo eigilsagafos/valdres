@@ -138,7 +138,7 @@ const program = (seed: number, mode: "bulk" | "loop") => {
             desc.reset(rows(k))
         }
         const counts = { membership: 0 }
-        desc.sub(rows, () => counts.membership++)
+        desc.sub(rows, { notify: () => counts.membership++ })
         return {
             desc,
             local,

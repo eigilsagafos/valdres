@@ -329,6 +329,43 @@ assert.deepEqual(target.get(sessions), [secondSession])
 target.set(firstSession, { id: "first", revision: 3 })
 assert.deepEqual(target.get(sessions), [secondSession, firstSession])
 
+// Direct collection callbacks receive committed, net, frozen row events.
+const sessionEvents = []
+const stopSessionEvents = target.sub(sessions, event => sessionEvents.push(event))
+const sessionMembershipCalls = []
+target.sub(sessions, { notify: () => sessionMembershipCalls.push("notify") })
+target.txn(transaction => {
+    transaction.set(sessions("third"), { id: "third", revision: 1 })
+    transaction.update(secondSession, current => ({ ...current, revision: 2 }))
+    transaction.update(secondSession, current => ({ ...current, revision: 3 }))
+})
+assert.deepEqual(sessionEvents, [
+    { type: "added", key: "third", value: { id: "third", revision: 1 } },
+    {
+        type: "updated",
+        key: "second",
+        previous: { id: "second", revision: 1 },
+        value: { id: "second", revision: 3 },
+    },
+])
+assert.equal(Object.isFrozen(sessionEvents[0]), true)
+assert.deepEqual(sessionMembershipCalls, ["notify"])
+target.update(secondSession, current => ({ ...current, revision: 4 }))
+assert.equal(sessionEvents.length, 3)
+assert.deepEqual(sessionMembershipCalls, ["notify"])
+assert.throws(
+    () => target.txn(transaction => {
+        transaction.delete(secondSession)
+        throw new Error("abort")
+    }),
+    /abort/,
+)
+assert.equal(sessionEvents.length, 3)
+stopSessionEvents()
+stopSessionEvents()
+target.delete(sessions("third"))
+assert.equal(sessionEvents.length, 3)
+
 // Transaction.resetAll (experimental): a child scope's bulk reset restores
 // inheritance, including the parent's membership order, in one transaction.
 const resetRoot = core.store()
@@ -1245,6 +1282,7 @@ import {
     type Collection,
     type CollectionKey,
     type CollectionOptions,
+    type CollectionEvent,
     type CollectionRow,
     type CollectionValue,
     type FamilyKey,
@@ -1366,6 +1404,25 @@ atom(1, { equal: (previous: 1, next: 1) => previous === next })
 // @ts-expect-error Selector comparators are checked against the read result.
 selector(get => get(count), { equal: (previous: string, next: string) => previous === next })
 const target: Store = store()
+const packedEvents = collection<string, { readonly revision: number }>()
+const stopPackedEvents: () => void = target.sub(packedEvents, event => {
+    const typed: CollectionEvent<string, { readonly revision: number }> = event
+    if (event.type === "updated") {
+        const revisions: [number, number] = [
+            event.previous.revision,
+            event.value.revision,
+        ]
+        void revisions
+    }
+    // @ts-expect-error Collection events are readonly.
+    event.type = "reordered"
+    void typed
+})
+stopPackedEvents()
+target.sub(packedEvents, () => undefined)
+target.sub(packedEvents, { notify: () => undefined })
+// @ts-expect-error Only collection callbacks receive an event.
+target.sub(count, (event: CollectionEvent<string, number>) => event)
 const stopPackedReaction: () => void = target.sub(doubled, {
     settle: (transaction: Transaction) => {
         transaction.set(count, transaction.get(doubled))

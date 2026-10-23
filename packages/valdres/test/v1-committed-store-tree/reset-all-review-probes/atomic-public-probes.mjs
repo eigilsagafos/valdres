@@ -37,7 +37,8 @@ run('caller transaction: staged ownership, clear, parent writes, rebuild, notifi
     draft.delete(rows('b'))
     const subscriptions = [version, marker, lookup('owned'), rows('a'), rows('b'), rows('old'), rows('new'), rows, selected]
     const deliveries = subscriptions.map(() => [])
-    const removers = subscriptions.map((state, index) => child.sub(state, () => deliveries[index].push({ version: child.get(version), marker: child.get(marker), family: child.get(lookup('owned')), rows: keys(child.get(rows)), query: keys(child.get(selected)) })))
+    // notify observes each State's value: for rows, membership.
+    const removers = subscriptions.map((state, index) => child.sub(state, { notify: () => deliveries[index].push({ version: child.get(version), marker: child.get(marker), family: child.get(lookup('owned')), rows: keys(child.get(rows)), query: keys(child.get(selected)) }) }))
     const finalA = { kind: 'entity', name: 'snapshot-plus-edit' }
     root.txn(tx => {
         tx.set(version, 2)
