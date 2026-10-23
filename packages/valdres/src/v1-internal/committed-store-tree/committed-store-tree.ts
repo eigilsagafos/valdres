@@ -2569,7 +2569,12 @@ class CommittedStoreTreeHost
         // neither clears nor delivers that boundary's notification set, and
         // leaves latched control faults for the boundary to surface.
         const nested = this.#reactionDepth !== 0
-        if (firstSource === undefined && prepare === undefined) {
+        // A commit whose only effect is collection events still notifies.
+        if (
+            firstSource === undefined &&
+            prepare === undefined &&
+            (nested || this.#notificationTarget === undefined)
+        ) {
             if (!nested) this.clearNotificationSettlement()
             return
         }

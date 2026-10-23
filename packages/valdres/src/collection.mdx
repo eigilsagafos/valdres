@@ -235,11 +235,13 @@ transaction: its events follow those of the commit that triggered it.
 **Scopes.** A scoped Store sees its effective collection. Writes to a parent
 reach a child's subscribers unless the child overrides that row; writes to a
 child never reach the parent's subscribers. `reset` and `resetAll` produce
-events only for the values and order they actually change. `resetAll` changes
-the rows the scope owned in the order it stages them: in the parent's current
-order when the scope has child scopes, otherwise in the order the scope first
-wrote them; rows the transaction already changed keep their earlier position.
-Across scopes, an ancestor's subscribers are notified before its descendants'.
+events only for the values and order they actually change. The rows
+`resetAll` changes follow the parent's current order, then rows the parent does
+not have, in the order the scope acquired them; rows the transaction already
+changed keep their earlier position. Subscribers are notified in the order the
+update reached them; within one transaction and collection, an ancestor's
+subscribers come before its descendants', and scopes at the same depth follow
+the order in which their current subscription began.
 
 **Delivery.** Events are delivered synchronously, with the other subscribers,
 before `set` or `txn` returns. Each event is a frozen object shared by every

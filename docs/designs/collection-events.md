@@ -61,13 +61,19 @@ id or replay.
   `get(collection)`.
 - **Bulk reset.** `resetAll` stages one reset per owned row; those rows take the
   position of that staging unless the transaction changed them earlier: the
-  parent's current order when the scope has child scopes, otherwise the order in
-  which the scope acquired them. This is the existing staging order of
-  `resetAll`, made observable.
+  parent's current order, then rows the parent lacks in the order the scope
+  acquired them. `resetAll` already staged in parent order when the scope had
+  child scopes; it now also does so when the scope has a live event
+  subscription, because the order became observable. Without either, staging
+  order stays unobservable and skips the parent walk. (The child-scope test
+  alone was not enough: `children` is weak, so a dropped anonymous child made
+  the order depend on garbage collection.)
 - **Scopes.** Events describe the subscribed Store's effective collection.
   Parent changes reach a child unless the child overrides the row; child writes
-  never reach the parent. Event subscribers in different scopes of one tree are
-  notified ancestors first, then in first-subscription order.
+  never reach the parent. Across subscriptions, delivery follows the order the
+  update reached them (the ordinary snapshot rule). Within one transaction and
+  collection, ancestors' event subscribers come first; scopes at the same
+  depth follow the order in which their current subscription began.
 - **Transactions.** Each committed transaction is delivered separately, in commit
   order. Each `settle` commit is its own transaction and follows the commit that
   triggered it. A failed transaction (including a failed `settle` draft)
@@ -96,19 +102,26 @@ subscriber; values are passed by reference, not cloned or frozen.
   from the membership plan nodes it already computes. It does not subscribe to
   rows or scan memberships for value changes. With no event subscriber
   anywhere, the only added work per collection plan is one integer comparison.
-- At settlement, the kernel reaches the event target with its events and
-  returns it as a commit source, so an event-only commit still runs the
-  notification boundary. The host appends events per boundary (in commit order
-  across `settle` commits), and the snapshot expands each event registration
-  into one attempt per event. Undelivered events are dropped when a boundary
-  ends.
-- Stale channel registrations (unsubscribed scopes) are pruned on the tree's
-  next plan for that collection; disposal releases them immediately.
+- At settlement, the kernel reaches the event target with its events. A
+  boundary with reached targets but no changed source still notifies, so an
+  event-only commit delivers without counting the channel as a changed source
+  (inspection `changedSources` is unchanged). The host appends events per
+  boundary (in commit order across `settle` commits), and the snapshot expands
+  each event registration into one attempt per event. Undelivered events are
+  dropped when a boundary ends.
+- Channels hold scopes through weak references, so an unsubscribed scope is
+  collectable without a later write. Stale registrations are pruned on the
+  tree's next plan for that collection, disposal releases them immediately, and
+  resubscribing moves a scope to the end of the sibling order.
 
 Cost: a value-only update with one event subscriber builds one frozen event per
 changed row; a reorder check scans the subscribed scope's membership only when
 a row left and returned in the transaction or an order was restored (both
-already O(collection) paths).
+already O(collection) paths). `resetAll` on a scope with its own event
+subscriber walks the parent's membership once per affected collection, as it
+already did for scopes with child scopes. The zero-subscriber fast path uses
+one counter for the whole runtime domain; with any event subscriber, plans in
+other Stores pay one extra WeakMap lookup.
 
 ## Measurements
 
@@ -132,10 +145,12 @@ Existing paths (candidate / baseline):
 | depth-2 child reads, root update | 0.997 | 0.996 |
 | resetAll + rebuild 100 rows | 0.989 | 0.972 |
 | subscribe + unsubscribe, collection `{ notify }` | 1.018 | 1.014 |
-| subscribe + unsubscribe, collection direct callback | 1.095 | 1.128 |
+| subscribe + unsubscribe, collection direct callback (final, 7 rounds) | 1.669 | 1.309 |
 
-The direct-callback subscribe lane now registers the event channel; it is the
-only existing-API lane outside the noise floor.
+The direct-callback subscribe lane now registers the scope in the event channel
+(about 50 ns per subscribe); it is the only existing-API lane outside the noise
+floor. Lanes above were measured before the review fixes; after them, atom
+notify was re-measured at 1.014 (Bun) and 0.979 (Node) over 7 rounds.
 
 New observation cost (candidate only, ns per operation; compare with the
 matching no-subscriber lane above):
@@ -150,37 +165,41 @@ matching no-subscriber lane above):
 | 1,000-row update transaction, no subscriber | 1,014,690 | 1,376,044 |
 | same, one event subscriber | 1,198,677 | 1,389,617 |
 | 500 adds + 500 deletes ×2, one event subscriber | 6,766,906 | 4,385,802 |
-| resetAll + rebuild 100 rows, one event subscriber | 569,212 | 495,940 |
+| resetAll + rebuild 100 rows, one event subscriber on the scope (final) | 1,042,621 | 687,876 |
 
 One event subscriber is cheaper per update than 10,000 row subscriptions on
-both engines. Bulk cost is linear in changed rows (about 180 ns per event on
+both engines. `resetAll` on a scope with its own event subscriber now walks the
+10,000-row parent membership to stage in parent order (about +0.5 ms on Bun,
++0.2 ms on Node per transaction here), the walk a scope with child scopes
+already does. Bulk cost is linear in changed rows (about 180 ns per event on
 Bun, 15 ns on Node for the 1,000-row lane).
 
 Retention (heap after forced GC, after event-loop turns): 100k
 subscribe/commit/unsubscribe cycles, 25k child scopes subscribing, receiving a
 commit and being disposed, and 10k commits of 10 KB payloads with an event
 subscriber all stay flat across rounds on both engines, at the same level as
-the baseline.
+the baseline. 200 unnamed scopes that subscribe and unsubscribe with no later
+write are all collected (the pre-review candidate retained all 200).
 
-Sizes (candidate, pinned Bun 1.4.3): core-retaining `atom-selector-store`
-72,416 raw / 19,725 gzip (+349 / +134 over the current allowance; the host
-routing, accumulation, per-event attempts and boundary cleanup), `collection`
-114,846 / 32,696 (+2,813 / +840), packed tarball 552,869 / 148,971
-(+6,632 / +2,109).
+Sizes (final candidate, pinned Bun 1.4.3): core-retaining `atom-selector-store`
+72,439 raw / 19,733 gzip (+372 / +142 over the current allowance; the host
+routing, accumulation, per-event attempts, event-only boundary trigger and
+boundary cleanup), `collection` 115,119 / 32,738 (+3,086 / +882), packed
+tarball 553,419 / 149,255 (+7,182 / +2,393).
 
 ## Proposed approvals (not applied)
 
 One combined proposal, measured on the candidate; `PROPOSED-approvals.patch`
 in the handoff applies it:
 
-- `scripts/size-baseline.json`: `coreRetainingRawAllowance` 5783 → 6132 and
-  `coreRetainingGzipAllowance` 2322 → 2456 (exact overage of
+- `scripts/size-baseline.json`: `coreRetainingRawAllowance` 5783 → 6155 and
+  `coreRetainingGzipAllowance` 2322 → 2464 (exact overage of
   `atom-selector-store` against its immutable 2% ceilings 66,284 / 17,269);
-  feature budgets to measured values: dist 393,326 / 116,830, packed
-  552,869 / 148,971, collection 114,846 / 32,696, query and query-development
-  121,268 / 34,747, all-exports 147,420 / 42,087, inspect 110,275 / 29,950,
-  external-atom 93,293 / 25,527; `certifiedRuntimeBuildSha256`
-  `d2bc79b4dbc4ff6eb3ff09f8ea2f00f005fa449956a4b25d679f0c41f73bd04c`.
+  feature budgets to measured values: dist 393,876 / 116,980, packed
+  553,419 / 149,255, collection 115,119 / 32,738, query and query-development
+  121,534 / 34,810, all-exports 147,694 / 42,182, inspect 110,298 / 29,959,
+  external-atom 93,316 / 25,535; `certifiedRuntimeBuildSha256`
+  `baaadfafdb12ed3e01660ecbd6a8c7362d107129430f392fe719e31752c0e4df`.
   `scripts/toolchain-version.test.ts` pins the two allowances. Immutable
   ordinary baselines are unchanged.
 - Contracts: catalogue `core.type.collection-event` (public API entry and

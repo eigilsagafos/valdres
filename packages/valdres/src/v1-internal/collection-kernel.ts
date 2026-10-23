@@ -138,21 +138,22 @@ interface CollectionScopeSidecar {
     liveRowViews: WeakHandleSet<RowViewRecord> | undefined
     memberships: WeakMap<CollectionHandle, MembershipRecord> | undefined
     liveMemberships: WeakHandleSet<MembershipRecord> | undefined
-    /** Event channels this scope is registered in, for disposal. */
-    eventChannels?: Set<EventChannel> | undefined
+    /** This scope's weak reference in each event channel it is registered
+     * in, for re-registration and disposal. */
+    eventChannels?: Map<EventChannel, WeakRef<StoreScopeNode>> | undefined
 }
 
 /** One collection's subscription key for direct callback subscribers in one
- * StoreTree. `scopes` may hold scopes whose subscriptions ended; the tree's
- * next plan for the collection prunes them. */
+ * StoreTree. `scopes` holds weak references in registration order and may
+ * hold scopes whose subscriptions ended; the tree's next plan for the
+ * collection prunes them. */
 interface EventChannel {
-    readonly scopes: Set<StoreScopeNode>
+    readonly scopes: Set<WeakRef<StoreScopeNode>>
 }
 
-/** A subscribed scope's events; as a commit source, it makes an event-only
- * commit settle and notify. */
-interface EventDelivery extends CollectionCommitSource {
+interface EventDelivery {
     readonly scope: StoreScopeNode
+    readonly atom: AnyState
     readonly events: readonly object[]
 }
 
@@ -699,8 +700,23 @@ export const createCollectionKernel = (
         channel: EventChannel,
         scope: StoreScopeNode,
     ): void => {
-        if (channel.scopes.delete(scope)) eventScopes--
+        const references = scopeSidecars.get(scope)?.eventChannels
+        const reference = references?.get(channel)
+        if (reference === undefined) return
+        references!.delete(channel)
+        channel.scopes.delete(reference)
+        eventScopes--
     }
+
+    const subscribedEvents = (
+        scope: StoreScopeNode,
+        channel: EventChannel,
+    ): boolean =>
+        scope.status === "live" &&
+        scope.coordinator.hasSubscription(
+            scope,
+            channel as unknown as AnyState,
+        )
 
     const draftLocal = (
         lane: DraftLane,
@@ -1544,8 +1560,15 @@ export const createCollectionKernel = (
         // order history; stage them in the parent's current order so that
         // order is defined rather than an ownership-acquisition artifact.
         // Staging order is observable only in descendants with their own
-        // history, so scopes without children skip the parent walk.
-        if (owned.length > 1 && !scope.children.isEmpty()) {
+        // history and in the scope's own collection events, so other scopes
+        // skip the parent walk.
+        let observed = false
+        scopeSidecars
+            .get(scope)
+            ?.eventChannels?.forEach(
+                (_, channel) => (observed ||= subscribedEvents(scope, channel)),
+            )
+        if (owned.length > 1 && (observed || !scope.children.isEmpty())) {
             const pending = new Set(owned)
             const ordered: CollectionRowHandle[] = []
             for (const collection of new Set(owned.map(collectionForRow)))
@@ -2916,27 +2939,25 @@ export const createCollectionKernel = (
             for (const { collection } of collectionSlots) {
                 const channel = channels.get(collection)
                 if (channel === undefined) continue
-                for (const scope of channel.scopes)
-                    if (
-                        scope.status !== "live" ||
-                        !scope.coordinator.hasSubscription(
-                            scope,
-                            channel as unknown as AnyState,
-                        )
-                    ) {
-                        releaseEventScope(channel, scope)
-                        scopeSidecars.get(scope)?.eventChannels?.delete(channel)
-                    }
+                let scopes: StoreScopeNode[] = []
+                for (const reference of channel.scopes) {
+                    const scope = reference.deref()
+                    if (scope === undefined) {
+                        channel.scopes.delete(reference)
+                        eventScopes--
+                    } else if (subscribedEvents(scope, channel))
+                        scopes.push(scope)
+                    else releaseEventScope(channel, scope)
+                }
                 // Ancestors notify before descendants; otherwise scopes keep
-                // the order in which they first subscribed.
-                let scopes: Iterable<StoreScopeNode> = channel.scopes
-                if (channel.scopes.size > 1) {
+                // the order in which their current subscription began.
+                if (scopes.length > 1) {
                     const depth = (scope: StoreScopeNode): number => {
                         let count = 0
                         while ((scope = scope.parent!) !== undefined) count++
                         return count
                     }
-                    scopes = [...channel.scopes]
+                    scopes = scopes
                         .map(scope => ({ scope, depth: depth(scope) }))
                         .sort((first, second) => first.depth - second.depth)
                         .map(entry => entry.scope)
@@ -3121,11 +3142,10 @@ export const createCollectionKernel = (
             rowSettlements: Object.freeze(rowSettlements),
             membershipInstalls: Object.freeze(membershipInstalls),
             membershipSettlements: Object.freeze(membershipSettlements),
-            sources: Object.freeze(
-                events === undefined
-                    ? [...rowSettlements, ...membershipSettlements]
-                    : [...rowSettlements, ...membershipSettlements, ...events],
-            ),
+            sources: Object.freeze([
+                ...rowSettlements,
+                ...membershipSettlements,
+            ]),
         }
         return plan
     }
@@ -3197,7 +3217,8 @@ export const createCollectionKernel = (
                     sidecar.rowLocals = undefined
                     if (
                         sidecar.liveRowViews === undefined &&
-                        sidecar.liveMemberships === undefined
+                        sidecar.liveMemberships === undefined &&
+                        sidecar.eventChannels === undefined
                     ) {
                         scopeSidecars.delete(scope)
                     }
@@ -3362,10 +3383,9 @@ export const createCollectionKernel = (
         indexes?.dispose(scope)
         const sidecar = scopeSidecars.get(scope)
         if (sidecar === undefined) return
-        sidecar.eventChannels?.forEach(channel =>
+        sidecar.eventChannels?.forEach((_, channel) =>
             releaseEventScope(channel, scope),
         )
-        sidecar.eventChannels = undefined
         sidecar.liveRowViews?.forEach(record => {
             detachRowView(record)
             record.inheritingChildren.clear()
@@ -3529,11 +3549,16 @@ export const createCollectionKernel = (
                 channel = { scopes: new Set() }
                 channels.set(node, channel)
             }
-            if (!channel.scopes.has(scope)) {
-                channel.scopes.add(scope)
+            const sidecar = sidecarFor(scope)
+            let reference = sidecar.eventChannels?.get(channel)
+            if (reference === undefined) {
+                reference = new WeakRef(scope)
+                ;(sidecar.eventChannels ??= new Map()).set(channel, reference)
                 eventScopes++
-                ;(sidecarFor(scope).eventChannels ??= new Set()).add(channel)
-            }
+            } else if (subscribedEvents(scope, channel)) return channel as never
+            // A new subscription run starts at the end of the scope order.
+            else channel.scopes.delete(reference)
+            channel.scopes.add(reference)
             return channel as unknown as AnyState
         },
         resetAll: (draftValue: object, scopeValue: object): void =>

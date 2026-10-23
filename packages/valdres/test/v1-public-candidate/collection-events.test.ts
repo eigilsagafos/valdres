@@ -441,8 +441,8 @@ describe("scopes", () => {
         seen.take()
         root.txn(tx => tx.scope(child).resetAll())
         expect(seen.take()).toEqual([
-            { type: "deleted", key: "b", previous: "child" },
             { type: "updated", key: "a", previous: "child", value: "root" },
+            { type: "deleted", key: "b", previous: "child" },
         ])
     })
 
@@ -465,37 +465,61 @@ describe("scopes", () => {
         ])
     })
 
-    test("orders bulk reset rows by resetAll staging order", () => {
+    test("orders bulk reset rows by the parent's current order, independent of child scopes", async () => {
         const rows = collection<string, number>()
         const root = store()
         root.txn(tx => {
             for (const key of ["a", "b", "c"]) tx.set(rows(key), 0)
         })
         const leaf = root.scope("leaf")
-        leaf.set(rows("c"), 3)
-        leaf.set(rows("a"), 1)
         const parent = root.scope("parent")
-        parent.set(rows("c"), 3)
-        parent.set(rows("a"), 1)
-        parent.scope("kid") // a descendant switches staging to parent order
-        const leafSeen = record(leaf, rows)
-        const parentSeen = record(parent, rows)
+        const held = parent.scope("kid")
+        const dropped = root.scope("dropped")
+        ;(() => dropped.scope())() // an unnamed child the application drops
+        for (const scope of [leaf, parent, dropped]) {
+            scope.set(rows("c"), 3) // acquired first
+            scope.set(rows("x"), 9) // absent from the parent
+            scope.set(rows("a"), 1)
+        }
+        for (let round = 0; round < 5; round++) {
+            await Bun.sleep(0)
+            Bun.gc(true)
+        }
+        const seen = [leaf, parent, dropped].map(scope => record(scope, rows))
 
         root.txn(tx => {
-            tx.scope(leaf).resetAll()
-            tx.scope(parent).resetAll()
+            for (const scope of [leaf, parent, dropped])
+                tx.scope(scope).resetAll()
         })
 
-        // Without descendants, owned rows stage in ownership order.
-        expect(leafSeen.take()).toEqual([
-            { type: "updated", key: "c", previous: 3, value: 0 },
-            { type: "updated", key: "a", previous: 1, value: 0 },
-        ])
-        // With descendants, they stage in the parent's current order.
-        expect(parentSeen.take()).toEqual([
-            { type: "updated", key: "a", previous: 1, value: 0 },
-            { type: "updated", key: "c", previous: 3, value: 0 },
-        ])
+        // Parent order first; rows the parent lacks follow in ownership order.
+        for (const scopeSeen of seen)
+            expect(scopeSeen.take()).toEqual([
+                { type: "updated", key: "a", previous: 1, value: 0 },
+                { type: "updated", key: "c", previous: 3, value: 0 },
+                { type: "deleted", key: "x", previous: 9 },
+            ])
+        void held
+    })
+
+    test("orders sibling scopes by when their current subscription began", () => {
+        const rows = collection<string, number>()
+        const root = store()
+        const x = root.scope("x")
+        const y = root.scope("y")
+        for (const writeBetween of [false, true]) {
+            const order: string[] = []
+            const stopX = x.sub(rows, () => order.push("x"))
+            const stopY = y.sub(rows, () => order.push("y"))
+            stopX()
+            if (writeBetween) root.set(rows("w"), 1)
+            const stopAgain = x.sub(rows, () => order.push("x"))
+            order.length = 0
+            root.set(rows(`a${writeBetween}`), 1)
+            expect(order).toEqual(["y", "x"])
+            stopAgain()
+            stopY()
+        }
     })
 
     test("notifies ancestors before descendants, then first-subscription order", () => {
@@ -562,18 +586,34 @@ describe("other Store kinds", () => {
         ])
     })
 
-    test("delivers on an inspectable Store", () => {
-        const rows = collection<string, number>({ name: "inspected" })
-        const { store: s } = createInspectableStore()
-        const seen = record(s, rows)
+    test("delivers on an inspectable Store without counting event sources", () => {
+        const changedSources = (subscribers: number): unknown => {
+            const rows = collection<string, number>({ name: "inspected" })
+            const { store: s, inspect } = createInspectableStore()
+            const scopes = [s, s.scope("a"), s.scope("b")]
+            s.set(rows("a"), 1)
+            const seen = scopes
+                .slice(0, subscribers)
+                .map(scope => record(scope, rows))
+            inspect.reset()
+            s.set(rows("a"), 2)
+            for (const scopeSeen of seen)
+                expect(scopeSeen.take()).toEqual([
+                    { type: "updated", key: "a", previous: 1, value: 2 },
+                ])
+            const exported = inspect.export() as {
+                readonly summaries?: readonly {
+                    type?: string
+                    changedSources?: number
+                }[]
+            }
+            return exported.summaries?.find(entry => entry.type === "commit")
+                ?.changedSources
+        }
 
-        s.set(rows("a"), 1)
-        s.set(rows("a"), 2)
-
-        expect(seen.take()).toEqual([
-            { type: "added", key: "a", value: 1 },
-            { type: "updated", key: "a", previous: 1, value: 2 },
-        ])
+        expect(typeof changedSources(0)).toBe("number")
+        expect(changedSources(1)).toBe(changedSources(0))
+        expect(changedSources(3)).toBe(changedSources(0))
     })
 })
 
@@ -892,9 +932,9 @@ describe("retention", () => {
             return [new WeakRef(child as object), new WeakRef(callback)]
         })()
 
-        // The next commit to the collection prunes the stale registration.
-        root.set(rows("b"), 1)
+        // No later write is needed to release it.
         expect(await collected(references)).toBe(0)
+        root.set(rows("b"), 1)
     })
 })
 
