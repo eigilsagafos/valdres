@@ -187,8 +187,8 @@ registration and returns an idempotent unsubscribe. The one exception is a
 direct function callback on a collection: it receives one frozen
 `CollectionEvent` per call, the committed net row changes (`added`, `updated`,
 `deleted`) of each transaction in the subscribed Store's effective view,
-ordered by first staged value or presence change, then at most one
-`reordered`. The handler form,
+ordered by the first staged value or presence change the subscribed Store can
+see, then at most one `reordered`. The handler form,
 selectors, and the adapter `subscribe` seam keep value (membership) semantics
 on collections. Registration performs the
 same outcome materialization as `get`, but catches the public read throw of a

@@ -47,13 +47,19 @@ id or replay.
   subscriptions use: absent to present is `added`, present to a different value
   is `updated` with both values, present to absent is `deleted`, and anything
   else produces no row event. At most one row event per key per transaction.
-- **Order.** Row events follow the order of each row's first staged value or
-  presence change in the subscribed scope or one of its ancestors: the first
-  staged write after which the written scope's effective value differs (by
-  `Object.is`) from before it. Ownership-only writes do not reserve a position:
-  deleting an absent row (a root no-op or a child tombstone), an override equal
-  to the inherited value, or a reset of an override equal to the inherited
-  value. Later writes never move a row. All three row types share one order;
+- **Order.** Row events follow the order of the first staged write that
+  changed each row's value or presence as the subscribed scope sees it: a write
+  in the scope or an ancestor after which the written scope's effective value
+  differs (by `Object.is`) from before it, while no scope between them (the
+  subscribed scope included) had its own value or deletion for the row at that
+  point. An ancestor write hidden by an override does not reserve a position;
+  neither do ownership-only writes: deleting an absent row (a root no-op or a
+  child tombstone), an override equal to the inherited value, or a reset of an
+  override equal to the inherited value. Later writes never move a row. Each
+  draft presence-history entry carries a `changed` flag, and visibility is
+  reconstructed from those entries' kinds and the committed locals; no
+  intermediate values are kept. Root subscribers see every root write, so they
+  use the draft's `eventOrder` directly. All three row types share one order;
   there is no deletion phase. The kernel's staging `planOrder` (which also
   admits ownership-only writes and shapes `resetAll` staging) is unchanged; the
   draft keeps a separate `eventOrder`, filled only while an event subscriber
@@ -188,9 +194,9 @@ write are all collected (the pre-review candidate retained all 200).
 Sizes (final candidate, pinned Bun 1.4.3): core-retaining `atom-selector-store`
 72,439 raw / 19,733 gzip (+372 / +142 over the current allowance; the host
 routing, accumulation, per-event attempts, event-only boundary trigger and
-boundary cleanup), `collection` 115,269 / 32,791 (+3,236 / +935), packed
-tarball 553,721 / 149,465 (+7,484 / +2,603). The first-value-change ordering
-fix left the core fixture unchanged; an A/B of the previous candidate against
+boundary cleanup), `collection` 115,941 / 33,028 (+3,908 / +1,172), packed
+tarball 555,107 / 149,815 (+8,870 / +2,953). The two ordering fixes (first
+value change; changes hidden by an override) left the core fixture unchanged; an A/B of the previous candidate against
 the fix on the affected lanes (single updates, 1,000-row and add/delete
 transactions, child reads, `resetAll`, with and without an event subscriber)
 stayed within the noise floor on both engines.
@@ -203,11 +209,11 @@ in the handoff applies it:
 - `scripts/size-baseline.json`: `coreRetainingRawAllowance` 5783 → 6155 and
   `coreRetainingGzipAllowance` 2322 → 2464 (exact overage of
   `atom-selector-store` against its immutable 2% ceilings 66,284 / 17,269);
-  feature budgets to measured values: dist 394,178 / 117,072, packed
-  553,721 / 149,465, collection 115,269 / 32,791, query and query-development
-  121,684 / 34,866, all-exports 147,844 / 42,211, inspect 110,298 / 29,959,
+  feature budgets to measured values: dist 395,564 / 117,552, packed
+  555,107 / 149,815, collection 115,941 / 33,028, query and query-development
+  122,369 / 35,096, all-exports 148,518 / 42,446, inspect 110,298 / 29,959,
   external-atom 93,316 / 25,535; `certifiedRuntimeBuildSha256`
-  `92653ac8afbe88a189218cb308a26de3d83ae6db174b1abfdd6624a0b82ae6df`.
+  `5287271b25957c0517cb38ae4d1cdfa2bca6c5cfb0ee24efebda16b3b36a277c`.
   `scripts/toolchain-version.test.ts` pins the two allowances. Immutable
   ordinary baselines are unchanged.
 - Contracts: catalogue `core.type.collection-event` (public API entry and

@@ -401,6 +401,109 @@ describe("ordering ignores writes that change nothing", () => {
     })
 })
 
+describe("hidden ancestor writes", () => {
+    const fixture = () => {
+        const rows = collection<string, string>()
+        const root = store()
+        root.set(rows("A"), "root-a0")
+        const child = root.scope("child")
+        return { rows, root, child }
+    }
+
+    test("a parent write hidden by the child's override does not set the child's order", () => {
+        const { rows, root, child } = fixture()
+        child.set(rows("A"), "child-a0")
+        const rootSeen = record(root, rows)
+        const childSeen = record(child, rows)
+
+        root.txn(tx => {
+            tx.set(rows("A"), "root-a1") // hidden from the child
+            tx.scope(child).set(rows("B"), "child-b")
+            tx.scope(child).set(rows("A"), "child-a1")
+        })
+
+        expect(childSeen.take()).toEqual([
+            { type: "added", key: "B", value: "child-b" },
+            { type: "updated", key: "A", previous: "child-a0", value: "child-a1" },
+        ])
+        expect(rootSeen.take()).toEqual([
+            { type: "updated", key: "A", previous: "root-a0", value: "root-a1" },
+        ])
+    })
+
+    test("control: an inheriting child is ordered by the visible parent write", () => {
+        const { rows, root, child } = fixture()
+        const childSeen = record(child, rows)
+
+        root.txn(tx => {
+            tx.set(rows("A"), "root-a1") // visible to the child
+            tx.scope(child).set(rows("B"), "child-b")
+            tx.scope(child).set(rows("A"), "child-a1")
+        })
+
+        expect(childSeen.take()).toEqual([
+            { type: "updated", key: "A", previous: "root-a0", value: "child-a1" },
+            { type: "added", key: "B", value: "child-b" },
+        ])
+    })
+
+    test("control: a hidden parent write alone produces no child event", () => {
+        const { rows, root, child } = fixture()
+        child.set(rows("A"), "child-a0")
+        const childSeen = record(child, rows)
+
+        root.txn(tx => {
+            tx.set(rows("A"), "root-a1")
+            tx.scope(child).set(rows("B"), "child-b")
+        })
+
+        expect(childSeen.take()).toEqual([
+            { type: "added", key: "B", value: "child-b" },
+        ])
+    })
+
+    test("control: several child writes coalesce to the final value at the first visible change", () => {
+        const { rows, root, child } = fixture()
+        child.set(rows("A"), "child-a0")
+        const childSeen = record(child, rows)
+
+        root.txn(tx => {
+            tx.set(rows("A"), "root-a1") // hidden
+            tx.scope(child).set(rows("B"), "child-b")
+            tx.scope(child).set(rows("A"), "child-a1")
+            tx.scope(child).set(rows("C"), "child-c")
+            tx.scope(child).set(rows("A"), "child-a2")
+        })
+
+        expect(childSeen.take()).toEqual([
+            { type: "added", key: "B", value: "child-b" },
+            { type: "updated", key: "A", previous: "child-a0", value: "child-a2" },
+            { type: "added", key: "C", value: "child-c" },
+        ])
+    })
+
+    test("an override in a middle scope hides parent writes from its descendants until it is reset", () => {
+        const rows = collection<string, string>()
+        const root = store()
+        root.set(rows("A"), "root-a0")
+        const middle = root.scope("middle")
+        middle.set(rows("A"), "middle-a0")
+        const leaf = middle.scope("leaf")
+        const leafSeen = record(leaf, rows)
+
+        root.txn(tx => {
+            tx.set(rows("A"), "root-a1") // hidden by the middle override
+            tx.set(rows("B"), "root-b")
+            tx.scope(middle).reset(rows("A")) // now visible to the leaf
+        })
+
+        expect(leafSeen.take()).toEqual([
+            { type: "added", key: "B", value: "root-b" },
+            { type: "updated", key: "A", previous: "middle-a0", value: "root-a1" },
+        ])
+    })
+})
+
 describe("relative order", () => {
     test("reports a pure reorder once, after row events", () => {
         const rows = collection<string, number>()
@@ -596,7 +699,7 @@ describe("scopes", () => {
         ])
     })
 
-    test("orders an inherited row by its first staged change in any ancestor", () => {
+    test("orders an inherited row by the first change the scope can see", () => {
         const rows = collection<string, number>()
         const root = store()
         const child = root.scope("child")
@@ -609,9 +712,10 @@ describe("scopes", () => {
             tx.scope(child).reset(rows("hidden"))
         })
 
+        // The root write is hidden until the reset; b is visible at once.
         expect(seen.take()).toEqual([
-            { type: "updated", key: "hidden", previous: 0, value: 1 },
             { type: "added", key: "b", value: 1 },
+            { type: "updated", key: "hidden", previous: 0, value: 1 },
         ])
     })
 
@@ -1024,8 +1128,11 @@ describe("membership-only observers keep their semantics", () => {
 })
 
 describe("retention", () => {
-    // Bun's collector scans the stack conservatively; overwrite stale slots so
-    // a dead local cannot keep a payload alive.
+    // Bun's collector also scans the native stack conservatively, so a stale
+    // stack slot can keep an otherwise unreachable object alive. Overwrite the
+    // stack below this frame before each collection. (In one full-file run the
+    // payload below stayed alive until this was added; the exact reference
+    // was not identified.)
     const clobberStack = (depth = 200): number => {
         const slots = [depth, depth + 1, depth + 2, depth + 3]
         return depth === 0 ? 0 : clobberStack(depth - 1) + slots.length
@@ -1050,13 +1157,12 @@ describe("retention", () => {
         const s = store()
         let delivered = 0
         s.sub(rows, () => delivered++)
-        const commitAndDelete = (): WeakRef<object> => {
+        const reference = (() => {
             const value = { payload: "large" }
             s.set(rows("a"), value)
             s.delete(rows("a"))
             return new WeakRef(value)
-        }
-        const reference = commitAndDelete()
+        })()
 
         expect(delivered).toBe(2)
         expect(await collected([reference])).toBe(0)

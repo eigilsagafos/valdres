@@ -10,10 +10,10 @@ import {
 /**
  * Seeded differential: random transactions over a scope tree, compared with an
  * independent model of staged locals. For every subscribed scope the delivered
- * events must equal the model's net changes, ordered by each row's first
- * staged change in that scope or an ancestor (a write that leaves the row's
- * value and presence in the written scope as they were is not a change, even
- * when it changes the scope's override), then at
+ * events must equal the model's net changes, ordered by the first staged
+ * write that changed each row's value or presence as that scope sees it
+ * (overrides hide ancestor writes; a write that only changes an override is
+ * not a change), then at
  * most one `reordered` when rows present before and after changed relative
  * order. Rows first changed by `resetAll` are compared as a set; their order is
  * pinned by focused tests.
@@ -126,21 +126,31 @@ const runProgram = (seed: number) => {
 
         // Model staging.
         const draft = copy(committed)
-        const planOrder: { scope: string; key: string; bulk: boolean }[] = []
-        const planned = new Set<string>()
+        // Per subscribed scope: rows in the order of the first staged write
+        // that changed the row's effective value as that scope sees it.
+        const firstChanges = new Map(
+            SCOPES.map(scope => [
+                scope,
+                [] as { key: string; bulk: boolean }[],
+            ]),
+        )
         const stage = (
             scope: string,
             key: string,
             next: Local | undefined,
             bulk: boolean,
         ) => {
-            const was = effective(draft, scope, key)
+            const before = SCOPES.map(viewer => effective(draft, viewer, key))
             if (next === undefined) draft.get(scope)!.delete(key)
             else draft.get(scope)!.set(key, next)
-            const changed = !Object.is(was, effective(draft, scope, key))
-            if (!changed || planned.has(`${scope}:${key}`)) return
-            planned.add(`${scope}:${key}`)
-            planOrder.push({ scope, key, bulk })
+            SCOPES.forEach((viewer, index) => {
+                const order = firstChanges.get(viewer)!
+                if (
+                    !Object.is(before[index], effective(draft, viewer, key)) &&
+                    !order.some(entry => entry.key === key)
+                )
+                    order.push({ key, bulk })
+            })
         }
         const runnable: Op[] = []
         for (const op of ops) {
@@ -194,16 +204,11 @@ const runProgram = (seed: number) => {
                 expect(events).toEqual([])
                 continue
             }
-            const scopes = route(scope)
-            const seen = new Set<string>()
             const expected: {
                 event: CollectionEvent<string, CollectionValue>
                 bulk: boolean
             }[] = []
-            for (const entry of planOrder) {
-                if (!scopes.includes(entry.scope) || seen.has(entry.key))
-                    continue
-                seen.add(entry.key)
+            for (const entry of firstChanges.get(scope)!) {
                 const previous = effective(committed, scope, entry.key)
                 const next = effective(draft, scope, entry.key)
                 if (Object.is(previous, next)) continue

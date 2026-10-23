@@ -218,17 +218,18 @@ its original value, produces nothing. A transaction that throws produces
 nothing.
 
 **Order.** Row events follow the order in which the transaction first changed
-each row's value or presence, in the subscribed Store or one of its ancestors. A
-later write to the same row does not move it. A write that leaves the row's
-value and presence as they were does not count, even if it changes the scope's
-own override: setting the value a row already has, deleting a row that is
-already absent, or a scoped `set` or `reset` that keeps the inherited value.
-Additions, updates, and deletions share that one order. A `reordered` event
-comes last, at most once per transaction. Rows deleted or added do not count as
-reordering; a row that is deleted and set again in one transaction moves to the
-end, which does. `reordered` carries no order: read `get(collection)` when you
-need it. This is the order of the writes, not a dependency order: Valdres does
-not look inside row values.
+each row's value or presence as the subscribed Store sees it. A parent's write
+counts when the Store inherits the row, not while the Store's own override (or
+one in a scope between them) hides it. A later write to the same row does not
+move it. A write that leaves the row's value and presence as they were does not
+count, even if it changes the scope's own override: setting the value a row
+already has, deleting a row that is already absent, or a scoped `set` or `reset`
+that keeps the inherited value. Additions, updates, and deletions share that one
+order. A `reordered` event comes last, at most once per transaction. Rows
+deleted or added do not count as reordering; a row that is deleted and set again
+in one transaction moves to the end, which does. `reordered` carries no order:
+read `get(collection)` when you need it. This is the order of the writes, not a
+dependency order: Valdres does not look inside row values.
 
 **One transaction at a time.** Separate transactions are delivered separately,
 in commit order, even within the same tick. A

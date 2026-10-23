@@ -222,6 +222,8 @@ interface PresenceEvent {
     readonly collection: CollectionHandle
     readonly kind: PresenceEventKind
     readonly sequence: number
+    /** The write changed its own scope's effective value (`Object.is`). */
+    readonly changed: boolean
 }
 
 const REORDERED = Object.freeze({ type: "reordered" })
@@ -701,6 +703,50 @@ export const createCollectionKernel = (
             if (local.kind === "absent") return undefined
         }
         return undefined
+    }
+
+    /** Sequence of the first staged write that changed `row` as `scope` sees
+     * it: a changing write in the scope or an ancestor while no scope between
+     * them (the scope included) had its own value or deletion for the row.
+     * Reconstructed from the draft's presence history; no values are kept. */
+    const firstVisibleChange = (
+        lane: DraftLane,
+        scope: StoreScopeNode,
+        row: CollectionRowHandle,
+    ): number | undefined => {
+        const history = lane.byRow.get(row)?.historyByScope
+        let first: number | undefined
+        for (
+            let writer: StoreScopeNode | undefined = scope;
+            writer !== undefined;
+            writer = writer.parent
+        ) {
+            const events = history?.get(writer)
+            if (events === undefined) continue
+            for (const event of events) {
+                if (first !== undefined && event.sequence >= first) break
+                if (!event.changed) continue
+                // Hidden if a scope from `scope` up to, but excluding, the
+                // writer had its own value or deletion at that point.
+                let hidden = false
+                for (
+                    let between: StoreScopeNode = scope;
+                    between !== writer && !hidden;
+                    between = between.parent!
+                ) {
+                    let kind: string = committedLocal(between, row).kind
+                    for (const earlier of history!.get(between) ?? []) {
+                        if (earlier.sequence >= event.sequence) break
+                        kind = earlier.kind === "reset" ? "none" : earlier.kind
+                    }
+                    hidden = kind !== "none"
+                }
+                if (hidden) continue
+                first = event.sequence
+                break
+            }
+        }
+        return first
     }
 
     const releaseEventScope = (
@@ -1326,11 +1372,8 @@ export const createCollectionKernel = (
             coordinate.planIndex = lane.planOrder.length
             lane.planOrder.push(coordinate)
         }
-        if (
-            eventScopes !== 0 &&
-            !coordinate.eventOrdered &&
-            !sameOutcome(beforeEffective, effective)
-        ) {
+        const changed = !sameOutcome(beforeEffective, effective)
+        if (eventScopes !== 0 && changed && !coordinate.eventOrdered) {
             coordinate.eventOrdered = true
             ;(lane.eventOrder ??= []).push(coordinate)
         }
@@ -1343,6 +1386,7 @@ export const createCollectionKernel = (
             collection: coordinate.collection,
             kind: final.kind,
             sequence,
+            changed,
         })
         lane.history.push(event)
         const rowLane = lane.byRow.get(coordinate.row)!
@@ -2940,8 +2984,8 @@ export const createCollectionKernel = (
         }
 
         // Net row events for each subscribed scope: a row's committed and
-        // final effective values in that scope, in the order of its first
-        // staged value or presence change in the scope or an ancestor; then any
+        // final effective values in that scope, in the order of the first
+        // staged write that changed the row as that scope sees it; then any
         // reorder.
         let events: EventDelivery[] | undefined
         const channels =
@@ -2983,6 +3027,17 @@ export const createCollectionKernel = (
                 for (const scope of scopes) {
                     let scopeEvents: object[] | undefined
                     let seen: Set<CollectionRowHandle> | undefined
+                    // A root's writes are all visible to it, so eventOrder is
+                    // its order; below the root, a parent change hidden by an
+                    // override in between must not set the row's position.
+                    const ranked =
+                        scope.parent === undefined
+                            ? undefined
+                            : ([] as {
+                                  row: CollectionRowHandle
+                                  position: number
+                                  event: object
+                              }[])
                     for (const coordinate of lane.eventOrder ?? []) {
                         if (
                             coordinate.collection !== collection ||
@@ -3001,20 +3056,33 @@ export const createCollectionKernel = (
                         const value = finalValue(lane, scope, row)
                         if (Object.is(previous, value)) continue
                         const key = (row as { readonly key: unknown }).key
-                        ;(scopeEvents ??= []).push(
-                            Object.freeze(
-                                previous === undefined
-                                    ? { type: "added", key, value }
-                                    : value === undefined
-                                      ? { type: "deleted", key, previous }
-                                      : {
-                                            type: "updated",
-                                            key,
-                                            previous,
-                                            value,
-                                        },
-                            ),
+                        const event = Object.freeze(
+                            previous === undefined
+                                ? { type: "added", key, value }
+                                : value === undefined
+                                  ? { type: "deleted", key, previous }
+                                  : { type: "updated", key, previous, value },
                         )
+                        if (ranked === undefined)
+                            (scopeEvents ??= []).push(event)
+                        else ranked.push({ row, position: 0, event })
+                    }
+                    if (ranked?.length) {
+                        // One event needs no position.
+                        if (ranked.length > 1) {
+                            for (const entry of ranked)
+                                entry.position =
+                                    firstVisibleChange(
+                                        lane,
+                                        scope,
+                                        entry.row,
+                                    ) ?? Number.MAX_SAFE_INTEGER
+                            ranked.sort(
+                                (first, second) =>
+                                    first.position - second.position,
+                            )
+                        }
+                        scopeEvents = ranked.map(entry => entry.event)
                     }
                     if (reorders(nodesByScope.get(scope)?.get(collection)))
                         (scopeEvents ??= []).push(REORDERED)
