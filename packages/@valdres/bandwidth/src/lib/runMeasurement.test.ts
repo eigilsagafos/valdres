@@ -13,6 +13,7 @@ import { measureBandwidth } from "../utils/measureBandwidth"
 import { forgetBandwidth } from "./measurementRecord"
 import { normalizeOptions } from "./normalizeOptions"
 import { runMeasurement } from "./runMeasurement"
+import { bytesToMbps } from "./bytesToMbps"
 import { runPhase } from "./runPhase"
 
 interface Request {
@@ -28,6 +29,8 @@ const CHUNK = 65_536
 let respond: (requested: number) => number
 /** How long the scripted server takes per request, ms. */
 let delayMs: number
+/** When set, download bodies stream in 64 KB chunks this many ms apart. */
+let streamEveryMs: number | undefined
 
 /** The `bytes=N` a download or latency request asked for. */
 const requestedBytes = (url: string) =>
@@ -37,6 +40,7 @@ beforeEach(() => {
     requests = []
     respond = requested => Math.min(requested, CHUNK)
     delayMs = 1
+    streamEveryMs = undefined
     original = Object.getOwnPropertyDescriptor(globalThis, "fetch")
     Object.defineProperty(globalThis, "fetch", {
         configurable: true,
@@ -51,7 +55,20 @@ beforeEach(() => {
             await new Promise(resolve => setTimeout(resolve, delayMs))
             init?.signal?.throwIfAborted()
             const bytes = respond(requestedBytes(String(input)))
-            return new Response(new Uint8Array(bytes), { status: 200 })
+            const every = streamEveryMs
+            if (every === undefined || bytes === 0)
+                return new Response(new Uint8Array(bytes), { status: 200 })
+            let sent = 0
+            const body = new ReadableStream<Uint8Array>({
+                pull: async controller => {
+                    if (sent >= bytes) return controller.close()
+                    await new Promise(resolve => setTimeout(resolve, every))
+                    const size = Math.min(CHUNK, bytes - sent)
+                    sent += size
+                    controller.enqueue(new Uint8Array(size))
+                },
+            })
+            return new Response(body, { status: 200 })
         },
     })
 })
@@ -239,20 +256,49 @@ describe("transfer limits", () => {
 
     test("a server that ignores the requested size is cut off at the limit", async () => {
         respond = requested => (requested === 0 ? 0 : 1_000_000)
-        delayMs = 300
+        streamEveryMs = 40
         const result = await run({
             maxDownloadBytes: 300_000,
-            maxUploadBytes: 1_000_000,
+            maxUploadBytes: 2_500_000,
             startStreams: 1,
             maxStreams: 1,
         })
         expect(result.downloadEndedBy).toBe("bytes")
-        // Reading stops at the limit (plus at most the chunk that crossed it).
+        // Reading stops at the limit, plus at most the chunk that crossed it,
+        // although the server keeps sending.
         expect(result.downloadBytes).toBeGreaterThanOrEqual(300_000)
-        expect(result.downloadBytes).toBeLessThan(300_000 + 1_000_000)
+        expect(result.downloadBytes).toBeLessThanOrEqual(300_000 + CHUNK)
         expect(
             requests.filter(r => /__down\?bytes=[1-9]/.test(r.url)),
         ).toHaveLength(1)
+    })
+
+    test("a phase cut off by its limit reports its average rate, not the lagging smoothed one", async () => {
+        // Slow for 300 ms, then fast: the smoothed rate trails far behind.
+        let ticks = 0
+        const started = performance.now()
+        const { mbps, bytes, endedBy } = await runPhase({
+            worker: async (signal, { report }) => {
+                while (!signal.aborted) {
+                    const slow = ticks++ < 3
+                    await new Promise(resolve =>
+                        setTimeout(resolve, slow ? 100 : 20),
+                    )
+                    report(slow ? 10_000 : 500_000)
+                }
+            },
+            maxBytes: 3_000_000,
+            maxDurationMs: 5_000,
+            minDurationMs: 5_000,
+            warmupMs: 0,
+            sampleIntervalMs: 50,
+            startStreams: 1,
+            maxStreams: 1,
+        })
+        const average = bytesToMbps(bytes, (performance.now() - started) / 1000)
+        expect(endedBy).toBe("bytes")
+        expect(mbps).toBeGreaterThanOrEqual(average * 0.95)
+        expect(mbps).toBeLessThanOrEqual(average * 1.15)
     })
 
     test("Infinity lifts a limit; the time limit still ends the phase", async () => {

@@ -294,6 +294,20 @@ describe("concurrency", () => {
                     upload: "https://speed.test/up",
                 },
             },
+            {
+                maxDownloadBytes: 5_000_000,
+                endpoints: {
+                    download: "https://speed.test/down",
+                    upload: "https://speed.cloudflare.com/__up",
+                },
+            },
+            {
+                maxDownloadBytes: 5_000_000,
+                endpoints: {
+                    download: "https://speed.cloudflare.com/__down",
+                    upload: "https://speed.test/up",
+                },
+            },
         ]) {
             const error = (await measureBandwidth(options).catch(
                 (failure: unknown) => failure,
