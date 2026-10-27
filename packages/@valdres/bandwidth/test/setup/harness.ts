@@ -6,10 +6,10 @@
 import type { BandwidthProgress } from "../../src/types/BandwidthProgress"
 import type { BandwidthResult } from "../../src/types/BandwidthResult"
 import type { MeasurementPhase } from "../../src/types/MeasurementPhase"
-import type { NormalizedOptions } from "../../src/lib/normalizeOptions"
+import type { BandwidthMeasurementConfig } from "../../src/types/BandwidthMeasurementConfig"
 
 export interface ScriptedRun {
-    readonly options: NormalizedOptions
+    readonly options: BandwidthMeasurementConfig
     readonly signal: AbortSignal
     /** Reports a phase and provisional readings, as the real runner does. */
     report(phase: MeasurementPhase, progress: Partial<BandwidthProgress>): void
@@ -25,7 +25,7 @@ export interface ScriptedRunner {
      */
     ignoreAbort: boolean
     readonly runner: (
-        options: NormalizedOptions,
+        options: BandwidthMeasurementConfig,
         signal: AbortSignal,
         report: (phase: MeasurementPhase, progress: BandwidthProgress) => void,
     ) => Promise<BandwidthResult>
@@ -36,6 +36,8 @@ const EMPTY: BandwidthProgress = Object.freeze({
     jitterMs: null,
     downloadMbps: null,
     uploadMbps: null,
+    downloadBytes: null,
+    uploadBytes: null,
 })
 
 export const scriptedRunner = (): ScriptedRunner => {
@@ -58,6 +60,10 @@ export const scriptedRunner = (): ScriptedRunner => {
                             uploadMbps: 20,
                             latencyMs: 12,
                             jitterMs: 1.5,
+                            downloadBytes: 25_000_000,
+                            uploadBytes: 10_000_000,
+                            downloadEndedBy: "bytes",
+                            uploadEndedBy: "bytes",
                             timestamp: Date.now(),
                             ...result,
                         })

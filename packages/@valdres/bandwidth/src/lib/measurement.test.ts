@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { bytesToMbps } from "./bytesToMbps"
 import { median } from "./median"
 import { stdDev } from "./stdDev"
-import { runPhase } from "./runPhase"
+import { BandwidthInsufficientDataError } from "../errors/BandwidthInsufficientDataError"
+import { runPhase, type PhaseTransfer } from "./runPhase"
 import { measureDownload } from "./measureDownload"
 import { measureUpload } from "./measureUpload"
 import { measureLatency } from "./measureLatency"
@@ -52,7 +53,7 @@ describe("runPhase", () => {
         // Worker reports a steady rate so CoV drops below the threshold.
         const worker = async (
             signal: AbortSignal,
-            reportBytes: (bytes: number) => void,
+            { report: reportBytes }: PhaseTransfer,
         ) => {
             while (!signal.aborted) {
                 await new Promise(r => setTimeout(r, 10))
@@ -61,7 +62,7 @@ describe("runPhase", () => {
         }
 
         const start = Date.now()
-        const mbps = await runPhase({
+        const { mbps, endedBy } = await runPhase({
             worker,
             maxDurationMs: 2_000,
             minDurationMs: 100,
@@ -76,6 +77,7 @@ describe("runPhase", () => {
         const elapsed = Date.now() - start
 
         expect(mbps).toBeGreaterThan(0)
+        expect(endedBy).toBe("stable")
         // Should stop well before maxDurationMs (2s) once stable.
         expect(elapsed).toBeLessThan(1_000)
     })
@@ -84,7 +86,7 @@ describe("runPhase", () => {
         let tick = 0
         const worker = async (
             signal: AbortSignal,
-            reportBytes: (bytes: number) => void,
+            { report: reportBytes }: PhaseTransfer,
         ) => {
             while (!signal.aborted) {
                 await new Promise(r => setTimeout(r, 10))
@@ -94,7 +96,7 @@ describe("runPhase", () => {
         }
 
         const start = Date.now()
-        await runPhase({
+        const { endedBy } = await runPhase({
             worker,
             maxDurationMs: 200,
             minDurationMs: 50,
@@ -110,12 +112,13 @@ describe("runPhase", () => {
         // Reached maxDurationMs, not significantly beyond.
         expect(elapsed).toBeGreaterThanOrEqual(180)
         expect(elapsed).toBeLessThan(400)
+        expect(endedBy).toBe("time")
     })
 
     test("aborts promptly on external signal mid-sleep", async () => {
         const worker = async (
             signal: AbortSignal,
-            reportBytes: (bytes: number) => void,
+            { report: reportBytes }: PhaseTransfer,
         ) => {
             while (!signal.aborted) {
                 await new Promise(r => setTimeout(r, 10))
@@ -147,22 +150,28 @@ describe("runPhase", () => {
         // minDurationMs/maxDurationMs.
         const worker = async (
             _signal: AbortSignal,
-            reportBytes: (bytes: number) => void,
+            { report: reportBytes }: PhaseTransfer,
         ) => {
             await new Promise(r => setTimeout(r, 10))
             reportBytes(1024)
         }
 
         const start = Date.now()
-        await runPhase({
+        // 1 KB in ~10 ms, before one 50 ms sampling interval: no usable
+        // reading, which is neither a result nor a cancellation.
+        const error = await runPhase({
             worker,
+            phase: "upload",
             maxDurationMs: 2_000,
             minDurationMs: 1_000,
             warmupMs: 0,
             sampleIntervalMs: 50,
             startStreams: 1,
             maxStreams: 1,
-        })
+        }).catch((failure: unknown) => failure)
+        expect(error).toBeInstanceOf(BandwidthInsufficientDataError)
+        expect((error as BandwidthInsufficientDataError).phase).toBe("upload")
+        expect((error as BandwidthInsufficientDataError).bytes).toBe(1024)
         // Phase should end soon after the worker finishes, well before
         // minDurationMs (1s) — not run out the full clock.
         expect(Date.now() - start).toBeLessThan(500)
@@ -198,7 +207,9 @@ describe("response validation", () => {
         globalThis.fetch = (async () =>
             new Response("rate limited", { status: 429 })) as typeof fetch
 
-        await expect(measureLatency(1)).rejects.toThrow(/429/)
+        await expect(
+            measureLatency("https://speed.test/__down", 1),
+        ).rejects.toThrow(/429/)
     })
 
     test("measureDownload throws on non-OK response", async () => {
@@ -206,7 +217,7 @@ describe("response validation", () => {
             new Response("server error", { status: 503 })) as typeof fetch
 
         await expect(
-            measureDownload({
+            measureDownload("https://speed.test/__down", {
                 maxDurationMs: 200,
                 minDurationMs: 50,
                 warmupMs: 0,
@@ -221,7 +232,7 @@ describe("response validation", () => {
             new Response("nope", { status: 500 })) as typeof fetch
 
         await expect(
-            measureUpload({
+            measureUpload("https://speed.test/__up", {
                 maxDurationMs: 200,
                 minDurationMs: 50,
                 warmupMs: 0,
@@ -237,7 +248,7 @@ describe("response validation", () => {
         let calls = 0
         globalThis.fetch = (async () => {
             calls++
-            await new Promise(r => setTimeout(r, 10))
+            await new Promise(r => setTimeout(r, 60))
             // A bare Response object whose body getter returns null while
             // arrayBuffer() still resolves — mimics a runtime without
             // streaming bodies.
@@ -250,7 +261,7 @@ describe("response validation", () => {
             } as unknown as Response
         }) as typeof fetch
 
-        await measureDownload({
+        const outcome = await measureDownload("https://speed.test/__down", {
             maxDurationMs: 300,
             minDurationMs: 50,
             warmupMs: 0,
@@ -258,7 +269,8 @@ describe("response validation", () => {
             startStreams: 1,
             maxStreams: 1,
         })
-        // One per started stream, no looping.
+        // One per started stream, no looping; an average over what arrived.
         expect(calls).toBe(1)
+        expect(outcome).toMatchObject({ bytes: 1024, endedBy: "drained" })
     })
 })

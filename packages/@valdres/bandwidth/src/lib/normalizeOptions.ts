@@ -1,16 +1,10 @@
+import type { BandwidthMeasurementConfig } from "../types/BandwidthMeasurementConfig"
 import type { MeasureBandwidthOptions } from "../types/MeasureBandwidthOptions"
+import { DEFAULT_ENDPOINTS } from "./endpoints"
 
-export interface NormalizedOptions {
-    readonly latencySamples: number
-    readonly maxDurationMs: number
-    readonly minDurationMs: number
-    readonly warmupMs: number
-    readonly startStreams: number
-    readonly maxStreams: number
-    readonly stabilityThreshold: number
-}
+type Numeric = Exclude<keyof BandwidthMeasurementConfig, "endpoints">
 
-const DEFAULTS: NormalizedOptions = {
+const DEFAULTS: { readonly [K in Numeric]: number } = {
     latencySamples: 10,
     maxDurationMs: 10_000,
     minDurationMs: 5_000,
@@ -18,43 +12,79 @@ const DEFAULTS: NormalizedOptions = {
     startStreams: 2,
     maxStreams: 8,
     stabilityThreshold: 0.05,
+    maxDownloadBytes: 25_000_000,
+    maxUploadBytes: 10_000_000,
 }
 
 const isCount = (value: number) => Number.isInteger(value) && value >= 1
 const isDuration = (value: number) => Number.isFinite(value) && value >= 0
+const isLimit = (value: number) =>
+    value === Infinity || (Number.isInteger(value) && value >= 1)
 
 /**
  * Throws `TypeError` for options no measurement could honour, before any
- * work. `signal` and `fresh` are returned separately.
+ * work. Returns the effective configuration plus the per-call `signal` and
+ * `fresh`.
  */
 export const normalizeOptions = (options: MeasureBandwidthOptions = {}) => {
     if (typeof options !== "object" || options === null)
         throw new TypeError("bandwidth options must be an object")
-    const { signal, fresh = false, ...rest } = options
-    const normalized: NormalizedOptions = { ...DEFAULTS }
-    for (const key of Object.keys(DEFAULTS) as (keyof NormalizedOptions)[]) {
+    const {
+        signal,
+        fresh = false,
+        endpoints = DEFAULT_ENDPOINTS,
+        ...rest
+    } = options
+    if (
+        typeof endpoints !== "object" ||
+        endpoints === null ||
+        typeof endpoints.download !== "string" ||
+        endpoints.download === "" ||
+        typeof endpoints.upload !== "string" ||
+        endpoints.upload === ""
+    )
+        throw new TypeError(
+            "bandwidth endpoints need non-empty download and upload URLs",
+        )
+    const numbers = { ...DEFAULTS } as { [K in Numeric]: number }
+    for (const key of Object.keys(DEFAULTS) as Numeric[]) {
         const value = rest[key]
         if (value === undefined) continue
         if (typeof value !== "number")
             throw new TypeError(`bandwidth ${key} must be a number`)
-        ;(normalized as { -readonly [K in keyof NormalizedOptions]: number })[
-            key
-        ] = value
+        numbers[key] = value
     }
     const valid =
-        isCount(normalized.latencySamples) &&
-        isCount(normalized.startStreams) &&
-        isCount(normalized.maxStreams) &&
-        normalized.maxStreams >= normalized.startStreams &&
-        isDuration(normalized.warmupMs) &&
-        isDuration(normalized.minDurationMs) &&
-        isDuration(normalized.maxDurationMs) &&
-        normalized.maxDurationMs > 0 &&
-        normalized.maxDurationMs >= normalized.minDurationMs &&
-        normalized.stabilityThreshold > 0
+        isCount(numbers.latencySamples) &&
+        isCount(numbers.startStreams) &&
+        isCount(numbers.maxStreams) &&
+        numbers.maxStreams >= numbers.startStreams &&
+        isDuration(numbers.warmupMs) &&
+        isDuration(numbers.minDurationMs) &&
+        isDuration(numbers.maxDurationMs) &&
+        numbers.maxDurationMs > 0 &&
+        numbers.maxDurationMs >= numbers.minDurationMs &&
+        numbers.stabilityThreshold > 0 &&
+        isLimit(numbers.maxDownloadBytes) &&
+        isLimit(numbers.maxUploadBytes)
     if (!valid)
         throw new TypeError(
-            "bandwidth options need positive integer sample and stream counts (maxStreams >= startStreams), non-negative durations with maxDurationMs > 0 and >= minDurationMs, and a positive stabilityThreshold",
+            "bandwidth options need positive integer sample and stream counts (maxStreams >= startStreams), non-negative durations with maxDurationMs > 0 and >= minDurationMs, a positive stabilityThreshold, and byte limits that are positive integers or Infinity",
         )
-    return { options: Object.freeze(normalized), signal, fresh: fresh === true }
+    const config: BandwidthMeasurementConfig = Object.freeze({
+        ...numbers,
+        endpoints: Object.freeze({
+            download: endpoints.download,
+            upload: endpoints.upload,
+        }),
+    })
+    return { config, signal, fresh: fresh === true }
 }
+
+export const sameConfig = (
+    a: BandwidthMeasurementConfig,
+    b: BandwidthMeasurementConfig,
+) =>
+    a.endpoints.download === b.endpoints.download &&
+    a.endpoints.upload === b.endpoints.upload &&
+    (Object.keys(DEFAULTS) as Numeric[]).every(key => a[key] === b[key])

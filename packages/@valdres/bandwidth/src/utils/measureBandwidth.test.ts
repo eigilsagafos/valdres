@@ -8,6 +8,8 @@ import {
     type ScriptedRunner,
 } from "../../test/setup/harness"
 import { bandwidthAtom } from "../atoms/bandwidthAtom"
+import { BandwidthInsufficientDataError } from "../errors/BandwidthInsufficientDataError"
+import { BandwidthMeasurementConflictError } from "../errors/BandwidthMeasurementConflictError"
 import {
     forgetBandwidth,
     inspectBandwidth,
@@ -92,11 +94,13 @@ describe("explicit measurement", () => {
         })
         const run = net.runs[0]!
         run.report("download", { latencyMs: 12, jitterMs: 1.5 })
-        run.report("download", { downloadMbps: 80 })
+        run.report("download", { downloadMbps: 80, downloadBytes: 4_000_000 })
         expect(root.get(bandwidthAtom).progress).toEqual({
             latencyMs: 12,
             jitterMs: 1.5,
             downloadMbps: 80,
+            downloadBytes: 4_000_000,
+            uploadBytes: null,
             uploadMbps: null,
         })
         // Provisional readings are not results.
@@ -139,6 +143,12 @@ describe("explicit measurement", () => {
             startStreams: 2,
             maxStreams: 8,
             stabilityThreshold: 0.05,
+            maxDownloadBytes: 25_000_000,
+            maxUploadBytes: 10_000_000,
+            endpoints: {
+                download: "https://speed.cloudflare.com/__down",
+                upload: "https://speed.cloudflare.com/__up",
+            },
         })
     })
 
@@ -196,6 +206,26 @@ describe("failures", () => {
         })
     })
 
+    test("too little data is an error outcome, distinct from a result and from a cancellation", async () => {
+        const root = app()
+        const first = measureBandwidth()
+        const previous = net.runs[0]!.complete()
+        await first
+        const second = measureBandwidth()
+        const error = new BandwidthInsufficientDataError(
+            "download",
+            25_000_000,
+            120,
+        )
+        net.runs[1]!.fail(error)
+        await expect(second).rejects.toBe(error)
+        expect(root.get(bandwidthAtom)).toMatchObject({
+            status: "error",
+            result: previous,
+            error: { name: "BandwidthInsufficientDataError" },
+        })
+    })
+
     test("a failure is never retried automatically; the next explicit call is", async () => {
         const root = app()
         const failed = measureBandwidth()
@@ -232,12 +262,67 @@ describe("failures", () => {
 })
 
 describe("concurrency", () => {
-    test("concurrent calls share one measurement; a joining call's options are ignored", async () => {
+    test("calls with the same effective configuration share one measurement", async () => {
         const first = measureBandwidth()
-        const second = measureBandwidth({ maxStreams: 2, startStreams: 1 })
+        // Spelled-out defaults and a per-call signal are the same configuration.
+        const second = measureBandwidth({
+            maxDownloadBytes: 25_000_000,
+            endpoints: {
+                download: "https://speed.cloudflare.com/__down",
+                upload: "https://speed.cloudflare.com/__up",
+            },
+            signal: new AbortController().signal,
+        })
         expect(net.runs).toHaveLength(1)
         const result = net.runs[0]!.complete()
         expect(await Promise.all([first, second])).toEqual([result, result])
+    })
+
+    test("a different server, limit or setting conflicts instead of sharing or running a second measurement", async () => {
+        const root = app()
+        const running = measureBandwidth({ maxDownloadBytes: 5_000_000 })
+        const before = root.get(bandwidthAtom)
+        for (const options of [
+            {},
+            { maxDownloadBytes: 5_000_000, maxUploadBytes: Infinity },
+            { maxDownloadBytes: 5_000_000, maxStreams: 4 },
+            { maxDownloadBytes: 5_000_000, latencySamples: 3 },
+            {
+                maxDownloadBytes: 5_000_000,
+                endpoints: {
+                    download: "https://speed.test/down",
+                    upload: "https://speed.test/up",
+                },
+            },
+        ]) {
+            const error = (await measureBandwidth(options).catch(
+                (failure: unknown) => failure,
+            )) as BandwidthMeasurementConflictError
+            expect(error).toBeInstanceOf(BandwidthMeasurementConflictError)
+            expect(error.code).toBe("VALDRES_BANDWIDTH_MEASUREMENT_CONFLICT")
+            expect(error.active.maxDownloadBytes).toBe(5_000_000)
+        }
+        // The running measurement and the state are untouched.
+        expect(net.runs).toHaveLength(1)
+        expect(net.runs[0]!.signal.aborted).toBe(false)
+        expect(root.get(bandwidthAtom)).toBe(before)
+        const result = net.runs[0]!.complete()
+        expect(await running).toBe(result)
+        // Once it settled, another configuration simply starts.
+        void measureBandwidth({ maxStreams: 4 })
+        expect(net.runs).toHaveLength(2)
+        expect(net.runs[1]!.options.maxStreams).toBe(4)
+    })
+
+    test("fresh replaces a measurement of any configuration", async () => {
+        const old = measureBandwidth({ maxDownloadBytes: 5_000_000 })
+        const replacement = measureBandwidth({ maxStreams: 4, fresh: true })
+        expect(
+            ((await old.catch((failure: unknown) => failure)) as Error).name,
+        ).toBe("AbortError")
+        expect(inspectBandwidth().config?.maxStreams).toBe(4)
+        const result = net.runs[1]!.complete()
+        expect(await replacement).toBe(result)
     })
 
     test("fresh replaces the running measurement; its callers reject with AbortError", async () => {
@@ -473,6 +558,51 @@ describe("subscriber failures", () => {
         await flush()
         expect(noisy.get(measurementStatusAtom)).toBe("error")
         expect(reports.unhandled).toEqual([])
+    })
+
+    test("a transaction that throws does not roll the measurement back; it runs and publishes once", async () => {
+        const root = app()
+        const trigger = atom(0)
+        const { seen } = watch(root)
+        let answer: Promise<unknown> | undefined
+        expect(() =>
+            root.txn(tx => {
+                tx.set(trigger, 1)
+                answer = measureBandwidth()
+                throw new Error(
+                    "transaction aborted after the measurement started",
+                )
+            }),
+        ).toThrow("transaction aborted")
+        expect(root.get(trigger)).toBe(0)
+        expect(net.runs).toHaveLength(1)
+        await flush(1)
+        expect(root.get(measurementStatusAtom)).toBe("pending")
+        const result = net.runs[0]!.complete()
+        expect(await answer).toBe(result)
+        expect(seen).toEqual(["pending/latency", "ready"])
+        expect([reports.reported, reports.unhandled]).toEqual([[], []])
+    })
+
+    test("a measurement started in a transaction that throws can be cancelled; the state does not stay pending", async () => {
+        const root = app()
+        const controller = new AbortController()
+        let answer: Promise<unknown> | undefined
+        try {
+            root.txn(() => {
+                answer = measureBandwidth({ signal: controller.signal })
+                throw new Error("abort")
+            })
+        } catch {}
+        controller.abort()
+        expect(
+            ((await answer!.catch((failure: unknown) => failure)) as Error)
+                .name,
+        ).toBe("AbortError")
+        await flush()
+        expect(root.get(measurementStatusAtom)).toBe("idle")
+        expect(net.runs[0]!.signal.aborted).toBe(true)
+        expect([reports.reported, reports.unhandled]).toEqual([[], []])
     })
 
     test("a measurement started inside a transaction is published once the transaction is over", async () => {

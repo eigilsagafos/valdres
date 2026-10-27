@@ -3,7 +3,8 @@
 # bandwidth
 
 Runs an active network measurement when you ask — latency and jitter, then
-download and upload throughput against Cloudflare's speed-test endpoints — and
+download and upload throughput against Cloudflare's speed-test endpoints, or a
+compatible server you configure — and
 publishes its progress and result as read-only state.
 
 > **Transfers data only when you call it**
@@ -11,8 +12,8 @@ publishes its progress and result as read-only state.
 >
 > Importing, reading, subscribing and server rendering never transfer
 > anything. Only `measureBandwidth()` does, and a measurement
-> deliberately saturates the connection: up to \~20 s of traffic, often
-> hundreds of megabytes on a fast link.
+> deliberately loads the connection: by default up to 25 MB down and
+> 10 MB up, within 5–10 s per direction.
 
 ## Install
 
@@ -94,101 +95,189 @@ function SpeedTest() {
 
 ## Exports
 
-| Export                    | Kind                      | Type                                                                                                                                                             |
-| ------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bandwidthAtom`           | external atom (read-only) | `BandwidthState`                                                                                                                                                 |
-| `downloadSpeedAtom`       | selector (read-only)      | `number \| null` — Mbps, last result                                                                                                                             |
-| `uploadSpeedAtom`         | selector (read-only)      | `number \| null` — Mbps, last result                                                                                                                             |
-| `latencyAtom`             | selector (read-only)      | `number \| null` — ms, last result                                                                                                                               |
-| `jitterAtom`              | selector (read-only)      | `number \| null` — ms, last result                                                                                                                               |
-| `lastMeasurementAtom`     | selector (read-only)      | `number \| null` — `Date.now()` of the last result                                                                                                               |
-| `measurementStatusAtom`   | selector (read-only)      | `MeasurementStatus`                                                                                                                                              |
-| `measureBandwidth`        | util fn                   | `(options?: MeasureBandwidthOptions) => Promise<BandwidthResult>`                                                                                                |
-| `BandwidthState`          | type                      | `{ status, phase, progress, result, error }`                                                                                                                     |
-| `BandwidthResult`         | type                      | `{ downloadMbps, uploadMbps, latencyMs, jitterMs, timestamp: number }`                                                                                           |
-| `BandwidthProgress`       | type                      | `{ latencyMs, jitterMs, downloadMbps, uploadMbps: number \| null }`                                                                                              |
-| `BandwidthError`          | type                      | `{ name: string; message: string }`                                                                                                                              |
-| `MeasurementStatus`       | type                      | `"unsupported" \| "idle" \| "pending" \| "ready" \| "error"`                                                                                                     |
-| `MeasurementPhase`        | type                      | `"latency" \| "download" \| "upload"`                                                                                                                            |
-| `MeasureBandwidthOptions` | type                      | `{ latencySamples?, maxDurationMs?, minDurationMs?, warmupMs?, startStreams?, maxStreams?, stabilityThreshold?: number; signal?: AbortSignal; fresh?: boolean }` |
+| Export                              | Kind                      | Type                                                                                                                       |
+| ----------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `bandwidthAtom`                     | external atom (read-only) | `BandwidthState`                                                                                                           |
+| `downloadSpeedAtom`                 | selector (read-only)      | `number \| null` — Mbps, last result                                                                                       |
+| `uploadSpeedAtom`                   | selector (read-only)      | `number \| null` — Mbps, last result                                                                                       |
+| `latencyAtom`                       | selector (read-only)      | `number \| null` — ms, last result                                                                                         |
+| `jitterAtom`                        | selector (read-only)      | `number \| null` — ms, last result                                                                                         |
+| `lastMeasurementAtom`               | selector (read-only)      | `number \| null` — `Date.now()` of the last result                                                                         |
+| `measurementStatusAtom`             | selector (read-only)      | `MeasurementStatus`                                                                                                        |
+| `measureBandwidth`                  | util fn                   | `(options?: MeasureBandwidthOptions) => Promise<BandwidthResult>`                                                          |
+| `BandwidthMeasurementConflictError` | error class               | rejects a call whose configuration conflicts with the running measurement                                                  |
+| `BandwidthInsufficientDataError`    | error class               | rejects a measurement whose download or upload phase produced no usable reading                                            |
+| `BandwidthState`                    | type                      | `{ status, phase, progress, result, error }`                                                                               |
+| `BandwidthResult`                   | type                      | `{ downloadMbps, uploadMbps, latencyMs, jitterMs, downloadBytes, uploadBytes, downloadEndedBy, uploadEndedBy, timestamp }` |
+| `BandwidthProgress`                 | type                      | `{ latencyMs, jitterMs, downloadMbps, uploadMbps, downloadBytes, uploadBytes: number \| null }`                            |
+| `BandwidthEndpoints`                | type                      | `{ download: string; upload: string }`                                                                                     |
+| `BandwidthMeasurementConfig`        | type                      | every option except `signal` / `fresh`, with defaults applied                                                              |
+| `BandwidthError`                    | type                      | `{ name: string; message: string }`                                                                                        |
+| `MeasurementStatus`                 | type                      | `"unsupported" \| "idle" \| "pending" \| "ready" \| "error"`                                                               |
+| `MeasurementPhase`                  | type                      | `"latency" \| "download" \| "upload"`                                                                                      |
+| `MeasurementPhaseEnd`               | type                      | `"stable" \| "time" \| "bytes" \| "drained"`                                                                               |
+| `MeasureBandwidthOptions`           | type                      | see [Options](#options)                                                                                                    |
 
 ## State
 
-| `status`        | Meaning                                       | `phase` / `progress`                           | `result`                    | `error` |
-| --------------- | --------------------------------------------- | ---------------------------------------------- | --------------------------- | ------- |
-| `"unsupported"` | No `fetch` or `performance.now`.              | `null`                                         | `null`                      | `null`  |
-| `"idle"`        | Nothing measured yet in this page or process. | `null`                                         | `null`                      | `null`  |
-| `"pending"`     | A measurement is running.                     | the running phase and its provisional readings | the previous result, if any | `null`  |
-| `"ready"`       | The latest measurement completed.             | `null`                                         | its result                  | `null`  |
-| `"error"`       | The latest measurement failed.                | `null`                                         | the previous result, if any | why     |
+| `status`        | Meaning                                                                         | `phase` / `progress`                                                         | `result`                    | `error` |
+| --------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------- | ------- |
+| `"unsupported"` | No `fetch` or `performance.now`.                                                | `null`                                                                       | `null`                      | `null`  |
+| `"idle"`        | Nothing measured yet in this page or process.                                   | `null`                                                                       | `null`                      | `null`  |
+| `"pending"`     | An active measurement is running and transferring data.                         | the running phase, its provisional readings and the bytes transferred so far | the previous result, if any | `null`  |
+| `"ready"`       | The latest measurement completed.                                               | `null`                                                                       | its result                  | `null`  |
+| `"error"`       | The latest measurement failed or had too little data (`error.name` says which). | `null`                                                                       | the previous result, if any | why     |
 
 Each snapshot is frozen and published as one value. The selectors read `result`
 only — a completed measurement — so they never show a provisional reading; read
 `bandwidthAtom`'s `progress` for live numbers.
 
+A call ends in exactly one of four ways:
+
+| Outcome               | Promise                                                                       | State                                                                |
+| --------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Completed             | resolves the `BandwidthResult`                                                | `"ready"` with it as `result`                                        |
+| Too little data       | rejects with `BandwidthInsufficientDataError` (`phase`, `bytes`, `elapsedMs`) | `"error"`, previous `result` kept                                    |
+| Failed request        | rejects with that request's error                                             | `"error"`, previous `result` kept                                    |
+| Cancelled or replaced | rejects with the signal's reason / `AbortError`                               | back to what it was before (cancel) or the replacement's `"pending"` |
+
 ## What is measured
 
-Everything here is an **active measurement** between this client and
-`speed.cloudflare.com`, never a browser estimate. The package does not read
+Everything here is an **active measurement** between this client and the
+measurement server, never a browser estimate. The package does not read
 `navigator.connection` (`downlink`, `rtt`, `effectiveType`): those are coarse,
-rounded estimates that only some browsers expose, and they are never substituted
-for a measurement.
+rounded estimates that only some browsers expose, and they are never
+substituted for a measurement.
 
-| Phase    | Requests                                                                                                     | Result                                                                                                  |
-| -------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| latency  | one warm-up, then `latencySamples` (10) sequential `GET __down?bytes=0`                                      | `latencyMs`: median round trip, ms. `jitterMs`: population standard deviation of those round trips, ms. |
-| download | `startStreams` (2) to `maxStreams` (8) parallel streams of `GET __down?bytes=100000000`, read as they arrive | `downloadMbps`                                                                                          |
-| upload   | the same number of parallel streams of 1 MB `POST __up`                                                      | `uploadMbps`                                                                                            |
+| Phase    | Requests                                                                                                                                                                        | Result                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| latency  | one warm-up, then `latencySamples` (10) sequential `GET <download>?bytes=0`                                                                                                     | `latencyMs`: median round trip, ms. `jitterMs`: population standard deviation of those round trips, ms. |
+| download | `startStreams` (2) to `maxStreams` (8) parallel streams of `GET <download>?bytes=N`, N ≤ 10 MB per request and never more than the download limit has left, read as they arrive | `downloadMbps`, `downloadBytes`, `downloadEndedBy`                                                      |
+| upload   | the same number of parallel streams of `POST <upload>` with up to 1 MB each, never more than the upload limit has left                                                          | `uploadMbps`, `uploadBytes`, `uploadEndedBy`                                                            |
 
-Throughput is in megabits per second (1 Mbps = 1,000,000 bits/s). Every 250 ms a
-phase computes the rate over the last 1.5 s and smooths it (exponential moving
-average, α = 0.2); `progress` shows that smoothed rate as it moves, and the
-result is its value when the phase ends. After `minDurationMs` (5 s) a phase
-ends as soon as the coefficient of variation of its last four unsmoothed
-readings (ignoring the first `warmupMs`, 2 s) drops below `stabilityThreshold`
-(0.05), and at `maxDurationMs` (10 s) at the latest. Past `minDurationMs`, a
-reading more than 15 % above the previous one opens another stream, up to
-`maxStreams`.
+Throughput is in megabits per second (1 Mbps = 1,000,000 bits/s). Every 250 ms
+a phase computes the rate over the last 1.5 s and smooths it (exponential moving
+average, α = 0.2); `progress` shows that smoothed rate and the bytes so far.
+A phase ends at the first of:
 
-Limitations: the result is throughput to Cloudflare's nearest edge over this
+| `…EndedBy`  | When                                                                                                                                                                     | Reported rate                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `"stable"`  | after `minDurationMs` (5 s), the coefficient of variation of the last four unsmoothed readings (ignoring the first `warmupMs`, 2 s) is below `stabilityThreshold` (0.05) | the smoothed rate                                                             |
+| `"time"`    | `maxDurationMs` (10 s)                                                                                                                                                   | the smoothed rate                                                             |
+| `"bytes"`   | the phase's byte limit has been transferred                                                                                                                              | the phase's **average** rate — a lower bound that includes connection ramp-up |
+| `"drained"` | every stream finished on its own (a runtime without streamed bodies)                                                                                                     | the average rate                                                              |
+
+A phase that ends with no bytes, or before one 250 ms sampling interval,
+produces no result: the measurement rejects with
+`BandwidthInsufficientDataError`. Past `minDurationMs`, a reading more than
+15 % above the previous one opens another stream, up to `maxStreams`.
+
+Limitations: the result is throughput to the measurement server over this
 browser's network path at that moment — other traffic, Wi-Fi conditions, VPNs
-and the browser's own connection limits all lower it, and it is not the capacity
-of the line. Latency includes HTTP request overhead, so it is higher than an
-ICMP ping.
+and the browser's own connection limits all lower it, and it is not the
+capacity of the line. Latency includes HTTP request overhead, so it is higher
+than an ICMP ping.
 
-### Data transferred
+### Data transferred and limits
 
-A measurement moves roughly _throughput × phase duration_ in each direction,
-plus 11 empty latency requests. With the defaults each throughput phase lasts
-5–10 s, so on a 100 Mbps link a measurement downloads about 60–125 MB and on a 1
-Gbps link up to about 1.25 GB, with upload traffic on the same scale for its own
-speed. Repeated measurements multiply that. Do not run measurements
+`maxDownloadBytes` and `maxUploadBytes` are hard limits **per direction**, on
+the response bodies the download phase requests and the request bodies the
+upload phase sends. Requests are sized so the bytes asked for never exceed what
+is left, and a server that sends more than it was asked for is cut off at the
+limit (at most the chunk that crossed it is read). They do not count HTTP
+headers, TLS or TCP overhead, or the empty latency responses. Both limits apply
+alongside the time limits; whichever is reached first ends the phase.
+`Infinity` lifts a byte limit.
+
+|         | Download | Upload | Worst case per measurement      |
+| ------- | -------- | ------ | ------------------------------- |
+| Default | 25 MB    | 10 MB  | ≈ 35 MB of bodies plus overhead |
+
+The trade-off: a phase ends by its byte limit before `minDurationMs` on links
+faster than limit × 8 / 5 s — about **40 Mbps down and 16 Mbps up** with the
+defaults — and before the 2 s warm-up above about 100 Mbps down / 40 Mbps up.
+Such a result is marked `"bytes"` and reports the average rate, which
+**underestimates** fast links because it includes TCP ramp-up; above roughly
+800 Mbps down (320 Mbps up) the limit can be spent inside one sampling
+interval and the measurement rejects with `BandwidthInsufficientDataError`.
+For accurate results on fast links raise the limits deliberately — for
+example 250 MB down / 100 MB up keeps phases time-bounded up to about
+400 / 160 Mbps — knowing each measurement may then transfer that much.
+
+Repeated measurements multiply the cost. Do not run measurements
 automatically, on a timer, or on metered or mobile connections without the
-user's consent; shorter `maxDurationMs` and fewer `maxStreams` reduce the cost
-and the accuracy. Requests send no cookies or referrer and bypass the HTTP
-cache; Cloudflare sees the client's IP address, as with any request.
+user's consent.
+
+### Endpoints
+
+By default every request goes to Cloudflare's speed test,
+`https://speed.cloudflare.com/__down` and `__up`; no other service is
+contacted, and Cloudflare sees the client's IP address as with any request.
+Requests send no cookies or referrer and bypass the HTTP cache.
+
+`endpoints: { download, upload }` points a measurement at another server that
+speaks **the same protocol** — this is not compatible with arbitrary speed-test
+servers:
+
+- `GET <download>?bytes=N` (or `&bytes=N` when the URL already has a query)
+  answers 2xx with a body of N bytes. `bytes=0` is the latency probe.
+- `POST <upload>` with a raw binary body of up to 1 MB answers 2xx; the response
+  body is read and discarded.
+- Cross-origin servers must send CORS headers allowing the page's origin.
+
+## Options
+
+| Option                                | Default        |                                                            |
+| ------------------------------------- | -------------- | ---------------------------------------------------------- |
+| `endpoints`                           | Cloudflare     | see [Endpoints](#endpoints)                                |
+| `maxDownloadBytes` / `maxUploadBytes` | 25 MB / 10 MB  | hard per-direction limits; positive integers or `Infinity` |
+| `maxDurationMs` / `minDurationMs`     | 10 000 / 5 000 | per throughput phase                                       |
+| `warmupMs`                            | 2 000          | readings ignored for stability                             |
+| `startStreams` / `maxStreams`         | 2 / 8          | parallel streams per phase                                 |
+| `stabilityThreshold`                  | 0.05           | coefficient of variation                                   |
+| `latencySamples`                      | 10             | after one warm-up request                                  |
+| `signal`                              | —              | cancels this caller                                        |
+| `fresh`                               | `false`        | replace a running measurement                              |
 
 ## Measuring
 
-- **Sharing.** There is one measurement at a time per page or process — two
-  would compete for the same link. Concurrent calls share it; the options of a
-  call that joins are ignored. `fresh: true` aborts the running measurement
-  instead (its callers reject with an `AbortError`) and starts a new one.
+- **One at a time, shared only when compatible.** There is one measurement at a
+  time per page or process — two would compete for the same link. Its
+  **effective configuration** is every option except `signal` and `fresh`, with
+  defaults applied:
+
+  | A call while a measurement is running…  | Result                                                                                                                        |
+  | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+  | with the same effective configuration   | joins it; every caller gets its outcome                                                                                       |
+  | with any other server, limit or setting | rejects with `BandwidthMeasurementConflictError` (`active`, `requested`); the running measurement and the state are untouched |
+  | with `fresh: true` (any configuration)  | aborts the running measurement — **its other callers reject with `AbortError`** — and starts this one                         |
+
 - **Cancellation.** `signal` cancels only that caller: its promise rejects with
   the signal's reason. When every caller sharing the measurement has cancelled,
-  all its requests are aborted and the state returns to what it was before. A
-  caller without a signal keeps it running. A cut-short phase never produces a
-  result.
+  all its requests are aborted, no further transfer is scheduled, and the state
+  returns to what it was before. A caller without a signal keeps it running. A
+  cut-short phase never produces a result.
+
 - **Ordering.** Only the newest measurement publishes. A replaced or cancelled
   one whose readings still arrive changes nothing.
+
+- **Transactions.** A measurement is not transactional. Calling
+  `measureBandwidth()` inside a transaction or `settle` handler starts it
+  immediately; if the transaction then throws, the measurement is **not**
+  rolled back — it keeps transferring and its outcome is published as usual
+  (the Store is notified once the transaction is over, never during it). Pass a
+  `signal` and abort it if it should not outlive a failed transaction.
+
 - **No automatic work.** Nothing retries a failure or measures again. Call
   `measureBandwidth()` when you want a new result.
-- **Errors.** Invalid options throw `TypeError` before anything is sent. Without
-  `fetch` or `performance.now` the promise rejects with `NotSupportedError`. The
-  first failing request (for example `download failed: 503`) fails the
-  measurement. A Store subscriber that throws while the state is published is
-  reported through `globalThis.reportError` (or thrown in a later task) and
-  never changes the promise's outcome; every other Store is still notified.
+
+- **Errors.** Invalid options throw `TypeError` before anything is sent.
+  Without `fetch` or `performance.now` the promise rejects with
+  `NotSupportedError`. The first failing request (for example
+  `download failed: 503`) fails the measurement. A Store subscriber that
+  throws while the state is published is reported through
+  `globalThis.reportError` (or thrown in a later task) and never changes the
+  promise's outcome; every other Store is still notified.
 
 ## Ownership and lifetime
 
@@ -201,9 +290,8 @@ unsubscribe or `dispose()`. Unsubscribing or disposing a Store never stops a
 measurement; abort its `signal` for that. A disposed Store receives nothing
 afterwards.
 
-Calling `measureBandwidth()` inside a transaction or a `settle` handler starts
-the measurement immediately and notifies that Store once the transaction is
-over; prefer event handlers and effects.
+Prefer calling `measureBandwidth()` from event handlers and effects; inside a
+transaction it starts immediately and is not rolled back (see Measuring).
 
 ## Server rendering
 
@@ -213,16 +301,19 @@ hydration.
 
 ## Migrating from 1.0.0-beta.8
 
-| Before                                                                                                                                     | Now                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| Reading or subscribing to `downloadSpeedAtom`, `uploadSpeedAtom`, `latencyAtom` or `jitterAtom` started a full measurement and suspended   | Reading never measures. Call `measureBandwidth()`; the selectors are `number \| null` (`null` until a measurement completes). |
-| Those atoms updated live during a measurement                                                                                              | They hold completed results only. Live readings are `bandwidthAtom`'s `progress`, labelled by `phase`.                        |
-| `measurementStatusAtom` (settable): `"idle" \| "measuring-latency" \| "measuring-download" \| "measuring-upload" \| "complete" \| "error"` | Read-only: `"idle" \| "pending" \| "ready" \| "error"` (plus `"unsupported"`); the phase is `bandwidthAtom`'s `phase`.        |
-| `lastMeasurementAtom` (settable)                                                                                                           | Read-only selector of the last result's `timestamp`.                                                                          |
-| `invalidateOnAtom` re-measured whenever listed global atoms changed                                                                        | Removed. Subscribe to what should trigger a new measurement and call `measureBandwidth({ fresh: true })` (example below).     |
-| `invalidateMeasurement()`                                                                                                                  | `measureBandwidth({ fresh: true })`.                                                                                          |
-| An abort mid-phase could still complete with partial numbers                                                                               | A cancelled or replaced measurement rejects and never publishes a result.                                                     |
-| Peer `valdres` `^1.0.0-beta.19`                                                                                                            | `^1.0.0-beta.39`, the first core with `externalAtom`.                                                                         |
+| Before                                                                                                                                     | Now                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Reading or subscribing to `downloadSpeedAtom`, `uploadSpeedAtom`, `latencyAtom` or `jitterAtom` started a full measurement and suspended   | Reading never measures. Call `measureBandwidth()`; the selectors are `number \| null` (`null` until a measurement completes).                                                                                                                                |
+| Those atoms updated live during a measurement                                                                                              | They hold completed results only. Live readings are `bandwidthAtom`'s `progress`, labelled by `phase`.                                                                                                                                                       |
+| `measurementStatusAtom` (settable): `"idle" \| "measuring-latency" \| "measuring-download" \| "measuring-upload" \| "complete" \| "error"` | Read-only: `"idle" \| "pending" \| "ready" \| "error"` (plus `"unsupported"`); the phase is `bandwidthAtom`'s `phase`.                                                                                                                                       |
+| `lastMeasurementAtom` (settable)                                                                                                           | Read-only selector of the last result's `timestamp`.                                                                                                                                                                                                         |
+| `invalidateOnAtom` re-measured whenever listed global atoms changed                                                                        | Removed. Subscribe to what should trigger a new measurement and call `measureBandwidth({ fresh: true })` (example below).                                                                                                                                    |
+| `invalidateMeasurement()`                                                                                                                  | `measureBandwidth({ fresh: true })`.                                                                                                                                                                                                                         |
+| An abort mid-phase could still complete with partial numbers                                                                               | A cancelled or replaced measurement rejects and never publishes a result.                                                                                                                                                                                    |
+| Each phase streamed 100 MB requests for 5–10 s — gigabytes per measurement on a fast link                                                  | Hard per-direction byte limits, default 25 MB down / 10 MB up (see [Data transferred and limits](#data-transferred-and-limits)); a phase cut off by its limit reports its average rate and `…EndedBy: "bytes"`. Pass `Infinity` to restore time-only phases. |
+| Only Cloudflare                                                                                                                            | Cloudflare by default; `endpoints` for a server speaking the same protocol.                                                                                                                                                                                  |
+| A joining call's options were ignored                                                                                                      | Calls share a measurement only with the same configuration; a conflicting call rejects with `BandwidthMeasurementConflictError`.                                                                                                                             |
+| Peer `valdres` `^1.0.0-beta.19`                                                                                                            | `^1.0.0-beta.39`, the first core with `externalAtom`.                                                                                                                                                                                                        |
 
 To re-measure when something changes, wire it explicitly — and consider the data
 cost before doing so:

@@ -3,7 +3,9 @@ import type { CancelSignal } from "../types/CancelSignal"
 import type { BandwidthState } from "../types/BandwidthState"
 import type { MeasureBandwidthOptions } from "../types/MeasureBandwidthOptions"
 import { abortError, notSupportedError } from "./domErrors"
-import { normalizeOptions, type NormalizedOptions } from "./normalizeOptions"
+import { BandwidthMeasurementConflictError } from "../errors/BandwidthMeasurementConflictError"
+import type { BandwidthMeasurementConfig } from "../types/BandwidthMeasurementConfig"
+import { normalizeOptions, sameConfig } from "./normalizeOptions"
 import { notifyAll } from "./notifyAll"
 import { runMeasurement, type ReportProgress } from "./runMeasurement"
 import {
@@ -15,13 +17,14 @@ import {
 } from "./states"
 
 type Runner = (
-    options: NormalizedOptions,
+    config: BandwidthMeasurementConfig,
     signal: AbortSignal,
     report: ReportProgress,
 ) => Promise<BandwidthResult>
 
 /** One running measurement, shared by every caller that joined it. */
 interface Run {
+    readonly config: BandwidthMeasurementConfig
     readonly controller: AbortController
     done: Promise<BandwidthResult>
     /** A caller without a signal can never cancel, so it keeps the run alive. */
@@ -83,8 +86,9 @@ export const retainBandwidth = (invalidate: () => void): (() => void) => {
     }
 }
 
-const start = (options: NormalizedOptions): Run => {
+const start = (config: BandwidthMeasurementConfig): Run => {
     const run: Run = {
+        config,
         controller: new AbortController(),
         done: undefined as unknown as Promise<BandwidthResult>,
         pinned: false,
@@ -97,7 +101,7 @@ const start = (options: NormalizedOptions): Run => {
     // it is delivered joins a complete run.
     let starting = true
     let first: BandwidthState | undefined
-    run.done = runner(options, run.controller.signal, (phase, progress) => {
+    run.done = runner(config, run.controller.signal, (phase, progress) => {
         if (record.run !== run) return
         const next = pendingFrom(record.settled, phase, progress)
         if (starting) first = next
@@ -170,13 +174,19 @@ const join = (
 export const measureBandwidthOnce = (
     input?: MeasureBandwidthOptions,
 ): Promise<BandwidthResult> => {
-    const { options, signal, fresh } = normalizeOptions(input)
+    const { config, signal, fresh } = normalizeOptions(input)
     if (!isSupported())
         return Promise.reject(
             notSupportedError("This runtime has no fetch or performance.now"),
         )
     if (signal?.aborted) return Promise.reject(signal.reason)
     let run = record.run
+    // Share only an identical configuration; never hand a caller a result
+    // measured with another server, limits or settings.
+    if (run !== undefined && !fresh && !sameConfig(run.config, config))
+        return Promise.reject(
+            new BandwidthMeasurementConflictError(run.config, config),
+        )
     if (run === undefined || fresh) {
         if (run !== undefined) {
             // Ownership moves first, so the replaced run's late progress and
@@ -186,7 +196,7 @@ export const measureBandwidthOnce = (
                 abortError("Replaced by a newer bandwidth measurement"),
             )
         }
-        run = start(options)
+        run = start(config)
     }
     return join(run, signal)
 }
@@ -195,6 +205,7 @@ export const measureBandwidthOnce = (
 export const inspectBandwidth = () => ({
     registrations: record.registrations.size,
     running: record.run !== undefined,
+    config: record.run?.config,
 })
 
 /** @internal Tests: replace the network measurement, or restore it. */

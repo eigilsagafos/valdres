@@ -1,6 +1,24 @@
+import type { BandwidthEndpoints } from "./BandwidthEndpoints"
 import type { CancelSignal } from "./CancelSignal"
 
 export interface MeasureBandwidthOptions {
+    /**
+     * The measurement server. Default Cloudflare's speed test
+     * (`https://speed.cloudflare.com/__down` and `__up`); see
+     * `BandwidthEndpoints` for the protocol another server must speak.
+     */
+    readonly endpoints?: BandwidthEndpoints
+    /**
+     * Hard limit on the response-body bytes the download phase requests.
+     * Default `25_000_000` (25 MB). `Infinity` lifts it; the time limits still
+     * apply.
+     */
+    readonly maxDownloadBytes?: number
+    /**
+     * Hard limit on the request-body bytes the upload phase sends. Default
+     * `10_000_000` (10 MB). `Infinity` lifts it; the time limits still apply.
+     */
+    readonly maxUploadBytes?: number
     /** Round trips timed after one warm-up request. Default `10`. */
     readonly latencySamples?: number
     /** Upper bound per throughput phase, ms. Default `10000`. */

@@ -15,6 +15,11 @@ import {
     measureBandwidth,
     measurementStatusAtom,
     uploadSpeedAtom,
+    BandwidthInsufficientDataError,
+    BandwidthMeasurementConflictError,
+    type BandwidthEndpoints,
+    type BandwidthMeasurementConfig,
+    type MeasurementPhaseEnd,
     type BandwidthError,
     type BandwidthProgress,
     type BandwidthResult,
@@ -41,6 +46,9 @@ const rejectedWrites = (
     result.downloadMbps = 1
     // @ts-expect-error measurements are not tied to a Store
     void measureBandwidth(app)
+    const downloadOnly = { download: "https://speed.test/down" }
+    // @ts-expect-error endpoints name both URLs
+    void measureBandwidth({ endpoints: downloadOnly })
     // @ts-expect-error the retired invalidation option is gone
     void measureBandwidth({ invalidateOn: [] })
 }
@@ -59,6 +67,26 @@ test("reads keep their declared value domains", () => {
     const phase: MeasurementPhase | null = app.get(state).phase
     const progress: BandwidthProgress | null = app.get(state).progress
     const error: BandwidthError | null = app.get(state).error
+    const endpoints: BandwidthEndpoints = {
+        download: "https://speed.test/down",
+        upload: "https://speed.test/up",
+    }
+    const ended: MeasurementPhaseEnd[] = ["stable", "time", "bytes", "drained"]
+    const conflict: Error = new BandwidthMeasurementConflictError(
+        {} as BandwidthMeasurementConfig,
+        {} as BandwidthMeasurementConfig,
+    )
+    const insufficient: Error = new BandwidthInsufficientDataError(
+        "upload",
+        0,
+        0,
+    )
+    const limits: MeasureBandwidthOptions = {
+        endpoints,
+        maxDownloadBytes: 1,
+        maxUploadBytes: Infinity,
+    }
+    void [ended, conflict, insufficient, limits]
     const options: MeasureBandwidthOptions = {
         latencySamples: 3,
         maxDurationMs: 1,
