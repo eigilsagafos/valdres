@@ -1,8 +1,9 @@
 # Committed collection change events
 
-Status: implemented as a review candidate. The size-gate allowances, feature
-budgets, certified runtime digest and contract pins it needs are proposed below
-and not applied; they need owner approval.
+Status: approved by the owner on 2026-10-27 for candidate head `7ebb7162`
+after ShiftX validated packet `.4` against its application and roc-db adapter.
+The size-gate allowances, feature budgets, certified runtime digest and contract
+pins below are applied exactly as approved.
 
 ## Problem
 
@@ -201,10 +202,13 @@ the fix on the affected lanes (single updates, 1,000-row and add/delete
 transactions, child reads, `resetAll`, with and without an event subscriber)
 stayed within the noise floor on both engines.
 
-## Proposed approvals (not applied)
+## Approvals (applied)
 
-One combined proposal, measured on the candidate; `PROPOSED-approvals.patch`
-in the handoff applies it:
+One combined proposal, measured on candidate `7ebb7162` (runtime identical to
+`1e35a1b5`) and approved by the owner on 2026-10-27 as
+`PROPOSED-approvals.patch` (SHA-256
+`b67619d355bfbaf7eb3c030d65c3820249756c43766f33b71a1b05f284cfc07d`); it is
+applied unchanged:
 
 - `scripts/size-baseline.json`: `coreRetainingRawAllowance` 5783 → 6155 and
   `coreRetainingGzipAllowance` 2322 → 2464 (exact overage of
@@ -223,5 +227,44 @@ in the handoff applies it:
   `frozenReleaseTrackOwnershipSha256`
   `0e30f9632fedf4a738904b678debe0667f608169a25f376845504af9e67d6e8b`.
 
-With the proposal applied in a scratch tree, `bun run verify` and
-`test:v1-beta:packed` pass.
+Rationale: the core-retaining growth is the host side of the feature (routing
+direct collection callbacks to event targets, accumulating events per
+notification boundary, one subscriber attempt per event, the event-only
+boundary trigger and end-of-boundary cleanup); everything else lives in the
+optional collection kernel and moves only the collection-retaining feature
+budgets. The contract pins move only because `CollectionEvent` is catalogued as
+a public type with its contract ID.
+
+## Consumer acceptance
+
+ShiftX validated packet `.4` (SHA-256
+`edfa413f7e26bcd9a4fa173815b35ae2f5576b1701c8f3ecfa9b5feb361335dd`):
+
+- All 11 packet checks passed on Node 26 and Bun 1.4.4, production and
+  development graphs; TypeScript 5.9.2 passed.
+- All 13 ShiftX test projects pass after migrating `createMutationSync`.
+- A real roc-db integration validates ordering, final-state coalescing,
+  acknowledgements, rollback, child/root isolation and synchronous `waitFor`
+  capture.
+- Their measured fixture went from 6 subscriptions and 44 reads to 1
+  subscription and 1 startup read.
+- No Valdres defects were found. Their queue-slot replacement bug and missing
+  package dependency declarations are application work.
+
+## Retention test fixture
+
+`collection-events.test.ts` checks that delivered payloads, disposed scopes and
+unsubscribed scopes become collectable. In one full-file run on candidate
+`bf7816e9` the delivered-payload case kept its payload alive. On that exact
+runtime and test file, the original fixture retained the payload in 5 of 6
+runs, a named-function variant in 5 of 6, and the original fixture with a stack
+overwrite before each collection in 0 of 6; on later heads the original fixture
+passed 6 of 6. The fixture therefore overwrites the native stack below its frame
+before each GC round. Overwriting stack memory, with no Store operation,
+released the object, so the retaining reference was not in a live Valdres
+structure; a stale, conservatively scanned stack or register slot is suspected
+but the exact retaining root was not identified, and the outcome is
+layout-sensitive. The fixture keeps the same subscription, commits, captured
+objects, 20-round loop and zero-retained assertion. Negative control: with the
+host's clearing of delivered events removed, the hardened test failed in 3 of 3
+full-file runs.
