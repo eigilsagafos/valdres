@@ -470,6 +470,41 @@ jobs:
               # condition, and the packed declarations under tsc.
               run: bun run test:jotai:packed
 
+    recoil:
+        name: Recoil compatibility package
+        # `@valdres-react/recoil` is a bounded Recoil 0.7.7 migration adapter
+        # and is NOT release-eligible, so this job is deliberately absent from
+        # publish's needs. It keeps the adapter's differential scenarios
+        # against the recorded recoil@0.7.7 reference, the reference itself,
+        # its Valdres-interop tests, declarations and installed-tarball
+        # consumers from regressing.
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.3
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Recoil suites and typechecks
+              # Both tsconfigs, the package suite, and a fresh run of the
+              # scenarios against recoil@0.7.7 on React 18.3.1 that must
+              # reproduce the recorded reference.
+              run: bun run test:recoil
+            - name: Validate packed Recoil consumers
+              # Builds and npm-packs valdres, valdres-react and the package
+              # with the real prepack, installs them with React 18 and 19, and
+              # runs the differential scenarios, runtime-identity probes under
+              # the default and development conditions on Node and Bun,
+              # hydration, and the packed declarations under tsc.
+              run: bun run test:recoil:packed
+
     browser-permission:
         name: Browser permission packages
         # @valdres/browser-device-motion, -device-orientation, -geolocation
