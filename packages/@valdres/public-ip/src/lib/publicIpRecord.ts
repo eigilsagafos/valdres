@@ -1,3 +1,4 @@
+import type { CancelSignal } from "../types/CancelSignal"
 import type { PublicIpFamily } from "../types/PublicIpFamily"
 import type { PublicIpRequestOptions } from "../types/PublicIpRequestOptions"
 import type { PublicIpState } from "../types/PublicIpState"
@@ -123,7 +124,7 @@ const start = (
 const join = (
     record: PublicIpRecord,
     run: Run,
-    signal: AbortSignal | undefined,
+    signal: CancelSignal | undefined,
 ): Promise<string> => {
     if (signal === undefined) {
         run.pinned = true

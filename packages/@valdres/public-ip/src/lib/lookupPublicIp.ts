@@ -1,3 +1,4 @@
+import type { CancelSignal } from "../types/CancelSignal"
 import type { PublicIpFamily } from "../types/PublicIpFamily"
 import { timeoutError } from "./domErrors"
 import { isValidIp } from "./isValidIp"
@@ -27,11 +28,11 @@ const MAX_ADDRESS_LENGTH = 45
  */
 export const lookupPublicIp = async (
     { family, endpoints, timeoutMs }: NormalizedOptions,
-    signal: AbortSignal | undefined,
+    signal: CancelSignal | undefined,
 ): Promise<string> => {
     const failures: unknown[] = []
     for (const endpoint of endpoints) {
-        signal?.throwIfAborted()
+        if (signal?.aborted) throw signal.reason
         const controller = new AbortController()
         const forward = () => controller.abort(signal!.reason)
         signal?.addEventListener("abort", forward, { once: true })
@@ -56,7 +57,7 @@ export const lookupPublicIp = async (
                 continue
             }
             const body = (await response.text()).trim()
-            signal?.throwIfAborted()
+            if (signal?.aborted) throw signal.reason
             if (body.length > MAX_ADDRESS_LENGTH || !VALIDATE[family](body)) {
                 failures.push(
                     new Error(`${endpoint} did not return ${EXPECTED[family]}`),

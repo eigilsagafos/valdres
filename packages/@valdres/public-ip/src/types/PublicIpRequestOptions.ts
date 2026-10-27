@@ -1,3 +1,4 @@
+import type { CancelSignal } from "./CancelSignal"
 import type { PublicIpFamily } from "./PublicIpFamily"
 
 export interface PublicIpRequestOptions {
@@ -16,7 +17,7 @@ export interface PublicIpRequestOptions {
      * reason. The request itself is aborted once every caller sharing it has
      * cancelled.
      */
-    readonly signal?: AbortSignal
+    readonly signal?: CancelSignal
     /**
      * Replace an in-flight request of the same family instead of sharing it.
      * The replaced request is aborted and its callers reject with an

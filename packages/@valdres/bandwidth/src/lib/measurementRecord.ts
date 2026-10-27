@@ -1,4 +1,5 @@
 import type { BandwidthResult } from "../types/BandwidthResult"
+import type { CancelSignal } from "../types/CancelSignal"
 import type { BandwidthState } from "../types/BandwidthState"
 import type { MeasureBandwidthOptions } from "../types/MeasureBandwidthOptions"
 import { abortError, notSupportedError } from "./domErrors"
@@ -119,7 +120,7 @@ const start = (options: NormalizedOptions): Run => {
 /** This caller's view of `run`: settles with it, or with its own signal. */
 const join = (
     run: Run,
-    signal: AbortSignal | undefined,
+    signal: CancelSignal | undefined,
 ): Promise<BandwidthResult> => {
     if (signal === undefined) {
         run.pinned = true

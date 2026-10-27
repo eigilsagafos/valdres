@@ -1,3 +1,4 @@
+import type { CancelSignal } from "../types/CancelSignal"
 import type { PublicIpFamily } from "../types/PublicIpFamily"
 import type { PublicIpRequestOptions } from "../types/PublicIpRequestOptions"
 import { DEFAULT_ENDPOINTS, DEFAULT_TIMEOUT_MS } from "./endpoints"
@@ -6,7 +7,7 @@ export interface NormalizedOptions {
     readonly family: PublicIpFamily
     readonly endpoints: readonly string[]
     readonly timeoutMs: number
-    readonly signal: AbortSignal | undefined
+    readonly signal: CancelSignal | undefined
     readonly fresh: boolean
 }
 

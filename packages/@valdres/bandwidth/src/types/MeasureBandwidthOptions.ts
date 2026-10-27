@@ -1,3 +1,5 @@
+import type { CancelSignal } from "./CancelSignal"
+
 export interface MeasureBandwidthOptions {
     /** Round trips timed after one warm-up request. Default `10`. */
     readonly latencySamples?: number
@@ -18,7 +20,7 @@ export interface MeasureBandwidthOptions {
      * reason. The measurement itself is aborted once every caller sharing it
      * has cancelled.
      */
-    readonly signal?: AbortSignal
+    readonly signal?: CancelSignal
     /**
      * Replace a running measurement instead of sharing it. The replaced one is
      * aborted and its callers reject with an `AbortError`. Default `false`.
