@@ -26,7 +26,8 @@
  * both tsconfigs, its suites, the upstream suite against it and against the
  * pinned Jotai, packed consumers), `browser-permission` (the release-ignored
  * motion, orientation, geolocation and screen-details packages: suites, both
- * tsconfigs, packed consumers) and `valdres-package` (the published-tarball gate: publint, ATTW, size
+ * tsconfigs, packed consumers), `network` (the release-ignored public-ip and
+ * bandwidth packages: the same three gates) and `valdres-package` (the published-tarball gate: publint, ATTW, size
  * budgets; ~13s). It does NOT cover the manual-only legacy docs workflows or
  * the Bencher gate; those are listed under NOT_COVERED and printed on every
  * run, because a
@@ -93,6 +94,7 @@ const JOBS = [
     "hotkeys",
     "jotai",
     "browser-permission",
+    "network",
     "valdres-package",
 ]
 
@@ -262,6 +264,18 @@ const SKIPPED_ACTIONS: Record<
         reason: SETUP_BUN,
     },
     "browser-permission / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
+    "network / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "network / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "network / actions/setup-node": {
         action: "actions/setup-node",
         reason: SETUP_NODE,
     },
