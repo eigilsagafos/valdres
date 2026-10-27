@@ -417,6 +417,26 @@ describe("stores", () => {
     })
 })
 
+describe("re-entrancy", () => {
+    test("a subscriber that measures while pending is published joins the same measurement", async () => {
+        const root = app()
+        let joined: Promise<unknown> | undefined
+        root.sub(bandwidthAtom, () => {
+            if (
+                joined === undefined &&
+                root.get(bandwidthAtom).status === "pending"
+            )
+                joined = measureBandwidth()
+        })
+        const answer = measureBandwidth()
+        expect(joined).toBeInstanceOf(Promise)
+        expect(net.runs).toHaveLength(1)
+        const result = net.runs[0]!.complete()
+        expect(await Promise.all([answer, joined])).toEqual([result, result])
+        expect(reports.reported).toEqual([])
+    })
+})
+
 describe("subscriber failures", () => {
     test("a throwing subscriber never changes the promise and never starves another store", async () => {
         const noisy = app()

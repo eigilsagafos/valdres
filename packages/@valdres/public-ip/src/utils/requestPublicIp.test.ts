@@ -525,6 +525,26 @@ describe("stores", () => {
     })
 })
 
+describe("re-entrancy", () => {
+    test("a subscriber that requests while pending is published joins the same request", async () => {
+        const root = app()
+        let joined: Promise<string> | undefined
+        root.sub(publicIpAtom, () => {
+            if (
+                joined === undefined &&
+                root.get(publicIpAtom).status === "pending"
+            )
+                joined = requestPublicIp()
+        })
+        const answer = requestPublicIp()
+        expect(joined).toBeInstanceOf(Promise)
+        expect(net.calls).toHaveLength(1)
+        net.calls[0]!.respond(V4)
+        expect(await Promise.all([answer, joined])).toEqual([V4, V4])
+        expect(reports.reported).toEqual([])
+    })
+})
+
 describe("subscriber failures", () => {
     test("a throwing subscriber never changes the promise and never starves another store", async () => {
         const noisy = app()

@@ -91,11 +91,17 @@ const start = (options: NormalizedOptions): Run => {
         waiting: 0,
     }
     record.run = run
-    // The first request starts synchronously, inside the caller's task; the
-    // first report publishes "pending".
+    // The first request starts synchronously, inside the caller's task, and
+    // reports "pending" before the runner returns. That first publication is
+    // held until `run.done` exists, so a subscriber that measures again while
+    // it is delivered joins a complete run.
+    let starting = true
+    let first: BandwidthState | undefined
     run.done = runner(options, run.controller.signal, (phase, progress) => {
-        if (record.run === run)
-            publish(pendingFrom(record.settled, phase, progress))
+        if (record.run !== run) return
+        const next = pendingFrom(record.settled, phase, progress)
+        if (starting) first = next
+        else publish(next)
     }).then(
         result => {
             if (record.run === run) {
@@ -114,6 +120,8 @@ const start = (options: NormalizedOptions): Run => {
     )
     // Every caller may have cancelled by the time it settles.
     run.done.catch(() => {})
+    starting = false
+    if (first !== undefined && record.run === run) publish(first)
     return run
 }
 
