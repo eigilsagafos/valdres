@@ -13,7 +13,11 @@ import {
 import { publicIpAtom } from "../atoms/publicIpAtom"
 import { publicIpV4Atom } from "../atoms/publicIpV4Atom"
 import { publicIpV6Atom } from "../atoms/publicIpV6Atom"
-import { forgetPublicIp, inspectPublicIp } from "../lib/publicIpRecord"
+import {
+    forgetPublicIp,
+    inspectPublicIp,
+    usePublicIpLookup,
+} from "../lib/publicIpRecord"
 import { publicIpErrorAtom } from "../selectors/publicIpErrorAtom"
 import { publicIpStatusAtom } from "../selectors/publicIpStatusAtom"
 import { publicIpValueAtom } from "../selectors/publicIpValueAtom"
@@ -333,6 +337,48 @@ describe("concurrency", () => {
             ip: V4,
             error: null,
         })
+    })
+})
+
+describe("stale-result guard", () => {
+    // A lookup that resolves despite its abort: the answer was already on its
+    // way when the run was replaced or cancelled. Only the record's ownership
+    // check stands between it and the store.
+    const lateLookup = () => {
+        const answers: ((ip: string) => void)[] = []
+        usePublicIpLookup(
+            () => new Promise<string>(resolve => answers.push(resolve)),
+        )
+        return answers
+    }
+    afterEach(() => usePublicIpLookup())
+
+    test("a replaced lookup that still resolves publishes nothing", async () => {
+        const answers = lateLookup()
+        const root = app()
+        const old = requestPublicIp()
+        const newer = requestPublicIp({ fresh: true })
+        answers[1]!(V4_NEXT)
+        expect(await newer).toBe(V4_NEXT)
+        answers[0]!(V4)
+        // Its own callers still get what the lookup answered.
+        expect(await old).toBe(V4)
+        await flush()
+        expect(root.get(publicIpValueAtom)).toBe(V4_NEXT)
+    })
+
+    test("a cancelled lookup that still resolves publishes nothing", async () => {
+        const answers = lateLookup()
+        const root = app()
+        const { seen } = watch(root)
+        const controller = new AbortController()
+        const answer = requestPublicIp({ signal: controller.signal })
+        controller.abort()
+        await answer.catch(() => {})
+        answers[0]!(V4)
+        await flush()
+        expect(root.get(publicIpAtom).status).toBe("idle")
+        expect(seen).toEqual(["pending:-", "idle:-"])
     })
 })
 

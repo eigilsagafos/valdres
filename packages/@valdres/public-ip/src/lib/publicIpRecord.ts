@@ -49,6 +49,8 @@ const create = (): PublicIpRecord => ({
     registrations: new Set(),
 })
 
+let lookup: typeof lookupPublicIp = lookupPublicIp
+
 const records: Record<PublicIpFamily, PublicIpRecord> = {
     any: create(),
     v4: create(),
@@ -97,7 +99,7 @@ const start = (
     }
     record.run = run
     // The first fetch starts synchronously, inside the caller's task.
-    run.done = lookupPublicIp(options, run.controller.signal).then(
+    run.done = lookup(options, run.controller.signal).then(
         ip => {
             if (record.run === run) {
                 record.run = undefined
@@ -197,6 +199,13 @@ export const inspectPublicIp = (family: PublicIpFamily) => {
         registrations: record.registrations.size,
         inFlight: record.run !== undefined,
     }
+}
+
+/** @internal Tests: replace the network lookup, or restore it. */
+export const usePublicIpLookup = (
+    next: typeof lookupPublicIp = lookupPublicIp,
+): void => {
+    lookup = next
 }
 
 /** @internal Tests: abort any run and forget every family's state. */
