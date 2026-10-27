@@ -12,14 +12,20 @@ import type { PublicIpRequestOptions } from "../types/PublicIpRequestOptions"
  *
  * - Publishes `"pending"` synchronously (keeping the previous address), then
  *   `"ready"` with the new address, or `"error"` keeping the previous one.
- * - Concurrent calls for the same family share one request; a joining call's
- *   endpoints and timeout are ignored. `fresh: true` aborts the in-flight
- *   request (its callers reject with `AbortError`) and starts a new one.
+ * - Each family (`"any"`, `"v4"`, `"v6"`) has its own request and state.
+ *   Within a family, concurrent calls with the same effective configuration
+ *   (endpoints and timeout) share one request; a call with another
+ *   configuration rejects with `PublicIpRequestConflictError` and leaves the
+ *   in-flight request alone. `fresh: true` aborts the in-flight request (its
+ *   other callers reject with `AbortError`) and starts this one.
  * - `signal` cancels only this caller. Once every caller has cancelled, the
  *   request is aborted and the state returns to what it was before.
  * - Only the newest request publishes: an older one that still answers,
  *   despite being aborted or replaced, changes nothing.
  * - Nothing retries or refreshes automatically.
+ * - Not transactional: called inside a transaction, the request is sent at
+ *   once and is not rolled back if the transaction throws; the Store is
+ *   notified after the transaction. Abort a `signal` to stop it.
  *
  * Errors: throws `TypeError` for invalid options, before any request. The
  * promise rejects with `NotSupportedError` without `fetch`, with the signal's

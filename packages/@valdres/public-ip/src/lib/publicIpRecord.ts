@@ -1,5 +1,7 @@
+import { PublicIpRequestConflictError } from "../errors/PublicIpRequestConflictError"
 import type { CancelSignal } from "../types/CancelSignal"
 import type { PublicIpFamily } from "../types/PublicIpFamily"
+import type { PublicIpRequestConfig } from "../types/PublicIpRequestConfig"
 import type { PublicIpRequestOptions } from "../types/PublicIpRequestOptions"
 import type { PublicIpState } from "../types/PublicIpState"
 import { abortError, notSupportedError } from "./domErrors"
@@ -16,6 +18,7 @@ import {
 
 /** One in-flight request, shared by every caller that joined it. */
 interface Run {
+    readonly config: PublicIpRequestConfig
     readonly controller: AbortController
     done: Promise<string>
     /** A caller without a signal can never cancel, so it keeps the run alive. */
@@ -87,11 +90,25 @@ export const retainPublicIp = (
     }
 }
 
+const configOf = ({
+    family,
+    endpoints,
+    timeoutMs,
+}: ReturnType<typeof normalizeOptions>): PublicIpRequestConfig =>
+    Object.freeze({ family, endpoints, timeoutMs })
+
+const sameConfig = (a: PublicIpRequestConfig, b: PublicIpRequestConfig) =>
+    a.family === b.family &&
+    a.timeoutMs === b.timeoutMs &&
+    a.endpoints.length === b.endpoints.length &&
+    a.endpoints.every((endpoint, index) => endpoint === b.endpoints[index])
+
 const start = (
     record: PublicIpRecord,
     options: ReturnType<typeof normalizeOptions>,
 ): Run => {
     const run: Run = {
+        config: configOf(options),
         controller: new AbortController(),
         done: undefined as unknown as Promise<string>,
         pinned: false,
@@ -178,6 +195,16 @@ export const requestPublicIpOnce = (
     if (signal?.aborted) return Promise.reject(signal.reason)
     const record = records[normalized.family]
     let run = record.run
+    // Share only an identical configuration; never hand a caller a request
+    // made with other endpoints or another timeout.
+    if (
+        run !== undefined &&
+        !normalized.fresh &&
+        !sameConfig(run.config, configOf(normalized))
+    )
+        return Promise.reject(
+            new PublicIpRequestConflictError(run.config, configOf(normalized)),
+        )
     if (run === undefined || normalized.fresh) {
         if (run !== undefined) {
             // Ownership moves first, so the replaced run's settlement is
@@ -198,6 +225,7 @@ export const inspectPublicIp = (family: PublicIpFamily) => {
     return {
         registrations: record.registrations.size,
         inFlight: record.run !== undefined,
+        config: record.run?.config,
     }
 }
 

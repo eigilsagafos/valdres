@@ -88,6 +88,8 @@ function PublicIp() {
 | `publicIpErrorAtom`, `publicIpV4ErrorAtom`, `publicIpV6ErrorAtom` | selector (read-only) | `PublicIpError \| null` |
 | `requestPublicIp` | util fn | `(options?: PublicIpRequestOptions) => Promise<string>` |
 | `fetchPublicIp` | util fn | `(options?: PublicIpRequestOptions) => Promise<string>` — stateless |
+| `PublicIpRequestConflictError` | error class | rejects a call whose configuration conflicts with the in-flight request |
+| `PublicIpRequestConfig` | type | `{ family, endpoints: readonly string[], timeoutMs: number }` |
 | `PublicIpState` | type | `{ status, ip: string \| null, updatedAt: number \| null, error: PublicIpError \| null }` |
 | `PublicIpStatus` | type | `"unsupported" \| "idle" \| "pending" \| "ready" \| "error"` |
 | `PublicIpError` | type | `{ name: string; message: string }` |
@@ -124,12 +126,8 @@ failures and the state turns `"error"`.
 | `"v6"` | `https://api6.ipify.org`, `https://ipv6.icanhazip.com` | `publicIpV6Atom` |
 
 Pass `endpoints` to use your own service: each must answer a plain `GET` with
-the address as the response body.
+the address as the response body (surrounding whitespace is ignored).
 
-- **Sharing.** Concurrent calls for the same family share one request; the
-  options of a call that joins are ignored. `fresh: true` aborts the in-flight
-  request instead (its callers reject with an `AbortError`) and starts a new
-  one.
 - **Cancellation.** `signal` cancels only that caller: its promise rejects with
   the signal's reason. When every caller sharing the request has cancelled, the
   request is aborted and the state returns to what it was before. A caller
@@ -137,6 +135,12 @@ the address as the response body.
 - **Ordering.** Only the newest request publishes. A replaced or cancelled
   request whose response still arrives — an abort cannot always stop a response
   that is already completing — changes nothing.
+- **Transactions.** A request is not transactional. Calling `requestPublicIp()`
+  inside a transaction or `settle` handler sends the request immediately; if the
+  transaction then throws, the request is **not** rolled back — it keeps
+  running and its outcome is published as usual (the Store is notified once the
+  transaction is over, never during it). Pass a `signal` and abort it if the
+  request should not outlive a failed transaction.
 - **No automatic work.** Nothing retries a failure, refreshes on a timer, or
   reacts to `online`, visibility or connection changes. Call again when you
   want a new answer.
@@ -146,11 +150,33 @@ the address as the response body.
   `globalThis.reportError` (or thrown in a later task) and never changes the
   promise's outcome; every other Store is still notified.
 
+### Concurrent requests
+
+Each family has its own state and at most one request in flight; families
+never share or conflict, so `"any"`, `"v4"` and `"v6"` can be requested at
+the same time. Within a family, a request's **effective configuration** is its
+`endpoints` (after defaults) and `timeoutMs`:
+
+| A call while a request of the same family is in flight… | Result |
+|---|---|
+| with the same effective configuration | joins it: one network request, every caller gets its outcome |
+| with different `endpoints` or `timeoutMs` | rejects with `PublicIpRequestConflictError` (`active`, `requested`); the in-flight request and the state are untouched |
+| with `fresh: true` (any configuration) | aborts the in-flight request — **its other callers reject with `AbortError`** — and starts this one |
+
+`signal` and `fresh` are per call and never part of the configuration; each
+caller's `signal` stays independent. `timeoutMs` bounds each endpoint
+separately, so a request with two endpoints can take up to twice as long
+before it fails.
+
 ### Privacy
 
 A request necessarily reveals the caller's public IP address to every endpoint
-it reaches — that is how the endpoint answers. With the defaults that is
-ipify, and icanhazip when ipify fails. Requests send no cookies or referrer and
+it reaches — that is how the endpoint answers. With the defaults, every request
+goes to ipify first (`api.ipify.org`, `api4.ipify.org` or `api6.ipify.org` by
+family); icanhazip (`icanhazip.com`, `ipv4.icanhazip.com`,
+`ipv6.icanhazip.com`) receives a request **only when ipify fails** — a network
+error, a non-2xx status, a timeout or a body that is not an address of that
+family. No other service is contacted. Requests send no cookies or referrer and
 bypass the HTTP cache. Point `endpoints` at a service you operate if a third
 party must not see your users' addresses, and ask for consent where your users
 expect it.
@@ -166,9 +192,8 @@ per tree, shared by its scopes, released by its last unsubscribe or by
 `dispose()`. Unsubscribing or disposing a Store never cancels a request; use a
 `signal` for that. A disposed Store receives nothing afterwards.
 
-Calling `requestPublicIp()` inside a transaction or a `settle` handler starts
-the request immediately and notifies that Store once the transaction is over;
-prefer event handlers and effects.
+Prefer calling `requestPublicIp()` from event handlers and effects; inside a
+transaction it is sent immediately and not rolled back (see Requesting).
 
 ## Server rendering
 
@@ -191,6 +216,7 @@ publication, no sharing.
 | `publicIpStatusAtom` etc. were settable atoms with `"idle" \| "loading" \| "revalidating" \| "ok" \| "error"` | Read-only selectors over the coherent state, with `"idle" \| "pending" \| "ready" \| "error"` (plus `"unsupported"`); "revalidating" is `"pending"` with a non-null `ip`. |
 | `publicIpErrorAtom` held an `Error` | A frozen `{ name, message }`; the promise still rejects with the real error. |
 | `fetchPublicIp(endpoints, validate?, timeoutMs?)` | `fetchPublicIp({ family?, endpoints?, timeoutMs?, signal? })`. |
+| Reads shared one in-flight fetch per family | Calls share a request only with the same endpoints and timeout; a conflicting call rejects with `PublicIpRequestConflictError`. |
 | Peer `valdres` `^1.0.0-beta.19` | `^1.0.0-beta.39`, the first core with `externalAtom`. |
 
 To keep the old refresh-on-reconnect behavior, wire it explicitly:

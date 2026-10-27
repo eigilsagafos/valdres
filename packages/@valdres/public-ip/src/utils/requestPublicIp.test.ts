@@ -10,6 +10,7 @@ import {
     type FetchHarness,
     type ReportCapture,
 } from "../../test/setup/fetchHarness"
+import { PublicIpRequestConflictError } from "../errors/PublicIpRequestConflictError"
 import { publicIpAtom } from "../atoms/publicIpAtom"
 import { publicIpV4Atom } from "../atoms/publicIpV4Atom"
 import { publicIpV6Atom } from "../atoms/publicIpV6Atom"
@@ -280,12 +281,118 @@ describe("failures", () => {
 })
 
 describe("concurrency", () => {
-    test("concurrent calls share one request; a joining call's options are ignored", async () => {
+    test("calls with the same effective configuration share one request", async () => {
         const first = requestPublicIp()
-        const second = requestPublicIp({ endpoints: ["https://ip.test/other"] })
+        // Spelled out, the defaults are the same configuration.
+        const second = requestPublicIp({
+            family: "any",
+            endpoints: ["https://api.ipify.org", "https://icanhazip.com"],
+            timeoutMs: 4000,
+        })
+        // A signal is per caller, never part of the configuration.
+        const third = requestPublicIp({ signal: new AbortController().signal })
         expect(net.calls).toHaveLength(1)
         net.calls[0]!.respond(V4)
-        expect(await Promise.all([first, second])).toEqual([V4, V4])
+        expect(await Promise.all([first, second, third])).toEqual([V4, V4, V4])
+    })
+
+    test("different endpoints or timeout conflict instead of sharing", async () => {
+        const root = app()
+        const custom = { endpoints: ["https://ip.test/a"], timeoutMs: 1000 }
+        const running = requestPublicIp(custom)
+        const before = root.get(publicIpAtom)
+        for (const options of [
+            {},
+            { endpoints: ["https://ip.test/b"], timeoutMs: 1000 },
+            {
+                endpoints: ["https://ip.test/a", "https://ip.test/b"],
+                timeoutMs: 1000,
+            },
+            { endpoints: ["https://ip.test/a"], timeoutMs: 2000 },
+        ]) {
+            const error = (await requestPublicIp(options).catch(
+                (failure: unknown) => failure,
+            )) as PublicIpRequestConflictError
+            expect(error).toBeInstanceOf(PublicIpRequestConflictError)
+            expect(error.code).toBe("VALDRES_PUBLIC_IP_REQUEST_CONFLICT")
+            expect(error.active).toEqual({ family: "any", ...custom })
+        }
+        // The in-flight request and the state are untouched.
+        expect(net.calls).toHaveLength(1)
+        expect(net.calls[0]!.signal?.aborted).toBe(false)
+        expect(root.get(publicIpAtom)).toBe(before)
+        net.calls[0]!.respond(V4)
+        expect(await running).toBe(V4)
+        // Once it settled, another configuration simply starts a request.
+        const next = requestPublicIp({ endpoints: ["https://ip.test/b"] })
+        expect(net.calls).toHaveLength(2)
+        net.calls[1]!.respond(V4_NEXT)
+        expect(await next).toBe(V4_NEXT)
+    })
+
+    test("each address family has its own request and state; families never share or conflict", async () => {
+        const root = app()
+        const any = requestPublicIp()
+        const v4 = requestPublicIp({
+            family: "v4",
+            endpoints: ["https://ip.test/v4"],
+        })
+        const v6 = requestPublicIp({ family: "v6" })
+        expect(net.calls.map(call => call.url)).toEqual([
+            "https://api.ipify.org",
+            "https://ip.test/v4",
+            "https://api6.ipify.org",
+        ])
+        expect([
+            inspectPublicIp("any").config?.family,
+            inspectPublicIp("v4").config?.endpoints,
+            inspectPublicIp("v6").config?.timeoutMs,
+        ]).toEqual(["any", ["https://ip.test/v4"], 4000])
+        net.calls[1]!.respond(V4)
+        expect(await v4).toBe(V4)
+        expect([
+            root.get(publicIpAtom).status,
+            root.get(publicIpV4Atom).status,
+            root.get(publicIpV6Atom).status,
+        ]).toEqual(["pending", "ready", "pending"])
+        net.calls[0]!.respond(V6)
+        net.calls[2]!.fail()
+        expect(await any).toBe(V6)
+        await expect(v6).rejects.toBeInstanceOf(AggregateError)
+        expect([
+            root.get(publicIpAtom).ip,
+            root.get(publicIpV4Atom).ip,
+            root.get(publicIpV6Atom).status,
+        ]).toEqual([V6, V4, "error"])
+    })
+
+    test("a per-endpoint timeout bounds each endpoint, not the request", async () => {
+        const answer = requestPublicIp({
+            endpoints: ["https://ip.test/a", "https://ip.test/b"],
+            timeoutMs: 15,
+        })
+        while (net.calls.length < 2)
+            await new Promise(resolve => setTimeout(resolve, 1))
+        // The second endpoint gets its own full timeout.
+        expect(net.calls[1]!.signal?.aborted).toBe(false)
+        net.calls[1]!.respond(V4)
+        expect(await answer).toBe(V4)
+    })
+
+    test("fresh replaces a request of any configuration", async () => {
+        const old = requestPublicIp({ endpoints: ["https://ip.test/a"] })
+        const replacement = requestPublicIp({
+            endpoints: ["https://ip.test/b"],
+            fresh: true,
+        })
+        expect(
+            ((await old.catch((failure: unknown) => failure)) as Error).name,
+        ).toBe("AbortError")
+        expect(inspectPublicIp("any").config?.endpoints).toEqual([
+            "https://ip.test/b",
+        ])
+        net.calls[1]!.respond(V4)
+        expect(await replacement).toBe(V4)
     })
 
     test("fresh replaces the in-flight request; the replaced callers reject with AbortError", async () => {
@@ -598,6 +705,55 @@ describe("subscriber failures", () => {
         net.calls[0]!.respond(V4)
         expect(await answer!).toBe(V4)
         expect(reports.reported).toEqual([])
+    })
+
+    test("a transaction that throws does not roll the request back; it runs and publishes once", async () => {
+        const root = app()
+        const trigger = atom(0)
+        const { seen } = watch(root)
+        let answer: Promise<string> | undefined
+        expect(() =>
+            root.txn(tx => {
+                tx.set(trigger, 1)
+                answer = requestPublicIp()
+                throw new Error("transaction aborted after the request started")
+            }),
+        ).toThrow("transaction aborted")
+        // The write was discarded; the request was not.
+        expect(root.get(trigger)).toBe(0)
+        expect(net.calls).toHaveLength(1)
+        await flush(1)
+        expect(root.get(publicIpStatusAtom)).toBe("pending")
+        net.calls[0]!.respond(V4)
+        expect(await answer!).toBe(V4)
+        await flush()
+        expect(root.get(publicIpAtom)).toMatchObject({
+            status: "ready",
+            ip: V4,
+        })
+        expect(seen).toEqual(["pending:-", `ready:${V4}`])
+        expect([reports.reported, reports.unhandled]).toEqual([[], []])
+    })
+
+    test("a request started in a transaction that throws can be cancelled; the state does not stay pending", async () => {
+        const root = app()
+        const controller = new AbortController()
+        let answer: Promise<string> | undefined
+        try {
+            root.txn(() => {
+                answer = requestPublicIp({ signal: controller.signal })
+                throw new Error("abort")
+            })
+        } catch {}
+        controller.abort()
+        expect(
+            ((await answer!.catch((failure: unknown) => failure)) as Error)
+                .name,
+        ).toBe("AbortError")
+        await flush()
+        expect(root.get(publicIpStatusAtom)).toBe("idle")
+        expect(net.calls[0]!.signal?.aborted).toBe(true)
+        expect([reports.reported, reports.unhandled]).toEqual([[], []])
     })
 
     test("a request made from a subscriber callback publishes immediately", async () => {
