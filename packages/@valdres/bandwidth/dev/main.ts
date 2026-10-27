@@ -1,121 +1,75 @@
 import { store } from "valdres"
 import {
-    downloadSpeedAtom,
-    uploadSpeedAtom,
-    latencyAtom,
-    jitterAtom,
-    measurementStatusAtom,
+    bandwidthAtom,
     measureBandwidth,
-    invalidateOnAtom,
+    type BandwidthState,
 } from "../src/index"
-import { publicIpAtom } from "@valdres/public-ip"
-import type { MeasurementStatus } from "../src/types/MeasurementStatus"
 
 const s = store()
 
 const el = (id: string) => document.getElementById(id) as HTMLElement
 
-const statusLabels: Record<MeasurementStatus, string> = {
-    idle: "Idle",
-    "measuring-latency": "Measuring latency…",
-    "measuring-download": "Measuring download…",
-    "measuring-upload": "Measuring upload…",
-    complete: "Complete",
-    error: "Error",
+const label = ({ status, phase }: BandwidthState): string => {
+    if (status === "pending") return `Measuring ${phase}…`
+    return {
+        unsupported: "Unsupported",
+        idle: "Idle",
+        ready: "Complete",
+        error: "Error",
+    }[status]
 }
 
-const statusClass = (status: MeasurementStatus): string => {
-    if (status === "complete") return "complete"
-    if (status === "error") return "error"
-    if (status === "idle") return ""
-    return "active"
-}
-
-const activeStat = (status: MeasurementStatus): string | null => {
-    if (status === "measuring-latency") return "latency"
-    if (status === "measuring-download") return "download"
-    if (status === "measuring-upload") return "upload"
-    return null
-}
-
-const format = (value: unknown, decimals = 1): string => {
+const format = (value: number | null | undefined, decimals = 1): string => {
     if (typeof value !== "number" || !isFinite(value)) return "—"
     if (value >= 100) return value.toFixed(0)
     if (value >= 10) return value.toFixed(1)
     return value.toFixed(decimals)
 }
 
-let frame = 0
+let controller: AbortController | null = null
+
 const render = () => {
-    if (frame) return
-    frame = requestAnimationFrame(() => {
-        frame = 0
-        const status = s.get(measurementStatusAtom)
-        const statusEl = el("status")
-        statusEl.className = `status ${statusClass(status)}`.trim()
-        el("status-label").textContent = statusLabels[status]
-
-        el("download").textContent = format(s.get(downloadSpeedAtom))
-        el("upload").textContent = format(s.get(uploadSpeedAtom))
-        el("latency").textContent = format(s.get(latencyAtom))
-        el("jitter").textContent = format(s.get(jitterAtom))
-
-        const active = activeStat(status)
-        for (const key of ["download", "upload", "latency", "jitter"]) {
-            const card = document.querySelector(
-                `[data-stat="${key}"]`,
-            ) as HTMLElement | null
-            if (!card) continue
-            card.classList.toggle(
-                "active",
-                key === active ||
-                    (active === "latency" && key === "jitter"),
-            )
-        }
-
-        const btn = el("refresh") as HTMLButtonElement
-        btn.disabled = status.startsWith("measuring-")
-        btn.textContent = status.startsWith("measuring-")
-            ? "Measuring…"
-            : "Run again"
-    })
+    const state = s.get(bandwidthAtom)
+    const statusEl = el("status")
+    statusEl.className =
+        `status ${state.status === "ready" ? "complete" : state.status === "error" ? "error" : state.status === "pending" ? "active" : ""}`.trim()
+    el("status-label").textContent =
+        state.status === "error"
+            ? `Error: ${state.error!.message}`
+            : label(state)
+    // While running, show the provisional readings; otherwise the last result.
+    const shown = state.status === "pending" ? state.progress : state.result
+    el("download").textContent = format(shown?.downloadMbps)
+    el("upload").textContent = format(shown?.uploadMbps)
+    el("latency").textContent = format(shown?.latencyMs)
+    el("jitter").textContent = format(shown?.jitterMs)
+    for (const key of ["download", "upload", "latency", "jitter"]) {
+        const active =
+            state.phase === key ||
+            (state.phase === "latency" && key === "jitter")
+        document
+            .querySelector(`[data-stat="${key}"]`)
+            ?.classList.toggle("active", active)
+    }
+    const running = state.status === "pending"
+    const button = el("refresh") as HTMLButtonElement
+    button.disabled = running
+    button.textContent = running
+        ? "Measuring…"
+        : state.result === null
+          ? "Run measurement"
+          : "Run again"
+    ;(el("cancel") as HTMLButtonElement).disabled = !running
 }
 
-s.sub(measurementStatusAtom, render)
-s.sub(downloadSpeedAtom, render)
-s.sub(uploadSpeedAtom, render)
-s.sub(latencyAtom, render)
-s.sub(jitterAtom, render)
-
+s.sub(bandwidthAtom, render)
 render()
 
-// Lazy-trigger: reading any value atom kicks off the measurement.
-s.get(downloadSpeedAtom)
-
 el("refresh").addEventListener("click", () => {
-    measureBandwidth({ fresh: true }).catch(err => {
-        console.error("measurement failed:", err)
+    controller = new AbortController()
+    measureBandwidth({ signal: controller.signal }).catch(error => {
+        if ((error as Error).name !== "AbortError")
+            console.error("measurement failed:", error)
     })
 })
-
-const ipMeta = el("ip-meta")
-let ipUnsub: (() => void) | null = null
-
-const renderIp = () => {
-    const ip = s.get(publicIpAtom)
-    ipMeta.textContent = typeof ip === "string" && ip ? ip : "…"
-}
-
-const watchIp = el("watch-ip") as HTMLInputElement
-watchIp.addEventListener("change", () => {
-    ipUnsub?.()
-    ipUnsub = null
-    if (watchIp.checked) {
-        invalidateOnAtom.setSelf([publicIpAtom])
-        ipUnsub = s.sub(publicIpAtom, renderIp)
-        renderIp()
-    } else {
-        invalidateOnAtom.setSelf([])
-        ipMeta.textContent = "—"
-    }
-})
+el("cancel").addEventListener("click", () => controller?.abort())

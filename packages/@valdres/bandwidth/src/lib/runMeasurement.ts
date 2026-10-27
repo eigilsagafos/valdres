@@ -1,78 +1,72 @@
-import { downloadSpeedAtom } from "../atoms/downloadSpeedAtom"
-import { uploadSpeedAtom } from "../atoms/uploadSpeedAtom"
-import { latencyAtom } from "../atoms/latencyAtom"
-import { jitterAtom } from "../atoms/jitterAtom"
-import { measurementStatusAtom } from "../atoms/measurementStatusAtom"
-import { lastMeasurementAtom } from "../atoms/lastMeasurementAtom"
-import { measureLatency } from "./measureLatency"
+import type { BandwidthProgress } from "../types/BandwidthProgress"
+import type { BandwidthResult } from "../types/BandwidthResult"
+import type { MeasurementPhase } from "../types/MeasurementPhase"
 import { measureDownload } from "./measureDownload"
+import { measureLatency } from "./measureLatency"
 import { measureUpload } from "./measureUpload"
 import { median } from "./median"
+import type { NormalizedOptions } from "./normalizeOptions"
 import { stdDev } from "./stdDev"
-import type { BandwidthResult } from "../types/BandwidthResult"
-import type { MeasureBandwidthOptions } from "../types/MeasureBandwidthOptions"
 
+export type ReportProgress = (
+    phase: MeasurementPhase,
+    progress: BandwidthProgress,
+) => void
+
+/**
+ * Runs latency, download and upload in order against the measurement server
+ * and resolves the frozen result. Stateless: `report` receives each phase as
+ * it starts and every provisional reading. An abort rejects with
+ * `signal.reason` at the next step — never a partial result.
+ */
 export const runMeasurement = async (
-    options: MeasureBandwidthOptions = {},
+    options: NormalizedOptions,
+    signal: AbortSignal,
+    report: ReportProgress,
 ): Promise<BandwidthResult> => {
-    const {
-        latencySamples = 10,
-        maxDurationMs,
-        minDurationMs,
-        warmupMs,
-        startStreams,
-        maxStreams,
-        stabilityThreshold,
-        signal,
-    } = options
-
-    const phaseOptions = {
-        maxDurationMs,
-        minDurationMs,
-        warmupMs,
-        startStreams,
-        maxStreams,
-        stabilityThreshold,
-        signal,
+    const { latencySamples, ...phase } = options
+    let progress: BandwidthProgress = Object.freeze({
+        latencyMs: null,
+        jitterMs: null,
+        downloadMbps: null,
+        uploadMbps: null,
+    })
+    const update = (
+        current: MeasurementPhase,
+        next: Partial<BandwidthProgress>,
+    ) => {
+        progress = Object.freeze({ ...progress, ...next })
+        report(current, progress)
     }
 
-    try {
-        // Pre-aborted signal: bail out before flipping any status atoms so
-        // we don't leave consumers stuck on a "measuring-*" state.
-        if (signal?.aborted) {
-            throw Object.assign(new Error("aborted"), { name: "AbortError" })
-        }
-        measurementStatusAtom.setSelf("measuring-latency")
-        const latencies = await measureLatency(latencySamples, signal)
-        const latencyMs = median(latencies)
-        const jitterMs = stdDev(latencies)
-        latencyAtom.setSelf(latencyMs)
-        jitterAtom.setSelf(jitterMs)
+    report("latency", progress)
+    const latencies = await measureLatency(latencySamples, signal)
+    signal.throwIfAborted()
+    const latencyMs = median(latencies)
+    const jitterMs = stdDev(latencies)
 
-        measurementStatusAtom.setSelf("measuring-download")
-        const downloadMbps = await measureDownload({
-            ...phaseOptions,
-            onUpdate: mbps => downloadSpeedAtom.setSelf(mbps),
-        })
-        downloadSpeedAtom.setSelf(downloadMbps)
+    update("download", { latencyMs, jitterMs })
+    const downloadMbps = await measureDownload({
+        ...phase,
+        signal,
+        onUpdate: mbps => update("download", { downloadMbps: mbps }),
+    })
+    // runPhase ends quietly on abort; a cut-short phase is not a reading.
+    signal.throwIfAborted()
 
-        measurementStatusAtom.setSelf("measuring-upload")
-        const uploadMbps = await measureUpload({
-            ...phaseOptions,
-            onUpdate: mbps => uploadSpeedAtom.setSelf(mbps),
-        })
-        uploadSpeedAtom.setSelf(uploadMbps)
+    update("upload", { downloadMbps })
+    const uploadMbps = await measureUpload({
+        ...phase,
+        signal,
+        onUpdate: mbps => update("upload", { uploadMbps: mbps }),
+    })
+    signal.throwIfAborted()
 
-        const timestamp = Date.now()
-        lastMeasurementAtom.setSelf(timestamp)
-        measurementStatusAtom.setSelf("complete")
-
-        return { downloadMbps, uploadMbps, latencyMs, jitterMs, timestamp }
-    } catch (error) {
-        // An abort means a caller (e.g. invalidateMeasurement) intentionally
-        // cancelled this run — don't flip status to "error", since a fresh
-        // measurement is typically already in flight and owns the status.
-        if (!signal?.aborted) measurementStatusAtom.setSelf("error")
-        throw error
-    }
+    return Object.freeze({
+        downloadMbps,
+        uploadMbps,
+        latencyMs,
+        jitterMs,
+        timestamp: Date.now(),
+    })
 }

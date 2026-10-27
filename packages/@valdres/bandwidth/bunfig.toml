@@ -1,2 +1,3 @@
 [test]
+preload = "./test/setup/happyDom.ts"
 timeout = 10000

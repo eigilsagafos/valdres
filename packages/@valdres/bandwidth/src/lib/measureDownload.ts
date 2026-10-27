@@ -9,7 +9,12 @@ const downloadWorker = async (
     reportBytes: (bytes: number) => void,
 ): Promise<void> => {
     while (!signal.aborted) {
-        const res = await fetch(DOWNLOAD_URL, { cache: "no-store", signal })
+        const res = await fetch(DOWNLOAD_URL, {
+            cache: "no-store",
+            credentials: "omit",
+            referrerPolicy: "no-referrer",
+            signal,
+        })
         if (!res.ok) {
             throw new Error(
                 `download failed: ${res.status} ${res.statusText}`.trim(),

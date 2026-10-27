@@ -2,12 +2,17 @@
 
 # bandwidth
 
-Download/upload speed, latency, and jitter from a live measurement, as async global atoms.
+Runs an active network measurement when you ask — latency and jitter, then
+download and upload throughput against Cloudflare's speed-test endpoints — and
+publishes its progress and result as read-only state.
 
-> **Runs a measurement**
+> **Transfers data only when you call it**
 >
 >
-> Reading a measured atom triggers a download/upload test on first subscribe. Call `invalidateMeasurement()` to discard the result and re-run.
+> Importing, reading, subscribing and server rendering never transfer
+> anything. Only `measureBandwidth()` does, and a measurement
+> deliberately saturates the connection: up to \~20 s of traffic, often
+> hundreds of megabytes on a fast link.
 
 ## Install
 
@@ -21,47 +26,221 @@ bun add @valdres/bandwidth
 
 ## Usage
 
+```ts
+import { store } from "valdres"
+import { bandwidthAtom, measureBandwidth } from "@valdres/bandwidth"
+
+const app = store()
+app.sub(bandwidthAtom, () => {
+    const { status, phase, progress, result } = app.get(bandwidthAtom)
+    if (status === "pending") render(`Measuring ${phase}…`, progress)
+    else if (result)
+        render(`${result.downloadMbps.toFixed(1)} Mbps down`, result)
+})
+
+const controller = new AbortController()
+button.addEventListener("click", () => {
+    measureBandwidth({ signal: controller.signal }).catch(() => {}) // the state records failures
+})
+cancelButton.addEventListener("click", () => controller.abort())
+```
+
 ```tsx
-import { Suspense } from "react"
+import { useEffect, useRef } from "react"
 import { useValue } from "valdres-react"
-import { downloadSpeedAtom, latencyAtom } from "@valdres/bandwidth"
+import { bandwidthAtom, measureBandwidth } from "@valdres/bandwidth"
 
-function Speed() {
-    const download = useValue(downloadSpeedAtom)
-    const latency = useValue(latencyAtom)
-    return <span>{download.toFixed(1)} Mbps · {latency.toFixed(0)} ms</span>
-}
+function SpeedTest() {
+    const { status, phase, progress, result, error } = useValue(bandwidthAtom)
+    const running = useRef<AbortController | null>(null)
 
-// The measured atoms suspend until the test resolves
-export function App() {
+    // Stop transferring if this component goes away mid-measurement.
+    useEffect(() => () => running.current?.abort(), [])
+
+    const start = () => {
+        running.current = new AbortController()
+        measureBandwidth({ signal: running.current.signal }).catch(() => {})
+    }
+
+    if (status === "pending")
+        return (
+            <span>
+                Measuring {phase}… {progress?.downloadMbps?.toFixed(1) ?? "–"}{" "}
+                Mbps
+            </span>
+        )
     return (
-        <Suspense fallback="Measuring…">
-            <Speed />
-        </Suspense>
+        <>
+            {result && (
+                <span>
+                    {result.downloadMbps.toFixed(1)} Mbps ·{" "}
+                    {result.latencyMs.toFixed(0)} ms
+                </span>
+            )}
+            {error && <span>Failed: {error.message}</span>}
+            <button onClick={start}>
+                {result ? "Measure again" : "Measure"}
+            </button>
+        </>
     )
 }
 ```
 
+> **Adapter support in this beta**
+>
+> `valdres-react` is the only adapter migrated to the v1 core. The Vue, Svelte,
+> Solid and Angular adapters cannot read an external atom yet. Until they ship,
+> read this package with `store.get` / `store.sub` as above.
+
 ## Exports
 
-| Export                    | Kind                    | Type                                                                                                                                                             |
-| ------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `downloadSpeedAtom`       | atom (read-only, async) | `number` — Mbps                                                                                                                                                  |
-| `uploadSpeedAtom`         | atom (read-only, async) | `number` — Mbps                                                                                                                                                  |
-| `latencyAtom`             | atom (read-only, async) | `number` — ms                                                                                                                                                    |
-| `jitterAtom`              | atom (read-only, async) | `number` — ms                                                                                                                                                    |
-| `measurementStatusAtom`   | atom (settable)         | `MeasurementStatus`                                                                                                                                              |
-| `lastMeasurementAtom`     | atom (settable)         | `number \| null` — timestamp                                                                                                                                     |
-| `invalidateOnAtom`        | atom (settable)         | `GlobalAtom<unknown>[]`                                                                                                                                          |
-| `measureBandwidth`        | util fn                 | `(options?: MeasureBandwidthOptions) => Promise<BandwidthResult>`                                                                                                |
-| `invalidateMeasurement`   | util fn                 | `() => void`                                                                                                                                                     |
-| `MeasurementStatus`       | type                    | `"idle" \| "measuring-latency" \| "measuring-download" \| "measuring-upload" \| "complete" \| "error"`                                                           |
-| `BandwidthResult`         | type                    | `{ downloadMbps, uploadMbps, latencyMs, jitterMs, timestamp: number }`                                                                                           |
-| `MeasureBandwidthOptions` | type                    | `{ latencySamples?, maxDurationMs?, minDurationMs?, warmupMs?, startStreams?, maxStreams?, stabilityThreshold?: number; signal?: AbortSignal; fresh?: boolean }` |
+| Export                    | Kind                      | Type                                                                                                                                                             |
+| ------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bandwidthAtom`           | external atom (read-only) | `BandwidthState`                                                                                                                                                 |
+| `downloadSpeedAtom`       | selector (read-only)      | `number \| null` — Mbps, last result                                                                                                                             |
+| `uploadSpeedAtom`         | selector (read-only)      | `number \| null` — Mbps, last result                                                                                                                             |
+| `latencyAtom`             | selector (read-only)      | `number \| null` — ms, last result                                                                                                                               |
+| `jitterAtom`              | selector (read-only)      | `number \| null` — ms, last result                                                                                                                               |
+| `lastMeasurementAtom`     | selector (read-only)      | `number \| null` — `Date.now()` of the last result                                                                                                               |
+| `measurementStatusAtom`   | selector (read-only)      | `MeasurementStatus`                                                                                                                                              |
+| `measureBandwidth`        | util fn                   | `(options?: MeasureBandwidthOptions) => Promise<BandwidthResult>`                                                                                                |
+| `BandwidthState`          | type                      | `{ status, phase, progress, result, error }`                                                                                                                     |
+| `BandwidthResult`         | type                      | `{ downloadMbps, uploadMbps, latencyMs, jitterMs, timestamp: number }`                                                                                           |
+| `BandwidthProgress`       | type                      | `{ latencyMs, jitterMs, downloadMbps, uploadMbps: number \| null }`                                                                                              |
+| `BandwidthError`          | type                      | `{ name: string; message: string }`                                                                                                                              |
+| `MeasurementStatus`       | type                      | `"unsupported" \| "idle" \| "pending" \| "ready" \| "error"`                                                                                                     |
+| `MeasurementPhase`        | type                      | `"latency" \| "download" \| "upload"`                                                                                                                            |
+| `MeasureBandwidthOptions` | type                      | `{ latencySamples?, maxDurationMs?, minDurationMs?, warmupMs?, startStreams?, maxStreams?, stabilityThreshold?: number; signal?: AbortSignal; fresh?: boolean }` |
 
-## Cross-framework
+## State
 
-One in-flight measurement is shared across every store and framework. `invalidateMeasurement()` clears the result and, if anything is subscribed, kicks off a fresh run.
+| `status`        | Meaning                                       | `phase` / `progress`                           | `result`                    | `error` |
+| --------------- | --------------------------------------------- | ---------------------------------------------- | --------------------------- | ------- |
+| `"unsupported"` | No `fetch` or `performance.now`.              | `null`                                         | `null`                      | `null`  |
+| `"idle"`        | Nothing measured yet in this page or process. | `null`                                         | `null`                      | `null`  |
+| `"pending"`     | A measurement is running.                     | the running phase and its provisional readings | the previous result, if any | `null`  |
+| `"ready"`       | The latest measurement completed.             | `null`                                         | its result                  | `null`  |
+| `"error"`       | The latest measurement failed.                | `null`                                         | the previous result, if any | why     |
+
+Each snapshot is frozen and published as one value. The selectors read `result`
+only — a completed measurement — so they never show a provisional reading; read
+`bandwidthAtom`'s `progress` for live numbers.
+
+## What is measured
+
+Everything here is an **active measurement** between this client and
+`speed.cloudflare.com`, never a browser estimate. The package does not read
+`navigator.connection` (`downlink`, `rtt`, `effectiveType`): those are coarse,
+rounded estimates that only some browsers expose, and they are never substituted
+for a measurement.
+
+| Phase    | Requests                                                                                                     | Result                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| latency  | one warm-up, then `latencySamples` (10) sequential `GET __down?bytes=0`                                      | `latencyMs`: median round trip, ms. `jitterMs`: population standard deviation of those round trips, ms. |
+| download | `startStreams` (2) to `maxStreams` (8) parallel streams of `GET __down?bytes=100000000`, read as they arrive | `downloadMbps`                                                                                          |
+| upload   | the same number of parallel streams of 1 MB `POST __up`                                                      | `uploadMbps`                                                                                            |
+
+Throughput is in megabits per second (1 Mbps = 1,000,000 bits/s). Every 250 ms a
+phase computes the rate over the last 1.5 s and smooths it (exponential moving
+average, α = 0.2); `progress` shows that smoothed rate as it moves, and the
+result is its value when the phase ends. After `minDurationMs` (5 s) a phase
+ends as soon as the coefficient of variation of its last four unsmoothed
+readings (ignoring the first `warmupMs`, 2 s) drops below `stabilityThreshold`
+(0.05), and at `maxDurationMs` (10 s) at the latest. Past `minDurationMs`, a
+reading more than 15 % above the previous one opens another stream, up to
+`maxStreams`.
+
+Limitations: the result is throughput to Cloudflare's nearest edge over this
+browser's network path at that moment — other traffic, Wi-Fi conditions, VPNs
+and the browser's own connection limits all lower it, and it is not the capacity
+of the line. Latency includes HTTP request overhead, so it is higher than an
+ICMP ping.
+
+### Data transferred
+
+A measurement moves roughly _throughput × phase duration_ in each direction,
+plus 11 empty latency requests. With the defaults each throughput phase lasts
+5–10 s, so on a 100 Mbps link a measurement downloads about 60–125 MB and on a 1
+Gbps link up to about 1.25 GB, with upload traffic on the same scale for its own
+speed. Repeated measurements multiply that. Do not run measurements
+automatically, on a timer, or on metered or mobile connections without the
+user's consent; shorter `maxDurationMs` and fewer `maxStreams` reduce the cost
+and the accuracy. Requests send no cookies or referrer and bypass the HTTP
+cache; Cloudflare sees the client's IP address, as with any request.
+
+## Measuring
+
+- **Sharing.** There is one measurement at a time per page or process — two
+  would compete for the same link. Concurrent calls share it; the options of a
+  call that joins are ignored. `fresh: true` aborts the running measurement
+  instead (its callers reject with an `AbortError`) and starts a new one.
+- **Cancellation.** `signal` cancels only that caller: its promise rejects with
+  the signal's reason. When every caller sharing the measurement has cancelled,
+  all its requests are aborted and the state returns to what it was before. A
+  caller without a signal keeps it running. A cut-short phase never produces a
+  result.
+- **Ordering.** Only the newest measurement publishes. A replaced or cancelled
+  one whose readings still arrive changes nothing.
+- **No automatic work.** Nothing retries a failure or measures again. Call
+  `measureBandwidth()` when you want a new result.
+- **Errors.** Invalid options throw `TypeError` before anything is sent. Without
+  `fetch` or `performance.now` the promise rejects with `NotSupportedError`. The
+  first failing request (for example `download failed: 503`) fails the
+  measurement. A Store subscriber that throws while the state is published is
+  reported through `globalThis.reportError` (or thrown in a later task) and
+  never changes the promise's outcome; every other Store is still notified.
+
+## Ownership and lifetime
+
+The measurement and its result belong to the JavaScript realm (the page, worker
+or process) and are shared by every Store: root Stores, their scopes and
+independent Stores read the same snapshot, and a Store created later reads the
+latest result without measuring. Subscribing only registers a store tree for
+notifications — once per tree, shared by its scopes, released by its last
+unsubscribe or `dispose()`. Unsubscribing or disposing a Store never stops a
+measurement; abort its `signal` for that. A disposed Store receives nothing
+afterwards.
+
+Calling `measureBandwidth()` inside a transaction or a `settle` handler starts
+the measurement immediately and notifies that Store once the transaction is
+over; prefer event handlers and effects.
+
+## Server rendering
+
+The server snapshot is the fixed idle seed; nothing is measured during a server
+render, and `useValue` renders the seed first and the live state after
+hydration.
+
+## Migrating from 1.0.0-beta.8
+
+| Before                                                                                                                                     | Now                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Reading or subscribing to `downloadSpeedAtom`, `uploadSpeedAtom`, `latencyAtom` or `jitterAtom` started a full measurement and suspended   | Reading never measures. Call `measureBandwidth()`; the selectors are `number \| null` (`null` until a measurement completes). |
+| Those atoms updated live during a measurement                                                                                              | They hold completed results only. Live readings are `bandwidthAtom`'s `progress`, labelled by `phase`.                        |
+| `measurementStatusAtom` (settable): `"idle" \| "measuring-latency" \| "measuring-download" \| "measuring-upload" \| "complete" \| "error"` | Read-only: `"idle" \| "pending" \| "ready" \| "error"` (plus `"unsupported"`); the phase is `bandwidthAtom`'s `phase`.        |
+| `lastMeasurementAtom` (settable)                                                                                                           | Read-only selector of the last result's `timestamp`.                                                                          |
+| `invalidateOnAtom` re-measured whenever listed global atoms changed                                                                        | Removed. Subscribe to what should trigger a new measurement and call `measureBandwidth({ fresh: true })` (example below).     |
+| `invalidateMeasurement()`                                                                                                                  | `measureBandwidth({ fresh: true })`.                                                                                          |
+| An abort mid-phase could still complete with partial numbers                                                                               | A cancelled or replaced measurement rejects and never publishes a result.                                                     |
+| Peer `valdres` `^1.0.0-beta.19`                                                                                                            | `^1.0.0-beta.39`, the first core with `externalAtom`.                                                                         |
+
+To re-measure when something changes, wire it explicitly — and consider the data
+cost before doing so:
+
+```ts
+import { store } from "valdres"
+import { measureBandwidth } from "@valdres/bandwidth"
+import { publicIpValueAtom } from "@valdres/public-ip"
+
+const app = store()
+let previous = app.get(publicIpValueAtom)
+app.sub(publicIpValueAtom, () => {
+    const ip = app.get(publicIpValueAtom)
+    if (ip !== null && previous !== null && ip !== previous)
+        measureBandwidth({ fresh: true }).catch(() => {})
+    previous = ip
+})
+```
 
 ---
 
