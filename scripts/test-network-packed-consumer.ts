@@ -245,8 +245,11 @@ const render = () => { const request = store(); try { return renderToString(crea
 assert.equal(render(), "<p>idle|-|idle|-</p>")
 assert.deepEqual(calls, [], "reads, subscriptions or a server render requested something")
 
-// One shared request, published synchronously to every store tree.
-const first = ip.requestPublicIp(), joined = ip.requestPublicIp({ endpoints: ["https://ip.test/ignored"] })
+// One shared request for one configuration, published synchronously to every
+// store tree; another configuration conflicts instead of joining.
+const first = ip.requestPublicIp(), joined = ip.requestPublicIp({ endpoints: ["https://api.ipify.org", "https://icanhazip.com"], timeoutMs: 4000 })
+const conflict = await ip.requestPublicIp({ endpoints: ["https://ip.test/other"] }).catch(error => error)
+assert.ok(conflict instanceof ip.PublicIpRequestConflictError, String(conflict))
 assert.equal(calls.length, 1)
 assert.equal(calls[0].url, "https://api.ipify.org")
 assert.equal(calls[0].init.referrerPolicy, "no-referrer")
@@ -322,26 +325,37 @@ assert.equal(root.get(ip.publicIpAtom), statelessBefore)
 
 // A shortened bandwidth measurement against in-process bodies.
 const requestsBefore = calls.length
+let pace = 1
 globalThis.fetch = async (input, init) => {
     calls.push({ url: String(input), init })
-    await new Promise(resolve => setTimeout(resolve, 1))
+    await new Promise(resolve => setTimeout(resolve, pace))
     if (init?.signal?.aborted) throw init.signal.reason
     const bytes = Math.min(Number(/bytes=(\\d+)/.exec(String(input))?.[1] ?? 0), 65536)
     return new Response(new Uint8Array(bytes))
 }
 const phases = []
 child.sub(bw.bandwidthAtom, () => { const { status, phase } = child.get(bw.bandwidthAtom); const label = phase ? status + "/" + phase : status; if (phases.at(-1) !== label) phases.push(label) })
-const result = await bw.measureBandwidth({ latencySamples: 2, maxDurationMs: 120, minDurationMs: 60, warmupMs: 0, startStreams: 1, maxStreams: 1 })
+const timed = { latencySamples: 2, maxDurationMs: 300, minDurationMs: 300, warmupMs: 0, startStreams: 1, maxStreams: 1, maxDownloadBytes: Infinity, maxUploadBytes: Infinity }
+const running = bw.measureBandwidth(timed)
+const busy = await bw.measureBandwidth({ ...timed, maxStreams: 2 }).catch(error => error)
+assert.ok(busy instanceof bw.BandwidthMeasurementConflictError, String(busy))
+const result = await running
 assert.deepEqual(phases, ["pending/latency", "pending/download", "pending/upload", "ready"])
 assert.equal(root.get(bw.bandwidthAtom).result, result)
 assert.ok(result.downloadMbps > 0 && result.uploadMbps > 0 && result.latencyMs > 0)
 assert.equal(root.get(bw.downloadSpeedAtom), result.downloadMbps)
 assert.ok(calls.slice(requestsBefore).every(call => call.url.startsWith("https://speed.cloudflare.com/")))
+assert.deepEqual([result.downloadEndedBy, result.uploadEndedBy], ["time", "time"])
+// Hard byte limits, with a paced server so a phase outlasts one sampling interval.
+pace = 100
+const limited = await bw.measureBandwidth({ ...timed, maxDurationMs: 5000, minDurationMs: 5000, maxDownloadBytes: 200000, maxUploadBytes: 2500000 })
+assert.deepEqual([limited.downloadBytes, limited.downloadEndedBy, limited.uploadBytes, limited.uploadEndedBy], [200000, "bytes", 2500000, "bytes"])
+pace = 1
 const stop = new AbortController()
 const aborted = bw.measureBandwidth({ signal: stop.signal, latencySamples: 2, maxDurationMs: 2000, minDurationMs: 1000, warmupMs: 0, startStreams: 1, maxStreams: 1 })
 setTimeout(() => stop.abort(), 30)
 assert.equal(await aborted.catch(error => error.name), "AbortError")
-assert.equal(root.get(bw.bandwidthAtom).result, result, "a cancelled measurement must leave the previous result")
+assert.equal(root.get(bw.bandwidthAtom).result, limited, "a cancelled measurement must leave the previous result")
 assert.equal(root.get(bw.measurementStatusAtom), "ready")
 
 // Without fetch (sampled by a store that holds no subscription): unsupported,

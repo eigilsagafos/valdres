@@ -141,8 +141,8 @@ const publicIpDemo = (el: HTMLElement) => {
     }
 }
 
-// A shortened measurement (each throughput phase 2–4 s on at most 4 streams)
-// keeps the demo's transfer well below a full run's.
+// A shortened measurement (each throughput phase 2–4 s on at most 4 streams,
+// within the default 25 MB down / 10 MB up limits).
 const DEMO_MEASUREMENT = { maxDurationMs: 4_000, minDurationMs: 2_000, warmupMs: 1_000, maxStreams: 4 }
 
 const bandwidthDemo = (el: HTMLElement) => {
@@ -150,18 +150,20 @@ const bandwidthDemo = (el: HTMLElement) => {
     const measure = (fresh: boolean) =>
         measureBandwidth({ ...DEMO_MEASUREMENT, fresh, signal: controller.signal }).catch(() => {})
     const cleanup = inspector({
-        hint: "Transfers test data to and from speed.cloudflare.com for up to ~10 s — tens of MB or more on a fast link",
+        hint: "Measures against speed.cloudflare.com: up to 25 MB down and 10 MB up, within ~8 s",
         gated: { buttonLabel: "Measure", request: () => measure(false) },
         action: { label: "Measure again", run: () => measure(true) },
         rows: [
             { label: "measurementStatusAtom", state: measurementStatusAtom },
             {
-                label: "progress (provisional)",
+                label: "active measurement (provisional)",
                 state: bandwidthAtom,
                 format: ({ phase, progress }: BandwidthState) =>
                     phase === null || progress === null
                         ? "—"
-                        : `${phase}: ${(phase === "upload" ? progress.uploadMbps : phase === "download" ? progress.downloadMbps : progress.latencyMs)?.toFixed(1) ?? "…"} ${phase === "latency" ? "ms" : "Mbps"}`,
+                        : phase === "latency"
+                          ? `measuring latency…`
+                          : `${phase}: ${(phase === "upload" ? progress.uploadMbps : progress.downloadMbps)?.toFixed(1) ?? "…"} Mbps · ${(((phase === "upload" ? progress.uploadBytes : progress.downloadBytes) ?? 0) / 1e6).toFixed(1)} MB transferred`,
             },
             { label: "downloadSpeedAtom (Mbps)", state: downloadSpeedAtom },
             { label: "uploadSpeedAtom (Mbps)", state: uploadSpeedAtom },

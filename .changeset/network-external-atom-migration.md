@@ -38,10 +38,22 @@ is a separate change, and its changeset must carry the breaking changes:
   `"unsupported" | "idle" | "pending" | "ready" | "error"` (was
   `"measuring-latency" | "measuring-download" | "measuring-upload" |
   "complete"` …); the phase is `bandwidthAtom`'s `phase`.
-- State is shared by every Store in the realm; concurrent calls share one
-  operation, `fresh` replaces it, a per-caller `signal` cancels only that
+- State is shared by every Store in the realm; `fresh` replaces a running
+  operation, a per-caller `signal` cancels only that
   caller, and only the newest operation publishes. A cancelled or replaced
   measurement rejects and never reports partial numbers.
 - Requests send no cookies or referrer and bypass the HTTP cache.
 - The `valdres` peer range is `^1.0.0-beta.39`, the first core with
   `externalAtom`.
+- Concurrent calls share an operation only when their effective
+  configuration matches; a conflicting call rejects with
+  `PublicIpRequestConflictError` / `BandwidthMeasurementConflictError`
+  instead of silently receiving another configuration's result.
+- `@valdres/bandwidth` has hard per-direction transfer limits,
+  `maxDownloadBytes` (default 25 MB) and `maxUploadBytes` (default 10 MB);
+  results carry `downloadBytes` / `uploadBytes` and `downloadEndedBy` /
+  `uploadEndedBy`, and a phase without a usable reading rejects with
+  `BandwidthInsufficientDataError`. `endpoints: { download, upload }` targets
+  a server speaking Cloudflare's speed-test protocol.
+- Neither operation is transactional: one started in a transaction that
+  throws keeps running and is published after the transaction.

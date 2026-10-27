@@ -463,7 +463,7 @@ const DOWNLOAD_BODY = new Uint8Array(512 * 1024)
 auto = request => {
     if (request.url === "https://speed.cloudflare.com/__down?bytes=0")
         return counts.latency++, { body: "" }
-    if (request.url === "https://speed.cloudflare.com/__down?bytes=100000000")
+    if (/^https:\/\/speed\.cloudflare\.com\/__down\?bytes=[1-9]/.test(request.url))
         return counts.download++, { body: DOWNLOAD_BODY }
     if (
         request.url === "https://speed.cloudflare.com/__up" &&
@@ -472,7 +472,9 @@ auto = request => {
         return counts.upload++, { body: "" }
     return undefined
 }
-const fast = `{ latencySamples: 2, maxDurationMs: 600, minDurationMs: 300, warmupMs: 0, startStreams: 1, maxStreams: 2 }`
+// Time-bounded: locally answered bodies would spend the default byte limits
+// inside one sampling interval (the suites cover the limits).
+const fast = `{ latencySamples: 2, maxDurationMs: 600, minDurationMs: 300, warmupMs: 0, startStreams: 1, maxStreams: 2, maxDownloadBytes: Infinity, maxUploadBytes: Infinity }`
 await probe(`start("s7", "bandwidth", ${fast})`)
 const s7 = await probe(`outcome("s7")`)
 const s7State = await probe("snapshot()")
@@ -508,8 +510,8 @@ await probe(
     `start("s8", "bandwidth", { latencySamples: 2, maxDurationMs: 5000, minDurationMs: 4000, warmupMs: 0, startStreams: 2, maxStreams: 2, cancellable: true })`,
 )
 const streams = [
-    await take(r => r.url.endsWith("__down?bytes=100000000"), "s8 stream 1"),
-    await take(r => r.url.endsWith("__down?bytes=100000000"), "s8 stream 2"),
+    await take(r => /__down\?bytes=[1-9]/.test(r.url), "s8 stream 1"),
+    await take(r => /__down\?bytes=[1-9]/.test(r.url), "s8 stream 2"),
 ]
 await probe(`abort("s8")`)
 await pause()
