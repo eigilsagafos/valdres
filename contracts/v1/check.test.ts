@@ -1541,6 +1541,7 @@ describe("v1 contract manifest validation", () => {
         expect(subscriber.phase).toBe("notifying")
         expect(subscriber.suppliedCapabilities).toEqual([
             "zero-argument invalidation signal; no settled value argument",
+            "one frozen committed CollectionEvent per call for a direct collection callback",
             "idempotent unsubscribe for already-owned subscription",
             "committed reads that do not sample dormant external sources",
         ])

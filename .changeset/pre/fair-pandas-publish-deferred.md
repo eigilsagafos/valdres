@@ -4,12 +4,6 @@
 "valdres-svelte": patch
 "valdres-vue": patch
 "@valdres/bandwidth": patch
-"@valdres/browser-device-motion": patch
-"@valdres/browser-device-orientation": patch
-"@valdres/browser-geolocation": patch
-"@valdres/browser-screen": patch
-"@valdres/browser-screen-details": patch
-"@valdres/browser-window": patch
 "@valdres/color-mode": patch
 "@valdres/public-ip": patch
 "@valdres/redux-devtools": patch

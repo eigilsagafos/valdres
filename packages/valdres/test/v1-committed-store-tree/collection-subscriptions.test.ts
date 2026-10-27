@@ -16,11 +16,13 @@ import { runCollectionTransaction } from "./collection-test-transaction"
 const read = <Value>(store: CommittedStoreTree, state: State<any>): Value =>
     store.get(state) as Value
 
+// These cases pin value (membership) routing, which the notify handler keeps;
+// a direct collection callback receives row events instead.
 const sub = (
     store: CommittedStoreTree,
     state: State<any>,
     callback: () => void,
-): (() => void) => store.sub(state, callback)
+): (() => void) => store.sub(state, { notify: callback })
 
 const thrownBy = (operation: () => unknown): unknown => {
     try {

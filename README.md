@@ -151,13 +151,12 @@ reset reconnects inheritance.
 
 ## Opt-in structural equality
 
-`Object.is` remains the default comparator. Import `deepEqual` from the separate
-equality entry only where structurally equal replacements should retain the
-previous reference and stop notifications or downstream propagation:
+`Object.is` remains the default comparator. Pass `deepEqual` only where
+structurally equal replacements should retain the previous reference and stop
+notifications or downstream propagation:
 
 ```ts
-import { atom } from "valdres"
-import { deepEqual } from "valdres/equality"
+import { atom, deepEqual } from "valdres"
 
 const documentAtom = atom({ blocks: [] }, { equal: deepEqual })
 ```
@@ -173,7 +172,7 @@ run and throw.
 
 Structural comparison walks the compared values, so use it deliberately on
 allocation-heavy results where pruning redundant updates outweighs that work.
-The separate `valdres/equality` entry keeps it out of ordinary root bundles.
+Bundles that never import `deepEqual` drop it.
 
 ## Inspect a Store
 
@@ -306,7 +305,7 @@ The package tables below are auto-generated — do not hand-edit.
 | [`@valdres/browser-screen`](https://valdres.dev/react/plugins/browser-screen) | Reactive screen resolution and orientation from window.screen |
 | [`@valdres/browser-screen-details`](https://valdres.dev/react/plugins/browser-screen-details) | Reactive multi-screen layout from the Window Management API |
 | [`@valdres/browser-visibility`](https://valdres.dev/react/plugins/browser-visibility) | Reactive Page Visibility state (visible / hidden) |
-| [`@valdres/browser-window`](https://valdres.dev/react/plugins/browser-window) | Reactive window inner size, tracked through resize events |
+| [`@valdres/browser-window`](https://valdres.dev/react/plugins/browser-window) | Reactive window inner and outer size, tracked through resize events |
 | [`@valdres/color-mode`](https://valdres.dev/react/plugins/color-mode) | Color mode (dark/light theme) state powered by Valdres |
 | [`@valdres/hotkeys`](https://valdres.dev/react/plugins/hotkeys) | Keyboard shortcuts as synchronous Valdres transactions |
 | [`@valdres/public-ip`](https://valdres.dev/react/plugins/public-ip) | Reactive public IP (v4/v6) with stale-while-revalidate |

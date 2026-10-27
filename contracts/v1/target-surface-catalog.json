@@ -93,6 +93,7 @@
         "core.type.atom",
         "core.type.atom-options",
         "core.type.collection",
+        "core.type.collection-event",
         "core.type.collection-key",
         "core.type.collection-options",
         "core.type.collection-row",
@@ -831,6 +832,13 @@
             "package": "valdres",
             "subpath": ".",
             "name": "CollectionOptions"
+        },
+        {
+            "id": "core.type.collection-event",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CollectionEvent"
         },
         {
             "id": "core.type.collection-row",

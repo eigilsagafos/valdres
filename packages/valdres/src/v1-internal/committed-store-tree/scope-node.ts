@@ -139,7 +139,13 @@ export interface StoreScopeCoordinator {
         selector: AnySelector,
         session: SelectorEvaluationSession<AnyState>,
     ): void
-    reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void
+    /** `events` are committed collection events for an event key's target. */
+    reachSubscriptionTarget(
+        scope: StoreScopeNode,
+        state: AnyState,
+        events?: readonly unknown[],
+    ): void
+    hasSubscription(scope: StoreScopeNode, node: AnyState): boolean
     /** Monotonic id of the running (or last) settlement boundary, shared by
      * its lifecycle waves and settle commits. */
     readonly settlementEpoch: number

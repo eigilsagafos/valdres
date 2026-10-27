@@ -1,0 +1,8 @@
+{
+    "manifest_version": 3,
+    "name": "valdres geometry probe zoom",
+    "description": "Lets scripts/browser-geometry-probe/run.ts set real browser zoom (the Ctrl/Cmd-+ path) through chrome.tabs.setZoom.",
+    "version": "1.0",
+    "permissions": ["tabs"],
+    "background": { "service_worker": "worker.js" }
+}

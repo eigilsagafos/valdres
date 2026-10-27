@@ -1,7 +1,7 @@
 {
     "name": "valdres",
     "description": "Fast atom-based state management for JavaScript. Inspired by Recoil and Jotai.",
-    "version": "1.0.0-beta.44",
+    "version": "1.0.0-beta.46",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -16,7 +16,6 @@
     "exports": {
         ".": "./src/index.ts",
         "./inspect": "./src/inspect.ts",
-        "./equality": "./src/equality.ts",
         "./adapter-internals/v1": "./src/adapter-internals/v1.ts",
         "./query": "./src/query.ts"
     },

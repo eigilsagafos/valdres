@@ -87,6 +87,36 @@ export interface Collection<
     (input: Input): CollectionRow<Key, Value>
 }
 
+/**
+ * One committed change delivered to a direct `Store.sub(collection, callback)`.
+ * Row events report a transaction's net effect on one key in the subscribed
+ * Store's effective view (`added`, `updated`, `deleted`); `reordered` reports a
+ * change in the relative order of rows present before and after it.
+ */
+export type CollectionEvent<
+    Key extends CollectionKey,
+    Value extends CollectionValue,
+> =
+    | {
+          readonly type: "added"
+          readonly key: Key
+          readonly value: Value
+      }
+    | {
+          readonly type: "updated"
+          readonly key: Key
+          readonly previous: Value
+          readonly value: Value
+      }
+    | {
+          readonly type: "deleted"
+          readonly key: Key
+          readonly previous: Value
+      }
+    | {
+          readonly type: "reordered"
+      }
+
 interface CollectionOptionCarrier<
     Key extends CollectionKey,
     Value extends CollectionValue,
@@ -262,6 +292,23 @@ export type SubscriptionHandlers<Result = void> =
 export interface CommittedStoreTree {
     readonly get: <Value>(state: State<Value>) => Value
     readonly sub: {
+        /**
+         * Calls `callback` once per event for each committed transaction that
+         * changes the collection as this Store sees it: row events in the
+         * order their rows were first written, then at most one `reordered`.
+         * Events carry the committed values; a later `get` may already read
+         * newer state. Membership-only observers subscribe to a selector
+         * that reads the collection instead.
+         */
+        <
+            Key extends CollectionKey,
+            Value extends CollectionValue,
+            Input,
+            Indexes,
+        >(
+            collection: Collection<Key, Value, Input, Indexes>,
+            callback: (event: CollectionEvent<Key, Value>) => void,
+        ): () => void
         <Value>(state: State<Value>, callback: () => void): () => void
         /**
          * When a settlement changes `state`, `settle` writes inside it, before
@@ -341,3 +388,8 @@ export interface CommittedStoreTreeDomain {
     createStoreTree(): CommittedStoreTree
     readonly adapter: CommittedStoreTreeAdapter
 }
+
+// Public names, re-exported as these same symbols by the root entry so that
+// consumer declaration emit can name inferred Stores and Transactions. Aliasing
+// here rather than in index.ts keeps Bun's minified identifiers unchanged.
+export type { CommittedStoreTree as Store, RootTransaction as Transaction }

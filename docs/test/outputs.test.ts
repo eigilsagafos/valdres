@@ -106,17 +106,19 @@ describe("pages about an integration not migrated to v1", () => {
     test("llms.txt marks them, and llms-full.txt carries the notice", async () => {
         const index = await read("llms.txt")
         const full = await read("llms-full.txt")
-        for (const route of ["/react/plugins/browser-window", "/vue/createValdres", "/svelte/fromState"]) {
+        for (const route of ["/react/plugins/public-ip", "/vue/createValdres", "/svelte/fromState"]) {
             const entry = index.split("\n").find(line => line.includes(`(${SITE}${route}.md)`))
             expect(entry).toContain(`${legacyNoticeTitle} (legacy, pre-v1 API)`)
         }
-        expect(fullSection(full, "/react/plugins/browser-window")).toContain(
-            `> ${legacyPageNotice("@valdres/browser-window")}`,
+        expect(fullSection(full, "/react/plugins/public-ip")).toContain(
+            `> ${legacyPageNotice("@valdres/public-ip")}`,
         )
         expect(fullSection(full, "/vue/createValdres")).toContain(
             `> ${legacyPageNotice("valdres-vue")}`,
         )
         // A migrated integration is not marked.
+        const window = index.split("\n").find(line => line.includes("/react/plugins/browser-window.md"))
+        expect(window).not.toContain(legacyNoticeTitle)
         const online = index.split("\n").find(line => line.includes("/react/plugins/browser-online.md"))
         expect(online).not.toContain(legacyNoticeTitle)
     })
@@ -128,7 +130,18 @@ describe("framework-specific examples", () => {
 
     test("every example for an unmigrated adapter is labelled, on the website and in Markdown", async () => {
         const labelled = docs.filter(doc => doc.framework && unmigratedAdapter(doc.framework) && blocks(doc) > 0)
-        expect(labelled.length).toBeGreaterThan(30)
+        // Keeps the loop below from passing vacuously. Deliberately not a page
+        // count: pages leave this set as their plugins migrate and drop their
+        // non-React examples (the four permission plugins removed 16), so a
+        // number only breaks on progress. What must hold is that the filter
+        // still finds labelled pages for every adapter that is not migrated.
+        const adapters = new Set(labelled.map(doc => unmigratedAdapter(doc.framework!)))
+        expect([...adapters].sort()).toEqual([
+            "valdres-angular",
+            "valdres-solid",
+            "valdres-svelte",
+            "valdres-vue",
+        ])
         for (const doc of labelled) {
             const adapter = unmigratedAdapter(doc.framework!)!
             const label = legacyExampleLabel(adapter)
@@ -167,8 +180,8 @@ describe("current core atom and selector documentation", () => {
     const MD_LEGACY = "\n## Legacy pre-1.0 API\n"
 
     const claims = {
-        atom: ["options.equal", "Object.is", "valdres/equality", "never copies or freezes"],
-        selector: ["options.equal", "Object.is", "valdres/equality", "never copied or frozen"],
+        atom: ["options.equal", "Object.is", "deepEqual", "never copies or freezes"],
+        selector: ["options.equal", "Object.is", "deepEqual", "never copied or frozen"],
     }
 
     for (const page of ["atom", "selector"] as const) {
@@ -183,7 +196,7 @@ describe("current core atom and selector documentation", () => {
                 for (const claim of claims[page]) {
                     expect(current, `${output}: ${claim}`).toContain(claim)
                 }
-                for (const unsupported of ["options.mutable", "options.schema", "options.maxAge", "deep-freez"]) {
+                for (const unsupported of ["options.mutable", "options.schema", "options.maxAge", "deep-freez", "valdres/equality"]) {
                     expect(current, `${output}: ${unsupported}`).not.toContain(unsupported)
                 }
                 expect(legacy, output).toContain("Legacy — not in Valdres 1.0")

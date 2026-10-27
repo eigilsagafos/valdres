@@ -1,5 +1,72 @@
 # valdres
 
+## 1.0.0-beta.46
+
+### Minor Changes
+
+- [#452](https://github.com/eigilsagafos/valdres/pull/452)
+  [`6b6eb6d`](https://github.com/eigilsagafos/valdres/commit/6b6eb6df365703b7c358a76eb58be918aef30210)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - **Breaking: a
+  direct `store.sub(collection, callback)` now receives committed row events.**
+
+    The callback is called once per event with a `CollectionEvent<Key, Value>`
+    (newly exported): `added`, `updated` (with `previous`), `deleted` (with
+    `previous`), and at most one `reordered` per transaction. Events report each
+    committed transaction's net change per key in the subscribed Store's
+    effective view, compared with `Object.is`, in the order the transaction
+    first changed each row as that Store sees it. Value-only row updates now
+    call the callback; before, it ran without arguments and only when membership
+    or order changed.
+
+    To keep membership-only notifications, subscribe to a selector that reads
+    the collection, or use the `notify` handler form:
+
+    ```diff
+    -store.sub(mutations, () => onMembershipChange())
+    +store.sub(selector(get => get(mutations)), () => onMembershipChange())
+    +// or: store.sub(mutations, { notify: () => onMembershipChange() })
+    ```
+
+    `settle` handlers on a collection, framework bindings such as `useValue`,
+    and the adapter `subscribe` seam keep membership semantics.
+
+## 1.0.0-beta.45
+
+### Minor Changes
+
+- [#440](https://github.com/eigilsagafos/valdres/pull/440)
+  [`810c1c8`](https://github.com/eigilsagafos/valdres/commit/810c1c8f3c8006c96fc732e686a33197c2e9d846)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - **Breaking: import
+  `deepEqual` from `valdres`; the `valdres/equality` subpath is removed.**
+
+    ```diff
+    -import { atom } from "valdres"
+    -import { deepEqual } from "valdres/equality"
+    +import { atom, deepEqual } from "valdres"
+    ```
+
+    `deepEqual` itself is unchanged, and atoms and selectors still default to
+    `Object.is`. It ships in its own chunk, so bundles that never import it
+    still drop it. Importing `valdres/equality` now fails to resolve (Node
+    reports `ERR_PACKAGE_PATH_NOT_EXPORTED`, TypeScript reports TS2307).
+
+### Patch Changes
+
+- [#434](https://github.com/eigilsagafos/valdres/pull/434)
+  [`dda0666`](https://github.com/eigilsagafos/valdres/commit/dda0666558788fbe2978977b8f2f40cf6419b9cb)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make inferred
+  values exportable from projects that emit declarations. An unannotated
+  `export const count = atom(0)` (likewise `atom.lazy`, `selector`, `family`
+  members, collection rows, `query` results, `store()`, `scope()` and
+  transaction cursors) failed with TS2742 / TS2883 because its type could only
+  be named through `valdres/dist/types/v1.js` or `v1-internal`. The root entry
+  now re-exports the `Atom`, `Selector`, `CollectionRow`, `State`, `Store` and
+  `Transaction` declarations those values carry instead of wrapping them in new
+  aliases, so declarations name them as `import("valdres").Atom<number>` and so
+  on. Assigning a factory itself to an exported constant
+  (`export const myAtom = atom`) is still unsupported; re-export it with
+  `export { atom } from "valdres"`. Declarations only; the runtime is unchanged.
+
 ## 1.0.0-beta.44
 
 ### Minor Changes

@@ -400,9 +400,14 @@ const oracleProgram = (seed: number) => {
     const states = [rowsDef, plain, ts] as const
     for (const [si, s] of [draft, grand].entries())
         for (const [i, st] of states.entries()) {
-            s.sub(st as any, () =>
-                counts.set(`${si}:${i}`, (counts.get(`${si}:${i}`) ?? 0) + 1),
-            )
+            // notify observes membership; direct callbacks receive row events.
+            s.sub(st as any, {
+                notify: () =>
+                    counts.set(
+                        `${si}:${i}`,
+                        (counts.get(`${si}:${i}`) ?? 0) + 1,
+                    ),
+            })
         }
     for (const s of [ref, refGrand]) for (const st of states) s.get(st as any)
     const beforeRef = states.map(st => ref.get(st as any) as readonly any[])

@@ -122,8 +122,53 @@ describe("generated release metadata scope", () => {
         ])
     })
 
+    test("accepts the Version Packages list once the permission packages release", () => {
+        // The exact file list `bun run version-packages` produced for the
+        // browser-permission release in an isolated simulation
+        // (.context/release-sim), with #437's pending empty changeset.
+        accepts([
+            ...["browser-permission-external-atom-migration", "browser-permission-release"].map(
+                id => renamed(`.changeset/${id}.md`, `.changeset/pre/${id}.md`),
+            ),
+            modified("bun.lock"),
+            ...[
+                "browser-device-motion",
+                "browser-device-orientation",
+                "browser-geolocation",
+                "browser-screen-details",
+            ].flatMap(pkg => [
+                modified(`packages/@valdres/${pkg}/CHANGELOG.md`),
+                modified(`packages/@valdres/${pkg}/package.json`),
+            ]),
+        ])
+    })
+
+    test("accepts the Version Packages list once the geometry packages release", () => {
+        // The exact file list `bun run version-packages` produced for the
+        // browser-geometry release in an isolated simulation
+        // (.context/release-sim), with #435's pending empty changeset.
+        accepts([
+            ...["browser-geometry-external-atom-migration", "browser-geometry-release"].map(
+                id => renamed(`.changeset/${id}.md`, `.changeset/pre/${id}.md`),
+            ),
+            modified("bun.lock"),
+            ...["browser-screen", "browser-window"].flatMap(pkg => [
+                modified(`packages/@valdres/${pkg}/CHANGELOG.md`),
+                modified(`packages/@valdres/${pkg}/package.json`),
+            ]),
+        ])
+    })
+
     test.each([
         ["runtime source", "packages/valdres/src/index.ts"],
+        [
+            "runtime file in a permission package",
+            "packages/@valdres/browser-geolocation/src/lib/watchRegistry.ts",
+        ],
+        [
+            "runtime file in a geometry package",
+            "packages/@valdres/browser-window/src/lib/windowSizeSource.ts",
+        ],
         [
             "runtime file in a keyboard package",
             "packages/@valdres/browser-keyboard/src/index.ts",
@@ -150,7 +195,7 @@ describe("generated release metadata scope", () => {
         ["root manifest", "package.json"],
         [
             "unlisted browser package",
-            "packages/@valdres/browser-geolocation/package.json",
+            "packages/@valdres/public-ip/package.json",
         ],
         [
             "runtime file in the Stage B presence package",
@@ -188,11 +233,11 @@ describe("generated release metadata scope", () => {
         rejects(
             [
                 renamed(
-                    "packages/@valdres/browser-geolocation/package.json",
+                    "packages/@valdres/public-ip/package.json",
                     "packages/@valdres/browser-keyboard/package.json",
                 ),
             ],
-            "non-release files: packages/@valdres/browser-geolocation/package.json",
+            "non-release files: packages/@valdres/public-ip/package.json",
         )
     })
 

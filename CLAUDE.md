@@ -40,8 +40,10 @@ test/
   exports. The re-export-only `index.ts` barrel is the intentional exception to
   the one-export guard.
 - `lib/` is internal; `utils/` is public. Put helpers in the right one.
-- `packages/valdres/src/equality.ts` is the opt-in `valdres/equality` entry and
-  intentionally stays outside the root barrel and ordinary root bundles.
+- `packages/valdres/src/equality.ts` holds `deepEqual`, re-exported from the
+  root. It is a build entrypoint but not a package export: that keeps it in its
+  own split chunk, so bundles that never import `deepEqual` drop it. Keep it a
+  leaf module with no imports.
 - `packages/valdres/src/inspect.ts` is the opt-in `valdres/inspect` entry. It
   constructs an instrumented Store inside the singleton public v1 domain; never
   import its recorder from the root entry or add observation state to an
@@ -56,15 +58,15 @@ test/
 
 ## Browser-API package pattern
 
-Each `@valdres/browser-*` package wraps one browser API as global atoms.
-Canonical reference: `packages/@valdres/browser-geolocation`.
-
-- Atoms use
-  `globalAtom(defaultValue, { name: "@valdres/<pkg>/<atom>", onMount: () => bootstrap(thisAtom) })`.
-- `onMount` starts the browser subscription on first subscriber; the cleanup it
-  returns stops it when the last subscriber leaves.
-- Subscription wiring lives in `lib/bootstrap.ts` (and friends like
-  `lib/subscribePermission.ts`).
+Each migrated `@valdres/browser-*` package wraps one browser API as read-only
+v1 state: an `externalAtom` whose source samples the browser in `getSnapshot`,
+attaches listeners in `subscribe` (first retention per store tree) and returns
+their cleanup (last release or `dispose`), with a fixed `getServerSnapshot`.
+`globalAtom`, `onMount` and `setSelf` no longer exist. References:
+`packages/@valdres/browser-online` (simplest), `browser-focus` (shared
+per-document hub), and the permission-gated `browser-geolocation` (explicit
+Store-owned triggers) and `browser-screen-details`. Permission prompts never
+start from a read or a subscription — only from an explicit, documented call.
 
 ## Tests
 
@@ -119,7 +121,9 @@ asserts the complement holds. Move a package between them in one change.
 Today that is `valdres`, `valdres-react`, the five migrated
 `@valdres/browser-{color-scheme,contrast,reduced-motion,reduced-data,reduced-transparency}`
 packages, `@valdres/browser-keyboard`, `@valdres/browser-{online,focus,visibility,presence}`,
-and `@valdres/hotkeys` with `@valdres-react/hotkeys`. The remaining browser
+`@valdres/browser-{device-motion,device-orientation,geolocation,screen-details}`,
+`@valdres/browser-{window,screen}`, and `@valdres/hotkeys` with
+`@valdres-react/hotkeys`. The remaining browser
 packages and both color-mode packages are still ignored.
 
 A changeset may not name both ignored and non-ignored packages — Changesets

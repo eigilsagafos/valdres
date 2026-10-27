@@ -99,9 +99,12 @@ describe("resetAll review blockers", () => {
         leaf.set(rows("extra"), y("extra"))
         leaf.sub(selected, () => {})
         const seen: string[] = []
-        leaf.sub(rows, () =>
-            seen.push(`${keys(leaf.get(rows))}|${keys(leaf.get(selected))}`),
-        )
+        leaf.sub(rows, {
+            notify: () =>
+                seen.push(
+                    `${keys(leaf.get(rows))}|${keys(leaf.get(selected))}`,
+                ),
+        })
         root.txn(tx => {
             tx.scope(ancestor).resetAll()
             tx.scope(leaf).resetAll()

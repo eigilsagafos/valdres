@@ -1,11 +1,12 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
-import { Provider, useValue } from "valdres-react"
+import { Provider, useStore, useValue } from "valdres-react"
 import {
     positionAtom,
     permissionAtom,
     geolocationErrorAtom,
     geolocationStatusAtom,
+    watchGeolocation,
 } from "@valdres/browser-geolocation"
 import { docsStore } from "./shared-store"
 
@@ -87,8 +88,12 @@ function PositionView() {
 }
 
 function LocationDemo() {
+    const store = useStore()
     const permission = useValue(permissionAtom)
+    const status = useValue(geolocationStatusAtom)
     const [active, setActive] = useState(false)
+    // The explicit trigger is the button; the watch lives as long as the card.
+    useEffect(() => (active ? watchGeolocation(store) : undefined), [active, store])
 
     if (permission === "denied") {
         return (
@@ -101,18 +106,18 @@ function LocationDemo() {
         )
     }
 
-    if (permission === "unsupported") {
+    if (status === "unsupported" || status === "insecure") {
         return (
             <div className="flex flex-col items-center justify-center gap-2 w-full h-full text-zinc-400 dark:text-zinc-500">
                 <PinIcon />
                 <div className="text-[10px] font-semibold uppercase tracking-wider">
-                    Unsupported
+                    {status === "insecure" ? "Needs HTTPS" : "Unsupported"}
                 </div>
             </div>
         )
     }
 
-    if (active || permission === "granted") {
+    if (active) {
         return (
             <div className="flex flex-col items-center justify-center gap-1.5 w-full h-full text-emerald-500">
                 <PinIcon />

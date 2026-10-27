@@ -36,7 +36,8 @@ run('independent descendant mirroring matrix, including staged writes', () => {
     const scopes = [untouched, deeper, valueOnly, membershipOwner, residue, staged]
     const seen = new Map(scopes.map(scope => [scope, []]))
     for (const scope of scopes) {
-        scope.sub(rows, () => seen.get(scope).push({ rows: keys(scope.get(rows)), query: keys(scope.get(selected)) }))
+        // notify observes membership, not row events.
+        scope.sub(rows, { notify: () => seen.get(scope).push({ rows: keys(scope.get(rows)), query: keys(scope.get(selected)) }) })
         scope.sub(selected, () => {})
     }
     root.txn(tx => {

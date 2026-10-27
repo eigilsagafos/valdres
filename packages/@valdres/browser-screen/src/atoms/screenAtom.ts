@@ -1,9 +1,7 @@
-import { globalAtom } from "valdres"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { screenSource } from "../lib/screenSource"
 import type { ScreenInfo } from "../types/ScreenInfo"
-import { readScreen } from "../lib/readScreen"
-import { subscribe } from "../lib/subscribe"
 
-export const screenAtom = globalAtom<ScreenInfo>(readScreen, {
+export const screenAtom: ExternalAtom<ScreenInfo> = externalAtom(screenSource, {
     name: "@valdres/browser-screen/screen",
-    onMount: () => subscribe(),
 })

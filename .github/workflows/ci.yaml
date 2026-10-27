@@ -27,7 +27,7 @@ jobs:
                   # Pinned to the repository toolchain and Bencher runners so
                   # certified builds and the separate performance workflows use
                   # the same Bun release.
-                  bun-version: 1.4.0
+                  bun-version: 1.4.3
             - uses: actions/setup-node@v6
               with:
                   node-version: "24.16"
@@ -274,7 +274,7 @@ jobs:
             - uses: actions/checkout@v6
             - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: 1.4.0
+                  bun-version: 1.4.3
             - uses: actions/setup-node@v6
               with:
                   # The packed consumer gate runs this executable.
@@ -311,7 +311,7 @@ jobs:
             - uses: actions/checkout@v6
             - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: 1.4.0
+                  bun-version: 1.4.3
             - uses: actions/setup-node@v6
               with:
                   # The packed consumer gate runs this executable.
@@ -346,7 +346,7 @@ jobs:
             - uses: actions/checkout@v6
             - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: 1.4.0
+                  bun-version: 1.4.3
             - uses: actions/setup-node@v6
               with:
                   # The packed consumer gate runs this executable.
@@ -363,6 +363,44 @@ jobs:
               # browserless import and SSR, listener accounting, the shared
               # focus hub, presence composition, declarations and peer floors.
               run: bun run test:browser-status:packed
+
+    browser-geometry:
+        name: Browser geometry packages
+        # @valdres/browser-window and @valdres/browser-screen, migrated to
+        # externalAtom. Both are release-eligible, so this job gates
+        # `publish`: the revision that publishes them must have passed their
+        # suites, both tsconfig type-checks and the packed gate (held by
+        # scripts/browser-geometry-packages.test.ts). Its own job rather than
+        # entries in browser-status: each publishes one identity-cached
+        # snapshot of several metrics, the window re-measures on animation
+        # frames after resize, and screen re-creates a resolution media query
+        # as the pixel ratio moves, so the suites and packed fixtures differ in
+        # kind.
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.3
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Browser geometry suites and typechecks
+              # `bun test` plus BOTH tsconfigs per package: tsconfig.tests.json
+              # is what holds the @ts-expect-error read-only contracts.
+              run: bun run test:browser-geometry
+            - name: Validate packed browser geometry consumers
+              # Shadow-packs both packages with core and React, installs the
+              # tarballs into an isolated consumer and checks the artifacts:
+              # browserless import and SSR, per-tree listener accounting,
+              # shared snapshots, coherent rotation, the resolution watch,
+              # declarations and the peer floor.
+              run: bun run test:browser-geometry:packed
 
     hotkeys:
         name: Hotkeys packages
@@ -382,7 +420,7 @@ jobs:
                   fetch-depth: 0
             - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: 1.4.0
+                  bun-version: 1.4.3
             - uses: actions/setup-node@v6
               with:
                   # The packed consumer gate runs this executable.
@@ -398,6 +436,77 @@ jobs:
               # browserless import and SSR, one dispatcher registry across the
               # split entries, dispatch and cancellation, declarations, peers.
               run: bun run test:hotkeys:packed
+
+    jotai:
+        name: Jotai compatibility package
+        # `@valdres-react/jotai` is a bounded, partial Jotai 3.0.1
+        # compatibility layer and is NOT release-eligible, so this job is
+        # deliberately absent from publish's needs. It keeps the candidate's
+        # upstream matrix (against the adapter and the pinned real Jotai),
+        # differential suites, declarations and installed-tarball consumers
+        # from regressing.
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.3
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Jotai suites and typechecks
+              # Both tsconfigs, the adapter suite, and the upstream suite
+              # against this package and against jotai@3.0.1.
+              run: bun run test:jotai
+            - name: Validate packed Jotai consumers
+              # Builds and npm-packs valdres and the package with the real
+              # prepack, installs them with React 18 and 19, and runs vanilla,
+              # SSR and DOM fixtures on Node and Bun, the development export
+              # condition, and the packed declarations under tsc.
+              run: bun run test:jotai:packed
+
+    browser-permission:
+        name: Browser permission packages
+        # @valdres/browser-device-motion, -device-orientation, -geolocation
+        # and -screen-details, migrated to externalAtom. All four are
+        # release-eligible, so this job gates `publish`: the revision that
+        # publishes them must have passed their suites, both tsconfig
+        # type-checks and the packed gate (held by
+        # scripts/browser-permission-packages.test.ts). Its own job: each
+        # package sits behind a browser permission with an explicit trigger,
+        # and geolocation runs one native watch per Store, so its suites and
+        # packed fixtures script permission and hardware outcomes the other
+        # lanes never see.
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.3
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Browser permission suites and typechecks
+              # `bun test` plus BOTH tsconfigs per package: tsconfig.tests.json
+              # is what holds the @ts-expect-error read-only contracts.
+              run: bun run test:browser-permission
+            - name: Validate packed browser permission consumers
+              # Shadow-packs the four packages with core and React, installs the
+              # tarballs into an isolated consumer and runs them under Node and
+              # Bun against the packed head and the published peer floor:
+              # browserless import and SSR, scripted permission and hardware
+              # outcomes, listener and watch accounting, declarations, peers.
+              run: bun run test:browser-permission:packed
 
     valdres-package:
         name: Valdres published-package gate
@@ -437,7 +546,7 @@ jobs:
                   github.event_name != 'pull_request' ||
                   steps.changes.outputs.package == 'true'
               with:
-                  bun-version: 1.4.0
+                  bun-version: 1.4.3
             - uses: actions/setup-node@v6
               if:
                   github.event_name != 'pull_request' ||
@@ -469,11 +578,12 @@ jobs:
               run: bun run test:v1-beta:packed
 
     publish:
-        # browser-media, browser-keyboard, hotkeys and browser-status joined
-        # this list when their packages stopped being release-ignored: the
-        # revision that publishes them must have passed their suites, both
-        # tsconfig type-checks and the packed-consumer gate.
-        needs: [test, valdres-package, browser-media, browser-keyboard, hotkeys, browser-status]
+        # browser-media, browser-keyboard, hotkeys, browser-status,
+        # browser-permission and browser-geometry joined this list when their
+        # packages stopped being release-ignored: the revision that publishes
+        # them must have passed their suites, both tsconfig type-checks and the
+        # packed-consumer gate.
+        needs: [test, valdres-package, browser-media, browser-keyboard, hotkeys, browser-status, browser-permission, browser-geometry]
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         runs-on: ubuntu-22.04
         environment: npm-publish
@@ -494,7 +604,7 @@ jobs:
               with:
                   # Match the test job / Bencher runners so the frozen-lockfile
                   # gate sees identical lockfile behavior across both lanes.
-                  bun-version: 1.4.0
+                  bun-version: 1.4.3
 
             - uses: actions/setup-node@v6
               with:

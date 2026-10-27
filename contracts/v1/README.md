@@ -183,7 +183,14 @@ SubscriberNotificationError           VALDRES_SUBSCRIBER_NOTIFICATION
 ```
 
 `Store.sub(state, callback)` creates an independent zero-argument invalidation
-registration and returns an idempotent unsubscribe. Registration performs the
+registration and returns an idempotent unsubscribe. The one exception is a
+direct function callback on a collection: it receives one frozen
+`CollectionEvent` per call, the committed net row changes (`added`, `updated`,
+`deleted`) of each transaction in the subscribed Store's effective view,
+ordered by the first staged value or presence change the subscribed Store can
+see, then at most one `reordered`. The handler form,
+selectors, and the adapter `subscribe` seam keep value (membership) semantics
+on collections. Registration performs the
 same outcome materialization as `get`, but catches the public read throw of a
 successfully materialized ordinary current error outcome so it remains
 subscribable; only admission, disposal, or internal-publication failure
@@ -390,8 +397,11 @@ Reproduce the audit from the checked-out Git objects and published tarball (the
 isolated test run takes roughly half a minute):
 
 ```sh
-bun contracts/v1/generate-frozen-test-inventory.ts --check
+npm exec --yes --package=bun@1.4.0 -- bun contracts/v1/generate-frozen-test-inventory.ts --check
 ```
+
+Only this frozen historical audit uses Bun 1.4.0; current runtime, retention and
+other contract checks use the repository's Bun 1.4.3 pin.
 
 The generator archives the pinned source revision into a temporary directory,
 verifies its `bun.lock` Git blob and SHA-256, installs that lockfile with Bun

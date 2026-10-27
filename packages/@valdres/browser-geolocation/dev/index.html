@@ -117,8 +117,8 @@
     <body>
         <h1>@valdres/browser-geolocation</h1>
         <p class="sub">
-            Reactive geolocation via valdres atoms. Your browser will prompt
-            for permission on first access.
+            Reactive geolocation via valdres. Nothing is requested until you
+            press Start, which may show your browser's location prompt.
         </p>
 
         <div class="grid">
@@ -130,6 +130,7 @@
                     Permission <span id="permission" class="pill">…</span>
                 </div>
                 <div id="error" class="meta" style="margin-top: 0.5rem"></div>
+                <button id="toggle" type="button" style="margin-top: 0.5rem">Start</button>
             </div>
 
             <div class="card">
@@ -147,7 +148,7 @@
                     <input id="max-age" type="number" min="0" step="1000" />
                 </label>
                 <p class="sub" style="font-size: 0.8rem; margin: 0.5rem 0 0">
-                    Changes restart the watch live.
+                    Changes restart a running watch with the new options.
                 </p>
             </div>
         </div>

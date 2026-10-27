@@ -19,9 +19,14 @@
  * migrated browser media packages: suites, both tsconfigs, packed consumers),
  * `browser-keyboard` (the same three gates for the keyboard package),
  * `browser-status` (the same three gates for the online, focus, visibility
- * and presence packages),
+ * and presence packages), `browser-geometry` (the same three gates for the
+ * window and screen packages),
  * `hotkeys` (suites, both tsconfigs and packed consumers for the two
- * hotkeys packages) and `valdres-package` (the published-tarball gate: publint, ATTW, size
+ * hotkeys packages), `jotai` (the release-ignored Jotai compatibility package:
+ * both tsconfigs, its suites, the upstream suite against it and against the
+ * pinned Jotai, packed consumers), `browser-permission` (the release-ignored
+ * motion, orientation, geolocation and screen-details packages: suites, both
+ * tsconfigs, packed consumers) and `valdres-package` (the published-tarball gate: publint, ATTW, size
  * budgets; ~13s). It does NOT cover the manual-only legacy docs workflows or
  * the Bencher gate; those are listed under NOT_COVERED and printed on every
  * run, because a
@@ -84,7 +89,10 @@ const JOBS = [
     "browser-media",
     "browser-keyboard",
     "browser-status",
+    "browser-geometry",
     "hotkeys",
+    "jotai",
+    "browser-permission",
     "valdres-package",
 ]
 
@@ -209,6 +217,18 @@ const SKIPPED_ACTIONS: Record<
         action: "actions/setup-node",
         reason: SETUP_NODE,
     },
+    "browser-geometry / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "browser-geometry / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "browser-geometry / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
     "hotkeys / actions/checkout": {
         action: "actions/checkout",
         reason: CHECKOUT,
@@ -218,6 +238,30 @@ const SKIPPED_ACTIONS: Record<
         reason: SETUP_BUN,
     },
     "hotkeys / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
+    "jotai / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "jotai / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "jotai / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
+    "browser-permission / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "browser-permission / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "browser-permission / actions/setup-node": {
         action: "actions/setup-node",
         reason: SETUP_NODE,
     },
