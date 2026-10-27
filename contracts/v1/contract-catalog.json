@@ -18,6 +18,7 @@
         "collection.artifact-boundary",
         "collection.artifact-reconciliation",
         "collection.atomic-deltas",
+        "collection.committed-events",
         "collection.effective-presence",
         "collection.invariant-readable-state",
         "collection.local-absent-tombstone",

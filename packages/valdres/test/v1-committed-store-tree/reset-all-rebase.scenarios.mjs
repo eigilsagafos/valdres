@@ -67,7 +67,10 @@ const subscribeAll = (draft, env) => {
         ["lookup k", env.lookup("k")],
         ["summary", env.summary],
     ].map(([label, state]) =>
-        draft.sub(state, () => log.push({ label, seen: view(draft, env) })),
+        // notify observes each State's value: membership for the collection.
+        draft.sub(state, {
+            notify: () => log.push({ label, seen: view(draft, env) }),
+        }),
     )
     return { log, stop: () => stops.forEach(stop => stop()) }
 }
@@ -276,7 +279,7 @@ export const descendantMatrix = (V, mode) => {
         const desc = draft.scope("desc")
         prepare(desc, rows)
         const counts = { membership: 0, "row a": 0, "row b": 0, "row d": 0 }
-        desc.sub(rows, () => counts.membership++)
+        desc.sub(rows, { notify: () => counts.membership++ })
         desc.sub(rows("a"), () => counts["row a"]++)
         desc.sub(rows("b"), () => counts["row b"]++)
         desc.sub(rows("d"), () => counts["row d"]++)

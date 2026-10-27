@@ -619,7 +619,10 @@ class CollectionRuntimeDriverImpl implements CollectionRuntimeDriver {
                 }),
             )
         }
-        const unsubscribe = scope.store.sub(state, callback)
+        // The model observes read outcomes. A direct collection callback
+        // receives row events instead, so the handler form keeps value
+        // semantics for every target (collection-events.test.ts covers events).
+        const unsubscribe = scope.store.sub(state, { notify: callback })
         this.#subscriptions.set(command.subscription, {
             id: command.subscription,
             tree: command.tree,

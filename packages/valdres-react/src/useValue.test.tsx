@@ -72,6 +72,44 @@ describe("useValue", () => {
         expect(result.current).toEqual([undefined, [], false])
     })
 
+    test("re-renders a collection on membership, not on row value updates", () => {
+        const sessions = collection<string, { readonly id: number }>()
+        const selectedStore = store()
+        selectedStore.set(sessions("a"), { id: 1 })
+        const events: string[] = []
+        selectedStore.sub(sessions, event => events.push(event.type))
+        let renders = 0
+        const { result } = renderHook(
+            () => {
+                renders++
+                return useValue(sessions)
+            },
+            {
+                wrapper: ({ children }: { readonly children: ReactNode }) => (
+                    <Provider store={selectedStore}>{children}</Provider>
+                ),
+            },
+        )
+        const initial = result.current
+        const rendered = renders
+
+        act(() => {
+            selectedStore.set(sessions("a"), { id: 2 })
+            selectedStore.txn(tx => {
+                for (let id = 3; id < 8; id++)
+                    tx.set(sessions("a"), { id })
+            })
+        })
+        expect(result.current).toBe(initial)
+        expect(renders).toBe(rendered)
+
+        act(() => selectedStore.set(sessions("b"), { id: 1 }))
+        expect(result.current.map(row => row.key)).toEqual(["a", "b"])
+        expect(renders).toBe(rendered + 1)
+        // A direct subscription on the same collection receives the events.
+        expect(events).toEqual(["updated", "updated", "added"])
+    })
+
     test("reads collection States from an explicit Store", () => {
         const sessions = collection<string, { readonly id: string }>()
         const row = sessions("a")

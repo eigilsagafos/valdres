@@ -8,12 +8,12 @@
     "provenance": {
         "ordinaryBaselineCommit": "7c55be567457218fb597f9cd9658b1c71997fb83",
         "certificationBuildCount": 3,
-        "certifiedRuntimeBuildSha256": "b861c7702a2933527bc0d265c7a65a22777892a23ab0db19872cda8951dc4c50"
+        "certifiedRuntimeBuildSha256": "5287271b25957c0517cb38ae4d1cdfa2bca6c5cfb0ee24efebda16b3b36a277c"
     },
     "policy": {
         "ordinaryTolerancePercent": 2,
-        "coreRetainingRawAllowance": 5783,
-        "coreRetainingGzipAllowance": 2322,
+        "coreRetainingRawAllowance": 6155,
+        "coreRetainingGzipAllowance": 2464,
         "coreRetainingFixtures": [
             "atom",
             "atom-selector-store",
@@ -45,41 +45,41 @@
     },
     "featureBudgets": {
         "dist": {
-            "raw": 388606,
-            "gzip": 115226
+            "raw": 395564,
+            "gzip": 117552
         },
         "packed": {
-            "raw": 546237,
-            "gzip": 146862
+            "raw": 555107,
+            "gzip": 149815
         },
         "fixtures": {
             "collection": {
-                "raw": 112033,
-                "gzip": 31856
+                "raw": 115941,
+                "gzip": 33028
             },
             "all-exports": {
-                "raw": 144607,
-                "gzip": 41234
+                "raw": 148518,
+                "gzip": 42446
             },
             "root-deep-equal": {
                 "raw": 13876,
                 "gzip": 4409
             },
             "inspect": {
-                "raw": 109928,
-                "gzip": 29785
+                "raw": 110298,
+                "gzip": 29959
             },
             "query": {
-                "raw": 118447,
-                "gzip": 33907
+                "raw": 122369,
+                "gzip": 35096
             },
             "query-development": {
-                "raw": 118447,
-                "gzip": 33907
+                "raw": 122369,
+                "gzip": 35096
             },
             "external-atom": {
-                "raw": 92944,
-                "gzip": 25380
+                "raw": 93316,
+                "gzip": 25535
             }
         }
     }
