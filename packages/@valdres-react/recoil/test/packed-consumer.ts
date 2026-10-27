@@ -25,7 +25,6 @@ import { spawnSync } from "node:child_process"
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
-import { pendingReleaseVersions } from "../../../../scripts/lib/pending-release-versions"
 import { compareWithOracle } from "./differential/compare"
 import { scenarios } from "./differential/scenarios"
 
@@ -69,8 +68,8 @@ const IDENTITY_PROBE = `import { strict as assert } from "node:assert"
 import { createElement as h } from "react"
 import { renderToString } from "react-dom/server"
 import * as core from "valdres"
-import { useValue } from "valdres-react"
-import { RecoilRoot, atom, selector, toValdresState, useRecoilValue } from "@valdres-react/recoil"
+import { Provider, useValue } from "valdres-react"
+import { RecoilRoot, atom, selector, toValdresState, useRecoilValue, useSetRecoilState } from "@valdres-react/recoil"
 
 const resolved = import.meta.resolve("valdres")
 const graph = resolved.includes("/dist/development/") ? "development" : "production"
@@ -91,6 +90,13 @@ assert.equal(
     renderToString(h(RecoilRoot, { initializeState: ({ set }) => set(count, 5) }, h(Read))),
     "10 native",
 )
+
+// Valdres extensions: without a RecoilRoot the hooks use the nearest
+// Provider's Store, and read native States.
+const Mixed = () => (useSetRecoilState(native), \`\${useRecoilValue(doubled)} \${useRecoilValue(native)}\`)
+app.set(native, "provided")
+assert.equal(renderToString(h(Provider, { store: app }, h(Mixed))), "4 provided")
+assert.throws(() => renderToString(h(Mixed)), /<RecoilRoot> component or a valdres-react <Provider>/)
 
 // The other graph is a separate runtime, so the checks above are meaningful.
 const other = await import(new URL(graph === "development" ? "../index.js" : "./development/index.js", resolved).href)
@@ -142,7 +148,7 @@ console.log("HYDRATION_OK")
 `
 
 const TYPES_PROBE = `import type { ReactElement } from "react"
-import type { State } from "valdres"
+import { atom as valdresAtom, selector as valdresSelector, type Atom, type Selector, type State } from "valdres"
 import {
     DefaultValue,
     RecoilRoot,
@@ -198,6 +204,14 @@ export function Component(): ReactElement {
     const total: number = useRecoilValue(doubled)
     // @ts-expect-error read-only selectors cannot be set
     useSetRecoilState(doubled)
+    // Valdres extension: native Atoms are writable, native Selectors only readable.
+    const nativeAtom: Atom<number> = valdresAtom(0)
+    const nativeSelector: Selector<number> = valdresSelector(get => get(nativeAtom) + 1)
+    const [nativeValue, setNative]: [number, SetterOrUpdater<number>] = useRecoilState(nativeAtom)
+    const derived: number = useRecoilValue(nativeSelector)
+    // @ts-expect-error a Valdres Selector is read-only
+    useSetRecoilState(nativeSelector)
+    void [nativeValue, setNative, derived]
     const reset: () => void = useResetRecoilState(writable)
     const run = useRecoilCallback(
         ({ snapshot, set, reset, transact_UNSTABLE }) =>
@@ -242,7 +256,6 @@ try {
         assert.ok(adapterBundle.includes(`from ${specifier}`), `adapter must import ${specifier}`)
     assert.ok(!/from "recoil"/.test(adapterBundle), "adapter imports recoil")
 
-    const pending = pendingReleaseVersions(ROOT)
     const before = new Map<Name, string>()
     for (const name of Object.keys(dirs) as Name[])
         before.set(name, await readFile(join(dirs[name], "package.json"), "utf8"))
@@ -253,7 +266,6 @@ try {
         await mkdir(staged, { recursive: true })
         await cp(join(dirs[name], "dist"), join(staged, "dist"), { recursive: true })
         const manifest = JSON.parse(before.get(name)!)
-        if (pending.has(name)) manifest.version = pending.get(name)
         await writeFile(join(staged, "package.json"), JSON.stringify(manifest, null, 4))
         run(`prepack ${name}`, ["bun", "run", join(stage, "scripts", "prepack.ts")], staged)
         const prepacked = JSON.parse(await readFile(join(staged, "package.json"), "utf8"))

@@ -1,3 +1,4 @@
+import type { State } from "valdres"
 import type { RecoilValue } from "../lib/recoilValue"
 import type { Loadable } from "./Loadable"
 import type { SnapshotID } from "./SnapshotID"
@@ -9,6 +10,6 @@ import type { SnapshotID } from "./SnapshotID"
  */
 export interface Snapshot {
     getID(): SnapshotID
-    getLoadable<T>(recoilValue: RecoilValue<T>): Loadable<T>
-    getPromise<T>(recoilValue: RecoilValue<T>): Promise<T>
+    getLoadable<T>(recoilValue: RecoilValue<T> | State<T>): Loadable<T>
+    getPromise<T>(recoilValue: RecoilValue<T> | State<T>): Promise<T>
 }

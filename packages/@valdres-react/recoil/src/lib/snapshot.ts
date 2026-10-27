@@ -5,7 +5,7 @@ import type { SnapshotID } from "../types/SnapshotID"
 import { applyAction, readThrough, resetAction, setAction } from "./actions"
 import type { OpenTransaction } from "./batch"
 import { loadableOf } from "./loadable"
-import type { RecoilValue } from "./recoilValue"
+import type { ReadableValue } from "./recoilValue"
 import { unsupported } from "./unsupported"
 
 let nextSnapshotID = 0
@@ -35,7 +35,7 @@ const snapshotReader = (
     tx: Pick<Transaction, "get">,
 ): Snapshot => {
     const id = nextSnapshotID++ as unknown as SnapshotID
-    const loadable = <Value>(recoilValue: RecoilValue<Value>) => {
+    const loadable = <Value>(recoilValue: ReadableValue<Value>) => {
         assertReadable()
         return loadableOf(() => readThrough(tx, recoilValue, "snapshot.getLoadable"))
     }
@@ -96,11 +96,11 @@ export const mutableSnapshot = (
     }
     const snapshot = snapshotReader(assertOpen, tx)
     return Object.assign(snapshot, {
-        set: (recoilState: RecoilValue<any>, valueOrUpdater: unknown) => {
+        set: (recoilState: ReadableValue<any>, valueOrUpdater: unknown) => {
             assertOpen()
             applyAction(tx, setAction(recoilState, valueOrUpdater))
         },
-        reset: (recoilState: RecoilValue<any>) => {
+        reset: (recoilState: ReadableValue<any>) => {
             assertOpen()
             applyAction(tx, resetAction(recoilState))
         },

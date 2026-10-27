@@ -24,7 +24,8 @@ differs in ways that matter when you migrate:
 `@valdres-react/recoil` is a **bounded migration adapter**, not a drop-in
 replacement. It implements the synchronous subset of Recoil's API on Valdres,
 matches Recoil's behavior there, and throws `UnsupportedRecoilFeatureError`
-where it cannot reproduce Recoil faithfully, instead of doing something else.
+for the Recoil features it does not reproduce, instead of doing something else.
+It is not complete Recoil compatibility: check the tables below.
 
 ```tsx
 // Before
@@ -53,9 +54,9 @@ way to move a Recoil codebase to React 19 before rewriting it.
 | `selector` | Synchronous `get`, which may return another atom or selector. Writable selectors: `set` reads the state from before its own writes, updaters see that state, the last write to an atom wins, and `set` must return `undefined`. A reset passes a `DefaultValue` to `set`. Setting a read-only selector throws. |
 | `DefaultValue` | `set(state, new DefaultValue())` resets. |
 | `atomFamily`, `selectorFamily` | Recoil's parameter identity: parameters are compared by Recoil's stable serialization, so object key order, Set and Map order, and `undefined` properties don't matter, while `1` and `"1"` or `null` and `undefined` are different members. Member keys match Recoil's. Function and BigInt parameters throw, as in Recoil. Members are kept for the family's lifetime. |
-| `RecoilRoot` | Owns a new Store per mounted root, runs `initializeState` once (its writes are readable immediately), and nested roots are independent unless `override={false}`. Hooks outside a root throw Recoil's error. Works under `StrictMode`, server rendering and hydration. |
+| `RecoilRoot` | Owns a new Store per mounted root, runs `initializeState` once (its writes are readable immediately), and nested roots are independent unless `override={false}`. Hooks with no root above them throw (unless a `valdres-react` Provider is there; see [Valdres extensions](#valdres-extensions)). Works under `StrictMode`, server rendering and hydration. |
 | `useRecoilValue`, `useRecoilState`, `useSetRecoilState`, `useResetRecoilState` | Setters and resetters are stable. A function passed to a setter is an updater. Selector errors reach error boundaries as the value the getter threw. |
-| `useRecoilCallback` | Without `deps`, a new callback every render; with `deps`, stable. Writes during the synchronous part (through the interface or hook setters) apply together, in order, when the callback returns, even if it throws; a write that fails discards that root's queued writes. Nested callbacks and `transact_UNSTABLE` apply immediately, so they survive a later failure, as in Recoil. Writes after an `await` apply immediately. `snapshot` is the state when the callback was called, with Recoil's `getLoadable`/`getPromise` and settled loadables. `transact_UNSTABLE` is supported for atoms, including Recoil's behavior of reading a `DefaultValue` after a reset in the same update. |
+| `useRecoilCallback` | Without `deps`, a new callback every render; with `deps`, stable. Writes during the synchronous part (through the interface or hook setters) apply together, in order, when the callback returns, even if it throws; a write that fails discards that root's queued writes. Nested callbacks and `transact_UNSTABLE` apply immediately, so they survive a later failure, as in Recoil. Writes after an `await` apply immediately. `snapshot` is taken lazily on first access and holds the state from when the callback was called, excluding the callback's own queued writes, with Recoil's `getLoadable`/`getPromise` and settled loadables. Unlike Recoil's, it can only be read while the callback runs synchronously (see the refusals). `transact_UNSTABLE` is supported for atoms, including Recoil's behavior of reading a `DefaultValue` after a reset in the same update. |
 | `isRecoilValue`, `key`, `toJSON` | As in Recoil. |
 
 ### Different from Recoil
@@ -96,21 +97,26 @@ These are deliberate and covered by tests:
   `dangerouslyAllowMutability` is accepted and has no effect. Treat values as
   immutable, as you would in Recoil.
 
-### Refused with `UnsupportedRecoilFeatureError`
+### Unsupported: refused with `UnsupportedRecoilFeatureError`
 
-Each refusal names its `feature` and says what to do instead. Where possible,
-the types reject the same code at compile time.
+These Recoil features are not supported by this adapter. Each refusal names its
+`feature` and says what to do instead; where possible, the types reject the
+same code at compile time. "Could the adapter do it" records what is known, not
+a plan: none of these has been shown to require a change to Valdres itself.
+That assessment rests on the public API as it is today (Promises are rejected
+as atom values and selector results, and there is no Store snapshot and no
+per-Store "first use" hook), not on attempted implementations.
 
-| Recoil feature | Why | Instead |
+| Recoil feature | Could the adapter do it | Instead |
 | --- | --- | --- |
-| Async atom defaults, async selectors (returning or throwing a Promise), Promise values, `Loadable.map` to a Promise | Valdres state is synchronous and never suspends. A getter cannot catch the refusal and return a fallback: Recoil would re-run it once the dependency resolved. | Do the async work outside state and set the result. |
-| Reading an atom that has no `default` before it is set | Recoil suspends until it has a value. | Set it first, for example in `initializeState`, or give it a default. |
-| Atom `effects` / `effects_UNSTABLE` (empty lists are accepted) | Effects run when Recoil first uses an atom in a root, which Valdres definitions cannot observe. | Initialize with `initializeState`; subscribe to the Store for persistence. |
-| Selector `getCallback` | Selectors are not bound to a Store while they evaluate. | Create the callback with `useRecoilCallback`. |
-| Reading a callback's `snapshot` after its synchronous part, or after a nested callback or `transact_UNSTABLE` applied writes | A Store has no persistent snapshots; the snapshot is only exact while the callback runs synchronously. | Read the snapshot before the first `await` and pass the values on. |
-| Reading the snapshot of another root's callback called inside a callback | That root's Store cannot be read while the outer callback's transaction is open. | Read it outside the outer callback. |
-| Snapshot `retain`, `isRetained`, `map`, `asyncMap`, `getNodes_UNSTABLE`, `getInfo_UNSTABLE`; callback `refresh`, `gotoSnapshot` | No snapshots, and selectors cannot be re-run on demand. | Model refreshes as an atom the selector reads; write values back with `set`. |
-| A nested callback whose batch fails after other writes were applied | Recoil discards only that batch; a Valdres transaction cannot. The outer callback commits nothing. | Let the nested failure propagate, or validate before writing. |
+| Async atom defaults, async selectors (returning or throwing a Promise), Promise values, `Loadable.map` to a Promise | Possibly, with adapter machinery that keeps pending values outside Valdres state and suspends on them. Not attempted. A getter cannot catch the refusal and return a fallback, since Recoil would re-run it once the dependency resolved. | Do the async work outside state and set the result. |
+| Reading an atom that has no `default` before it is set | Depends on the async machinery above; Recoil suspends until the atom has a value. | Set it first, for example in `initializeState`, or give it a default. |
+| Atom `effects` / `effects_UNSTABLE` (empty lists are accepted) | Partly, perhaps: Valdres external sources attach and detach with subscribers, but Recoil runs effects when a root first uses an atom, including reads by selectors and writes. Not attempted. | Initialize with `initializeState`; subscribe to the Store for persistence. |
+| Selector `getCallback` | Possibly, by binding callbacks to a Store in the adapter. Not attempted. | Create the callback with `useRecoilCallback`. |
+| Reading a callback's `snapshot` after its synchronous part, or after a nested callback or `transact_UNSTABLE` applied writes | Not with the current design, where the snapshot is the callback's open transaction. A longer-lived snapshot would need adapter bookkeeping or a Store snapshot API. Not attempted. | Read the snapshot before the first `await` and pass the values on. |
+| Reading the snapshot of another root's callback called inside a callback | Not with the current design: that root's Store cannot be read while the outer callback's transaction is open. | Read it outside the outer callback. |
+| Snapshot `retain`, `isRetained`, `map`, `asyncMap`, `getNodes_UNSTABLE`, `getInfo_UNSTABLE`; callback `refresh`, `gotoSnapshot` | Not attempted; they depend on snapshots, and `refresh` on re-running a selector on demand. | Model refreshes as an atom the selector reads; write values back with `set`. |
+| A nested callback whose batch fails after other writes were applied | Not with one transaction per callback: Recoil discards only that batch. The outer callback commits nothing. | Let the nested failure propagate, or validate before writing. |
 
 ### Not provided
 
@@ -125,12 +131,70 @@ build time: `useRecoilValueLoadable`, `useRecoilStateLoadable`,
 `readOnlySelector`, `snapshot_UNSTABLE`, `RecoilEnv`, `RecoilLoadable`, and
 `atom.value`/`selector.value`.
 
+## Valdres extensions
+
+Two behaviors are additions for migrating to Valdres, not Recoil behavior.
+
+**Valdres States in Recoil APIs.** Wherever the adapter accepts a Recoil atom or
+selector (the hooks, `get` and `set` in selectors, the callback interface,
+snapshots, `transact_UNSTABLE`, and `default`), it also accepts a Valdres
+State. Only a Valdres Atom is writable: setters, `reset` and `set` reject a
+Valdres Selector or any other State, at compile time and at runtime. A Valdres
+Atom keeps its Valdres semantics: its own `equal`, and `reset` restoring its
+initial value, without the stored-value rules Recoil atoms have. `isRecoilValue`
+stays `false` for Valdres States.
+
+**The nearest Provider when there is no RecoilRoot.** The hooks use the Store of
+the nearest `<RecoilRoot>`; when there is none, they use the nearest
+`valdres-react` [Provider](/react/Provider)'s Store. A `<RecoilRoot>` anywhere
+above takes precedence over Providers inside it, and a `<RecoilRoot>` inside a
+Provider still owns its own Store (`override={false}` reuses only an ancestor
+`<RecoilRoot>`). There is no default Store: with neither, the hooks throw. The
+adapter never creates or disposes a Provider's Store; it only subscribes while
+components are mounted. If that Store is a [scope](/guides/scoped-stores),
+Valdres scope semantics apply: Recoil atoms read the parent's value until the
+scope writes them, and a reset in the scope reveals the parent's value rather
+than the atom's default.
+
+This lets one Store hold both while you migrate:
+
+```tsx
+import { atom as valdresAtom, store } from "valdres"
+import { Provider, useValue } from "valdres-react"
+import { atom, selector, useRecoilValue, useSetRecoilState } from "@valdres-react/recoil"
+
+const appStore = store()
+const filterAtom = valdresAtom("all") // new, native state
+const todosState = atom({ key: "todos", default: ["a", "b"] }) // not migrated yet
+const visibleTodos = selector({
+    key: "visibleTodos",
+    get: ({ get }) => (get(filterAtom) === "all" ? get(todosState) : []),
+})
+
+function LegacyList() {
+    const setFilter = useSetRecoilState(filterAtom)
+    const todos = useRecoilValue(visibleTodos)
+    return <button onClick={() => setFilter("none")}>{todos.join(", ")}</button>
+}
+
+function Filter() {
+    return <span>{useValue(filterAtom)}</span>
+}
+
+export const App = () => (
+    <Provider store={appStore}>
+        <LegacyList />
+        <Filter />
+    </Provider>
+)
+```
+
 ## Moving to native Valdres
 
 `<RecoilRoot>` also provides its Store to `valdres-react`, so migrated
 components can use [useValue](/react/useValue) and friends inside the same
 root. `toValdresState(recoilValue)` returns the Valdres State behind a Recoil
-atom or selector for that purpose:
+atom or selector for them:
 
 ```tsx
 import { atom, toValdresState } from "@valdres-react/recoil"

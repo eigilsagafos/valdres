@@ -6,8 +6,9 @@ import { DEFAULT_VALUE } from "./defaultValue"
 import { isThenable } from "./isThenable"
 import {
     createRecoilValue,
-    isRecoilValueObject,
+    isReadableValue,
     type RecoilState,
+    type ReadableValue,
     type RecoilValue,
     type RecoilValueReadOnly,
     type WriteContext,
@@ -36,7 +37,7 @@ export function createSelector<T>(
             // A refusal must not be caught and replaced by a getter's fallback:
             // Recoil would re-run that getter once the dependency settled.
             let refusal: UnsupportedRecoilFeatureError | undefined
-            const read = <V>(value: RecoilValue<V>) => {
+            const read = <V>(value: ReadableValue<V>) => {
                 try {
                     return readThrough({ get }, value, "get")
                 } catch (error) {
@@ -54,7 +55,7 @@ export function createSelector<T>(
                 throw error
             }
             if (refusal !== undefined) throw refusal
-            if (isRecoilValueObject(result)) return read(result as RecoilValue<T>)
+            if (isReadableValue(result)) return read(result as RecoilValue<T>)
             if (isThenable(result)) unsupported("async selectors", ASYNC_DETAIL)
             return result as T
         },

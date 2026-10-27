@@ -8,7 +8,7 @@ import {
     nodeOf,
     RESET,
     type AtomWrites,
-    type RecoilValue,
+    type ReadableValue,
 } from "./recoilValue"
 import { callbackSnapshot } from "./snapshot"
 import { unsupported } from "./unsupported"
@@ -16,7 +16,7 @@ import { unsupported } from "./unsupported"
 const CALLBACK_SHAPE =
     "useRecoilCallback() expects a function that returns a function: it accepts a function of the type (RecoilInterface) => (Args) => ReturnType and returns a callback function (Args) => ReturnType, where RecoilInterface is an object {snapshot, set, ...} and Args and ReturnType are the argument and return types of the callback you want to create.  Please see the docs at recoiljs.org for details."
 
-const atomNode = (recoilValue: RecoilValue<any>, operation: string) => {
+const atomNode = (recoilValue: ReadableValue<any>, operation: string) => {
     const node = nodeOf(recoilValue, "transact_UNSTABLE")
     if (node.kind !== "atom")
         throw new Error(`${operation} selectors within atomicUpdate is not supported`)
@@ -33,13 +33,13 @@ const transact = (
 ) =>
     performNow(store, {
         transact: (tx, beforeStaging) => {
-            const changes = new Map<RecoilValue<any>, unknown>()
-            const get = (recoilValue: RecoilValue<any>) => {
+            const changes = new Map<ReadableValue<any>, unknown>()
+            const get = (recoilValue: ReadableValue<any>) => {
                 if (changes.has(recoilValue)) return changes.get(recoilValue)
                 atomNode(recoilValue, "Reading")
                 return readThrough(tx, recoilValue, "transact_UNSTABLE")
             }
-            const set = (recoilValue: RecoilValue<any>, valueOrUpdater: unknown) => {
+            const set = (recoilValue: ReadableValue<any>, valueOrUpdater: unknown) => {
                 atomNode(recoilValue, "Setting")
                 changes.set(
                     recoilValue,
@@ -83,9 +83,9 @@ export const runCallback = <Args extends ReadonlyArray<unknown>, Return>(
         if (typeof factory !== "function") throw new Error(CALLBACK_SHAPE)
         let snapshot: ReturnType<typeof callbackSnapshot> | undefined
         const callbackInterface = {
-            set: (recoilValue: RecoilValue<any>, valueOrUpdater: unknown) =>
+            set: (recoilValue: ReadableValue<any>, valueOrUpdater: unknown) =>
                 queueOrPerform(store, setAction(recoilValue, valueOrUpdater)),
-            reset: (recoilValue: RecoilValue<any>) =>
+            reset: (recoilValue: ReadableValue<any>) =>
                 queueOrPerform(store, resetAction(recoilValue)),
             refresh: refuse(
                 "refresh",

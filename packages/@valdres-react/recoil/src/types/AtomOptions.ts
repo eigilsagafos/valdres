@@ -1,3 +1,4 @@
+import type { State } from "valdres"
 import type { RecoilValue } from "../lib/recoilValue"
 
 interface AtomOptionsWithoutDefault {
@@ -13,7 +14,7 @@ interface AtomOptionsWithoutDefault {
 }
 
 interface AtomOptionsWithDefault<T> extends AtomOptionsWithoutDefault {
-    default: RecoilValue<T> | T
+    default: RecoilValue<T> | State<T> | T
 }
 
 /**

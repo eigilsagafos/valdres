@@ -5,7 +5,7 @@ import { readThrough } from "./actions"
 import { isThenable } from "./isThenable"
 import {
     createRecoilValue,
-    isRecoilValueObject,
+    isReadableValue,
     RESET,
     type RecoilState,
     type RecoilValue,
@@ -72,7 +72,7 @@ export const createAtom = <Value>(
                 "atoms without a default",
                 `Recoil suspends on "${key}" until it is set; set it first (for example in initializeState) or give it a default.`,
             )
-    } else if (isRecoilValueObject(options.default)) {
+    } else if (isReadableValue(options.default)) {
         // Recoil's atomWithFallback: a selector over the base atom.
         publicKey = `${key}__withFallback`
         kind = "selector"

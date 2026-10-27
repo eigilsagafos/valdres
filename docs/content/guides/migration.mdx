@@ -20,18 +20,24 @@ import { atom, selector, useRecoilState } from "recoil"
 import { atom, selector, useRecoilState } from "@valdres-react/recoil"
 ```
 
-Install the package with its peers:
+<div className="callout callout-warning">
+  <div className="callout-title">Not yet released for Valdres 1.0</div>
+  The Valdres 1.0 version of this package is not published yet. The published
+  `@valdres-react/recoil@1.0.0-beta.3` targets the pre-1.0 core and does not
+  load with current Valdres betas.
+</div>
 
-```bash
-npm install @valdres-react/recoil valdres valdres-react
-```
+Its peers are `valdres`, `valdres-react` and React 18 or 19.
 
-Atoms, selectors (including writable ones), families, `RecoilRoot`, the state
-hooks and `useRecoilCallback` behave as in Recoil 0.7.7, and run on React 18
-and 19. Async atoms and selectors, atom effects, persistent snapshots and some
-hooks are not supported: using them throws `UnsupportedRecoilFeatureError` or
-fails to import, rather than behaving differently. Check the
-[support matrix](/guides/vs-recoil#the-migration-adapter) before migrating.
+It is not complete Recoil compatibility. Atoms, selectors (including writable
+ones), families, `RecoilRoot`, the state hooks and `useRecoilCallback` follow
+Recoil 0.7.7, checked against Recoil itself, apart from documented differences. Async atoms and selectors, atom
+effects, snapshots read after a callback's first `await` and some hooks are not
+supported: using them throws `UnsupportedRecoilFeatureError` or fails to
+import, rather than behaving differently. As Valdres extensions, the Recoil
+hooks also accept native Valdres states and work under a `valdres-react`
+`Provider`. Check the [support matrix](/guides/vs-recoil#the-migration-adapter)
+before migrating.
 
 <div className="callout callout-tip">
   <div className="callout-title">Why migrate from Recoil?</div>
@@ -88,7 +94,7 @@ The [compatibility notes](https://github.com/eigilsagafos/valdres/blob/main/pack
 
 Once you've migrated, you can incrementally adopt the native Valdres API:
 
-1. **Replace imports** — Switch from `@valdres-react/recoil` or `@valdres-react/jotai` to `valdres` and `valdres-react` (inside a `RecoilRoot`, `toValdresState` exposes a Recoil atom or selector to `valdres-react` hooks)
+1. **Replace imports** — Switch from `@valdres-react/recoil` or `@valdres-react/jotai` to `valdres` and `valdres-react` (the Recoil hooks also read and write native Valdres atoms, and work under a `valdres-react` `Provider`; see [Valdres extensions](/guides/vs-recoil#valdres-extensions))
 2. **Use native hooks** — Replace `useRecoilState` with `useAtom`, `useRecoilValue` with `useValue`
 3. **Adopt new features** — Start using transactions, first-class families, and framework-agnostic state
 

@@ -97,38 +97,8 @@ describe("Valdres interop", () => {
         expect(stores[1]).toBe(stores[2])
     })
 
-    test("only adapter atoms and selectors are Recoil values", () => {
-        const native = valdresAtom(0)
-        expect(isRecoilValue(native)).toBe(false)
-        const Probe = () => (useRecoilValue(native as never), null)
-        const errors: unknown[] = []
-        class Boundary extends (require("react") as typeof import("react")).Component<
-            { children: React.ReactNode },
-            { failed: boolean }
-        > {
-            override state = { failed: false }
-            static getDerivedStateFromError() {
-                return { failed: true }
-            }
-            override componentDidCatch(error: unknown) {
-                errors.push(error)
-            }
-            override render() {
-                return this.state.failed ? null : this.props.children
-            }
-        }
-        const restore = spyOn(console, "error").mockImplementation(() => {})
-        render(
-            <RecoilRoot>
-                <Boundary>
-                    <Probe />
-                </Boundary>
-            </RecoilRoot>,
-        )
-        restore.mockRestore()
-        expect(String((errors[0] as Error).message)).toContain(
-            "Invalid argument to useRecoilValue",
-        )
+    test("isRecoilValue stays false for Valdres States", () => {
+        expect(isRecoilValue(valdresAtom(0))).toBe(false)
     })
 })
 

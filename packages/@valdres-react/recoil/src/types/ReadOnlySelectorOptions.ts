@@ -1,3 +1,4 @@
+import type { State } from "valdres"
 import type { RecoilValue } from "../lib/recoilValue"
 import type { GetRecoilValue } from "./GetRecoilValue"
 
@@ -7,7 +8,7 @@ import type { GetRecoilValue } from "./GetRecoilValue"
  */
 export interface ReadOnlySelectorOptions<T> {
     key: string
-    get: (options: { get: GetRecoilValue }) => RecoilValue<T> | T
+    get: (options: { get: GetRecoilValue }) => RecoilValue<T> | State<T> | T
     /** Accepted for compatibility: values are never frozen. */
     dangerouslyAllowMutability?: boolean
     /**

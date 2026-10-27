@@ -4,7 +4,7 @@ import {
     nodeOf,
     RESET,
     type AtomWrites,
-    type RecoilValue,
+    type ReadableValue,
     type WriteContext,
 } from "./recoilValue"
 import { unwrapError } from "./unwrapError"
@@ -12,7 +12,7 @@ import { unwrapError } from "./unwrapError"
 /** One queued Recoil write, as Recoil's `set` action. */
 export type Action =
     | {
-          readonly recoilValue: RecoilValue<any>
+          readonly recoilValue: ReadableValue<any>
           readonly valueOrUpdater: unknown
       }
     | {
@@ -25,7 +25,7 @@ export type Action =
 /** Reads through a transaction, surfacing what a failing getter threw. */
 export const readThrough = <Value>(
     tx: Pick<Transaction, "get">,
-    recoilValue: RecoilValue<Value>,
+    recoilValue: ReadableValue<Value>,
     caller: string,
 ): Value => {
     const { state } = nodeOf(recoilValue, caller)
@@ -43,7 +43,7 @@ export const readThrough = <Value>(
  */
 export const resolveWrite = (
     context: WriteContext,
-    recoilValue: RecoilValue<any>,
+    recoilValue: ReadableValue<any>,
     valueOrUpdater: unknown,
     caller: string,
 ) => {
@@ -89,11 +89,11 @@ export const applyAction = (
 }
 
 export const setAction = (
-    recoilValue: RecoilValue<any>,
+    recoilValue: ReadableValue<any>,
     valueOrUpdater: unknown,
 ): Action => ({ recoilValue, valueOrUpdater })
 
-export const resetAction = (recoilValue: RecoilValue<any>): Action => ({
+export const resetAction = (recoilValue: ReadableValue<any>): Action => ({
     recoilValue,
     valueOrUpdater: DEFAULT_VALUE,
 })

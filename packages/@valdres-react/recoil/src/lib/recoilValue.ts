@@ -1,4 +1,5 @@
 import type { Atom, State } from "valdres"
+import { DefaultValue } from "../DefaultValue"
 
 /**
  * The atom-level writes one Recoil action resolves to, in first-write order
@@ -15,7 +16,7 @@ export const RESET: unique symbol = Symbol("reset")
  * selector `set` handlers do.
  */
 export interface WriteContext {
-    readonly read: <Value>(recoilValue: RecoilValue<Value>) => Value
+    readonly read: <Value>(recoilValue: ReadableValue<Value>) => Value
     /** Reads a Valdres State directly, before this action's writes. */
     readonly readState: <Value>(state: State<Value>) => Value
     readonly writes: AtomWrites
@@ -53,6 +54,9 @@ export class RecoilState<T> extends RecoilValueReadOnly<T> {
 
 export type RecoilValue<T> = RecoilValueReadOnly<T> | RecoilState<T>
 
+/** Internal: what the adapter reads, a Recoil value or a Valdres State. */
+export type ReadableValue<T> = RecoilValue<T> | State<T>
+
 export const createRecoilValue = <Value>(
     node: RecoilNode<Value>,
 ): RecoilState<Value> | RecoilValueReadOnly<Value> => {
@@ -71,17 +75,62 @@ const describe = (value: unknown) =>
           ? (value.constructor?.name ?? "object")
           : typeof value
 
-export const nodeOf = <Value>(
-    recoilValue: RecoilValue<Value>,
-    caller: string,
-): RecoilNode<Value> => {
-    const node = nodes.get(recoilValue as object)
-    if (node === undefined)
-        throw new Error(
-            `Invalid argument to ${caller}: expected an atom or selector from @valdres-react/recoil but got ${describe(recoilValue)}`,
-        )
+const VALDRES_KINDS = new Set(["atom", "selector", "external", "collection-row", "collection"])
+
+/**
+ * A Valdres State, recognized by its public `kind` discriminant. A forged
+ * object passes this check but is rejected by the Store on first use.
+ */
+export const isValdresState = (value: unknown): value is State<unknown> =>
+    typeof value === "object" &&
+    value !== null &&
+    !nodes.has(value) &&
+    VALDRES_KINDS.has((value as { kind?: unknown }).kind as string)
+
+const valdresNodes = new WeakMap<object, RecoilNode<any>>()
+
+/**
+ * Valdres extension: a native State used where Recoil expects an atom or
+ * selector. Only a Valdres Atom is writable; it keeps its own Valdres
+ * semantics (its `equal`, and `reset` restoring its initial value).
+ */
+const valdresNode = (state: State<unknown>): RecoilNode<unknown> => {
+    let node = valdresNodes.get(state)
+    if (node === undefined) {
+        const writable = state.kind === "atom"
+        node = {
+            key: `<valdres ${state.kind}>`,
+            kind: writable ? "atom" : "selector",
+            state,
+            write: writable
+                ? (context, value) =>
+                      context.writes.set(
+                          state as Atom<unknown>,
+                          value instanceof DefaultValue ? RESET : value,
+                      )
+                : undefined,
+        }
+        valdresNodes.set(state, node)
+    }
     return node
 }
 
+export const nodeOf = <Value>(
+    recoilValue: ReadableValue<Value>,
+    caller: string,
+): RecoilNode<Value> => {
+    const node = nodes.get(recoilValue as object)
+    if (node !== undefined) return node
+    if (isValdresState(recoilValue)) return valdresNode(recoilValue) as RecoilNode<Value>
+    throw new Error(
+        `Invalid argument to ${caller}: expected an atom or selector from @valdres-react/recoil, or a Valdres State, but got ${describe(recoilValue)}`,
+    )
+}
+
+/** A Recoil atom or selector from this package. */
 export const isRecoilValueObject = (value: unknown): boolean =>
     typeof value === "object" && value !== null && nodes.has(value)
+
+/** Anything the adapter reads where Recoil reads a RecoilValue. */
+export const isReadableValue = (value: unknown): boolean =>
+    isRecoilValueObject(value) || isValdresState(value)

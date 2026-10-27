@@ -1,3 +1,4 @@
+import type { State } from "valdres"
 import type { RecoilValue } from "../lib/recoilValue"
 import type { SerializableParam } from "./SerializableParam"
 
@@ -12,7 +13,7 @@ interface AtomFamilyOptionsWithoutDefault<P extends SerializableParam> {
 
 interface AtomFamilyOptionsWithDefault<T, P extends SerializableParam>
     extends AtomFamilyOptionsWithoutDefault<P> {
-    default: RecoilValue<T> | T | ((param: P) => T | RecoilValue<T>)
+    default: RecoilValue<T> | State<T> | T | ((param: P) => T | RecoilValue<T> | State<T>)
 }
 
 /** Recoil's atomFamily options, without async defaults or effects. */
