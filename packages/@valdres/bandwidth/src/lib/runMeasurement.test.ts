@@ -254,7 +254,7 @@ describe("transfer limits", () => {
         })
     })
 
-    test("a server that ignores the requested size is cut off at the limit", async () => {
+    test("a server that overruns the requested size: reading stops once the budget is counted", async () => {
         respond = requested => (requested === 0 ? 0 : 1_000_000)
         streamEveryMs = 40
         const result = await run({
@@ -299,6 +299,33 @@ describe("transfer limits", () => {
         expect(endedBy).toBe("bytes")
         expect(mbps).toBeGreaterThanOrEqual(average * 0.95)
         expect(mbps).toBeLessThanOrEqual(average * 1.15)
+    })
+
+    test("phases that spend their limit before the first progress tick still complete", async () => {
+        // ~10 ms per request: 500 KB down in ~80 ms, 3 MB up in ~30 ms.
+        delayMs = 10
+        const result = await run({
+            maxDownloadBytes: 500_000,
+            maxUploadBytes: 3_000_000,
+        })
+        expect(result).toMatchObject({
+            downloadEndedBy: "bytes",
+            uploadEndedBy: "bytes",
+            downloadBytes: 500_000,
+            uploadBytes: 3_000_000,
+        })
+        for (const [bytes, durationMs, mbps] of [
+            [
+                result.downloadBytes,
+                result.downloadDurationMs,
+                result.downloadMbps,
+            ],
+            [result.uploadBytes, result.uploadDurationMs, result.uploadMbps],
+        ] as const) {
+            expect(durationMs).toBeGreaterThanOrEqual(20)
+            expect(durationMs).toBeLessThan(250)
+            expect(mbps).toBe(bytesToMbps(bytes, durationMs / 1000))
+        }
     })
 
     test("Infinity lifts a limit; the time limit still ends the phase", async () => {

@@ -2,10 +2,10 @@
  * Why a throughput phase ended:
  * - `"stable"`: the rate settled after `minDurationMs`.
  * - `"time"`: it reached `maxDurationMs` without settling.
- * - `"bytes"`: it transferred its byte limit first; the reading is the phase's
- *   average rate, a lower bound on a link faster than the limit allows to
- *   measure.
+ * - `"bytes"`: it transferred its payload budget first; the reading is bytes
+ *   over the measured duration (to the last counted byte), which can be short
+ *   and may not represent sustained throughput.
  * - `"drained"`: every stream finished on its own (a runtime without streamed
- *   response bodies); also an average rate.
+ *   response bodies); also bytes over the measured duration.
  */
 export type MeasurementPhaseEnd = "stable" | "time" | "bytes" | "drained"

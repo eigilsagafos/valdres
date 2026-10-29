@@ -92,6 +92,8 @@ export const runMeasurement = async (
         uploadBytes: upload.bytes,
         downloadEndedBy: download.endedBy,
         uploadEndedBy: upload.endedBy,
+        downloadDurationMs: download.durationMs,
+        uploadDurationMs: upload.durationMs,
         timestamp: Date.now(),
     })
 }

@@ -64,6 +64,8 @@ export const scriptedRunner = (): ScriptedRunner => {
                             uploadBytes: 10_000_000,
                             downloadEndedBy: "bytes",
                             uploadEndedBy: "bytes",
+                            downloadDurationMs: 1_900,
+                            uploadDurationMs: 3_600,
                             timestamp: Date.now(),
                             ...result,
                         })

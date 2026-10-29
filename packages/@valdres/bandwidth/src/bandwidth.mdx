@@ -147,7 +147,7 @@ A call ends in exactly one of four ways:
 | Outcome | Promise | State |
 |---|---|---|
 | Completed | resolves the `BandwidthResult` | `"ready"` with it as `result` |
-| Too little data | rejects with `BandwidthInsufficientDataError` (`phase`, `bytes`, `elapsedMs`) | `"error"`, previous `result` kept |
+| Too little data | rejects with `BandwidthInsufficientDataError` (`phase`, `reason`: `"no-data"` or `"interval-too-short"`, `bytes`, `elapsedMs`) | `"error"`, previous `result` kept |
 | Failed request | rejects with that request's error | `"error"`, previous `result` kept |
 | Cancelled or replaced | rejects with the signal's reason / `AbortError` | back to what it was before (cancel) or the replacement's `"pending"` |
 
@@ -162,24 +162,36 @@ substituted for a measurement.
 | Phase | Requests | Result |
 |---|---|---|
 | latency | one warm-up, then `latencySamples` (10) sequential `GET <download>?bytes=0` | `latencyMs`: median round trip, ms. `jitterMs`: population standard deviation of those round trips, ms. |
-| download | `startStreams` (2) to `maxStreams` (8) parallel streams of `GET <download>?bytes=N`, N ≤ 10 MB per request and never more than the download limit has left, read as they arrive | `downloadMbps`, `downloadBytes`, `downloadEndedBy` |
-| upload | the same number of parallel streams of `POST <upload>` with up to 1 MB each, never more than the upload limit has left | `uploadMbps`, `uploadBytes`, `uploadEndedBy` |
+| download | `startStreams` (2) to `maxStreams` (8) parallel streams of `GET <download>?bytes=N`, N ≤ 10 MB per request and never more than the download budget has left, read as they arrive | `downloadMbps`, `downloadBytes`, `downloadEndedBy`, `downloadDurationMs` |
+| upload | the same number of parallel streams of `POST <upload>` with up to 1 MB each, never more than the upload budget has left | `uploadMbps`, `uploadBytes`, `uploadEndedBy`, `uploadDurationMs` |
 
 Throughput is in megabits per second (1 Mbps = 1,000,000 bits/s). Every 250 ms
 a phase computes the rate over the last 1.5 s and smooths it (exponential moving
 average, α = 0.2); `progress` shows that smoothed rate and the bytes so far.
-A phase ends at the first of:
+These periodic ticks only drive progress and the stability check — the final
+result never depends on one having fired. A phase ends at the first of:
 
-| `…EndedBy` | When | Reported rate |
-|---|---|---|
-| `"stable"` | after `minDurationMs` (5 s), the coefficient of variation of the last four unsmoothed readings (ignoring the first `warmupMs`, 2 s) is below `stabilityThreshold` (0.05) | the smoothed rate |
-| `"time"` | `maxDurationMs` (10 s) | the smoothed rate |
-| `"bytes"` | the phase's byte limit has been transferred | the phase's **average** rate — a lower bound that includes connection ramp-up |
-| `"drained"` | every stream finished on its own (a runtime without streamed bodies) | the average rate |
+| `…EndedBy` | When | `…Mbps` | `…DurationMs` |
+|---|---|---|---|
+| `"stable"` | after `minDurationMs` (5 s), the coefficient of variation of the last four unsmoothed readings (ignoring the first `warmupMs`, 2 s) is below `stabilityThreshold` (0.05) | the smoothed rate | phase start to its end |
+| `"time"` | `maxDurationMs` (10 s), on its own timer | the smoothed rate; bytes ÷ duration if no tick fired yet | phase start to its end |
+| `"bytes"` | the phase's payload budget has been transferred | bytes ÷ duration | phase start to the last counted byte |
+| `"drained"` | every stream finished on its own (a runtime without streamed bodies) | bytes ÷ duration | phase start to the last counted byte |
 
-A phase that ends with no bytes, or before one 250 ms sampling interval,
-produces no result: the measurement rejects with
-`BandwidthInsufficientDataError`. Past `minDurationMs`, a reading more than
+A byte-limited phase can end well before the first 250 ms tick on a fast link;
+its result is then still computed from its byte count and measured duration,
+and `…EndedBy: "bytes"` with a short `…DurationMs` says so. Such a short sample
+includes request start-up and first-byte latency and may also reflect data the
+network or browser had already buffered, so it **may not represent sustained
+throughput** — in either direction. Raise the budget when you need a longer
+sample.
+
+No rate is invented when there is nothing defensible to compute: a phase that
+carried no payload bytes rejects with `BandwidthInsufficientDataError`
+(`reason: "no-data"`), and one whose bytes arrived over less than **20 ms**
+rejects with `reason: "interval-too-short"` — browsers coarsen
+`performance.now()` to as much as 1 ms, which would make a shorter interval's
+rate unreliable by more than 5 %. Past `minDurationMs`, a reading more than
 15 % above the previous one opens another stream, up to `maxStreams`.
 
 Limitations: the result is throughput to the measurement server over this
@@ -188,31 +200,44 @@ and the browser's own connection limits all lower it, and it is not the
 capacity of the line. Latency includes HTTP request overhead, so it is higher
 than an ICMP ping.
 
-### Data transferred and limits
+### Data transferred and payload budgets
 
-`maxDownloadBytes` and `maxUploadBytes` are hard limits **per direction**, on
-the response bodies the download phase requests and the request bodies the
-upload phase sends. Requests are sized so the bytes asked for never exceed what
-is left, and a server that sends more than it was asked for is cut off at the
-limit (at most the chunk that crossed it is read). They do not count HTTP
-headers, TLS or TCP overhead, or the empty latency responses. Both limits apply
-alongside the time limits; whichever is reached first ends the phase.
-`Infinity` lifts a byte limit.
+`maxDownloadBytes` and `maxUploadBytes` are **application-payload budgets per
+direction**, defaulting to **25 MB down and 10 MB up**:
 
-| | Download | Upload | Worst case per measurement |
+- The download budget bounds the response-body bytes the measurement **asks
+  for**: each request is sized to what the budget has left, and the phase stops
+  once the bytes it has read reach the budget.
+- The upload budget bounds the request-body bytes the measurement **hands to
+  `fetch`**. A request's bytes count against it as soon as the request starts,
+  even if it is then cut off by the end of the phase, a failure or a
+  cancellation; only acknowledged bytes count toward `uploadBytes` and the rate.
+
+They are not an on-wire cap. HTTP headers, TLS and TCP overhead are not
+counted, and the payload actually transferred can exceed a budget: a server
+may send more than was asked for, and the browser may already have received
+and buffered data by the time the stream is cancelled. The measurement stops
+reading as soon as its count reaches the budget, but how much more arrived
+over the network is not bounded by this package. `downloadBytes` and
+`uploadBytes` report what was actually counted, which can be slightly above
+the budget.
+
+Besides the throughput phases, each measurement makes `latencySamples` + 1
+(default 11) latency requests that ask for zero payload bytes; they are not
+counted against either budget, and their traffic is headers and connection
+setup only. Nothing is retried: a failed request fails the measurement.
+
+| | Download | Upload | Payload budget per measurement |
 |---|---|---|---|
-| Default | 25 MB | 10 MB | ≈ 35 MB of bodies plus overhead |
+| Default | 25 MB | 10 MB | 35 MB, plus headers, TLS, latency probes and any server overrun |
 
-The trade-off: a phase ends by its byte limit before `minDurationMs` on links
-faster than limit × 8 / 5 s — about **40 Mbps down and 16 Mbps up** with the
-defaults — and before the 2 s warm-up above about 100 Mbps down / 40 Mbps up.
-Such a result is marked `"bytes"` and reports the average rate, which
-**underestimates** fast links because it includes TCP ramp-up; above roughly
-800 Mbps down (320 Mbps up) the limit can be spent inside one sampling
-interval and the measurement rejects with `BandwidthInsufficientDataError`.
-For accurate results on fast links raise the limits deliberately — for
-example 250 MB down / 100 MB up keeps phases time-bounded up to about
-400 / 160 Mbps — knowing each measurement may then transfer that much.
+The trade-off: with the defaults, a phase ends on its budget before
+`minDurationMs` (5 s) on links faster than about **40 Mbps down and 16 Mbps
+up** (budget × 8 ÷ 5 s), and before the 2 s warm-up above about 100 / 40 Mbps.
+Such results are marked `"bytes"` and come from a shorter sample than a
+time-bounded phase, with the caveats above. Raise the budgets deliberately for
+longer samples on fast links, knowing each measurement may then transfer that
+much; `Infinity` lifts a budget and leaves only the time limits.
 
 Repeated measurements multiply the cost. Do not run measurements
 automatically, on a timer, or on metered or mobile connections without the
@@ -240,7 +265,7 @@ servers:
 | Option | Default | |
 |---|---|---|
 | `endpoints` | Cloudflare | see [Endpoints](#endpoints) |
-| `maxDownloadBytes` / `maxUploadBytes` | 25 MB / 10 MB | hard per-direction limits; positive integers or `Infinity` |
+| `maxDownloadBytes` / `maxUploadBytes` | 25 MB / 10 MB | per-direction payload budgets; positive integers or `Infinity` |
 | `maxDurationMs` / `minDurationMs` | 10 000 / 5 000 | per throughput phase |
 | `warmupMs` | 2 000 | readings ignored for stability |
 | `startStreams` / `maxStreams` | 2 / 8 | parallel streams per phase |
@@ -316,7 +341,7 @@ hydration.
 | `invalidateOnAtom` re-measured whenever listed global atoms changed                                                                        | Removed. Subscribe to what should trigger a new measurement and call `measureBandwidth({ fresh: true })` (example below).     |
 | `invalidateMeasurement()`                                                                                                                  | `measureBandwidth({ fresh: true })`.                                                                                          |
 | An abort mid-phase could still complete with partial numbers                                                                               | A cancelled or replaced measurement rejects and never publishes a result.                                                     |
-| Each phase streamed 100 MB requests for 5–10 s — gigabytes per measurement on a fast link | Hard per-direction byte limits, default 25 MB down / 10 MB up (see [Data transferred and limits](#data-transferred-and-limits)); a phase cut off by its limit reports its average rate and `…EndedBy: "bytes"`. Pass `Infinity` to restore time-only phases. |
+| Each phase streamed 100 MB requests for 5–10 s — gigabytes per measurement on a fast link | Per-direction payload budgets, default 25 MB down / 10 MB up (see [Data transferred and payload budgets](#data-transferred-and-payload-budgets)); a phase ended by its budget reports bytes ÷ duration with `…EndedBy: "bytes"` and its `…DurationMs`. Pass `Infinity` to restore time-only phases. |
 | Only Cloudflare | Cloudflare by default; `endpoints` for a server speaking the same protocol. |
 | A joining call's options were ignored | Calls share a measurement only with the same configuration; a conflicting call rejects with `BandwidthMeasurementConflictError`. |
 | Peer `valdres` `^1.0.0-beta.19`                                                                                                            | `^1.0.0-beta.39`, the first core with `externalAtom`.                                                                         |

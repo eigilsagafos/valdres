@@ -20,6 +20,14 @@ export interface BandwidthResult {
     readonly uploadBytes: number
     readonly downloadEndedBy: MeasurementPhaseEnd
     readonly uploadEndedBy: MeasurementPhaseEnd
+    /**
+     * The interval `downloadMbps` was measured over, ms: to the last byte for
+     * `"bytes"` / `"drained"`, to the end of the phase otherwise. A short
+     * interval may not represent sustained throughput.
+     */
+    readonly downloadDurationMs: number
+    /** The same for `uploadMbps`. */
+    readonly uploadDurationMs: number
     /** `Date.now()` when the measurement completed. */
     readonly timestamp: number
 }

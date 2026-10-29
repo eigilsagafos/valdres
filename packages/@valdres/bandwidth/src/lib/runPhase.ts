@@ -26,12 +26,22 @@ export interface PhaseOutcome {
     readonly mbps: number
     readonly bytes: number
     readonly endedBy: MeasurementPhaseEnd
+    /** The measured interval the rate covers, ms. */
+    readonly durationMs: number
 }
+
+/**
+ * The shortest interval a rate is computed over. Browsers coarsen
+ * `performance.now()` to as much as 1 ms, so an interval read from two
+ * timestamps can be off by up to 1 ms; at 20 ms that is at most 5 %. A phase
+ * that carried bytes over a shorter interval has no defensible rate.
+ */
+export const MIN_MEASURED_MS = 20
 
 export type RunPhaseOptions = {
     worker: PhaseWorker
     phase?: "download" | "upload"
-    /** Hard limit on the bytes this phase may request. Default unlimited. */
+    /** Payload budget: the bytes this phase may reserve. Default unlimited. */
     maxBytes?: number
     maxDurationMs?: number
     minDurationMs?: number
@@ -53,7 +63,8 @@ export type RunPhaseOptions = {
  * `minDurationMs`), at `maxDurationMs`, when `maxBytes` have been transferred,
  * or when every stream finished on its own. An external abort ends it quietly;
  * the caller checks its own signal. Rejects with the first stream failure, or
- * with `BandwidthInsufficientDataError` when it ends without a usable reading.
+ * with `BandwidthInsufficientDataError` when it carried no bytes or its
+ * measured interval is shorter than `MIN_MEASURED_MS`.
  */
 export const runPhase = async ({
     worker,
@@ -81,12 +92,17 @@ export const runPhase = async ({
     }
 
     let endedBy: MeasurementPhaseEnd | undefined
+    let endedAt = 0
     const end = (reason: MeasurementPhaseEnd) => {
-        endedBy ??= reason
+        if (endedBy === undefined) {
+            endedBy = reason
+            endedAt = performance.now()
+        }
         controller.abort()
     }
 
     let totalBytes = 0
+    let lastByteAt = 0
     let reserved = 0
     const transfer: PhaseTransfer = {
         reserve: wanted => {
@@ -100,7 +116,9 @@ export const runPhase = async ({
         },
         report: bytes => {
             totalBytes += bytes
-            // A server that sends more than was asked for is cut off here.
+            lastByteAt = performance.now()
+            // Stop reading once the budget is counted, even if a server sends
+            // more than was asked for (what already arrived is not bounded).
             if (totalBytes >= maxBytes) end("bytes")
         },
     }
@@ -131,7 +149,8 @@ export const runPhase = async ({
     }
 
     const start = performance.now()
-    let finishedAt = start
+    // The time limit is its own timer, independent of the sampling ticks.
+    const timeLimit = setTimeout(() => end("time"), maxDurationMs)
     for (let i = 0; i < startStreams; i++) spawn()
 
     const samples: { t: number; bytes: number }[] = [{ t: start, bytes: 0 }]
@@ -218,7 +237,7 @@ export const runPhase = async ({
             else if (elapsed >= maxDurationMs) end("time")
         }
     } finally {
-        finishedAt = performance.now()
+        clearTimeout(timeLimit)
         controller.abort()
         signal?.removeEventListener("abort", abort)
         await Promise.allSettled(running)
@@ -229,18 +248,36 @@ export const runPhase = async ({
     if (workerError !== null) throw workerError
     // Cut short from outside: no reading. The caller rejects with its reason.
     if (endedBy === undefined)
-        return { mbps: 0, bytes: totalBytes, endedBy: "time" }
+        return { mbps: 0, bytes: totalBytes, endedBy: "time", durationMs: 0 }
 
-    const elapsedMs = finishedAt - start
-    if (totalBytes === 0 || elapsedMs < sampleIntervalMs)
-        throw new BandwidthInsufficientDataError(phase, totalBytes, elapsedMs)
-    // Stable and timed phases report the smoothed rate the live readout
-    // showed; a phase cut off by its byte limit (or one that ran dry) may end
-    // before the smoothing settles, so it reports the phase's average rate —
-    // a lower bound that includes connection ramp-up.
+    // The result comes from byte counts and timestamps, never from whether a
+    // progress tick happened to fire: a phase may end before the first one.
+    // A byte-limited or drained phase is timed to its last counted byte; a
+    // stable or timed one to the moment it ended.
+    const durationMs =
+        (endedBy === "bytes" || endedBy === "drained" ? lastByteAt : endedAt) -
+        start
+    if (totalBytes === 0)
+        throw new BandwidthInsufficientDataError(
+            phase,
+            "no-data",
+            totalBytes,
+            durationMs,
+        )
+    if (!(durationMs >= MIN_MEASURED_MS))
+        throw new BandwidthInsufficientDataError(
+            phase,
+            "interval-too-short",
+            totalBytes,
+            durationMs,
+        )
+    // Stable and timed phases that were sampled report the smoothed rate the
+    // live readout showed. Every other phase reports bytes over its measured
+    // interval — which includes request start-up and first-byte latency, so a
+    // short one may not represent sustained throughput.
     const mbps =
         (endedBy === "stable" || endedBy === "time") && sampled > 0
             ? smoothed
-            : bytesToMbps(totalBytes, elapsedMs / 1000)
-    return { mbps, bytes: totalBytes, endedBy }
+            : bytesToMbps(totalBytes, durationMs / 1000)
+    return { mbps, bytes: totalBytes, endedBy, durationMs }
 }

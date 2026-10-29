@@ -78,6 +78,7 @@ test("reads keep their declared value domains", () => {
     )
     const insufficient: Error = new BandwidthInsufficientDataError(
         "upload",
+        "no-data",
         0,
         0,
     )

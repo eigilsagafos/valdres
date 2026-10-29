@@ -214,8 +214,9 @@ describe("failures", () => {
         const second = measureBandwidth()
         const error = new BandwidthInsufficientDataError(
             "download",
+            "interval-too-short",
             25_000_000,
-            120,
+            12,
         )
         net.runs[1]!.fail(error)
         await expect(second).rejects.toBe(error)

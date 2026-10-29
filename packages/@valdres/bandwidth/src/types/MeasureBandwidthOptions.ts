@@ -9,14 +9,17 @@ export interface MeasureBandwidthOptions {
      */
     readonly endpoints?: BandwidthEndpoints
     /**
-     * Hard limit on the response-body bytes the download phase requests.
-     * Default `25_000_000` (25 MB). `Infinity` lifts it; the time limits still
+     * Payload budget for the response-body bytes the download phase asks for
+     * (not an on-wire cap: headers and TLS are not counted, and a server or
+     * the browser's buffering can deliver more). Default `25_000_000`
+     * (25 MB). `Infinity` lifts it; the time limits still
      * apply.
      */
     readonly maxDownloadBytes?: number
     /**
-     * Hard limit on the request-body bytes the upload phase sends. Default
-     * `10_000_000` (10 MB). `Infinity` lifts it; the time limits still apply.
+     * Payload budget for the request-body bytes the upload phase hands to
+     * `fetch`, counted when each request starts. Default `10_000_000`
+     * (10 MB). `Infinity` lifts it; the time limits still apply.
      */
     readonly maxUploadBytes?: number
     /** Round trips timed after one warm-up request. Default `10`. */

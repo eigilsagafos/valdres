@@ -6,7 +6,7 @@ import {
     type RunPhaseOptions,
 } from "./runPhase"
 
-/** The most one request asks for; the phase's byte limit caps it further. */
+/** The most one request asks for; the phase's payload budget caps it further. */
 const CHUNK_BYTES = 10_000_000
 
 const downloadWorker =

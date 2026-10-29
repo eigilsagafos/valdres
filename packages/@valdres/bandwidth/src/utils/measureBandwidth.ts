@@ -10,7 +10,7 @@ import type { MeasureBandwidthOptions } from "../types/MeasureBandwidthOptions"
  * data.
  *
  * A measurement deliberately loads the connection. Each throughput phase ends
- * at its byte limit (default 25 MB down, 10 MB up), its time limit (5–10 s) or
+ * at its payload budget (default 25 MB down, 10 MB up), its time limit (5–10 s) or
  * once stable, whichever comes first. Do not run it automatically or
  * repeatedly on metered connections.
  *

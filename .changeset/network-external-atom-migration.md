@@ -49,11 +49,14 @@ is a separate change, and its changeset must carry the breaking changes:
   configuration matches; a conflicting call rejects with
   `PublicIpRequestConflictError` / `BandwidthMeasurementConflictError`
   instead of silently receiving another configuration's result.
-- `@valdres/bandwidth` has hard per-direction transfer limits,
-  `maxDownloadBytes` (default 25 MB) and `maxUploadBytes` (default 10 MB);
-  results carry `downloadBytes` / `uploadBytes` and `downloadEndedBy` /
-  `uploadEndedBy`, and a phase without a usable reading rejects with
-  `BandwidthInsufficientDataError`. `endpoints: { download, upload }` targets
-  a server speaking Cloudflare's speed-test protocol.
+- `@valdres/bandwidth` has per-direction application-payload budgets,
+  `maxDownloadBytes` (default 25 MB) and `maxUploadBytes` (default 10 MB) —
+  not on-wire caps. Results carry `downloadBytes` / `uploadBytes`,
+  `downloadEndedBy` / `uploadEndedBy` and `downloadDurationMs` /
+  `uploadDurationMs`; a phase that ends on its budget before any progress tick
+  still completes from its bytes and measured duration. A phase with no
+  payload, or one timed over less than 20 ms, rejects with
+  `BandwidthInsufficientDataError` (`reason`). `endpoints: { download, upload }`
+  targets a server speaking Cloudflare's speed-test protocol.
 - Neither operation is transactional: one started in a transaction that
   throws keeps running and is published after the transaction.

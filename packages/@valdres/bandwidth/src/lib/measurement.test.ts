@@ -3,7 +3,7 @@ import { bytesToMbps } from "./bytesToMbps"
 import { median } from "./median"
 import { stdDev } from "./stdDev"
 import { BandwidthInsufficientDataError } from "../errors/BandwidthInsufficientDataError"
-import { runPhase, type PhaseTransfer } from "./runPhase"
+import { MIN_MEASURED_MS, runPhase, type PhaseTransfer } from "./runPhase"
 import { measureDownload } from "./measureDownload"
 import { measureUpload } from "./measureUpload"
 import { measureLatency } from "./measureLatency"
@@ -172,6 +172,9 @@ describe("runPhase", () => {
         expect(error).toBeInstanceOf(BandwidthInsufficientDataError)
         expect((error as BandwidthInsufficientDataError).phase).toBe("upload")
         expect((error as BandwidthInsufficientDataError).bytes).toBe(1024)
+        expect((error as BandwidthInsufficientDataError).reason).toBe(
+            "interval-too-short",
+        )
         // Phase should end soon after the worker finishes, well before
         // minDurationMs (1s) — not run out the full clock.
         expect(Date.now() - start).toBeLessThan(500)
@@ -194,6 +197,147 @@ describe("runPhase", () => {
                 maxStreams: 1,
             }),
         ).rejects.toThrow("worker exploded")
+    })
+})
+
+describe("finalizing a phase without depending on progress ticks", () => {
+    /** Reports `bytes` every `everyMs`, starting after one interval. */
+    const steady =
+        (bytes: number, everyMs: number) =>
+        async (signal: AbortSignal, { report }: PhaseTransfer) => {
+            while (!signal.aborted) {
+                await new Promise(r => setTimeout(r, everyMs))
+                if (!signal.aborted) report(bytes)
+            }
+        }
+    const counting = () => {
+        const ticks: number[] = []
+        return {
+            ticks,
+            onUpdate: (_mbps: number, bytes: number) => void ticks.push(bytes),
+        }
+    }
+
+    test("a byte limit reached before the first tick yields a result from bytes and time", async () => {
+        const progress = counting()
+        const outcome = await runPhase({
+            worker: steady(100_000, 15),
+            maxBytes: 400_000,
+            maxDurationMs: 5_000,
+            minDurationMs: 5_000,
+            warmupMs: 0,
+            sampleIntervalMs: 250,
+            startStreams: 1,
+            maxStreams: 1,
+            onUpdate: progress.onUpdate,
+        })
+        expect(progress.ticks).toEqual([])
+        expect(outcome.endedBy).toBe("bytes")
+        expect(outcome.bytes).toBe(400_000)
+        expect(outcome.durationMs).toBeGreaterThanOrEqual(45)
+        expect(outcome.durationMs).toBeLessThan(250)
+        expect(outcome.mbps).toBe(
+            bytesToMbps(outcome.bytes, outcome.durationMs / 1000),
+        )
+    })
+
+    test("a byte limit reached between ticks is timed to its last byte, not the next tick", async () => {
+        const progress = counting()
+        const outcome = await runPhase({
+            worker: steady(100_000, 30),
+            maxBytes: 900_000,
+            maxDurationMs: 5_000,
+            minDurationMs: 5_000,
+            warmupMs: 0,
+            sampleIntervalMs: 100,
+            startStreams: 1,
+            maxStreams: 1,
+            onUpdate: progress.onUpdate,
+        })
+        expect(outcome.endedBy).toBe("bytes")
+        expect(progress.ticks.length).toBeGreaterThan(0)
+        // Exactly the ticks that fit before the last byte; none after it.
+        expect(progress.ticks.length).toBe(Math.floor(outcome.durationMs / 100))
+        expect(outcome.mbps).toBe(
+            bytesToMbps(outcome.bytes, outcome.durationMs / 1000),
+        )
+    })
+
+    test("a time limit reached before the first tick yields a result from bytes and time", async () => {
+        const progress = counting()
+        const outcome = await runPhase({
+            worker: steady(50_000, 10),
+            maxDurationMs: 80,
+            minDurationMs: 0,
+            warmupMs: 0,
+            sampleIntervalMs: 250,
+            startStreams: 1,
+            maxStreams: 1,
+            onUpdate: progress.onUpdate,
+        })
+        expect(progress.ticks).toEqual([])
+        expect(outcome.endedBy).toBe("time")
+        expect(outcome.durationMs).toBeGreaterThanOrEqual(79)
+        expect(outcome.durationMs).toBeLessThan(250)
+        expect(outcome.mbps).toBe(
+            bytesToMbps(outcome.bytes, outcome.durationMs / 1000),
+        )
+    })
+
+    test("a sampled time-limited phase reports the smoothed rate over its full duration", async () => {
+        const progress = counting()
+        const outcome = await runPhase({
+            worker: steady(50_000, 10),
+            maxDurationMs: 260,
+            minDurationMs: 0,
+            warmupMs: 0,
+            sampleIntervalMs: 50,
+            startStreams: 1,
+            maxStreams: 1,
+            stabilityThreshold: 0.000_001,
+            onUpdate: progress.onUpdate,
+        })
+        expect(outcome.endedBy).toBe("time")
+        expect(progress.ticks.length).toBeGreaterThanOrEqual(4)
+        expect(outcome.durationMs).toBeGreaterThanOrEqual(259)
+        expect(outcome.mbps).toBeGreaterThan(0)
+    })
+
+    test("no payload at all is insufficient, with no rate", async () => {
+        const error = await runPhase({
+            worker: async signal => {
+                while (!signal.aborted)
+                    await new Promise(r => setTimeout(r, 10))
+            },
+            maxDurationMs: 60,
+            minDurationMs: 0,
+            startStreams: 1,
+            maxStreams: 1,
+        }).catch((failure: unknown) => failure)
+        expect(error).toBeInstanceOf(BandwidthInsufficientDataError)
+        expect(error).toMatchObject({ reason: "no-data", bytes: 0 })
+    })
+
+    test(`bytes carried in under ${MIN_MEASURED_MS} ms are too short to time, with no rate`, async () => {
+        const error = await runPhase({
+            worker: async (_signal, { report }) => {
+                await new Promise(r => setTimeout(r, 1))
+                report(400_000)
+            },
+            maxBytes: 400_000,
+            maxDurationMs: 5_000,
+            minDurationMs: 5_000,
+            startStreams: 1,
+            maxStreams: 1,
+        }).catch((failure: unknown) => failure)
+        expect(error).toBeInstanceOf(BandwidthInsufficientDataError)
+        expect(error).toMatchObject({
+            reason: "interval-too-short",
+            bytes: 400_000,
+        })
+        expect(
+            (error as BandwidthInsufficientDataError).elapsedMs,
+        ).toBeLessThan(MIN_MEASURED_MS)
     })
 })
 
