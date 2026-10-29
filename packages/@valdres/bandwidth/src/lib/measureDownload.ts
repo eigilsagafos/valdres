@@ -1,36 +1,58 @@
-import { runPhase } from "./runPhase"
-import type { RunPhaseOptions } from "./runPhase"
+import { downloadUrl, REQUEST_INIT } from "./endpoints"
+import {
+    runPhase,
+    type PhaseOutcome,
+    type PhaseWorker,
+    type RunPhaseOptions,
+} from "./runPhase"
 
-const CHUNK_BYTES = 100_000_000
-const DOWNLOAD_URL = `https://speed.cloudflare.com/__down?bytes=${CHUNK_BYTES}`
+/** The most one request asks for; the phase's payload budget caps it further. */
+const CHUNK_BYTES = 10_000_000
 
-const downloadWorker = async (
-    signal: AbortSignal,
-    reportBytes: (bytes: number) => void,
-): Promise<void> => {
-    while (!signal.aborted) {
-        const res = await fetch(DOWNLOAD_URL, { cache: "no-store", signal })
-        if (!res.ok) {
-            throw new Error(
-                `download failed: ${res.status} ${res.statusText}`.trim(),
-            )
-        }
-        if (!res.body) {
-            // No streaming body available — read once and exit. Looping here
-            // would allocate ~CHUNK_BYTES (100 MB) per pass.
-            const buf = await res.arrayBuffer()
-            reportBytes(buf.byteLength)
-            return
-        }
-        const reader = res.body.getReader()
+const downloadWorker =
+    (download: string): PhaseWorker =>
+    async (signal, transfer) => {
         while (!signal.aborted) {
-            const { done, value } = await reader.read()
-            if (done) break
-            reportBytes(value.byteLength)
+            const bytes = transfer.reserve(CHUNK_BYTES)
+            if (bytes === 0) return
+            let received = 0
+            try {
+                const res = await fetch(downloadUrl(download, bytes), {
+                    ...REQUEST_INIT,
+                    signal,
+                })
+                if (!res.ok) {
+                    throw new Error(
+                        `download failed: ${res.status} ${res.statusText}`.trim(),
+                    )
+                }
+                if (!res.body) {
+                    // No streaming body: read once and stop this stream.
+                    const buf = await res.arrayBuffer()
+                    received = buf.byteLength
+                    transfer.report(received)
+                    return
+                }
+                const reader = res.body.getReader()
+                while (!signal.aborted) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+                    received += value.byteLength
+                    transfer.report(value.byteLength)
+                }
+            } finally {
+                // A short (or cut-off) response leaves budget for the others.
+                if (received < bytes) transfer.release(bytes - received)
+            }
         }
     }
-}
 
 export const measureDownload = (
-    options: Omit<RunPhaseOptions, "worker"> = {},
-): Promise<number> => runPhase({ ...options, worker: downloadWorker })
+    download: string,
+    options: Omit<RunPhaseOptions, "worker" | "phase"> = {},
+): Promise<PhaseOutcome> =>
+    runPhase({
+        ...options,
+        phase: "download",
+        worker: downloadWorker(download),
+    })
