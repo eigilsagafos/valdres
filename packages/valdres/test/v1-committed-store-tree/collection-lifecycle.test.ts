@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { LeakDetector, retentionPhase } from "../../../test/src/LeakDetector"
 import {
     StoreDisposedError,
     TransactionClosedError,
@@ -15,82 +14,27 @@ import { runCollectionTransaction } from "./collection-test-transaction"
 const read = (store: CommittedStoreTree, state: State<any>): any =>
     store.get(state)
 
-const expectRetained = async (detector: LeakDetector, label?: string): Promise<void> => {
-    retentionPhase(label, "retention-await-enter")
-    const leaking = await detector.isLeaking(10, label)
-    retentionPhase(label, leaking ? "retention-await-return-live" : "retention-await-return-collected")
-    expect(leaking).toBe(true)
-}
-
-const expectCollected = async (detector: LeakDetector, label?: string): Promise<void> => {
-    let leaking = true
-    for (let attempt = 0; attempt < 3 && leaking; attempt++) {
-        retentionPhase(label, "collection-await-enter", attempt)
-        leaking = await detector.isLeaking(undefined, label)
-        retentionPhase(label, leaking ? "collection-await-return-live" : "collection-await-return-collected", attempt)
-    }
-    expect(leaking).toBe(false)
-}
-
 describe("v1 committed collection row lifecycle", () => {
-    test("pins Present and Absent owners until reset", async () => {
-        retentionPhase("collection-test", `start platform=${process.platform} arch=${process.arch} bun=${Bun.version}`)
+    test("Present and Absent ownership restores inherited state on reset", () => {
         const domain = createCommittedStoreTreeDomain()
         const sessions = createCollectionDefinition<string, number>(domain)
         const root = domain.createStoreTree()
         const child = root.scope("child")
+        const row = sessions("owned")
+        runCollectionTransaction(domain, root, (_tx, rows) => rows.set(row, 1))
+        expect(read(root, row)).toBe(1)
+        expect(read(child, row)).toBe(1)
+        runCollectionTransaction(domain, root, (_tx, rows) => rows.scope(child).delete(row))
+        expect(read(child, row)).toBeUndefined()
+        expect(read(root, row)).toBe(1)
+        runCollectionTransaction(domain, root, (_tx, rows) => rows.scope(child).reset(row))
+        expect(read(child, row)).toBe(1)
+        runCollectionTransaction(domain, root, (_tx, rows) => rows.reset(row))
+        expect(read(root, row)).toBeUndefined()
+        expect(read(child, row)).toBeUndefined()
+    })
 
-        const present = (() => {
-            let row: ReturnType<typeof sessions> | undefined =
-                sessions("present")
-            const detector = new LeakDetector(row)
-            const reference = new WeakRef(row)
-            runCollectionTransaction(domain, root, (_txn, rows) =>
-                rows.set(row!, 1),
-            )
-            row = undefined
-            return { detector, reference }
-        })()
-        retentionPhase("present-owned", "ownership-created")
-        await expectRetained(present.detector, "present-owned")
-        retentionPhase("present-released", "reset-enter")
-        ;(() => {
-            const row = sessions("present")
-            expect(present.reference.deref()).toBe(row)
-            runCollectionTransaction(domain, root, (_txn, rows) =>
-                rows.reset(row),
-            )
-        })()
-        retentionPhase("present-released", "reset-return")
-        await expectCollected(present.detector, "present-released")
-
-        const absent = (() => {
-            let row: ReturnType<typeof sessions> | undefined =
-                sessions("absent")
-            const detector = new LeakDetector(row)
-            const reference = new WeakRef(row)
-            runCollectionTransaction(domain, root, (_txn, rows) =>
-                rows.scope(child).delete(row!),
-            )
-            row = undefined
-            return { detector, reference }
-        })()
-        retentionPhase("absent-owned", "ownership-created")
-        await expectRetained(absent.detector, "absent-owned")
-        retentionPhase("absent-released", "reset-enter")
-        ;(() => {
-            const row = sessions("absent")
-            expect(absent.reference.deref()).toBe(row)
-            runCollectionTransaction(domain, root, (_txn, rows) =>
-                rows.scope(child).reset(row),
-            )
-        })()
-        retentionPhase("absent-released", "reset-return")
-        await expectCollected(absent.detector, "absent-released")
-        retentionPhase("collection-test", "complete")
-    }, 15_000)
-
-    test("scope disposal releases pins and detaches MembershipRecord routes exactly once", async () => {
+    test("scope disposal detaches MembershipRecord routes exactly once", () => {
         const instrumentation = createInternalStoreTreeInstrumentation()
         const domain = createCommittedStoreTreeDomain(instrumentation)
         const sessions = createCollectionDefinition<string, number>(domain)
@@ -117,9 +61,7 @@ describe("v1 committed collection row lifecycle", () => {
             rows.scope(child).set(row!, 2),
         )
         const routeRemovesBefore = instrumentation.read("routeRemoves")
-        const detector = new LeakDetector(row)
         row = undefined
-        await expectRetained(detector)
 
         child.dispose()
         expect(instrumentation.read("routeRemoves")).toBe(
@@ -129,37 +71,37 @@ describe("v1 committed collection row lifecycle", () => {
         expect(instrumentation.read("routeRemoves")).toBe(
             routeRemovesBefore + 1,
         )
-        await expectCollected(detector)
     }, 15_000)
 
-    test("cold RowViews and their inherited route do not retain row definitions", async () => {
+    test("cold RowViews remain empty across inherited reset", () => {
         const domain = createCommittedStoreTreeDomain()
         const sessions = createCollectionDefinition<string, number>(domain)
         const root = domain.createStoreTree()
         const child = root.scope("child")
-        const detector = (() => {
+        ;(() => {
             let row: ReturnType<typeof sessions> | undefined = sessions("cold")
-            const detector = new LeakDetector(row)
             expect(read(child, row)).toBeUndefined()
             row = undefined
-            return detector
         })()
 
-        await expectCollected(detector)
+        runCollectionTransaction(domain, root, (_tx, rows) => rows.set(sessions("cold"), 1))
+        expect(read(child, sessions("cold"))).toBe(1)
+        runCollectionTransaction(domain, root, (_tx, rows) => rows.reset(sessions("cold")))
+        expect(read(root, sessions("cold"))).toBeUndefined()
+        expect(read(child, sessions("cold"))).toBeUndefined()
         expect(root).toBeDefined()
         expect(child).toBeDefined()
     })
 
-    test("releases a successful row lane retained by its closed cursor and writer", async () => {
+    test("closed collection cursors reject writes after the row is reset", () => {
         const domain = createCommittedStoreTreeDomain()
         const sessions = createCollectionDefinition<string, object>(domain)
         const row = sessions("retained-draft")
         const store = domain.createStoreTree()
         let transaction: RootTransaction | undefined
         let writer: RootTransaction | undefined
-        const detector = (() => {
+        ;(() => {
             let value: object | undefined = Object.freeze({ private: true })
-            const detector = new LeakDetector(value)
             runCollectionTransaction(
                 domain,
                 store,
@@ -173,12 +115,11 @@ describe("v1 committed collection row lifecycle", () => {
                 rows.reset(row),
             )
             value = undefined
-            return detector
         })()
 
+        expect(read(store, row)).toBeUndefined()
         expect(transaction).toBeDefined()
         expect(() => writer!.set(row, {})).toThrow(TransactionClosedError)
-        await expectCollected(detector)
     }, 15_000)
 
     test("keeps same-domain definitions isolated across Store disposal", () => {

@@ -33,6 +33,14 @@ jobs:
                   node-version: "24.16"
             - name: Install
               run: bun install --frozen-lockfile
+            - name: Record retention diagnostic runtime
+              env:
+                  VALDRES_RETENTION_CAPTURE_DIR: /tmp/valdres-retention-capture
+              run: |
+                  mkdir -p "$VALDRES_RETENTION_CAPTURE_DIR"
+                  node -p 'JSON.stringify({platform:process.platform,arch:process.arch,versions:process.versions,run:process.env.GITHUB_RUN_ID,attempt:process.env.GITHUB_RUN_ATTEMPT,sha:process.env.GITHUB_SHA})' > "$VALDRES_RETENTION_CAPTURE_DIR/node-and-job.json"
+                  git rev-parse HEAD > "$VALDRES_RETENTION_CAPTURE_DIR/checkout-sha.txt"
+                  uname -a > "$VALDRES_RETENTION_CAPTURE_DIR/uname.txt"
             - name: Require changeset
               # A Changesets Version Packages PR consumes the changeset that
               # created it, so its release metadata diff cannot carry another
@@ -74,6 +82,8 @@ jobs:
               # typechecked before the future Store kernel can integrate it.
               run: bun --filter 'valdres' test:v1-selector-evaluator
             - name: V1 committed StoreTree host contract
+              env:
+                  VALDRES_RETENTION_CAPTURE_DIR: /tmp/valdres-retention-capture
               # This first persistent host is also intentionally outside every
               # package entrypoint, so its dedicated tsconfig must run explicitly.
               run: bun --filter 'valdres' test:v1-committed-store-tree
@@ -126,6 +136,8 @@ jobs:
                   -delete
             - name: Test
               id: test
+              env:
+                  VALDRES_RETENTION_CAPTURE_DIR: /tmp/valdres-retention-capture
               run: bun run test:ci
               continue-on-error: true
             - name: JUnit coverage gate
@@ -258,6 +270,17 @@ jobs:
             - name: Fail if tests failed
               if: steps.test.outcome == 'failure'
               run: exit 1
+            - name: Preserve retention evidence even after test failure
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: retention-normal-suite-${{ github.run_id }}-${{ github.run_attempt }}
+                  path: |
+                      /tmp/valdres-retention-capture/
+                      packages/valdres/junit*.xml
+                      packages/valdres-react/junit*.xml
+                  retention-days: 14
+                  if-no-files-found: error
 
     browser-media:
         name: Browser media packages
