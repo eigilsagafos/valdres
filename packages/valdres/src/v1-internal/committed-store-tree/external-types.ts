@@ -145,6 +145,7 @@ export interface ExternalTreePlane {
     readonly dormantPull: boolean
     retainRoot(scope: StoreScopeNode, node: AnyState): void
     releaseRoot(scope: StoreScopeNode, node: AnyState): void
+    disposeScope(scope: StoreScopeNode): void
     reconcile(scope: StoreScopeNode, node: AnyState): void
     read(
         scope: StoreScopeNode,

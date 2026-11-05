@@ -251,15 +251,18 @@ describe("pinned Bun toolchain", () => {
         // revision-3 onCommit measurement (19591 - ceiling 17269), recorded
         // in docs/designs/transaction-on-commit-prior-art.md. 2464 is the
         // committed collection events measurement (19733 - ceiling 17269),
-        // recorded in docs/designs/collection-events.md.
+        // recorded in docs/designs/collection-events.md. 3611 is the
+        // reversed-edge settlement and cycle-recovery measurement
+        // (20880 - ceiling 17269).
         const allowance = baseline.policy.coreRetainingGzipAllowance
-        expect(allowance).toBe(2464)
+        expect(allowance).toBe(3611)
         // The raw allowance is the same reviewed revision-3 measurement:
         // atom-selector-store 72063 - ordinary ceiling 66284. The Bun 1.4.3
         // producer adds 4 raw bytes: 72067 - 66284 = 5783. Gzip stays within
         // the existing 2322 allowance; immutable ordinary baselines stay fixed.
         // Committed collection events: 72439 - 66284 = 6155.
-        expect(baseline.policy.coreRetainingRawAllowance).toBe(6155)
+        // Reversed-edge settlement and cycle recovery: 76048 - 66284 = 9764.
+        expect(baseline.policy.coreRetainingRawAllowance).toBe(9764)
         for (const budget of [
             baseline.featureBudgets.dist,
             baseline.featureBudgets.packed,

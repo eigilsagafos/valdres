@@ -6,6 +6,7 @@ import {
 } from "./external-types"
 import { StoreTreeCounterId } from "./counter-ids"
 import type { SubscriptionRegistration } from "./committed-store-tree"
+import { SelectorCircularDependencyError } from "../selector-evaluator/errors"
 import {
     SelectorEvaluationSession,
     type ServedSelectorOutcome,
@@ -65,6 +66,16 @@ interface Operation {
     attachments: number
 }
 
+/** The closure flags a selector without a record contributes. */
+const RECORDLESS: Pick<
+    SelectorRecord,
+    "lifecycleInClosure" | "dormantExternalInClosure" | "cycleInClosure"
+> = Object.freeze({
+    lifecycleInClosure: false,
+    dormantExternalInClosure: false,
+    cycleInClosure: false,
+})
+
 interface Projection {
     readonly node: AnyState
     served: ServedSelectorOutcome<OutcomeToken>
@@ -96,6 +107,13 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         StoreScopeNode,
         WeakMap<AnyState, RetainRecord>
     >()
+    /** Cyclic selectors each retained walk visited, by scope (#cycleSources). */
+    readonly #cycleWalks = new WeakMap<
+        StoreScopeNode,
+        WeakMap<AnyState, WeakHandleSet<AnyState>>
+    >()
+    /** Projections each scope's lifecycle records hold, for disposeScope. */
+    readonly #held = new WeakMap<StoreScopeNode, Set<Projection>>()
     #pull: Pull | undefined
     #operation: Operation | undefined
     readonly #attachments = new Set<Projection>()
@@ -174,6 +192,31 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         }
     }
 
+    /** A record's lifecycle closure is its dependencies plus, for a latched
+     * cycle, the selectors it watches in place of its unrecorded closing read. */
+    #closure(
+        record: SelectorRecord,
+        test: (node: AnyState) => boolean,
+    ): boolean {
+        return (
+            record.dependencies.some(dependency => test(dependency.node)) ||
+            (record.cycleLatch?.on.some(test) ?? false)
+        )
+    }
+
+    /** A cycle failure, or a selector whose closure reaches one. */
+    #cyclic(scope: StoreScopeNode, node: AnyState): boolean {
+        return scope.externalRecord(node)?.cycleInClosure ?? false
+    }
+    #cycleInClosure(scope: StoreScopeNode, record: SelectorRecord): boolean {
+        const outcome = record.served.outcome
+        return (
+            (outcome.kind === "error" &&
+                outcome.error instanceof SelectorCircularDependencyError) ||
+            this.#closure(record, node => this.#cyclic(scope, node))
+        )
+    }
+
     reaches(scope: StoreScopeNode, node: AnyState): boolean {
         return (
             scope.externalRecord(node)?.lifecycleInClosure ??
@@ -194,12 +237,13 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
     ): SelectorRecord {
         return Object.freeze({
             ...record,
-            lifecycleInClosure: record.dependencies.some(dependency =>
-                this.reaches(scope, dependency.node),
+            lifecycleInClosure: this.#closure(record, node =>
+                this.reaches(scope, node),
             ),
-            dormantExternalInClosure: record.dependencies.some(dependency =>
-                this.reachesDormant(scope, dependency.node),
+            dormantExternalInClosure: this.#closure(record, node =>
+                this.reachesDormant(scope, node),
             ),
+            cycleInClosure: this.#cycleInClosure(scope, record),
         })
     }
     refreshActivity(scope: StoreScopeNode, node: AnyState): void {
@@ -209,8 +253,8 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             const current = pending[index]!,
                 record = scope.externalRecord(current)
             if (record === undefined) continue
-            const dormantExternalInClosure = record.dependencies.some(
-                dependency => this.reachesDormant(scope, dependency.node),
+            const dormantExternalInClosure = this.#closure(record, node =>
+                this.reachesDormant(scope, node),
             )
             if (dormantExternalInClosure === record.dormantExternalInClosure)
                 continue
@@ -229,37 +273,60 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         previous: SelectorRecord | undefined,
         record: SelectorRecord,
     ): void {
+        // Dependents that read or watch a selector before its first install
+        // (only possible when a cycle closes during that very evaluation)
+        // computed their flags as if it reached nothing; carry the change.
+        const before = previous ?? RECORDLESS
         if (
-            previous !== undefined &&
-            previous.dormantExternalInClosure !==
-                record.dormantExternalInClosure
+            (before.dormantExternalInClosure ?? false) !==
+            (record.dormantExternalInClosure ?? false)
         )
             this.refreshActivity(scope, node)
         this.reconcile(scope, node)
+        this.#cycleWalks
+            .get(scope)
+            ?.get(node)
+            ?.forEach(latch => this.reconcile(scope, latch))
         if (
-            previous === undefined ||
-            previous.lifecycleInClosure === record.lifecycleInClosure
+            (before.lifecycleInClosure ?? false) ===
+                (record.lifecycleInClosure ?? false) &&
+            (before.cycleInClosure ?? false) ===
+                (record.cycleInClosure ?? false)
         )
             return
+        // A preserved token does not re-run dependents, so carry both closure
+        // flags to them here; ownership follows each change (#dependencies).
         const pending: AnyState[] = []
         scope.externalDependents(node)?.forEach(parent => pending.push(parent))
         for (let index = 0; index < pending.length; index++) {
             const current = pending[index]!,
                 entry = scope.externalRecord(current)
             if (entry === undefined) continue
-            const lifecycleInClosure = entry.dependencies.some(dependency =>
-                this.reaches(scope, dependency.node),
-            )
-            if (lifecycleInClosure !== entry.lifecycleInClosure) {
+            const lifecycleInClosure = this.#closure(entry, node =>
+                    this.reaches(scope, node),
+                ),
+                cycleInClosure = this.#cycleInClosure(scope, entry)
+            if (
+                lifecycleInClosure !== entry.lifecycleInClosure ||
+                cycleInClosure !== entry.cycleInClosure
+            ) {
                 scope.replaceExternalRecord(
                     current,
-                    Object.freeze({ ...entry, lifecycleInClosure }),
+                    Object.freeze({
+                        ...entry,
+                        lifecycleInClosure,
+                        cycleInClosure,
+                    }),
                 )
                 scope
                     .externalDependents(current)
                     ?.forEach(parent => pending.push(parent))
             }
             this.reconcile(scope, current)
+            this.#cycleWalks
+                .get(scope)
+                ?.get(current)
+                ?.forEach(owner => this.reconcile(scope, owner))
         }
     }
 
@@ -974,13 +1041,58 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
 
     #dependencies(scope: StoreScopeNode, node: AnyState): Set<AnyState> {
         const result = new Set<AnyState>()
-        for (const dependency of scope.getCommittedSelectorDependencies(
-            node as never,
-        ) ?? []) {
+        const record = scope.externalRecord(node)
+        if (record?.cycleInClosure) {
+            this.#cycleSources(scope, node, record, result)
+            return result
+        }
+        for (const dependency of record?.dependencies ?? []) {
             if (this.reaches(scope, dependency.node))
                 result.add(dependency.node)
         }
         return result
+    }
+
+    /**
+     * A selector whose closure reaches a cycle failure never owns a cyclic
+     * selector: it walks through them (recorded reads, plus the selectors a
+     * latch watches in place of its closing read) and owns the acyclic
+     * selectors and external sources it reaches. Every lifecycle edge then ends
+     * at an acyclic closure, so counts cannot form a loop that outlives its
+     * last root. An install or flag change of a walked selector re-runs it.
+     */
+    #cycleSources(
+        scope: StoreScopeNode,
+        owner: AnyState,
+        record: SelectorRecord,
+        result: Set<AnyState>,
+    ): void {
+        let walks = this.#cycleWalks.get(scope)
+        if (walks === undefined)
+            this.#cycleWalks.set(scope, (walks = new WeakMap()))
+        const visited = new Set<AnyState>([owner])
+        const pending: AnyState[] = []
+        const expand = (entry: SelectorRecord) => {
+            for (const dependency of entry.dependencies)
+                pending.push(dependency.node)
+            pending.push(...(entry.cycleLatch?.on ?? []))
+        }
+        expand(record)
+        while (pending.length > 0) {
+            const current = pending.pop()!
+            if (visited.has(current)) continue
+            visited.add(current)
+            const entry = scope.externalRecord(current)
+            if (!entry?.cycleInClosure) {
+                if (this.reaches(scope, current)) result.add(current)
+                continue
+            }
+            let walkers = walks.get(current)
+            if (walkers === undefined)
+                walks.set(current, (walkers = new WeakHandleSet()))
+            walkers.add(owner)
+            expand(entry)
+        }
     }
 
     // Count incoming lifecycle edges, independently of selector graph/cache ownership.
@@ -1004,6 +1116,10 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             if (record.count++ !== 0) continue
             if (this.#bindings.domain.externalAtoms!.has(current)) {
                 const projection = this.#projections.get(current)!
+                let held = this.#held.get(scope)
+                if (held === undefined)
+                    this.#held.set(scope, (held = new Set()))
+                held.add(projection)
                 if (projection.retains++ === 0) {
                     this.#bindings.count(StoreTreeCounterId.lifecycleRetains)
                     this.#releases.delete(projection)
@@ -1031,6 +1147,7 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             if (--record.count !== 0) continue
             if (this.#bindings.domain.externalAtoms!.has(current)) {
                 const projection = this.#projections.get(current)!
+                this.#held.get(scope)?.delete(projection)
                 if (--projection.retains === 0) {
                     this.#bindings.count(StoreTreeCounterId.lifecycleReleases)
                     this.#releases.add(projection)
@@ -1049,6 +1166,20 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
         if (this.#retains.get(scope)?.get(node)?.root) return
         this.#retain(scope, node)
         this.#retains.get(scope)!.get(node)!.root = true
+    }
+
+    /** A disposed scope owns nothing: release every source its lifecycle
+     * records still hold, whatever their counts, exactly once each. */
+    disposeScope(scope: StoreScopeNode): void {
+        const held = this.#held.get(scope)
+        this.#held.delete(scope)
+        this.#retains.delete(scope)
+        this.#cycleWalks.delete(scope)
+        for (const projection of held ?? []) {
+            if (--projection.retains !== 0) continue
+            this.#bindings.count(StoreTreeCounterId.lifecycleReleases)
+            this.#releases.add(projection)
+        }
     }
 
     releaseRoot(scope: StoreScopeNode, node: AnyState): void {
@@ -1071,17 +1202,17 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             this.#bindings.domain.externalAtoms!.has(node)
         )
             return
-        const next = this.#dependencies(scope, node)
+        const next = this.#dependencies(scope, node),
+            previous = record.dependencies
         // Acquire replacement branches before releasing previous branches, even
-        // when the selector's comparison preserves its outcome token.
+        // when the selector's comparison preserves its outcome token. A release
+        // can reach this record through a cycle and release `next` with it, so
+        // `previous` keeps only the branches to drop before any release runs.
         for (const dependency of next) {
-            if (!record.dependencies.has(dependency))
-                this.#retain(scope, dependency)
-        }
-        for (const dependency of record.dependencies) {
-            if (!next.has(dependency)) this.#release(scope, dependency)
+            if (!previous.delete(dependency)) this.#retain(scope, dependency)
         }
         record.dependencies = next
+        for (const dependency of previous) this.#release(scope, dependency)
     }
 
     #newPull(dormant: boolean): Pull {
@@ -1199,8 +1330,10 @@ export class ExternalProjectionPlane implements ExternalTreePlane {
             if (visited.has(current)) continue
             visited.add(current)
             this.#bindings.count(StoreTreeCounterId.externalClosureVisits)
-            const dependencies =
-                scope.getCommittedSelectorDependencies(current as never) ?? []
+            const record = scope.externalRecord(current)
+            for (const watched of record?.cycleLatch?.on ?? [])
+                if (this.reaches(scope, watched)) pending.push(watched)
+            const dependencies = record?.dependencies ?? []
             for (let index = dependencies.length - 1; index >= 0; index--) {
                 const dependency = dependencies[index]!.node
                 if (this.reaches(scope, dependency)) pending.push(dependency)
