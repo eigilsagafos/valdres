@@ -2,12 +2,16 @@
 
 # public-ip
 
-Fetches your public IP from a list of HTTP endpoints and exposes it as global atoms, with stale-while-revalidate caching. `publicIpAtom` resolves to the IP (`Promise<string>` on first read, then `string`).
+Looks up this page's public IP address from HTTP endpoints when you ask, and
+publishes the outcome as read-only state: status, address, when it was received
+and why the last request failed — one coherent snapshot per address family.
 
-> **Async atom**
+> **Requests only when you call one**
 >
 >
-> `publicIpAtom` suspends on first read. Wrap consumers in `<Suspense>`, or read the non-suspending `publicIpValueAtom` / `publicIpStatusAtom` instead.
+> Importing, reading, subscribing and server rendering never contact anything.
+> Only `requestPublicIp()` (and the stateless `fetchPublicIp()`)
+> send a request, and every endpoint asked learns the caller's IP address.
 
 ## Install
 
@@ -21,55 +25,203 @@ bun add @valdres/public-ip
 
 ## Usage
 
+```ts
+import { store } from "valdres"
+import { publicIpAtom, requestPublicIp } from "@valdres/public-ip"
+
+const app = store()
+const stop = app.sub(publicIpAtom, () => {
+    const { status, ip, error } = app.get(publicIpAtom)
+    render(status === "error" ? error!.message : ip ?? "…")
+})
+
+button.addEventListener("click", () => {
+    requestPublicIp().catch(() => {}) // the state records the failure
+})
+```
+
 ```tsx
-import { Suspense } from "react"
+import { useEffect } from "react"
 import { useValue } from "valdres-react"
-import { publicIpAtom } from "@valdres/public-ip"
+import { publicIpAtom, requestPublicIp } from "@valdres/public-ip"
 
-function Ip() {
-    const ip = useValue(publicIpAtom) // string (suspends until resolved)
-    return <span>{ip}</span>
-}
+function PublicIp() {
+    const { status, ip, error } = useValue(publicIpAtom)
 
-function App() {
-    return (
-        <Suspense fallback="Loading…">
-            <Ip />
-        </Suspense>
-    )
+    // Ask once when this component mounts, and stop waiting when it unmounts.
+    useEffect(() => {
+        const controller = new AbortController()
+        requestPublicIp({ signal: controller.signal }).catch(() => {})
+        return () => controller.abort()
+    }, [])
+
+    if (status === "error") return <span>Lookup failed: {error!.message}</span>
+    return <span>{ip ?? "Looking up…"}</span>
 }
 ```
 
+> **Adapter support in this beta**
+>
+> `valdres-react` is the only adapter migrated to the v1 core. The Vue, Svelte,
+> Solid and Angular adapters cannot read an external atom yet. Until they ship,
+> read this package with `store.get` / `store.sub` as above.
+
 ## Exports
 
-| Export                             | Kind             | Type                                                                                              |
-| ---------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------- |
-| `publicIpAtom`                     | atom (read-only) | `Promise<string> \| string`                                                                       |
-| `publicIpStatusAtom`               | atom (read-only) | `PublicIpStatus`                                                                                  |
-| `publicIpErrorAtom`                | atom (read-only) | `Error \| null`                                                                                   |
-| `publicIpValueAtom`                | atom (read-only) | `string \| null`                                                                                  |
-| `publicIpV4Atom`                   | atom (read-only) | `Promise<string> \| string`                                                                       |
-| `publicIpV4StatusAtom`             | atom (read-only) | `PublicIpStatus`                                                                                  |
-| `publicIpV4ErrorAtom`              | atom (read-only) | `Error \| null`                                                                                   |
-| `publicIpV4ValueAtom`              | atom (read-only) | `string \| null`                                                                                  |
-| `publicIpV6Atom`                   | atom (read-only) | `Promise<string> \| string`                                                                       |
-| `publicIpV6StatusAtom`             | atom (read-only) | `PublicIpStatus`                                                                                  |
-| `publicIpV6ErrorAtom`              | atom (read-only) | `Error \| null`                                                                                   |
-| `publicIpV6ValueAtom`              | atom (read-only) | `string \| null`                                                                                  |
-| `publicIpEndpointsAtom`            | atom (settable)  | `string[]`                                                                                        |
-| `publicIpV4EndpointsAtom`          | atom (settable)  | `string[]`                                                                                        |
-| `publicIpV6EndpointsAtom`          | atom (settable)  | `string[]`                                                                                        |
-| `publicIpMaxAgeAtom`               | atom (settable)  | `number` (ms)                                                                                     |
-| `publicIpStaleWhileRevalidateAtom` | atom (settable)  | `number` (ms)                                                                                     |
-| `publicIpStaleIfErrorAtom`         | atom (settable)  | `number` (ms)                                                                                     |
-| `fetchPublicIp`                    | util fn          | `(endpoints: string[], validate?: (v: string) => boolean, timeoutMs?: number) => Promise<string>` |
-| `PublicIpStatus`                   | type             | `"idle" \| "loading" \| "revalidating" \| "ok" \| "error"`                                        |
+| Export                                                               | Kind                      | Type                                                                                                    |
+| -------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `publicIpAtom`                                                       | external atom (read-only) | `PublicIpState` — either family                                                                         |
+| `publicIpV4Atom`                                                     | external atom (read-only) | `PublicIpState` — IPv4 only                                                                             |
+| `publicIpV6Atom`                                                     | external atom (read-only) | `PublicIpState` — IPv6 only                                                                             |
+| `publicIpValueAtom`, `publicIpV4ValueAtom`, `publicIpV6ValueAtom`    | selector (read-only)      | `string \| null`                                                                                        |
+| `publicIpStatusAtom`, `publicIpV4StatusAtom`, `publicIpV6StatusAtom` | selector (read-only)      | `PublicIpStatus`                                                                                        |
+| `publicIpErrorAtom`, `publicIpV4ErrorAtom`, `publicIpV6ErrorAtom`    | selector (read-only)      | `PublicIpError \| null`                                                                                 |
+| `requestPublicIp`                                                    | util fn                   | `(options?: PublicIpRequestOptions) => Promise<string>`                                                 |
+| `fetchPublicIp`                                                      | util fn                   | `(options?: PublicIpRequestOptions) => Promise<string>` — stateless                                     |
+| `PublicIpRequestConflictError`                                       | error class               | rejects a call whose configuration conflicts with the in-flight request                                 |
+| `PublicIpRequestConfig`                                              | type                      | `{ family, endpoints: readonly string[], timeoutMs: number }`                                           |
+| `PublicIpState`                                                      | type                      | `{ status, ip: string \| null, updatedAt: number \| null, error: PublicIpError \| null }`               |
+| `PublicIpStatus`                                                     | type                      | `"unsupported" \| "idle" \| "pending" \| "ready" \| "error"`                                            |
+| `PublicIpError`                                                      | type                      | `{ name: string; message: string }`                                                                     |
+| `PublicIpFamily`                                                     | type                      | `"any" \| "v4" \| "v6"`                                                                                 |
+| `PublicIpRequestOptions`                                             | type                      | `{ family?, endpoints?: readonly string[], timeoutMs?: number, signal?: AbortSignal, fresh?: boolean }` |
 
-The `V4` / `V6` atoms are the same shape, fetching from IPv4- and IPv6-only endpoints. Endpoint, `maxAge`, `staleWhileRevalidate`, and `staleIfError` atoms are settable to tune fetching.
+## State
 
-## Cross-framework
+| `status`        | Meaning                                        | `ip` / `updatedAt`                           | `error` |
+| --------------- | ---------------------------------------------- | -------------------------------------------- | ------- |
+| `"unsupported"` | The runtime has no `fetch`.                    | `null`                                       | `null`  |
+| `"idle"`        | Nothing requested yet in this page or process. | `null`                                       | `null`  |
+| `"pending"`     | A request is in flight.                        | the previous address, if any                 | `null`  |
+| `"ready"`       | The latest request succeeded.                  | its address and `Date.now()` when it arrived | `null`  |
+| `"error"`       | The latest request failed.                     | the previous address, if any                 | why     |
 
-Atoms are global: the fetch starts on the first subscriber and the result is shared across every store. Only the read primitive changes per framework (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` / `store.sub` in plain JS).
+Each snapshot is frozen and published as one value, so status, address and
+error never disagree. An address survives a pending or failed refresh; check
+`status === "ready"` (or `updatedAt`) when only a current answer will do.
+
+## Requesting
+
+`requestPublicIp(options?)` asks each endpoint in order, with a per-endpoint
+timeout (default 4 s), and resolves the first trimmed response body that is an
+address of the requested family. A rejected request, a non-2xx status, a
+timeout, or a body that is not a valid address moves on to the next endpoint;
+when every endpoint fails the promise rejects with an `AggregateError` of their
+failures and the state turns `"error"`.
+
+| `family`          | Default endpoints                                      | State            |
+| ----------------- | ------------------------------------------------------ | ---------------- |
+| `"any"` (default) | `https://api.ipify.org`, `https://icanhazip.com`       | `publicIpAtom`   |
+| `"v4"`            | `https://api4.ipify.org`, `https://ipv4.icanhazip.com` | `publicIpV4Atom` |
+| `"v6"`            | `https://api6.ipify.org`, `https://ipv6.icanhazip.com` | `publicIpV6Atom` |
+
+Pass `endpoints` to use your own service: each must answer a plain `GET` with
+the address as the response body (surrounding whitespace is ignored).
+
+- **Cancellation.** `signal` cancels only that caller: its promise rejects with
+  the signal's reason. When every caller sharing the request has cancelled, the
+  request is aborted and the state returns to what it was before. A caller
+  without a signal keeps the request running.
+- **Ordering.** Only the newest request publishes. A replaced or cancelled
+  request whose response still arrives — an abort cannot always stop a response
+  that is already completing — changes nothing.
+- **Transactions.** A request is not transactional. Calling `requestPublicIp()`
+  inside a transaction or `settle` handler sends the request immediately; if the
+  transaction then throws, the request is **not** rolled back — it keeps
+  running and its outcome is published as usual (the Store is notified once the
+  transaction is over, never during it). Pass a `signal` and abort it if the
+  request should not outlive a failed transaction.
+- **No automatic work.** Nothing retries a failure, refreshes on a timer, or
+  reacts to `online`, visibility or connection changes. Call again when you
+  want a new answer.
+- **Errors.** Invalid options throw `TypeError` before anything is sent.
+  Without `fetch` the promise rejects with `NotSupportedError`. A Store
+  subscriber that throws while the state is published is reported through
+  `globalThis.reportError` (or thrown in a later task) and never changes the
+  promise's outcome; every other Store is still notified.
+
+### Concurrent requests
+
+Each family has its own state and at most one request in flight; families
+never share or conflict, so `"any"`, `"v4"` and `"v6"` can be requested at
+the same time. Within a family, a request's **effective configuration** is its
+`endpoints` (after defaults) and `timeoutMs`:
+
+| A call while a request of the same family is in flight… | Result                                                                                                                 |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| with the same effective configuration                   | joins it: one network request, every caller gets its outcome                                                           |
+| with different `endpoints` or `timeoutMs`               | rejects with `PublicIpRequestConflictError` (`active`, `requested`); the in-flight request and the state are untouched |
+| with `fresh: true` (any configuration)                  | aborts the in-flight request — **its other callers reject with `AbortError`** — and starts this one                    |
+
+`signal` and `fresh` are per call and never part of the configuration; each
+caller's `signal` stays independent. `timeoutMs` bounds each endpoint
+separately, so a request with two endpoints can take up to twice as long
+before it fails.
+
+### Privacy
+
+A request necessarily reveals the caller's public IP address to every endpoint
+it reaches — that is how the endpoint answers. With the defaults, every request
+goes to ipify first (`api.ipify.org`, `api4.ipify.org` or `api6.ipify.org` by
+family); icanhazip (`icanhazip.com`, `ipv4.icanhazip.com`,
+`ipv6.icanhazip.com`) receives a request **only when ipify fails** — a network
+error, a non-2xx status, a timeout or a body that is not an address of that
+family. No other service is contacted. Requests send no cookies or referrer and
+bypass the HTTP cache. Point `endpoints` at a service you operate if a third
+party must not see your users' addresses, and ask for consent where your users
+expect it.
+
+## Ownership and lifetime
+
+The address is a fact about the network the page (or worker, or server process)
+is on, so the state belongs to that JavaScript realm and is shared by every
+Store: root Stores, their scopes and independent Stores all read the same
+snapshot, and a Store created later reads the latest result without
+requesting. Subscribing only registers a store tree for notifications — once
+per tree, shared by its scopes, released by its last unsubscribe or by
+`dispose()`. Unsubscribing or disposing a Store never cancels a request; use a
+`signal` for that. A disposed Store receives nothing afterwards.
+
+Prefer calling `requestPublicIp()` from event handlers and effects; inside a
+transaction it is sent immediately and not rolled back (see Requesting).
+
+## Server rendering
+
+The server snapshot is the fixed seed
+`{ status: "idle", ip: null, updatedAt: null, error: null }`; nothing is
+requested during a server render, and `useValue` renders the seed first and the
+live state after hydration. On a server, the state would be shared by every
+request the process handles, so look the address up with the stateless
+`fetchPublicIp(options?)` instead: same options and validation, no
+publication, no sharing.
+
+## Migrating from 1.0.0-beta.8
+
+| Before                                                                                                        | Now                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reading `publicIpAtom` (or V4/V6) fetched the address and suspended (`Promise<string> \| string`)             | Reading never fetches. `publicIpAtom` is a read-only `ExternalAtom<PublicIpState>`; call `requestPublicIp()` to look the address up.                                      |
+| Re-fetched on window `online`, on `visibilitychange` to visible and on `navigator.connection` `change`        | Nothing refreshes automatically. Call `requestPublicIp()` from those events yourself if you want that (example below).                                                    |
+| `publicIpMaxAgeAtom`, `publicIpStaleWhileRevalidateAtom`, `publicIpStaleIfErrorAtom`                          | Removed. There is no automatic revalidation; the previous address is always kept while pending and after a failure, and `updatedAt` says how old it is.                   |
+| `publicIpEndpointsAtom`, `publicIpV4EndpointsAtom`, `publicIpV6EndpointsAtom` (settable)                      | `requestPublicIp({ family, endpoints })`.                                                                                                                                 |
+| `publicIpStatusAtom` etc. were settable atoms with `"idle" \| "loading" \| "revalidating" \| "ok" \| "error"` | Read-only selectors over the coherent state, with `"idle" \| "pending" \| "ready" \| "error"` (plus `"unsupported"`); "revalidating" is `"pending"` with a non-null `ip`. |
+| `publicIpErrorAtom` held an `Error`                                                                           | A frozen `{ name, message }`; the promise still rejects with the real error.                                                                                              |
+| `fetchPublicIp(endpoints, validate?, timeoutMs?)`                                                             | `fetchPublicIp({ family?, endpoints?, timeoutMs?, signal? })`.                                                                                                            |
+| Reads shared one in-flight fetch per family                                                                   | Calls share a request only with the same endpoints and timeout; a conflicting call rejects with `PublicIpRequestConflictError`.                                           |
+| Peer `valdres` `^1.0.0-beta.19`                                                                               | `^1.0.0-beta.39`, the first core with `externalAtom`.                                                                                                                     |
+
+To keep the old refresh-on-reconnect behavior, wire it explicitly:
+
+```ts
+import { requestPublicIp } from "@valdres/public-ip"
+
+const refresh = () => {
+    if (navigator.onLine) requestPublicIp().catch(() => {})
+}
+window.addEventListener("online", refresh)
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refresh()
+})
+```
 
 ---
 

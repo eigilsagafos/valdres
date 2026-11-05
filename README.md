@@ -289,7 +289,7 @@ The package tables below are auto-generated — do not hand-edit.
 
 | Package | Description |
 |:--------|:------------|
-| [`@valdres/bandwidth`](https://valdres.dev/react/plugins/bandwidth) | Reactive network throughput, latency, and jitter from a live measurement |
+| [`@valdres/bandwidth`](https://valdres.dev/react/plugins/bandwidth) | Active download, upload, latency and jitter measurement on explicit request, as read-only Valdres state |
 | [`@valdres/browser-color-scheme`](https://valdres.dev/react/plugins/browser-color-scheme) | Reactive prefers-color-scheme (dark / light) media query |
 | [`@valdres/browser-contrast`](https://valdres.dev/react/plugins/browser-contrast) | Reactive prefers-contrast preference from the OS |
 | [`@valdres/browser-device-motion`](https://valdres.dev/react/plugins/browser-device-motion) | Reactive device acceleration and rotation from DeviceMotionEvent |
@@ -308,7 +308,7 @@ The package tables below are auto-generated — do not hand-edit.
 | [`@valdres/browser-window`](https://valdres.dev/react/plugins/browser-window) | Reactive window inner and outer size, tracked through resize events |
 | [`@valdres/color-mode`](https://valdres.dev/react/plugins/color-mode) | Color mode (dark/light theme) state powered by Valdres |
 | [`@valdres/hotkeys`](https://valdres.dev/react/plugins/hotkeys) | Keyboard shortcuts as synchronous Valdres transactions |
-| [`@valdres/public-ip`](https://valdres.dev/react/plugins/public-ip) | Reactive public IP (v4/v6) with stale-while-revalidate |
+| [`@valdres/public-ip`](https://valdres.dev/react/plugins/public-ip) | Public IP (v4/v6) lookups on explicit request, as read-only Valdres state |
 | [`@valdres/redux-devtools`](https://valdres.dev/react/plugins/redux-devtools) | Connect a valdres store to the Redux DevTools browser extension |
 
 ### React extras

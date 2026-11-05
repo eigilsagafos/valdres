@@ -201,7 +201,15 @@ const migrated = [
     "browser-screen-details",
     "browser-window",
     "browser-screen",
+    "public-ip",
+    "bandwidth",
 ]
+// The network demos must not touch the network until a button is pressed.
+const requests: { url: string; signal: AbortSignal | undefined }[] = []
+globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+    requests.push({ url: String(input), signal: init?.signal ?? undefined })
+    return new Promise(() => {})
+}) as typeof fetch
 navigate(
     "/browser-online",
     migrated.map(name => `<div data-plugin-demo="${name}">Loading demo…</div>`).join(""),
@@ -228,20 +236,29 @@ check(
     "browser-screen inspector shows the live screen size",
 )
 
+check(requests.length === 0, "mounting the network demos requested nothing")
+const ipDemo = placeholders[migrated.indexOf("public-ip")]!
+const speedDemo = placeholders[migrated.indexOf("bandwidth")]!
+check(!!buttonNamed(speedDemo, "Measure"), "bandwidth demo waits behind its Measure button")
+click(buttonNamed(ipDemo, "Look up my IP"))
+check(
+    requests.length === 1 && requests[0]!.url === "https://api.ipify.org",
+    "the public-ip button sends exactly one request",
+)
+
 navigate("/guides/introduction")
 check(
     placeholders.every(el => el.childElementCount === 0),
     "navigation away unmounts every plugin root",
 )
+check(requests[0]!.signal?.aborted === true, "leaving the page cancels the demo's pending request")
 
 // ── unavailable integrations ───────────────────────────────────────────────
 const unmigrated = [
-    "bandwidth",
     "color-mode",
-    "public-ip",
 ]
 navigate(
-    "/public-ip",
+    "/color-mode",
     unmigrated.map(name => `<div data-plugin-demo="${name}">Loading demo…</div>`).join(""),
 )
 for (const name of unmigrated) {

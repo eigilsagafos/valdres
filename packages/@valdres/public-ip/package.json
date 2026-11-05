@@ -1,6 +1,6 @@
 {
     "name": "@valdres/public-ip",
-    "description": "Reactive public IP (v4/v6) with stale-while-revalidate",
+    "description": "Public IP (v4/v6) lookups on explicit request, as read-only Valdres state",
     "version": "1.0.0-beta.8",
     "license": "MIT",
     "author": {
@@ -21,14 +21,15 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../../scripts/rewrite-declaration-imports.ts dist/types",
-        "test": "bun test --reporter=dots",
-        "test:ci": "bun test --reporter=dots",
+        "typecheck:tests": "bunx tsgo --noEmit -p tsconfig.tests.json",
+        "test": "bun test",
+        "test:ci": "bun test",
         "dev": "bun --hot dev/index.html"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
-        "@types/react": "18.3.8",
-        "@types/react-dom": "18.3.0",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
         "happy-dom": "20.0.5",
         "react": "19.1.1",
         "react-dom": "19.1.1",
@@ -37,7 +38,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.19"
+        "valdres": "^1.0.0-beta.39"
     },
     "publishConfig": {
         "access": "public",

@@ -26,9 +26,7 @@ const dependsOnRemoved = (name: string, missing: string): V1Unavailable => ({
 })
 
 export const v1Unavailable = {
-    "@valdres/bandwidth": globalAtomPackage("@valdres/bandwidth", "`globalAtom` and `globalStore`"),
     "@valdres/color-mode": globalAtomPackage("@valdres/color-mode"),
-    "@valdres/public-ip": globalAtomPackage("@valdres/public-ip"),
     "@valdres/redux-devtools": dependsOnRemoved("@valdres/redux-devtools", "`isAtomFamily`, `isSelectorFamily`, the `SnapshotEntry` type and the legacy `storeAdapter` adapter internals"),
     "valdres-vue": dependsOnRemoved("valdres-vue", "`isPromiseLike` and the legacy `storeAdapter` adapter internals"),
     "valdres-svelte": dependsOnRemoved("valdres-svelte", "`isAtom`, `isPromiseLike`, `applyInitialize`, `hydrate` and the legacy `storeAdapter` adapter internals"),

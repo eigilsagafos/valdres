@@ -1,40 +1,20 @@
-import { isValidIp } from "../lib/isValidIp"
+import { notSupportedError } from "../lib/domErrors"
+import { lookupPublicIp } from "../lib/lookupPublicIp"
+import { normalizeOptions } from "../lib/normalizeOptions"
+import type { PublicIpRequestOptions } from "../types/PublicIpRequestOptions"
 
-const DEFAULT_REQUEST_TIMEOUT_MS = 4000
-
-export const fetchPublicIp = async (
-    endpoints: string[],
-    validate: (value: string) => boolean = isValidIp,
-    timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+/**
+ * Stateless lookup: the same request as `requestPublicIp`, but it publishes
+ * nothing and shares nothing, so concurrent calls make concurrent requests.
+ * Use it on servers, where the package's state would be shared by every
+ * request the process handles. `fresh` has no effect. Throws `TypeError` for
+ * invalid options, like `requestPublicIp`.
+ */
+export const fetchPublicIp = (
+    options?: PublicIpRequestOptions,
 ): Promise<string> => {
-    const errors: unknown[] = []
-    for (const endpoint of endpoints) {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(
-            () => controller.abort(new Error(`${endpoint} timed out`)),
-            timeoutMs,
-        )
-        try {
-            const response = await fetch(endpoint, {
-                signal: controller.signal,
-            })
-            if (!response.ok) {
-                errors.push(
-                    new Error(`${endpoint} responded ${response.status}`),
-                )
-                continue
-            }
-            const body = (await response.text()).trim()
-            if (!validate(body)) {
-                errors.push(new Error(`${endpoint} returned non-IP body`))
-                continue
-            }
-            return body
-        } catch (error) {
-            errors.push(error)
-        } finally {
-            clearTimeout(timeoutId)
-        }
-    }
-    throw new AggregateError(errors, "All public-ip endpoints failed")
+    const normalized = normalizeOptions(options)
+    if (typeof fetch !== "function")
+        return Promise.reject(notSupportedError("This runtime has no fetch"))
+    return lookupPublicIp(normalized, normalized.signal)
 }

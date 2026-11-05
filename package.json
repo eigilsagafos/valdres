@@ -43,6 +43,8 @@
         "test:jotai:packed": "bun run packages/@valdres-react/jotai/test/packed/run.ts",
         "test:browser-permission": "bun run scripts/check-browser-permission.ts",
         "test:browser-permission:packed": "bun run scripts/test-browser-permission-packed-consumer.ts",
+        "test:network": "bun run scripts/check-network.ts",
+        "test:network:packed": "bun run scripts/test-network-packed-consumer.ts",
         "probe:browser-media": "bun run scripts/browser-media-dispatch-probe/serve.ts",
         "verify": "bun run scripts/verify.ts",
         "changeset": "changeset",

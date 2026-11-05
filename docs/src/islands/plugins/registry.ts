@@ -71,6 +71,22 @@ import {
     screenPermissionAtom,
     screensAtom,
 } from "@valdres/browser-screen-details"
+import {
+    bandwidthAtom,
+    downloadSpeedAtom,
+    jitterAtom,
+    latencyAtom,
+    measureBandwidth,
+    measurementStatusAtom,
+    uploadSpeedAtom,
+    type BandwidthState,
+} from "@valdres/bandwidth"
+import {
+    publicIpErrorAtom,
+    publicIpStatusAtom,
+    publicIpValueAtom,
+    requestPublicIp,
+} from "@valdres/public-ip"
 import { ScreenPlacement } from "./ScreenPlacement"
 import { docsStore } from "../shared-store"
 
@@ -99,6 +115,64 @@ const geolocationDemo = (el: HTMLElement) => {
     })(el)
     return () => {
         stop?.()
+        cleanup()
+    }
+}
+
+// Network work belongs to the demo: nothing is requested until a button is
+// pressed, and unmounting the demo (navigating away) cancels what it started.
+const publicIpDemo = (el: HTMLElement) => {
+    const controller = new AbortController()
+    const request = (fresh: boolean) =>
+        requestPublicIp({ fresh, signal: controller.signal }).catch(() => {})
+    const cleanup = inspector({
+        hint: "Sends one request to api.ipify.org, which sees your IP address",
+        gated: { buttonLabel: "Look up my IP", request: () => request(false) },
+        action: { label: "Look up again", run: () => request(true) },
+        rows: [
+            { label: "publicIpStatusAtom", state: publicIpStatusAtom },
+            { label: "publicIpValueAtom", state: publicIpValueAtom },
+            { label: "publicIpErrorAtom", state: publicIpErrorAtom, format: error => error?.message ?? "null" },
+        ],
+    })(el)
+    return () => {
+        controller.abort()
+        cleanup()
+    }
+}
+
+// A shortened measurement (each throughput phase 2–4 s on at most 4 streams,
+// within the default 25 MB down / 10 MB up limits).
+const DEMO_MEASUREMENT = { maxDurationMs: 4_000, minDurationMs: 2_000, warmupMs: 1_000, maxStreams: 4 }
+
+const bandwidthDemo = (el: HTMLElement) => {
+    const controller = new AbortController()
+    const measure = (fresh: boolean) =>
+        measureBandwidth({ ...DEMO_MEASUREMENT, fresh, signal: controller.signal }).catch(() => {})
+    const cleanup = inspector({
+        hint: "Measures against speed.cloudflare.com: up to 25 MB down and 10 MB up, within ~8 s",
+        gated: { buttonLabel: "Measure", request: () => measure(false) },
+        action: { label: "Measure again", run: () => measure(true) },
+        rows: [
+            { label: "measurementStatusAtom", state: measurementStatusAtom },
+            {
+                label: "active measurement (provisional)",
+                state: bandwidthAtom,
+                format: ({ phase, progress }: BandwidthState) =>
+                    phase === null || progress === null
+                        ? "—"
+                        : phase === "latency"
+                          ? `measuring latency…`
+                          : `${phase}: ${(phase === "upload" ? progress.uploadMbps : progress.downloadMbps)?.toFixed(1) ?? "…"} Mbps · ${(((phase === "upload" ? progress.uploadBytes : progress.downloadBytes) ?? 0) / 1e6).toFixed(1)} MB transferred`,
+            },
+            { label: "downloadSpeedAtom (Mbps)", state: downloadSpeedAtom },
+            { label: "uploadSpeedAtom (Mbps)", state: uploadSpeedAtom },
+            { label: "latencyAtom (ms)", state: latencyAtom },
+            { label: "jitterAtom (ms)", state: jitterAtom },
+        ],
+    })(el)
+    return () => {
+        controller.abort()
         cleanup()
     }
 }
@@ -139,7 +213,7 @@ export const pluginDemos: Record<string, (el: HTMLElement) => () => void> = {
 
     "browser-keyboard": mountKeyboardDemo,
 
-    bandwidth: unavailable("@valdres/bandwidth"),
+    bandwidth: bandwidthDemo,
 
     "browser-contrast": inspector({
         hint: "Change your OS contrast preference (accessibility settings)",
@@ -262,5 +336,5 @@ export const pluginDemos: Record<string, (el: HTMLElement) => () => void> = {
         ],
     }),
 
-    "public-ip": unavailable("@valdres/public-ip"),
+    "public-ip": publicIpDemo,
 }

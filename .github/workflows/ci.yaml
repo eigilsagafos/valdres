@@ -508,6 +508,43 @@ jobs:
               # outcomes, listener and watch accounting, declarations, peers.
               run: bun run test:browser-permission:packed
 
+    network:
+        name: Network packages
+        # @valdres/public-ip and @valdres/bandwidth, migrated to externalAtom
+        # state with explicit network operations. Both are release-ignored, so
+        # this job is deliberately absent from publish's needs (held by
+        # scripts/network-packages.test.ts); it keeps the migration from
+        # regressing. Its own job: neither package attaches a browser listener,
+        # and their suites and packed fixtures script fetch responses, shared
+        # in-flight operations, cancellation and out-of-order answers that the
+        # browser lanes never see. No test contacts a real endpoint.
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.3
+            - uses: actions/setup-node@v6
+              with:
+                  # The packed consumer gate runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Network suites and typechecks
+              # `bun test` plus BOTH tsconfigs per package: tsconfig.tests.json
+              # is what holds the @ts-expect-error read-only contracts.
+              run: bun run test:network
+            - name: Validate packed network consumers
+              # Shadow-packs both packages with core and React, installs the
+              # tarballs into an isolated consumer and runs them under Node and
+              # Bun (default and development conditions) against the packed head
+              # and the published peer floor, with a scripted in-process fetch:
+              # inert import, reads and SSR, explicit requests and measurements,
+              # sharing, cancellation, ordering, declarations, peers.
+              run: bun run test:network:packed
+
     valdres-package:
         name: Valdres published-package gate
         runs-on: ubuntu-22.04

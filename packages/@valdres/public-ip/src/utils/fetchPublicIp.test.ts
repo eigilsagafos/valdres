@@ -1,85 +1,73 @@
-import { describe, test, expect, afterEach, afterAll } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { store } from "valdres"
+import {
+    installFetch,
+    V4,
+    V6,
+    type FetchHarness,
+} from "../../test/setup/fetchHarness"
+import { publicIpAtom } from "../atoms/publicIpAtom"
 import { fetchPublicIp } from "./fetchPublicIp"
-import { mockFetch } from "../../test/mockFetch"
+
+let net: FetchHarness
+beforeEach(() => {
+    net = installFetch()
+})
+afterEach(() => net.restore())
 
 describe("fetchPublicIp", () => {
-    const m = mockFetch()
-    afterEach(m.reset)
-    afterAll(() => m.restore())
-
-    test("returns the IP from the first successful endpoint", async () => {
-        m.queue(m.ok("203.0.113.5"))
-        const ip = await fetchPublicIp(["https://api.ipify.org"])
-        expect(ip).toBe("203.0.113.5")
-    })
-
-    test("falls through to the next endpoint on non-2xx", async () => {
-        m.queue(m.fail(500))
-        m.queue(m.ok("198.51.100.7"))
-        const ip = await fetchPublicIp([
-            "https://one.example",
-            "https://two.example",
+    test("looks up an address without publishing or sharing", async () => {
+        const app = store()
+        let notified = 0
+        app.sub(publicIpAtom, () => notified++)
+        const first = fetchPublicIp({ family: "v6" })
+        const second = fetchPublicIp({ family: "v6" })
+        expect(net.calls.map(call => call.url)).toEqual([
+            "https://api6.ipify.org",
+            "https://api6.ipify.org",
         ])
-        expect(ip).toBe("198.51.100.7")
-        expect(m.calls).toEqual(["https://one.example", "https://two.example"])
+        net.calls[0]!.respond(V6)
+        net.calls[1]!.respond(V6)
+        expect(await Promise.all([first, second])).toEqual([V6, V6])
+        expect(notified).toBe(0)
+        expect(app.get(publicIpAtom).status).toBe("idle")
+        app.dispose()
     })
 
-    test("falls through when the body is not a valid IP", async () => {
-        m.queue(m.ok("<!doctype html><html>oops</html>"))
-        m.queue(m.ok("203.0.113.9"))
-        const ip = await fetchPublicIp([
-            "https://garbage.example",
-            "https://good.example",
+    test("validates the family and rejects with every endpoint's failure", async () => {
+        const answer = fetchPublicIp({
+            family: "v4",
+            endpoints: ["https://ip.test/a"],
+        })
+        net.calls[0]!.respond(V6)
+        const error = (await answer.catch(failure => failure)) as AggregateError
+        expect(error.errors.map(cause => (cause as Error).message)).toEqual([
+            "https://ip.test/a did not return an IPv4 address",
         ])
-        expect(ip).toBe("203.0.113.9")
     })
 
-    test("trims whitespace from the response", async () => {
-        m.queue(m.ok("  203.0.113.9\n"))
-        const ip = await fetchPublicIp(["https://trim.example"])
-        expect(ip).toBe("203.0.113.9")
-    })
-
-    test("throws an AggregateError when every endpoint fails", async () => {
-        m.queue(m.fail(500))
-        m.queue(new Error("network down"))
+    test("a signal aborts the lookup and later endpoints are never asked", async () => {
+        const controller = new AbortController()
+        const answer = fetchPublicIp({
+            endpoints: ["https://ip.test/a", "https://ip.test/b"],
+            signal: controller.signal,
+        })
+        controller.abort()
         expect(
-            fetchPublicIp(["https://a.example", "https://b.example"]),
-        ).rejects.toBeInstanceOf(AggregateError)
+            ((await answer.catch((failure: unknown) => failure)) as Error).name,
+        ).toBe("AbortError")
+        expect(net.calls).toHaveLength(1)
+        expect(net.calls[0]!.signal?.aborted).toBe(true)
     })
 
-    test("accepts IPv6 addresses", async () => {
-        m.queue(m.ok("2001:db8::1"))
-        const ip = await fetchPublicIp(["https://v6.example"])
-        expect(ip).toBe("2001:db8::1")
+    test("throws TypeError for invalid options and requests nothing", () => {
+        expect(() => fetchPublicIp({ endpoints: [] })).toThrow(TypeError)
+        expect(net.calls).toEqual([])
     })
 
-    test("aborts a slow endpoint and moves on", async () => {
-        const intercepted = globalThis.fetch
-        globalThis.fetch = ((input: any, init?: RequestInit) => {
-            const url = typeof input === "string" ? input : input.url
-            if (url === "https://slow.example") {
-                return new Promise((_, reject) => {
-                    init?.signal?.addEventListener("abort", () => {
-                        reject(init.signal!.reason ?? new Error("aborted"))
-                    })
-                })
-            }
-            return Promise.resolve({
-                ok: true,
-                status: 200,
-                text: async () => "203.0.113.42",
-            }) as any
-        }) as typeof fetch
-        try {
-            const ip = await fetchPublicIp(
-                ["https://slow.example", "https://fast.example"],
-                undefined,
-                50,
-            )
-            expect(ip).toBe("203.0.113.42")
-        } finally {
-            globalThis.fetch = intercepted
-        }
+    test("a body longer than any address is rejected without validation", async () => {
+        const answer = fetchPublicIp({ endpoints: ["https://ip.test/a"] })
+        net.calls[0]!.respond(`${V4}${" x".repeat(40)}`)
+        await expect(answer).rejects.toBeInstanceOf(AggregateError)
     })
 })

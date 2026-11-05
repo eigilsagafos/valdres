@@ -1,21 +1,15 @@
-import { createPublicIpAtom } from "../lib/createPublicIpAtom"
-import { isValidIpV6 } from "../lib/isValidIpV6"
-import { publicIpV6EndpointsAtom } from "./publicIpV6EndpointsAtom"
-import { publicIpMaxAgeAtom } from "./publicIpMaxAgeAtom"
-import { publicIpStaleWhileRevalidateAtom } from "./publicIpStaleWhileRevalidateAtom"
-import { publicIpStaleIfErrorAtom } from "./publicIpStaleIfErrorAtom"
-import { publicIpV6StatusAtom } from "./publicIpV6StatusAtom"
-import { publicIpV6ErrorAtom } from "./publicIpV6ErrorAtom"
-import { publicIpV6ValueAtom } from "./publicIpV6ValueAtom"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { publicIpSource } from "../lib/publicIpSource"
+import type { PublicIpState } from "../types/PublicIpState"
 
-export const publicIpV6Atom = createPublicIpAtom({
-    name: "@valdres/public-ip/publicIpV6",
-    endpointsAtom: publicIpV6EndpointsAtom,
-    maxAgeAtom: publicIpMaxAgeAtom,
-    staleWhileRevalidateAtom: publicIpStaleWhileRevalidateAtom,
-    staleIfErrorAtom: publicIpStaleIfErrorAtom,
-    validate: isValidIpV6,
-    statusAtom: publicIpV6StatusAtom,
-    errorAtom: publicIpV6ErrorAtom,
-    valueAtom: publicIpV6ValueAtom,
-})
+/**
+ * The coherent public IP state for the IPv6 address: status, address and error from
+ * one publication, shared by every Store in this page or process. Reading or
+ * subscribing never sends a request; only `requestPublicIp({ family: "v6" })` does.
+ */
+export const publicIpV6Atom: ExternalAtom<PublicIpState> = externalAtom(
+    publicIpSource("v6"),
+    {
+        name: "@valdres/public-ip/publicIpV6",
+    },
+)

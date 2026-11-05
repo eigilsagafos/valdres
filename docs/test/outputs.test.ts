@@ -106,12 +106,12 @@ describe("pages about an integration not migrated to v1", () => {
     test("llms.txt marks them, and llms-full.txt carries the notice", async () => {
         const index = await read("llms.txt")
         const full = await read("llms-full.txt")
-        for (const route of ["/react/plugins/public-ip", "/vue/createValdres", "/svelte/fromState"]) {
+        for (const route of ["/react/plugins/color-mode", "/vue/createValdres", "/svelte/fromState"]) {
             const entry = index.split("\n").find(line => line.includes(`(${SITE}${route}.md)`))
             expect(entry).toContain(`${legacyNoticeTitle} (legacy, pre-v1 API)`)
         }
-        expect(fullSection(full, "/react/plugins/public-ip")).toContain(
-            `> ${legacyPageNotice("@valdres/public-ip")}`,
+        expect(fullSection(full, "/react/plugins/color-mode")).toContain(
+            `> ${legacyPageNotice("@valdres/color-mode")}`,
         )
         expect(fullSection(full, "/vue/createValdres")).toContain(
             `> ${legacyPageNotice("valdres-vue")}`,
@@ -121,6 +121,11 @@ describe("pages about an integration not migrated to v1", () => {
         expect(window).not.toContain(legacyNoticeTitle)
         const online = index.split("\n").find(line => line.includes("/react/plugins/browser-online.md"))
         expect(online).not.toContain(legacyNoticeTitle)
+        for (const plugin of ["public-ip", "bandwidth"]) {
+            const entry = index.split("\n").find(line => line.includes(`/react/plugins/${plugin}.md`))
+            expect(entry).toBeString()
+            expect(entry).not.toContain(legacyNoticeTitle)
+        }
     })
 })
 

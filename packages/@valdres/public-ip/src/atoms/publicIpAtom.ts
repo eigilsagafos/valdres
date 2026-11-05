@@ -1,21 +1,15 @@
-import { createPublicIpAtom } from "../lib/createPublicIpAtom"
-import { isValidIp } from "../lib/isValidIp"
-import { publicIpEndpointsAtom } from "./publicIpEndpointsAtom"
-import { publicIpMaxAgeAtom } from "./publicIpMaxAgeAtom"
-import { publicIpStaleWhileRevalidateAtom } from "./publicIpStaleWhileRevalidateAtom"
-import { publicIpStaleIfErrorAtom } from "./publicIpStaleIfErrorAtom"
-import { publicIpStatusAtom } from "./publicIpStatusAtom"
-import { publicIpErrorAtom } from "./publicIpErrorAtom"
-import { publicIpValueAtom } from "./publicIpValueAtom"
+import { externalAtom, type ExternalAtom } from "valdres"
+import { publicIpSource } from "../lib/publicIpSource"
+import type { PublicIpState } from "../types/PublicIpState"
 
-export const publicIpAtom = createPublicIpAtom({
-    name: "@valdres/public-ip/publicIp",
-    endpointsAtom: publicIpEndpointsAtom,
-    maxAgeAtom: publicIpMaxAgeAtom,
-    staleWhileRevalidateAtom: publicIpStaleWhileRevalidateAtom,
-    staleIfErrorAtom: publicIpStaleIfErrorAtom,
-    validate: isValidIp,
-    statusAtom: publicIpStatusAtom,
-    errorAtom: publicIpErrorAtom,
-    valueAtom: publicIpValueAtom,
-})
+/**
+ * The coherent public IP state for whichever address family an endpoint answers with: status, address and error from
+ * one publication, shared by every Store in this page or process. Reading or
+ * subscribing never sends a request; only `requestPublicIp()` does.
+ */
+export const publicIpAtom: ExternalAtom<PublicIpState> = externalAtom(
+    publicIpSource("any"),
+    {
+        name: "@valdres/public-ip/publicIp",
+    },
+)

@@ -242,8 +242,8 @@
             <header>
                 <h1>@valdres/bandwidth</h1>
                 <p class="subtitle">
-                    Reactive network speed measurement via Cloudflare's speed
-                    endpoints.
+                    Active network speed measurement against Cloudflare's speed
+                    endpoints, on explicit request.
                 </p>
             </header>
 
@@ -285,26 +285,17 @@
 
             <div class="actions">
                 <button id="refresh">Run measurement</button>
+                <button id="cancel" disabled>Cancel</button>
             </div>
 
             <p class="hint">
-                The first measurement was triggered automatically by reading
-                <code>downloadSpeedAtom</code>. The button calls
-                <code>measureBandwidth({ fresh: true })</code>.
+                Nothing is measured until you press the button, which calls
+                <code>measureBandwidth()</code>. A measurement saturates your
+                connection for up to ~20&nbsp;s and can transfer hundreds of
+                megabytes. Live numbers while it runs are provisional
+                (<code>bandwidthAtom.progress</code>); the tiles keep the last
+                completed result otherwise.
             </p>
-
-            <label class="toggle" for="watch-ip">
-                <div class="toggle-label">
-                    <span class="toggle-title"
-                        >Re-measure on public IP change</span
-                    >
-                    <span class="toggle-meta" id="ip-meta">—</span>
-                </div>
-                <span class="switch">
-                    <input type="checkbox" id="watch-ip" />
-                    <span class="slider"></span>
-                </span>
-            </label>
         </main>
         <script>
             // valdres core reads process.env.VALDRES_VERSION at module load

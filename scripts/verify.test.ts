@@ -32,6 +32,7 @@ const COVERED_JOBS = [
     "hotkeys",
     "jotai",
     "browser-permission",
+    "network",
     "valdres-package",
 ]
 
@@ -308,6 +309,14 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "            - uses: actions/setup-node@v6",
             "            - name: Browser permission gate",
             "              run: bun run test:browser-permission",
+            "    network:",
+            "        runs-on: ubuntu-22.04",
+            "        steps:",
+            "            - uses: actions/checkout@v6",
+            "            - uses: oven-sh/setup-bun@v2",
+            "            - uses: actions/setup-node@v6",
+            "            - name: Network gate",
+            "              run: bun run test:network",
             "    valdres-package:",
             "        runs-on: ubuntu-22.04",
             "        steps:",
@@ -347,6 +356,7 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "Hotkeys gate",
             "Jotai gate",
             "Browser permission gate",
+            "Network gate",
             "Package gate",
         ])
     })
