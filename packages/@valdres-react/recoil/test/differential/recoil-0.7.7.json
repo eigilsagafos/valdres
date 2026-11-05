@@ -1,0 +1,454 @@
+{
+    "reference": {
+        "recoil": "0.7.7",
+        "react": "18.3.1",
+        "react19": "recoil@0.7.7 throws on its first hook: Cannot destructure property 'ReactCurrentDispatcher' of React's removed internals"
+    },
+    "observations": {
+        "keys/RecoilValue key and toJSON": {
+            "atom": [
+                "keys/a",
+                "{\"key\":\"keys/a\"}"
+            ],
+            "selector": [
+                "keys/s",
+                "{\"key\":\"keys/s\"}"
+            ]
+        },
+        "keys/missing key is rejected": {
+            "atom": true,
+            "selector": true
+        },
+        "keys/duplicate atom keys": {
+            "values": {
+                "first": 2,
+                "second": 2
+            },
+            "afterSet": {
+                "first": 10,
+                "second": 10
+            },
+            "warned": true
+        },
+        "defaults/function default is stored, not called": {
+            "same": true
+        },
+        "defaults/undefined and null are values": {
+            "values": [
+                null,
+                null
+            ]
+        },
+        "defaults/no default suspends until set": {
+            "before": "pending",
+            "after": "pending"
+        },
+        "defaults/promise default suspends": {
+            "text": "pending"
+        },
+        "defaults/RecoilValue default tracks until set and after reset": {
+            "log": [
+                2,
+                6,
+                100,
+                100,
+                8,
+                9
+            ],
+            "key": "defaults/fallback__withFallback"
+        },
+        "defaults/atom default can be another atom": {
+            "before": "source",
+            "after": "changed"
+        },
+        "writes/setter treats functions as updaters": {
+            "plainSetCalledUpdater": true,
+            "wrappedStoresFunction": true
+        },
+        "writes/sequential updaters chain within one act": {
+            "value": 20
+        },
+        "writes/set DefaultValue resets": {
+            "changed": "changed",
+            "reset": "default"
+        },
+        "writes/setter and resetter identity is stable": {
+            "renders": 3,
+            "setterStable": true,
+            "resetStable": true,
+            "stateSetterStable": true
+        },
+        "writes/equal writes and resets do not re-render": {
+            "counts": [
+                1,
+                1,
+                1,
+                2,
+                2,
+                3,
+                3
+            ]
+        },
+        "writes/signed zero follows ===": {
+            "counts": [
+                1,
+                1
+            ],
+            "storedNegativeZero": false
+        },
+        "writes/NaN values render": {
+            "uncaught": {
+                "error": "Error"
+            }
+        },
+        "writes/set during render": {
+            "text": 1,
+            "warned": true
+        },
+        "selectors/read-only set throws": {
+            "threw": true,
+            "isRecoilValue": true,
+            "atom": true
+        },
+        "selectors/set handler reads pre-write state, last write wins": {
+            "seen": [
+                0,
+                0,
+                0
+            ],
+            "a": 1,
+            "b": 1,
+            "s": 2
+        },
+        "selectors/set handler writes judged against stored values": {
+            "values": [
+                "x",
+                1,
+                0
+            ]
+        },
+        "selectors/reset passes DefaultValue to set": {
+            "received": [
+                "changed",
+                "DefaultValue"
+            ],
+            "changed": "changed",
+            "reset": "default"
+        },
+        "selectors/updater receives selector value": {
+            "seen": [
+                20
+            ],
+            "a": 3
+        },
+        "selectors/set must return undefined": {
+            "threw": true,
+            "freshRoot": 0
+        },
+        "selectors/get may return a RecoilValue": {
+            "log": [
+                "a",
+                "A",
+                "b"
+            ]
+        },
+        "selectors/evaluation is cached per dependency values": {
+            "evaluations": 2,
+            "sameReferenceOnReturn": true,
+            "values": [
+                2,
+                4,
+                2
+            ]
+        },
+        "selectors/equal results do not re-render": {
+            "counts": [
+                1,
+                1,
+                2
+            ],
+            "value": 0
+        },
+        "selectors/one render per change across several reads": {
+            "perChange": [
+                1,
+                1
+            ]
+        },
+        "selectors/async get suspends": {
+            "text": "pending"
+        },
+        "selectors/thrown Promise suspends": {
+            "state": "loading"
+        },
+        "selectors/a getter catching a pending dependency": {
+            "contents": "fallback"
+        },
+        "selectors/getCallback": {
+            "type": "function"
+        },
+        "errors/boundaries receive the thrown value": {
+            "caughtSame": true,
+            "count": true
+        },
+        "errors/getters may catch dependency errors": {
+            "value": "recovered original"
+        },
+        "families/atomFamily parameter identity": {
+            "object key order": true,
+            "nested arrays": true,
+            "array order": false,
+            "number vs string": false,
+            "undefined vs null": false,
+            "undefined vs empty string": false,
+            "undefined property dropped": true,
+            "signed zero": true,
+            "NaN": true,
+            "Infinity vs string": false,
+            "true vs string": false,
+            "Set order": true,
+            "Map order": true,
+            "Map vs object": true,
+            "Date with same time": true,
+            "Date vs ISO string": true,
+            "Symbol same description": true,
+            "string with quote": true,
+            "toJSON override": true
+        },
+        "families/selectorFamily parameter identity": {
+            "object key order": true,
+            "nested arrays": true,
+            "array order": false,
+            "number vs string": false,
+            "undefined vs null": false,
+            "undefined vs empty string": false,
+            "undefined property dropped": true,
+            "signed zero": true,
+            "NaN": true,
+            "Infinity vs string": false,
+            "true vs string": false,
+            "Set order": true,
+            "Map order": true,
+            "Map vs object": true,
+            "Date with same time": true,
+            "Date vs ISO string": true,
+            "Symbol same description": true,
+            "string with quote": true,
+            "toJSON override": true
+        },
+        "families/unserializable parameters": {
+            "atomFunction": true,
+            "selectorFunction": true,
+            "atomBigInt": true
+        },
+        "families/reference equality policy": {
+            "sameObject": true,
+            "equalObject": false,
+            "functionParam": true
+        },
+        "families/member keys": {
+            "atoms": [
+                "families/keys__{\"a\":[1,\"x\"],\"b\":1}",
+                "families/keys__",
+                "families/keys__\"s\""
+            ],
+            "selectors": [
+                true
+            ]
+        },
+        "families/defaults per parameter": {
+            "before": [
+                4,
+                "static",
+                100,
+                105,
+                6
+            ],
+            "after": [
+                -1,
+                "static",
+                200,
+                205,
+                6
+            ]
+        },
+        "families/writable selectorFamily": {
+            "set": [
+                10,
+                0
+            ],
+            "reset": [
+                0,
+                0
+            ]
+        },
+        "families/atomFamily effects": "families/effects__1",
+        "root/hooks outside RecoilRoot throw": {
+            "threw": true,
+            "mentionsRoot": true
+        },
+        "root/initializeState writes are readable and committed": {
+            "reads": [
+                "default",
+                "initialized!",
+                "INITIALIZED!"
+            ],
+            "rendered": [
+                "initialized!",
+                "default-b",
+                "INITIALIZED!"
+            ],
+            "calls": 1
+        },
+        "root/initializeState runs once per root": {
+            "calls": 1,
+            "value": 1
+        },
+        "root/nested roots and override": {
+            "outer": "outer",
+            "overrideDefault": "default",
+            "overrideTrue": "default",
+            "overrideFalse": "outer"
+        },
+        "root/remounting a root starts from defaults": {
+            "before": 5,
+            "after": 0
+        },
+        "root/separate roots are isolated": {
+            "a": 1,
+            "b": 0
+        },
+        "root/StrictMode": {
+            "initial": "10",
+            "final": "12",
+            "returned": 11,
+            "initializedAtLeastOnce": true
+        },
+        "root/server rendering": {
+            "plain": "<b>default default!</b>",
+            "initialized": "<b>server server!</b>"
+        },
+        "callback/snapshot is frozen at call, writes apply at the end": {
+            "returned": [
+                0,
+                0
+            ],
+            "value": 2
+        },
+        "callback/lazy snapshot after set still excludes queued writes": {
+            "returned": "before",
+            "value": "after"
+        },
+        "callback/hook setters inside a callback join its batch": {
+            "returned": 0,
+            "value": 6,
+            "renders": 1
+        },
+        "callback/nested callbacks apply in Recoil batch order": {
+            "returned": [
+                "",
+                "",
+                "inner1;"
+            ],
+            "value": "inner1;inner2;outer;"
+        },
+        "callback/snapshot read after writes applied during the callback": {
+            "returned": ""
+        },
+        "callback/throwing keeps queued writes and rethrows": {
+            "caughtSame": true,
+            "value": 1
+        },
+        "callback/a failing queued write discards the batch": {
+            "outcome": "threw",
+            "value": 0
+        },
+        "callback/an outer batch failure keeps writes already applied": {
+            "threw": true,
+            "values": [
+                "inner",
+                "transact"
+            ]
+        },
+        "callback/calling another root's callback": {
+            "returned": "ok",
+            "first": 7,
+            "second": 5
+        },
+        "callback/another root's snapshot inside a callback": {
+            "returned": 3
+        },
+        "callback/identity follows deps": {
+            "renders": 2,
+            "noDepsStable": false,
+            "emptyDepsStable": true
+        },
+        "callback/arguments, return value and reset": {
+            "returns": [
+                "x:false",
+                "y:true"
+            ],
+            "set": "x",
+            "reset": "default"
+        },
+        "callback/writable selector inside a callback": {
+            "value": 4
+        },
+        "callback/transact_UNSTABLE reads its own writes": {
+            "seen": [
+                5,
+                {},
+                "[object Object]10"
+            ],
+            "returned": 1,
+            "value": "[object Object]10"
+        },
+        "callback/snapshot loadables": {
+            "value": {
+                "state": "hasValue",
+                "contents": 7,
+                "getValue": 7,
+                "valueMaybe": 7,
+                "valueOrThrow": 7,
+                "mapped": 8,
+                "is": true
+            },
+            "error": {
+                "state": "hasError",
+                "contentsSame": true,
+                "errorMaybeSame": true,
+                "getValueThrowsSame": true,
+                "mappedState": "hasError"
+            },
+            "promise": 7
+        },
+        "callback/async set after await applies immediately": {
+            "mid": 1,
+            "result": "done",
+            "final": 2
+        },
+        "callback/snapshot read after await": {
+            "result": "before"
+        },
+        "callback/refresh": "refreshed",
+        "callback/gotoSnapshot": "went",
+        "callback/snapshot retain": "retained",
+        "atoms/effects": {
+            "value": "from effect"
+        },
+        "atoms/effects_UNSTABLE": "atoms/effects-unstable",
+        "atoms/empty effect lists": [
+            1,
+            2
+        ],
+        "atoms/isRecoilValue": [
+            true,
+            true,
+            true,
+            false,
+            false,
+            false,
+            false
+        ]
+    }
+}

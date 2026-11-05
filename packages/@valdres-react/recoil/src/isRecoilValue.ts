@@ -1,8 +1,5 @@
-import { isAtom, isSelector } from "valdres"
+import { isRecoilValueObject, type RecoilValue } from "./lib/recoilValue"
 
-export const isRecoilValue = (x: any) => {
-    if (x == null || (typeof x !== "object" && typeof x !== "function")) {
-        return false
-    }
-    return isAtom(x) || isSelector(x)
-}
+/** True for atoms and selectors created by this package. */
+export const isRecoilValue = (value: unknown): value is RecoilValue<any> =>
+    isRecoilValueObject(value)

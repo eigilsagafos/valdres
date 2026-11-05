@@ -1,48 +1,25 @@
-import type { CallbackInterface } from "recoil"
-import { useStore, useValdresCallback } from "valdres-react"
+import { useCallback } from "react"
+import { runCallback } from "./lib/runCallback"
+import { useRecoilStore } from "./lib/useRecoilStore"
+import type { CallbackInterface } from "./types/CallbackInterface"
 
+/**
+ * Recoil's `useRecoilCallback`. Writes made while the callback runs
+ * synchronously apply together when it returns or throws; the snapshot is the
+ * state when it was called and is readable until the callback first returns
+ * or awaits. Without `deps` the callback is re-created every render, as in
+ * Recoil.
+ */
 export const useRecoilCallback = <Args extends ReadonlyArray<unknown>, Return>(
-    callback: (args: CallbackInterface) => (args: Args) => Return,
-    deps = [],
-) => {
-    const store = useStore()
-    return useValdresCallback(
-        (set, _get, reset) => (args: Args) => {
-            return callback({
-                set,
-                reset,
-                refresh: () => {
-                    throw new Error("Not implemented")
-                },
-                transact_UNSTABLE: () => {
-                    throw new Error("Not implemented")
-                },
-                snapshot: {
-                    getLoadable: (state: any) => {
-                        return {
-                            contents: store.get(state as any),
-                        } as any
-                    },
-                    getID: () => {
-                        throw new Error("Not implemented")
-                    },
-                    getPromise: () => {
-                        throw new Error("Not implemented")
-                    },
-                    getNodes_UNSTABLE: () => {
-                        throw new Error("Not implemented")
-                    },
-                    getInfo_UNSTABLE: () => {
-                        throw new Error("Not implemented")
-                    },
-                    map: undefined as any,
-                    asyncMap: undefined as any,
-                    retain: undefined as any,
-                    isRetained: undefined as any,
-                },
-                gotoSnapshot: () => {},
-            } as unknown as CallbackInterface)(args)
-        },
-        [...deps, store],
-    )
+    factory: (callbackInterface: CallbackInterface) => (...args: Args) => Return,
+    deps?: ReadonlyArray<unknown>,
+): ((...args: Args) => Return) => {
+    const store = useRecoilStore()
+    return useCallback(
+        (...args: Args) => runCallback(store, factory, args),
+        // Recoil passes `undefined` deps without them: a new callback each render.
+        (deps === undefined || deps === null
+            ? undefined
+            : [...deps, store]) as unknown as readonly unknown[],
+    ) as (...args: Args) => Return
 }

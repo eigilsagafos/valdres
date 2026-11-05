@@ -24,7 +24,9 @@
  * `hotkeys` (suites, both tsconfigs and packed consumers for the two
  * hotkeys packages), `jotai` (the release-ignored Jotai compatibility package:
  * both tsconfigs, its suites, the upstream suite against it and against the
- * pinned Jotai, packed consumers), `browser-permission` (the release-ignored
+ * pinned Jotai, packed consumers), `recoil` (the release-ignored Recoil
+ * migration adapter: both tsconfigs, its suites, a fresh run against the
+ * pinned Recoil reference, packed consumers), `browser-permission` (the release-ignored
  * motion, orientation, geolocation and screen-details packages: suites, both
  * tsconfigs, packed consumers) and `valdres-package` (the published-tarball gate: publint, ATTW, size
  * budgets; ~13s). It does NOT cover the manual-only legacy docs workflows or
@@ -92,6 +94,7 @@ const JOBS = [
     "browser-geometry",
     "hotkeys",
     "jotai",
+    "recoil",
     "browser-permission",
     "valdres-package",
 ]
@@ -250,6 +253,18 @@ const SKIPPED_ACTIONS: Record<
         reason: SETUP_BUN,
     },
     "jotai / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
+    "recoil / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "recoil / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "recoil / actions/setup-node": {
         action: "actions/setup-node",
         reason: SETUP_NODE,
     },
