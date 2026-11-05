@@ -293,12 +293,19 @@ interface ActiveSelectorFrame<Node> {
  */
 export class SelectorEvaluationSession<Node> {
     readonly #frames: ActiveSelectorFrame<Node>[] = []
+    /** A session opened inside another session's read, whose frames stay in
+     * flight around this one. Only transient adjacency reaches through it. */
+    readonly #outer: SelectorEvaluationSession<Node> | undefined
     #leftFrame: ActiveSelectorFrame<Node> | undefined
     #selectorGraphPublicationHost: object | undefined
     #selectorGraphPublicationCount = 0
     #otherSelectorGraphPublications: WeakMap<object, number> | undefined
     #controlFault: ControlFault = NO_CONTROL_FAULT
     #suppliedReadGuard: (() => never) | undefined
+
+    constructor(outer?: SelectorEvaluationSession<Node>) {
+        this.#outer = outer
+    }
 
     latchControlFault(error: unknown, origin: object = {}): void {
         if (this.#controlFault.kind === "fault") return
@@ -421,6 +428,15 @@ export class SelectorEvaluationSession<Node> {
             if (found || !Object.is(frame.selector, selector)) return false
             found = true
         }
+        // Outer frames are part of this session's transient adjacency.
+        for (
+            let outer: SelectorEvaluationSession<Node> | undefined =
+                this.#outer;
+            outer !== undefined;
+            outer = outer.#outer
+        )
+            for (const frame of outer.#frames)
+                if (Object.is(frame.host, host)) return false
         return found
     }
 
@@ -467,7 +483,8 @@ export class SelectorEvaluationSession<Node> {
         }
     }
 
-    /** @internal */
+    /** @internal An outer session's frame is current up to the reads it has
+     * accepted, while that selector's committed record predates them. */
     getTransientDependencies(
         host: object,
         node: Node,
@@ -481,11 +498,12 @@ export class SelectorEvaluationSession<Node> {
                 return frame.dependencyPrefix
             }
         }
-        return undefined
+        return this.#outer?.getTransientDependencies(host, node)
     }
 
     /**
-     * Snapshot every active same-host transient prefix as reverse additions.
+     * Snapshot every active same-host transient prefix, including outer
+     * sessions' frames, as reverse additions.
      * Committed reverse edges are deliberately not subtracted: stale edges can
      * only force canonical fallback from a negative-only reverse certificate.
      * Any frame ambiguity, caller mismatch, or oversized snapshot fails closed.
@@ -504,7 +522,20 @@ export class SelectorEvaluationSession<Node> {
         let activeFrames = 0
         let edgeCount = 0
 
-        for (const frame of this.#frames) {
+        // Outer sessions' frames are part of this session's transient
+        // adjacency, so the reverse overlay must include them too.
+        let frames = this.#frames
+        if (this.#outer !== undefined) {
+            frames = [...frames]
+            for (
+                let outer: SelectorEvaluationSession<Node> | undefined =
+                    this.#outer;
+                outer !== undefined;
+                outer = outer.#outer
+            )
+                frames.push(...outer.#frames)
+        }
+        for (const frame of frames) {
             scannedFrames++
             if (scannedFrames > maxEntries) {
                 diagnostics?.recordSnapshot(

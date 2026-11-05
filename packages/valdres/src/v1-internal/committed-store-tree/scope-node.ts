@@ -12,6 +12,7 @@ import type {
     SelectorRecordView,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
+import { SelectorCircularDependencyError } from "../selector-evaluator/errors"
 import { SelectorEvaluationSession } from "../selector-evaluator/types"
 import {
     classifyOwner,
@@ -94,6 +95,7 @@ export type StoreTreeCounter =
 export interface SelectorRecord {
     readonly lifecycleInClosure?: boolean
     readonly dormantExternalInClosure?: boolean
+    readonly cycleInClosure?: boolean
     readonly served: ServedSelectorOutcome<OutcomeToken>
     readonly dependencies: readonly SelectorDependencySnapshot<
         AnyState,
@@ -102,7 +104,23 @@ export interface SelectorRecord {
     readonly lastSuccess:
         | Readonly<{ value: unknown; token: OutcomeToken }>
         | undefined
+    /** A selector that latched a cycle records no closing edge. Its failure
+     * holds while its closing read still reaches it, so the scope watches a
+     * committed route back to it (#reopenBrokenCycles). The other selectors on
+     * the reported cycle also stand in for the closing read in lifecycle
+     * closures. */
+    readonly cycleLatch?: CycleLatch
 }
+
+export type CycleLatch = Readonly<{
+    /** The other selectors on the reported cycle, from the closing read on. */
+    on: readonly AnyState[]
+}>
+
+type CycleRoute = Readonly<{
+    reported: readonly AnyState[]
+    route: readonly AnyState[]
+}>
 
 const MAX_OBSERVED_SELECTOR_EDGE_ADDITIONS = 4_096
 const EMPTY_SELECTOR_EDGE_ADDITIONS = Object.freeze(
@@ -149,6 +167,11 @@ export interface StoreScopeCoordinator {
     /** Monotonic id of the running (or last) settlement boundary, shared by
      * its lifecycle waves and settle commits. */
     readonly settlementEpoch: number
+    /** Counts events after which a record already served in this
+     * settlement may still change. */
+    readonly provisionalServes: number
+    /** Settles a selector again within the running settlement. */
+    requeueSelector(scope: StoreScopeNode, selector: AnySelector): void
     /** Reports a selector failure that escaped evaluation to the running
      * settlement, if any. */
     reportSelectorFailure(error: unknown): void
@@ -347,6 +370,12 @@ export class StoreScopeNode
     /** Escaped failures published without any dependency to invalidate them,
      * by the settlement epoch that published them. */
     #retrySelectors: WeakMap<AnySelector, number> | undefined
+    /** Latched selectors by the selectors they watch, and for each latch its
+     * reported cycle and its route: a committed path from its closing read
+     * back to it. Each install of a latch replaces both; dropRecords releases
+     * all. */
+    #cycleWatchers: WeakMap<AnyState, WeakHandleSet<AnySelector>> | undefined
+    #cycleRoutes: WeakMap<AnySelector, CycleRoute> | undefined
     #selectorGraphVersion = 0
     #selectorGraphObserverCount = 0
     #observedSelectorEdgeAdditions:
@@ -476,6 +505,10 @@ export class StoreScopeNode
         return this.#dirtySelectors.has(selector)
     }
 
+    markSelectorDirty(selector: AnySelector): void {
+        this.#dirtySelectors.add(selector)
+    }
+
     getCommittedSelectorDependencies(
         selector: AnySelector,
     ):
@@ -490,8 +523,20 @@ export class StoreScopeNode
     replaceExternalRecord(node: AnyState, record: SelectorRecord): void {
         this.#selectorRecords.set(node as AnySelector, record)
     }
-    externalDependents(node: AnyState): WeakHandleSet<AnySelector> | undefined {
-        return this.#reverseEdges.get(node)
+    externalDependents(
+        node: AnyState,
+    ):
+        | Readonly<{ forEach(visit: (selector: AnySelector) => void): void }>
+        | undefined {
+        const dependents = this.#reverseEdges.get(node)
+        const watchers = this.#cycleWatchers?.get(node)
+        if (watchers === undefined) return dependents
+        return {
+            forEach: visit => {
+                dependents?.forEach(visit)
+                watchers.forEach(visit)
+            },
+        }
     }
 
     markDependents(node: AnyState): void {
@@ -516,6 +561,8 @@ export class StoreScopeNode
         this.#atomViews = new WeakMap()
         this.#selectorRecords = new WeakMap()
         this.#selectorDependencyNodes = undefined
+        this.#cycleWatchers = undefined
+        this.#cycleRoutes = undefined
         this.#reverseEdges = new WeakMap()
         this.#dirtySelectors = new WeakSet()
         this.#retrySelectors = undefined
@@ -583,6 +630,7 @@ export class StoreScopeNode
         }
 
         let proposal: SelectorEvaluationProposal<AnyState, OutcomeToken>
+        const provisionalServes = this.coordinator.provisionalServes
         try {
             proposal = runSelectorActivity(domain, session, () =>
                 this.coordinator.evaluate(definition, this, session),
@@ -597,7 +645,41 @@ export class StoreScopeNode
         ) {
             throw proposal.outcome.error
         }
-        return this.#installSelectorProposal(selector, proposal, session)
+        const served = this.#installSelectorProposal(
+            selector,
+            proposal,
+            session,
+        )
+        // A read served while an upstream evaluation was in flight, or from a
+        // settlement that later reopened, can be superseded before this
+        // install, which would otherwise clear the dirty mark its change set.
+        // Settle such a record again.
+        if (
+            provisionalServes !== this.coordinator.provisionalServes &&
+            this.#readSuperseded(proposal.dependencies)
+        ) {
+            this.#dirtySelectors.add(selector)
+            this.coordinator.requeueSelector(this, selector)
+        }
+        return served
+    }
+
+    #readSuperseded(
+        dependencies: readonly SelectorDependencySnapshot<
+            AnyState,
+            OutcomeToken
+        >[],
+    ): boolean {
+        // A dirty dependency may already have republished since the read.
+        for (const { node, token } of dependencies) {
+            const current =
+                node.kind === "selector"
+                    ? this.#selectorRecords.get(node as AnySelector)?.served
+                    : this.#atomViews.get(node as AnyAtom)?.served
+            if (current !== undefined && !Object.is(current.token, token))
+                return true
+        }
+        return false
     }
 
     getSelectorRecord(
@@ -808,6 +890,12 @@ export class StoreScopeNode
                       })
                     : previous?.lastSuccess,
         }
+        if (proposal.outcome.kind === "error")
+            record = this.#withCycleLatch(
+                selector,
+                record,
+                proposal.outcome.error,
+            )
         record =
             this.coordinator.external?.selectorRecord(this, record, session) ??
             Object.freeze(record)
@@ -836,6 +924,8 @@ export class StoreScopeNode
         )
         this.#dirtySelectors.delete(selector)
         this.#retrySelectors?.delete(selector)
+        this.#watchCycle(selector, previous, record)
+        this.#reopenBrokenCycles(selector, previous, record)
         if (addedSelectorEdges !== undefined) {
             this.#appendObservedSelectorEdgeAdditions(addedSelectorEdges)
         }
@@ -853,6 +943,156 @@ export class StoreScopeNode
             )
         }
         return record.served
+    }
+
+    /** Only a latched cycle's record carries its watch, so ordinary records
+     * keep one shape. */
+    #withCycleLatch(
+        selector: AnySelector,
+        record: SelectorRecord,
+        error: unknown,
+    ): SelectorRecord {
+        if (
+            !(error instanceof SelectorCircularDependencyError) ||
+            !Object.is(error.selector, selector)
+        )
+            return record
+        // The reported cycle, rotated to start at the closing read.
+        const open = (error.path as readonly AnyState[]).slice(0, -1)
+        const start = open.indexOf(selector)
+        const on: AnyState[] = []
+        for (const node of [...open.slice(start + 1), ...open.slice(0, start)])
+            if (!Object.is(node, selector) && !on.includes(node)) on.push(node)
+        if (on.length === 0) return record
+        const cycleLatch: CycleLatch = Object.freeze({ on: Object.freeze(on) })
+        return { ...record, cycleLatch }
+    }
+
+    /**
+     * A latch's failure holds while its closing read still reaches it, so it
+     * depends on reads along a watched route, not on their outcomes. Values
+     * and failures that keep those reads, including ones the cycle itself
+     * causes, never reopen it, so a persisting cycle settles once whatever its
+     * selectors return. A watched selector that installs without its
+     * successor either:
+     * - read differently (a value's reads are complete; a new read order is a
+     *   new topology): the route or the reported cycle is gone, so reopen;
+     * - or failed earlier along the same reads, leaving later reads
+     *   unobserved, not removed: keep the reported cycle, and if the route
+     *   lost its edge, watch another committed route from the closing read,
+     *   reopening only when none remains.
+     */
+    #reopenBrokenCycles(
+        member: AnySelector,
+        previous: SelectorRecord | undefined,
+        record: SelectorRecord,
+    ): void {
+        const latches: AnySelector[] = []
+        this.#cycleWatchers?.get(member)?.forEach(latch => latches.push(latch))
+        if (latches.length === 0) return
+        const reads = record.dependencies
+        const lost = (path: readonly AnyState[], latch: AnySelector) => {
+            const index = path.indexOf(member)
+            const successor = path[index + 1] ?? latch
+            return (
+                index >= 0 &&
+                !reads.some(({ node }) => Object.is(node, successor))
+            )
+        }
+        const unobserved =
+            record.served.outcome.kind !== "value" &&
+            previous !== undefined &&
+            reads.length < previous.dependencies.length &&
+            reads.every(({ node }, index) =>
+                Object.is(node, previous.dependencies[index]!.node),
+            )
+        for (const latch of latches) {
+            const cycle = this.#cycleRoutes?.get(latch)
+            if (cycle === undefined) continue
+            const routeLost = lost(cycle.route, latch)
+            if (!routeLost && !lost(cycle.reported, latch)) continue
+            if (unobserved && !routeLost) continue
+            const rerouted = unobserved
+                ? this.#cycleRoute(cycle.route[0]!, latch)
+                : undefined
+            if (rerouted !== undefined)
+                this.#routeCycle(latch, cycle.reported, rerouted)
+            else if (this.coordinator.enqueueSelector(this, latch))
+                this.#dirtySelectors.add(latch)
+        }
+    }
+
+    /** A shortest committed path from `start` back to `latch`, if any. */
+    #cycleRoute(start: AnyState, latch: AnySelector): AnyState[] | undefined {
+        const parents = new Map<AnyState, AnyState | undefined>([
+            [start, undefined],
+        ])
+        const queue = [start]
+        for (let index = 0; index < queue.length; index++) {
+            const node = queue[index]!
+            for (const { node: next } of this.#selectorRecords.get(
+                node as AnySelector,
+            )?.dependencies ?? []) {
+                if (Object.is(next, latch)) {
+                    const route: AnyState[] = []
+                    for (
+                        let at: AnyState | undefined = node;
+                        at !== undefined;
+                        at = parents.get(at)
+                    )
+                        route.push(at)
+                    return route.reverse()
+                }
+                if (parents.has(next)) continue
+                parents.set(next, node)
+                queue.push(next)
+            }
+        }
+        return undefined
+    }
+
+    #watchCycle(
+        selector: AnySelector,
+        previous: SelectorRecord | undefined,
+        record: SelectorRecord,
+    ): void {
+        if (
+            previous?.cycleLatch === undefined &&
+            record.cycleLatch === undefined
+        )
+            return
+        const on = record.cycleLatch?.on
+        this.#routeCycle(selector, on, on)
+    }
+
+    #routeCycle(
+        latch: AnySelector,
+        reported: readonly AnyState[] | undefined,
+        route: readonly AnyState[] | undefined,
+    ): void {
+        const previous = this.#cycleRoutes?.get(latch)
+        for (const node of [
+            ...(previous?.reported ?? []),
+            ...(previous?.route ?? []),
+        ])
+            this.#cycleWatchers?.get(node)?.delete(latch)
+        if (reported === undefined || route === undefined) {
+            this.#cycleRoutes?.delete(latch)
+            return
+        }
+        ;(this.#cycleRoutes ??= new WeakMap()).set(
+            latch,
+            Object.freeze({ reported, route }),
+        )
+        const watchers = (this.#cycleWatchers ??= new WeakMap())
+        for (const node of [...reported, ...route]) {
+            let watching = watchers.get(node)
+            if (watching === undefined) {
+                watching = this.#weakRoutes()
+                watchers.set(node, watching)
+            }
+            watching.add(latch)
+        }
     }
 
     #replaceReverseEdges(

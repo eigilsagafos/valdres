@@ -174,6 +174,16 @@ try {
 }
 ```
 
+The failure stays cached while the cycle exists. A commit that changes values
+along the cycle but not what its selectors read leaves the failure in place. A
+commit that breaks the cycle, by changing what one of those selectors reads,
+re-evaluates them and notifies their subscribers. A selector may catch and
+inspect the error and return a fallback; that does not break the cycle, because
+the selector still reads into it. `path` is the cycle as it was detected, kept
+while the cycle persists, even if a selector on it now fails before reaching
+the read the path names. Whether the cycle still exists is tracked separately,
+so this does not delay recovery.
+
 ## Legacy pre-1.0 API
 
 <div className="callout callout-warning">

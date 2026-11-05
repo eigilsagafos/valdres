@@ -605,6 +605,33 @@ const enum PropagationStatus {
     walking = 8,
 }
 
+/** What settlement has established about a committed selector record, for
+ * the session reading it. */
+const enum Currentness {
+    /** Its recorded edges may be obsolete, so a read must evaluate it. */
+    unproven = 0,
+    /** Current, but a read in flight in another session may still change it. */
+    pending = 1,
+    /** Current up to a selector the reader is evaluating: a real cycle. */
+    cyclic = 2,
+    settled = 3,
+}
+
+/** Folds the next dependency into its reader's currentness. Edges recorded
+ * after a pending read depend on its value, so they count only once settled;
+ * a current edge into the reader's own evaluation closes a real cycle. */
+const foldCurrentness = (
+    current: Currentness,
+    next: Currentness,
+): Currentness =>
+    current === Currentness.cyclic || current === Currentness.unproven
+        ? current
+        : current === Currentness.settled
+          ? next
+          : next === Currentness.settled
+            ? current
+            : Currentness.unproven
+
 const createCommitWorksets = (onAllocation?: () => void): CommitWorksets => ({
     onAllocation,
     preflightAtom: undefined,
@@ -799,6 +826,10 @@ class CommittedStoreTreeHost
      * escaped selector failures itself. */
     #externalSettlement = false
     settlementEpoch = 0
+    /** Counts events after which a record already served in this settlement
+     * may still change: a read served while an upstream evaluation was in
+     * flight, or a settled selector reopened. */
+    provisionalServes = 0
     readonly #domain: RuntimeDomainRecords
     readonly #counters:
         | ((counter: StoreTreeCounterId, amount: number) => void)
@@ -1246,6 +1277,7 @@ class CommittedStoreTreeHost
                 parent.children.delete(node)
             }
             this.#dropSubscriptions(node)
+            this.#external?.disposeScope(node)
             node.dropRecords()
             node.namedChildren.clear()
             node.children.clear()
@@ -2620,7 +2652,12 @@ class CommittedStoreTreeHost
                         cursor++
                     ] as AnySelector
                     try {
-                        this.#settleSelector(scope, selector)
+                        this.#settleSelector(
+                            scope,
+                            selector,
+                            undefined,
+                            undefined,
+                        )
                     } catch (cause) {
                         if (nested) this.#reactionFailure ??= { error: cause }
                         else if (prepare === undefined) throw cause
@@ -2927,7 +2964,9 @@ class CommittedStoreTreeHost
         if ((status & PropagationStatus.settled) !== 0) {
             // An old-dependency walk can settle this selector before an upstream
             // evaluation finishes. A later changed token invalidates that settlement
-            // even if this selector already evaluated once. Reopen and requeue it.
+            // even if this selector already evaluated once. Reopen and requeue it;
+            // a reader that already consumed it verifies its install.
+            this.provisionalServes++
             this.#updatePropagationStatus(
                 scope,
                 selector,
@@ -2949,21 +2988,41 @@ class CommittedStoreTreeHost
     ): void {
         if (this.#propagationQueue === undefined) return
         if (this.#external?.skipSelectorRead(scope, selector, session)) return
-        this.#settleSelector(scope, selector, session)
+        this.#settleSelector(scope, selector, session, session)
     }
 
     #settleSelector(
         scope: StoreScopeNode,
         selector: AnySelector,
-        session?: SelectorEvaluationSession<AnyState>,
-    ): void {
+        session: SelectorEvaluationSession<AnyState> | undefined,
+        reader: SelectorEvaluationSession<AnyState> | undefined,
+    ): Currentness {
         const status = this.#getPropagationStatus(scope, selector)
+        if ((status & PropagationStatus.settled) !== 0)
+            return Currentness.settled
+        // A read that reaches an evaluation in flight either closes a real
+        // cycle or, while dirty, is re-evaluated by serve. A record a nested
+        // evaluation already installed may still change when it finishes.
+        if ((status & PropagationStatus.settling) !== 0) {
+            if (session !== undefined) {
+                if (!scope.isSelectorDirty(selector)) this.provisionalServes++
+                return Currentness.pending
+            }
+            return reader?.isActive(scope, selector) === true
+                ? Currentness.cyclic
+                : Currentness.pending
+        }
         if (
-            (status &
-                (PropagationStatus.settled | PropagationStatus.settling)) !==
-            0
+            (status & PropagationStatus.walking) !== 0 &&
+            !scope.isSelectorDirty(selector)
         ) {
-            return
+            // Reentered while its own old-dependency walk is suspended.
+            const currentness = this.#suspendedWalk(scope, selector, reader)
+            if (currentness !== Currentness.unproven)
+                return this.#servePending(session, currentness)
+            if (session === undefined) return Currentness.unproven
+            // A dependency read must not accept edges that may be obsolete.
+            scope.markSelectorDirty(selector)
         }
         this.#updatePropagationStatus(
             scope,
@@ -2980,18 +3039,31 @@ class CommittedStoreTreeHost
                 (status & PropagationStatus.walking) !== 0
                     ? undefined
                     : scope.getCommittedSelectorDependencies(selector)
+            let currentness = Currentness.settled
             if (dependencies !== undefined) {
                 for (const dependency of dependencies) {
                     if (this.#domain.selectors.has(dependency.node)) {
                         // Administrative settlement preserves established
                         // propagation order and its isolated control faults.
-                        this.#settleSelector(
+                        const dependencyCurrentness = this.#settleSelector(
                             scope,
                             dependency.node as AnySelector,
+                            undefined,
+                            reader,
                         )
+                        if (
+                            dependencyCurrentness !== Currentness.settled ||
+                            currentness !== Currentness.settled
+                        )
+                            currentness = foldCurrentness(
+                                currentness,
+                                dependencyCurrentness,
+                            )
                     }
                 }
             }
+            if (currentness === Currentness.unproven && session !== undefined)
+                scope.markSelectorDirty(selector)
             if (scope.isSelectorDirty(selector)) {
                 this.#updatePropagationStatus(
                     scope,
@@ -3007,7 +3079,8 @@ class CommittedStoreTreeHost
                 const settleSession =
                     session !== undefined && graphStayedCurrent
                         ? session
-                        : new SelectorEvaluationSession<AnyState>()
+                        : new SelectorEvaluationSession<AnyState>(reader)
+                const provisionalServes = this.provisionalServes
                 try {
                     scope.serve(selector, settleSession)
                 } catch (error) {
@@ -3018,12 +3091,23 @@ class CommittedStoreTreeHost
                     if (this.#external?.dormantPull === true) throw error
                     scope.publishEscapedFailure(selector, error, settleSession)
                 }
+                // An install that read a superseded token stays dirty and is
+                // queued to settle again.
+                currentness =
+                    provisionalServes !== this.provisionalServes &&
+                    scope.isSelectorDirty(selector)
+                        ? Currentness.unproven
+                        : Currentness.settled
+            } else if (currentness !== Currentness.settled) {
+                this.#servePending(session, currentness)
             }
-            this.#updatePropagationStatus(
-                scope,
-                selector,
-                PropagationStatus.settled,
-            )
+            if (currentness === Currentness.settled)
+                this.#updatePropagationStatus(
+                    scope,
+                    selector,
+                    PropagationStatus.settled,
+                )
+            return currentness
         } catch (error) {
             if (this.#external?.recordSelectorFault(scope, selector, error)) {
                 this.#updatePropagationStatus(
@@ -3043,6 +3127,70 @@ class CommittedStoreTreeHost
                     ~status,
             )
         }
+    }
+
+    #servePending(
+        session: SelectorEvaluationSession<AnyState> | undefined,
+        currentness: Currentness,
+    ): Currentness {
+        if (session !== undefined) this.provisionalServes++
+        return currentness
+    }
+
+    /** Classifies a selector reentered while its own old-dependency walk is
+     * suspended, by folding its recorded dependencies as the walk would: a
+     * suspended dependency is classified the same way, an unvisited or dirty
+     * one may hold obsolete edges. */
+    #suspendedWalk(
+        scope: StoreScopeNode,
+        selector: AnySelector,
+        reader: SelectorEvaluationSession<AnyState> | undefined,
+        visited = new Set<AnySelector>(),
+    ): Currentness {
+        visited.add(selector)
+        let currentness = Currentness.settled
+        for (const dependency of scope.getCommittedSelectorDependencies(
+            selector,
+        ) ?? []) {
+            const node = dependency.node as AnySelector
+            if (!this.#domain.selectors.has(node)) continue
+            const status = this.#getPropagationStatus(scope, node)
+            currentness = foldCurrentness(
+                currentness,
+                (status & PropagationStatus.settled) !== 0
+                    ? Currentness.settled
+                    : (status & PropagationStatus.settling) !== 0
+                      ? reader?.isActive(scope, node) === true
+                          ? Currentness.cyclic
+                          : Currentness.pending
+                      : (status & PropagationStatus.walking) !== 0 &&
+                          !scope.isSelectorDirty(node) &&
+                          !visited.has(node)
+                        ? this.#suspendedWalk(scope, node, reader, visited)
+                        : Currentness.unproven,
+            )
+            if (
+                currentness === Currentness.unproven ||
+                currentness === Currentness.cyclic
+            )
+                return currentness
+        }
+        // Its walk is suspended in a dependency that has since settled.
+        return currentness === Currentness.settled
+            ? Currentness.pending
+            : currentness
+    }
+
+    requeueSelector(scope: StoreScopeNode, selector: AnySelector): void {
+        const queue = this.#propagationQueue
+        if (queue === undefined) return
+        this.#updatePropagationStatus(
+            scope,
+            selector,
+            PropagationStatus.queued,
+            PropagationStatus.settled,
+        )
+        queue.push(scope, selector)
     }
 
     #getPropagationStatus(
