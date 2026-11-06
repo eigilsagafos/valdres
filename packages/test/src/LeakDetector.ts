@@ -1,12 +1,15 @@
 import { generateHeapSnapshot } from "bun"
 import { releaseWeakRefs } from "bun:jsc"
 import { writeSync } from "node:fs"
+import { captureRetentionPhase, captureRetentionSnapshot, markRetentionTarget } from "./retentionCapture"
 
 // Temporary, opt-in diagnostic: write only scalar phase data, retaining no
 // test state, target, detector or callback. Synchronous stderr survives timeout.
 export function retentionPhase(label: string | undefined, phase: string, round = -1): void {
     if (label === undefined) return
-    writeSync(2, `[retention-phase] t=${performance.now().toFixed(3)} label=${label} phase=${phase} round=${round}\n`)
+    const line = `[retention-phase] t=${performance.now().toFixed(3)} label=${label} phase=${phase} round=${round}\n`
+    writeSync(2, line)
+    captureRetentionPhase(line)
 }
 
 /**
@@ -18,12 +21,10 @@ export function retentionPhase(label: string | undefined, phase: string, round =
  * ClearKeptObjects directly so the target is actually collectable.
  * Order matters: releaseWeakRefs MUST run before the GC.
  *
- * The remaining residue under heap pressure is JSC's conservative stack
- * scan retaining recently-dead allocations through stale callee-saved
- * register spills. We work around it with two GC passes per round, an
- * intermediate generateHeapSnapshot (which advances the visitor and tends
- * to overwrite spill slots), and a Bun.sleep(0) macrotask gap between
- * rounds.
+ * Collection is nondeterministic. Existing CI timeouts have not established
+ * an application-owned root or an engine cause. These historical two GC passes,
+ * intervening snapshot and task gaps are retained as the bounded probe, not a
+ * proof that conservative stack scanning caused a particular timeout.
  *
  * Usage:
  *   const detector = new LeakDetector(someObject)
@@ -31,21 +32,19 @@ export function retentionPhase(label: string | undefined, phase: string, round =
  *   expect(await detector.isLeaking()).toBe(false)
  *
  * Pass a smaller `maxRounds` when deliberately asserting that a strong
- * reference remains; dead-object checks use the wider default because JSC's
- * conservative stack scan can retain stale slots for many rounds under load.
+ * reference remains; dead-object checks use the wider default to allow eventual collection within the existing bounded probe.
  */
 export class LeakDetector {
     private _ref: WeakRef<object>
 
-    constructor(value: object) {
+    constructor(value: object, diagnosticTarget?: string) {
         this._ref = new WeakRef(value)
+        markRetentionTarget(value, diagnosticTarget)
     }
 
     async isLeaking(maxRounds = 50, diagnosticLabel?: string): Promise<boolean> {
-        // Start from a fresh macrotask so the caller that just dropped its last
-        // strong reference has unwound before JSC conservatively scans stack
-        // and register spill slots. Without this first gap, full-suite pressure
-        // can make a dead object survive every otherwise-identical GC round.
+        // Preserve the existing host-task opportunity before checking a WeakRef.
+        // A task gap does not guarantee collection or explain prior timeouts.
         retentionPhase(diagnosticLabel, "initial-sleep-enter")
         await Bun.sleep(0)
         retentionPhase(diagnosticLabel, "initial-sleep-return")
@@ -57,7 +56,7 @@ export class LeakDetector {
             retentionPhase(diagnosticLabel, "gc-1-return", round)
             if (round > 0) {
                 retentionPhase(diagnosticLabel, "snapshot-enter", round)
-                generateHeapSnapshot()
+                captureRetentionSnapshot(generateHeapSnapshot(), diagnosticLabel, round)
                 retentionPhase(diagnosticLabel, "snapshot-return", round)
             }
             retentionPhase(diagnosticLabel, "release-weak-refs-2-enter", round)

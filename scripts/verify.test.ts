@@ -249,6 +249,7 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             ...skippedStepYaml("test"),
             ...steps,
             ...realStepYaml("Test Report"),
+            ...realStepYaml("Preserve retention evidence even after test failure"),
             // The browser package jobs. Their action layout is mirrored here
             // for the same reason as the others: SKIPPED_ACTIONS is keyed by
             // job and step, and an unmatched entry is a stale-entry failure.
