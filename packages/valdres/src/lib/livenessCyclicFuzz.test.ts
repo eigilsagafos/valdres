@@ -75,7 +75,7 @@ const check = (s: any, states: any[]): Mismatch | null => {
     // 3. Compare against the maintained count.
     for (const D of states) {
         const exp = expected.get(D) ?? 0
-        const got = data.liveDependentCount.get(D) ?? 0
+        const got = data.graphNodes.get(D)?.live ?? 0
         if (got !== exp) {
             return {
                 dir: got < exp ? "UNDER" : "OVER",

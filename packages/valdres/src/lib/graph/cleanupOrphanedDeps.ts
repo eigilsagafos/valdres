@@ -3,6 +3,7 @@ import type { StoreData } from "../../types/StoreData"
 import type { Selector } from "../../types/Selector"
 import { removeStateDependent } from "./inheritedDependencyBranches"
 import { isLive } from "./mountAtom"
+import { graphNodeFor, peekGraphNode } from "./graphNode"
 import {
     noteStateValueChanged,
     recordColdSelectorCache,
@@ -23,17 +24,19 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
     if (isLive(state, data)) return
 
     const graphVersion = data.dependencyGraphVersion
-    const cleanedAtVersion = data.orphanCleanupVersion
-    if (cleanedAtVersion.get(state) === graphVersion) return
+    if (peekGraphNode(state, data)?.cleanedAt === graphVersion) return
 
     const stack = [state]
     while (stack.length > 0) {
         const current = stack.pop()!
         // Live boundaries are deliberately NOT marked: a later burst may make
         // one transition to non-live, at which point it needs cleanup.
-        if (cleanedAtVersion.get(current) === graphVersion) continue
+        // Peek: this walk stops at every live boundary it reaches, and those
+        // nodes must not be given a record just to be skipped.
+        const currentNode = peekGraphNode(current, data)
+        if (currentNode?.cleanedAt === graphVersion) continue
         if (isLive(current, data)) continue
-        cleanedAtVersion.set(current, graphVersion)
+        ;(currentNode ?? graphNodeFor(current, data)).cleanedAt = graphVersion
 
         const dependents = data.stateDependents.get(current)
         const deps = data.stateDependencies.get(current)

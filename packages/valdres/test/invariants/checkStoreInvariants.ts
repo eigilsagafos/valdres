@@ -1,7 +1,11 @@
 import type { Selector } from "../../src/types/Selector"
 import type { State } from "../../src/types/State"
 import type { Store } from "../../src/types/Store"
-import type { ColdSelectorCache, StoreData } from "../../src/types/StoreData"
+import type {
+    ColdSelectorCache,
+    GraphNode,
+    StoreData,
+} from "../../src/types/StoreData"
 import { getStoreData } from "../../src/lib/getStoreData"
 import { isStoreDisposed, peekStoreResources } from "../../src/lib/storeLifecycle"
 import { isAtomFamily } from "../../src/utils/isAtomFamily"
@@ -200,13 +204,22 @@ const checkStore = (
         data,
         "subscriptionsRequireEqualCheck",
     )
-    const liveCounts = hasOwn<WeakMap<State, number>>(data, "liveDependentCount")
+    // The liveness count, the mount/cycle markers and the stable order all live
+    // in ONE per-state record now (StoreData.graphNodes), so peek that table
+    // once and read fields off it. `live === 0` is the record's spelling of the
+    // old table's "absent", and an absent record means every field is default.
+    const graphNodes = hasOwn<WeakMap<State, GraphNode>>(data, "graphNodes")
+    const liveCountOf = (s: State): number | undefined => {
+        const live = graphNodes?.get(s)?.live
+        return live === undefined || live === 0 ? undefined : live
+    }
+    const hasMountMarker = (s: State): boolean =>
+        graphNodes?.get(s)?.mountInClosure === true
+    const orderOf = (s: State): number | undefined => {
+        const order = graphNodes?.get(s)?.order
+        return order === undefined || order < 0 ? undefined : order
+    }
     const mounts = hasOwn<WeakMap<State, unknown>>(data, "mounts")
-    const mountInClosure = hasOwn<WeakMap<State, true>>(data, "mountInClosure")
-    const dependencyOrder = hasOwn<WeakMap<State, number>>(
-        data,
-        "dependencyOrder",
-    )
     const abortControllers = hasOwn<WeakMap<State, AbortController>>(
         data,
         "abortControllers",
@@ -296,7 +309,7 @@ const checkStore = (
                     `${at}: disposed store retains reverse edges for ${label(s)}`,
                 )
             }
-            if (liveCounts?.get(s) !== undefined) {
+            if (liveCountOf(s) !== undefined) {
                 push(
                     "disposed-terminal",
                     `${at}: disposed store retains a liveDependentCount for ${label(s)}`,
@@ -373,7 +386,7 @@ const checkStore = (
     // --- dependency-ownership: materialization order ----------------------
     for (const s of region) {
         const deps = depsOf(data, s)
-        if (deps && deps.size > 0 && !dependencyOrder?.has(s)) {
+        if (deps && deps.size > 0 && orderOf(s) === undefined) {
             push(
                 "dependency-ownership",
                 `${at}: selector ${label(s)} has a dependency set but no dependencyOrder entry`,
@@ -441,7 +454,7 @@ const checkStore = (
         for (const d of deps) expected.set(d, (expected.get(d) ?? 0) + 1)
     }
     for (const s of region) {
-        const stored = liveCounts?.get(s)
+        const stored = liveCountOf(s)
         if (stored !== undefined) {
             if (!Number.isInteger(stored) || stored <= 0) {
                 push(
@@ -490,7 +503,7 @@ const checkStore = (
                 live.has(s) &&
                 hasHookedStrictDescendant(data, s) &&
                 !hasOwnMount(s) &&
-                !(mountInClosure?.has(s) ?? false)
+                !hasMountMarker(s)
             ) {
                 push(
                     "mount-state",
@@ -568,7 +581,7 @@ const checkStore = (
         const audit = explicit.length > 0 ? explicit : [...region]
         for (const s of audit) {
             if (live.has(s) || subsSize(data, s) > 0) continue
-            const count = liveCounts?.get(s)
+            const count = liveCountOf(s)
             if (count !== undefined && count > 0) {
                 push(
                     "retained-registration",
